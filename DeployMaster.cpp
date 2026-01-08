@@ -190,7 +190,9 @@ void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
                 continue;
             }
 
-            if (tc.syncSendCommand("reboot", 1000)) {
+            tc.syncSendCommand("sync", 1000);
+            QThread::msleep(100);
+            if (tc.syncSendCommand("reboot -f", 1000)) {
                 rebootSuccess << ip;
                 appendFtpLog(QString("✅ 重启命令已发送: %1").arg(ip));
             }
