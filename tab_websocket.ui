@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TabWebSocket</class>
+ <widget class="QWidget" name="TabWebSocket">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>960</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBox_mode">
+     <property name="title">
+      <string>模式选择</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout_mode">
+      <item>
+       <widget class="QRadioButton" name="radio_server">
+        <property name="text">
+         <string>Server 模式</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="radio_client">
+        <property name="text">
+         <string>Client 模式</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_server">
+     <property name="title">
+      <string>Server 设置</string>
+     </property>
+     <layout class="QFormLayout" name="formLayout_server">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_serverPort">
+        <property name="text">
+         <string>端口：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QSpinBox" name="spin_serverPort">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>65535</number>
+        </property>
+        <property name="value">
+         <number>8080</number>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_maxConnections">
+        <property name="text">
+         <string>最大连接数：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="spin_maxConnections">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="value">
+         <number>10</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_secureMode">
+        <property name="text">
+         <string>安全模式：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QCheckBox" name="chk_secureMode">
+        <property name="text">
+         <string>使用 WSS</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_client">
+     <property name="title">
+      <string>Client 设置</string>
+     </property>
+     <layout class="QFormLayout" name="formLayout_client">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_serverUrl">
+        <property name="text">
+         <string>服务器 URL：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="lineEdit_serverUrl">
+        <property name="text">
+         <string>ws://localhost:8080</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_buttons">
+     <item>
+      <widget class="QPushButton" name="btn_start">
+       <property name="text">
+        <string>启动</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_stop">
+       <property name="text">
+        <string>停止</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_send">
+       <property name="text">
+        <string>发送消息</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_pubsub">
+     <property name="title">
+      <string>发布/订阅</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_pubsub">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_topic">
+        <property name="text">
+         <string>主题 URL：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="lineEdit_topic">
+        <property name="text">
+         <string>/topic/example</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_pubMessage">
+        <property name="text">
+         <string>发布消息：</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="lineEdit_pubMessage">
+        <property name="placeholderText">
+         <string>输入要发布的消息...</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QPushButton" name="btn_subscribe">
+        <property name="text">
+         <string>订阅</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QPushButton" name="btn_publish">
+        <property name="text">
+         <string>发布</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_messages">
+     <property name="title">
+      <string>消息日志</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_messages">
+      <item>
+       <widget class="QTextEdit" name="txt_messages">
+        <property name="readOnly">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_log">
+        <item>
+         <spacer name="horizontalSpacer_log">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_clearLog">
+          <property name="text">
+           <string>清理日志</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

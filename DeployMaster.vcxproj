@@ -1,4 +1,4 @@
-﻿﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -36,12 +36,12 @@
     <Import Project="$(QtMsBuild)\qt_defaults.props" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
-    <QtModules>core;gui;network;widgets;serialbus</QtModules>
+    <QtModules>core;gui;network;widgets;serialbus;websockets</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.9.2_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;network;widgets;serialbus;websockets</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -64,7 +64,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./tinyvsoa</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
@@ -114,9 +114,12 @@
     <ClCompile Include="FileDeploy.cpp" />
     <ClCompile Include="FtpManager.cpp" />
     <ClCompile Include="main.cpp" />
+    <QtUic Include="tab_diagnostic.ui" />
     <QtUic Include="tab_modbus_cluster_test.ui" />
     <QtUic Include="tab_logquery.ui" />
     <QtUic Include="tab_telnet.ui" />
+    <QtUic Include="tab_websocket.ui" />
+    <ClCompile Include="WebSocketClient.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="OpcUaClient.h" />
@@ -129,6 +132,7 @@
     <ClInclude Include="FtpManager.h" />
     <QtMoc Include="LogQueryTab.h" />
     <QtMoc Include="ModbusCluster.h" />
+    <QtMoc Include="WebSocketClient.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

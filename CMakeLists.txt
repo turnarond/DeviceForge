@@ -19,6 +19,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Widgets
     Network
     SerialBus
+    WebSockets
 )
 
 set(LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
@@ -43,9 +44,12 @@ set(SOURCES
 	TelnetDeploy.cpp
 	LogQueryTab.cpp
 	ModbusCluster.cpp
+	WebSocketClient.cpp
+	DiagnosticClient.cpp
+	tinyvsoa/tinyvsoa.cpp
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/tinyvsoa)
 
 
 # 创建可执行文件
@@ -58,6 +62,7 @@ target_link_libraries(DeployMaster PRIVATE
     Qt6::Widgets
     Qt6::Network
     Qt6::SerialBus
+    Qt6::WebSockets
 	${LIBCURL_IMPL_LIB} 
 )
 

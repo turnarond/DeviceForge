@@ -8,8 +8,11 @@
 #include <QStyleFactory>
 #include <QStandardItemModel>
 #include <QStandardItem>
+#include <QInputDialog>
 
 #include "OpcUaClient.h" // add header
+#include "WebSocketClient.h" // add header
+//#include "DiagnosticClient.h" // add header
 
 DeployMaster::DeployMaster(QWidget* parent)
     : QMainWindow(parent)
@@ -23,6 +26,10 @@ DeployMaster::DeployMaster(QWidget* parent)
     setupModbusClusterTab();
 
     setupOpcUaClientTab(); // register OPC UA tab
+
+    setupWebSocketClientTab(); // register WebSocket tab
+
+    //setupDiagnosticClientTab(); // register Diagnostic tab
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
@@ -67,6 +74,21 @@ void DeployMaster::setupOpcUaClientTab()
     OpcUaClientTab* opcTab = new OpcUaClientTab(this);
     ui.tabWidget->addTab(opcTab, tr("OPC UA 客户端"));
 }
+
+// new: setup for websocket
+void DeployMaster::setupWebSocketClientTab()
+{
+    m_webSocketClient = new WebSocketClient(this);
+    ui.tabWidget->addTab(m_webSocketClient, tr("WebSocket"));
+}
+
+// new: setup for diagnostic
+void DeployMaster::setupDiagnosticClientTab()
+{
+    //m_diagnosticClient = new DiagnosticClient(this);
+    //ui.tabWidget->addTab(m_diagnosticClient, tr("诊断工具"));
+}
+
 
 void DeployMaster::onAddFilesClicked()
 {
@@ -357,7 +379,14 @@ void DeployMaster::setupRemotePreview()
     ui.tree_remoteFiles->setModel(remoteFileModel);
     
     // 设置初始路径
-    currentRemotePath = "/apps/m580cn/bin/";
+    currentRemotePath = ui.txt_remotePath->text().trimmed();
+    // 确保路径格式正确
+    if (!currentRemotePath.endsWith('/')) {
+        currentRemotePath += '/';
+    }
+    if (!currentRemotePath.startsWith('/')) {
+        currentRemotePath = '/' + currentRemotePath;
+    }
     
     // 连接信号槽
     connect(ui.cmb_targetIPs, &QComboBox::currentTextChanged, this, &DeployMaster::onIPSelectionChanged);
@@ -393,6 +422,14 @@ void DeployMaster::refreshRemoteFiles()
     QString user = ui.txt_user->text().trimmed();
     QString pass = ui.txt_pass->text().trimmed();
     
+    // 确保路径格式正确
+    if (!currentRemotePath.endsWith('/')) {
+        currentRemotePath += '/';
+    }
+    if (!currentRemotePath.startsWith('/')) {
+        currentRemotePath = '/' + currentRemotePath;
+    }
+    
     if (user.isEmpty() || pass.isEmpty()) {
         appendFtpLog("❌ 错误：请输入用户名和密码！");
         return;
@@ -424,19 +461,49 @@ void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
     QStandardItem* rootItem = new QStandardItem(QString("%1 (%2)").arg(currentRemoteIP).arg(currentRemotePath));
     rootItem->setData(currentRemotePath, Qt::UserRole);
     rootItem->setData(true, Qt::UserRole + 1); // 标记为目录
+    rootItem->setData(true, Qt::UserRole + 2); // 标记为根目录项
     remoteFileModel->appendRow(rootItem);
+    
+    // 添加返回上一级文件夹的选项（如果当前路径不是根目录）
+    if (currentRemotePath != "/" && !currentRemotePath.isEmpty()) {
+        QStandardItem* parentItem = new QStandardItem(".. (返回上一级)");
+        // 使用Qt标准目录图标
+        parentItem->setIcon(QApplication::style()->standardIcon(QStyle::SP_DirIcon));
+        QString parentPath = currentRemotePath;
+        // 移除末尾的斜杠
+        if (parentPath.endsWith('/')) {
+            parentPath.chop(1);
+        }
+        // 找到上一级目录
+        int lastSlashIndex = parentPath.lastIndexOf('/');
+        if (lastSlashIndex >= 0) {
+            parentPath = parentPath.left(lastSlashIndex + 1);
+        } else {
+            parentPath = "/";
+        }
+        parentItem->setData(parentPath, Qt::UserRole);
+        parentItem->setData(true, Qt::UserRole + 1); // 标记为目录
+        parentItem->setData(false, Qt::UserRole + 2); // 标记为非根目录项
+        rootItem->appendRow(parentItem);
+    }
     
     // 添加文件和文件夹
     for (const FtpFileInfo& file : files) {
         QStandardItem* item;
         if (file.size == -1) { // 目录（size为-1表示可能是目录）
-            item = new QStandardItem(QString("📁 %1").arg(file.name));
+            item = new QStandardItem(file.name);
+            // 使用Qt标准目录图标
+            item->setIcon(QApplication::style()->standardIcon(QStyle::SP_DirIcon));
             item->setData(currentRemotePath + file.name + "/", Qt::UserRole);
             item->setData(true, Qt::UserRole + 1); // 标记为目录
+            item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
         } else {
-            item = new QStandardItem(QString("📄 %1 (%2 bytes)").arg(file.name).arg(file.size));
+            item = new QStandardItem(QString("%1 (%2 bytes)").arg(file.name).arg(file.size));
+            // 使用Qt标准文件图标
+            item->setIcon(QApplication::style()->standardIcon(QStyle::SP_FileIcon));
             item->setData(currentRemotePath + file.name, Qt::UserRole);
             item->setData(false, Qt::UserRole + 1); // 标记为文件
+            item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
         }
         rootItem->appendRow(item);
     }
@@ -451,7 +518,27 @@ void DeployMaster::onRemoteFileDoubleClicked(const QModelIndex& index)
     if (!item) return;
     
     bool isDirectory = item->data(Qt::UserRole + 1).toBool();
-    if (isDirectory) {
+    bool isRootItem = item->data(Qt::UserRole + 2).toBool();
+    
+    if (isRootItem) {
+        // 双击根目录项，允许编辑路径
+        bool ok;
+        QString newPath = QInputDialog::getText(this, "编辑远程路径", "请输入新的远程路径:", QLineEdit::Normal, currentRemotePath, &ok);
+        if (ok && !newPath.isEmpty()) {
+            // 确保路径以斜杠结尾
+            if (!newPath.endsWith('/')) {
+                newPath += '/';
+            }
+            // 确保路径以斜杠开头
+            if (!newPath.startsWith('/')) {
+                newPath = '/' + newPath;
+            }
+            currentRemotePath = newPath;
+            appendFtpLog(QString("📝 路径已更改为: %1").arg(currentRemotePath));
+            refreshRemoteFiles();
+        }
+    } else if (isDirectory) {
+        // 双击普通目录项，进入该目录
         QString path = item->data(Qt::UserRole).toString();
         currentRemotePath = path;
         appendFtpLog(QString("📁 进入目录: %1").arg(path));

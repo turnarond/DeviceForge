@@ -11,6 +11,8 @@
 #include "ModbusCluster.h"
 
 class OpcUaClientTab; // forward declaration
+class WebSocketClient; // forward declaration
+class DiagnosticClient; // forward declaration
 
 class DeployMaster : public QMainWindow
 {
@@ -65,16 +67,20 @@ private slots:
         const QString& user,
         const QString& pass);
 
+private slots:
+    void buildRemoteFileTree(const QList<FtpFileInfo>& files); // 构建远程文件树
+
 private:
     void setupLogQueryTab();
     void setupTelnetDeployTab();
     void setupModbusClusterTab();
     void setupOpcUaClientTab(); // new
+    void setupWebSocketClientTab(); // new
+    void setupDiagnosticClientTab(); // new
     void setupRemotePreview(); // 初始化远端预览功能
     
     // 远端预览相关方法
     void refreshRemoteFiles(); // 刷新远程文件列表
-    void buildRemoteFileTree(const QList<FtpFileInfo>& files); // 构建远程文件树
     void onIPSelectionChanged(); // IP选择变化处理
     void onRemoteFileDoubleClicked(const QModelIndex& index); // 双击文件/文件夹处理
 
@@ -84,5 +90,7 @@ private:
     TelnetDeploy* m_telnetDeployTab = nullptr;
     ModbusCluster* m_modbusCluster = nullptr;
     OpcUaClientTab* m_opcUaTab = nullptr; // new
+    WebSocketClient* m_webSocketClient = nullptr; // new
+    //DiagnosticClient* m_diagnosticClient = nullptr; // new
 };
 

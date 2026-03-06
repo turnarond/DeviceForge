@@ -64,6 +64,9 @@
     <ClCompile Include="OpcUaClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WebSocketClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileDeploy.h">
@@ -76,9 +79,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_tab_opcua_client.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="OpcUaClient.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -100,6 +100,12 @@
     <QtUic Include="tab_modbus_cluster_test.ui">
       <Filter>Form Files</Filter>
     </QtUic>
+    <QtUic Include="tab_diagnostic.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="tab_websocket.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="DeployMaster.h">
@@ -118,6 +124,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="ModbusCluster.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="OpcUaClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="WebSocketClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

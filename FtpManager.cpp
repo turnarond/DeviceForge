@@ -104,6 +104,7 @@ QList<FtpFileInfo> FtpManager::listFtpDirectoryDetailed(const QString& remoteDir
     curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "LIST"); // 显式使用 LIST
     curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, listWriteCallback);
     curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &output);
+    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, 30L); // 添加超时设置，防止无限等待
 
     CURLcode res = curl_easy_perform(curl_);
     if (res != CURLE_OK) {
@@ -363,7 +364,7 @@ QStringList FtpManager::listFtpDirectory(const QString& remoteDir)
     curl_easy_setopt(curl_, CURLOPT_DIRLISTONLY, 1L); // 只返回文件名列表
     curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, writeCallbackString);
     curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &listOutput);
-    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, 30L); // 添加超时设置
 
     CURLcode res = curl_easy_perform(curl_);
     if (res != CURLE_OK) {
@@ -421,6 +422,7 @@ void FtpManager::downloadFile(const QString& remotePath, const QString& localPat
     curl_easy_setopt(curl_, CURLOPT_PASSWORD, pass_.toUtf8().constData());
     curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, writeData);
     curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &localFile);
+    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, 300L); // 添加超时设置，与上传保持一致
 
     if (progress) {
         curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
