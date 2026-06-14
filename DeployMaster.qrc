@@ -1,4 +1,7 @@
 <RCC>
     <qresource prefix="DeployMaster">
     </qresource>
+    <qresource prefix="styles">
+        <file>darkstyle.qss</file>
+    </qresource>
 </RCC>
