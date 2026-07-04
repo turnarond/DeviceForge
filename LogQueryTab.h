@@ -1,4 +1,3 @@
-﻿// LogQueryTab.h
 #pragma once
 
 #include <QWidget>
@@ -6,58 +5,51 @@
 #include <QMap>
 #include <QTextEdit>
 #include <QStringList>
-#include "FtpManager.h" // 包含 FtpFileInfo 结构体定义
+#include <QVector>
+#include <QTreeWidgetItem>
+#include "src/model/FtpManager.h"
 
 namespace Ui {
     class TabLogQuery;
 }
 
-class DeployMaster; // 前向声明主窗口
+class DeployMaster;
 
 class LogQueryTab : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit LogQueryTab( DeployMaster* parentWindow, QWidget* parent = nullptr);
+    explicit LogQueryTab(DeployMaster* parentWindow, QWidget* parent = nullptr);
     ~LogQueryTab();
 
-    // 获取当前查询参数（供主窗口调用）
-    QString logPath() const;
-    QDateTime startTime() const;
-    QDateTime endTime() const;
+    void setMainWindow(DeployMaster* mainWindow);
+    QStringList getTargetIPs();
 
-    void appendLogResult(const QString& ip, const QList<FtpFileInfo>& files);
-    void clearResults();
-
-    void setGlobalLogWidget(QTextEdit* logWidget) {
-        txt_globalLog = logWidget;
-    }
-
-private:
-    void downloadALogForIP(const QString& ip, const QString& remoteFile, const QString& saveDir);
-    void startDownloadTask(const QString& ip, const QString& remotePath, const QString& localPath, const QString& filename);
-
-private slots:
+public slots:
+    void on_btn_queryRequested();
+    void on_btn_downloadSelected();
+    void on_btn_downloadAll();
     void onTreeItemDoubleClicked();
-    void on_btn_queryRequested();      // 用户点击“查询日志”
-    void on_btn_downloadSelected();    // 下载选中
-    void on_btn_downloadAll();         // 下载全部
+    void onLogQueryResultReady(const QString& ip, const QList<FtpFileInfo>& files);
+    void appendLog(const QString& log);
     void updateDownloadProgress(const QString& ip, const QString& filename,
         qint64 bytesReceived, qint64 totalBytes);
-
-private slots:
-    void onLogQueryResultReady(const QString& ip, const QList<FtpFileInfo>& files);
-    void appendLog(const QString& log); // 供主窗口调用，追加日志
-
-private:
-    QStringList getTargetIPs();
-    QString formatFileSize(qint64 bytes);
 
 private:
     Ui::TabLogQuery* ui;
     DeployMaster* m_mainWindow;
+    QMap<QString, QList<FtpFileInfo>> m_logFilesCache;
+    QTextEdit* txt_globalLog;
 
-    QMap<QString, QStringList> m_logFilesCache; // 缓存每个 IP 的日志文件列表
-    QTextEdit* txt_globalLog = nullptr;
+    void startDownloadTask(const QString& ip, const QString& remotePath,
+        const QString& localPath, const QString& filename);
+    void downloadALogForIP(const QString& ip, const QString& remoteFile, const QString& saveDir);
+
+    QString logPath() const;
+    QDateTime startTime() const;
+    QDateTime endTime() const;
+    QString formatFileSize(qint64 bytes);
+    void appendLogResult(const QString& ip, const QList<FtpFileInfo>& files);
+    void clearResults();
 };

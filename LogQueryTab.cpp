@@ -1,4 +1,4 @@
-﻿// LogQueryTab.cpp
+// LogQueryTab.cpp
 #include "LogQueryTab.h"
 #include "ui_tab_logquery.h"
 #include "DeployMaster.h" // 确保能访问 ui->txt_ipList
@@ -112,7 +112,7 @@ void LogQueryTab::on_btn_queryRequested()
 {
     auto ips = getTargetIPs();
     if (ips.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先在“批量部署”页填写目标 IP 列表。");
+        QMessageBox::warning(this, "警告", "请先在\"批量部署\"页填写目标 IP 列表。");
         return;
     }
 
@@ -140,7 +140,8 @@ void LogQueryTab::on_btn_queryRequested()
                 Q_ARG(QString, QString("🔍 查询 %1 的日志目录: %2").arg(targetIp).arg(logDir)));
 
             try {
-                FtpManager ftp(targetIp, 21, ftpUser, ftpPass);
+                FtpManager ftp(targetIp, 21);
+                ftp.setCredentials(ftpUser, ftpPass);
                 auto files = ftp.listFtpDirectoryDetailed(logDir);
 
                 // 过滤：只保留 .log 文件（可选）
@@ -173,8 +174,8 @@ void LogQueryTab::startDownloadTask(const QString& ip, const QString& remotePath
     QString ftpPass = m_mainWindow->getFtpPass();
     QtConcurrent::run([=]() {
         try {
-            FtpManager ftp(ip, 21, ftpUser, ftpPass);
-            ftp.downloadFile(remotePath, localPath);
+            FtpManager ftp(ip, 21);
+            ftp.setCredentials(ftpUser, ftpPass);
 
             // 进度回调：通过信号更新 UI
             FtpManager::ProgressCallback progress = [=](qint64 bytes, qint64 total) {
@@ -190,7 +191,7 @@ void LogQueryTab::startDownloadTask(const QString& ip, const QString& remotePath
             // 下载完成
             QMetaObject::invokeMethod(this, "appendLog", Qt::QueuedConnection,
                 Q_ARG(QString, QString("📥 %1 -> %2 下载成功").arg(filename).arg(localPath)));
-            // 可选：标记为“完成”
+            // 可选：标记为"完成"
             QMetaObject::invokeMethod(this, "updateDownloadProgress", Qt::QueuedConnection,
                 Q_ARG(QString, ip),
                 Q_ARG(QString, filename),
@@ -199,7 +200,7 @@ void LogQueryTab::startDownloadTask(const QString& ip, const QString& remotePath
 
         }
         catch (const std::exception& e) {
-            QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
+            QMetaObject::invokeMethod(this, "appendLog", Qt::QueuedConnection,
                 Q_ARG(QString, QString("❌ %1 下载失败: %2").arg(filename).arg(e.what())));
             QMetaObject::invokeMethod(this, "updateDownloadProgress", Qt::QueuedConnection,
                 Q_ARG(QString, ip),
@@ -210,7 +211,7 @@ void LogQueryTab::startDownloadTask(const QString& ip, const QString& remotePath
         });
 }
 
-// DeployMaster.cpp
+// LogQueryTab::updateDownloadProgress
 void LogQueryTab::updateDownloadProgress(const QString& ip, const QString& filename,
     qint64 bytesReceived, qint64 totalBytes)
 {
@@ -221,15 +222,13 @@ void LogQueryTab::updateDownloadProgress(const QString& ip, const QString& filen
         if (item->text(0) == ip && item->text(1) == filename) {
             QString progressText;
             if (totalBytes == -1) {
-                progressText = QString("%1 / %2 (%3)")
+                progressText = QString("%1 (%2)")
                     .arg(formatFileSize(bytesReceived))
-                    .arg(formatFileSize(totalBytes))
                     .arg("已完成");
             }
             else if (totalBytes == -2) {
-                progressText = QString("%1 / %2 (%3)")
+                progressText = QString("%1 (%2)")
                     .arg(formatFileSize(bytesReceived))
-                    .arg(formatFileSize(totalBytes))
                     .arg("下载出错");
             }
             else {
@@ -366,4 +365,3 @@ void LogQueryTab::appendLog(const QString& log)
 {
     txt_globalLog->append(log);
 }
-

@@ -20,7 +20,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -64,7 +64,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include;./tinyvsoa</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./tinyvsoa;./src</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
@@ -112,7 +112,6 @@
     <ClCompile Include="DeployMaster.cpp" />
     <ClCompile Include="DropListWidget.cpp" />
     <ClCompile Include="FileDeploy.cpp" />
-    <ClCompile Include="FtpManager.cpp" />
     <ClCompile Include="main.cpp" />
     <QtUic Include="tab_diagnostic.ui" />
     <QtUic Include="tab_modbus_cluster_test.ui" />
@@ -120,6 +119,12 @@
     <QtUic Include="tab_telnet.ui" />
     <QtUic Include="tab_websocket.ui" />
     <ClCompile Include="WebSocketClient.cpp" />
+    <ClCompile Include="src\framework\EventBus.cpp" />
+    <ClCompile Include="src\framework\ConnectionPool.cpp" />
+    <ClCompile Include="src\framework\AppState.cpp" />
+    <ClCompile Include="src\model\FtpManager.cpp" />
+    <ClCompile Include="src\presenter\FtpPresenter.cpp" />
+    <ClCompile Include="src\presenter\ModbusPresenter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="OpcUaClient.h" />
@@ -129,11 +134,17 @@
     <QtMoc Include="DeployMaster.h" />
     <QtMoc Include="DropListWidget.h" />
     <ClInclude Include="FileDeploy.h" />
-    <ClInclude Include="FtpManager.h" />
     <QtMoc Include="LogQueryTab.h" />
     <QtMoc Include="ModbusCluster.h" />
     <QtMoc Include="WebSocketClient.h" />
     <ClInclude Include="resource.h" />
+    <QtMoc Include="src\framework\EventBus.h" />
+    <QtMoc Include="src\framework\ConnectionPool.h" />
+    <QtMoc Include="src\framework\AppState.h" />
+    <ClInclude Include="src\utils\DeployEvent.h" />
+    <ClInclude Include="src\model\FtpManager.h" />
+    <QtMoc Include="src\presenter\FtpPresenter.h" />
+    <QtMoc Include="src\presenter\ModbusPresenter.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DeployMaster.rc" />

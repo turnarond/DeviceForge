@@ -36,20 +36,35 @@ endif()
 set(SOURCES
     main.cpp
     DeployMaster.cpp
-	DropListWidget.cpp
-	FileDeploy.cpp
-	FtpManager.cpp
-	TelnetClient.cpp
-	OpcUaClient.cpp
-	TelnetDeploy.cpp
-	LogQueryTab.cpp
-	ModbusCluster.cpp
-	WebSocketClient.cpp
-	DiagnosticClient.cpp
-	tinyvsoa/tinyvsoa.cpp
+    DropListWidget.cpp
+    FileDeploy.cpp
+    TelnetClient.cpp
+    OpcUaClient.cpp
+    TelnetDeploy.cpp
+    LogQueryTab.cpp
+    ModbusCluster.cpp
+    WebSocketClient.cpp
+    DiagnosticClient.cpp
+    tinyvsoa/tinyvsoa.cpp
+    
+    # 新框架文件
+    src/framework/EventBus.cpp
+    src/framework/ConnectionPool.cpp
+    src/framework/AppState.cpp
+    
+    # 新模型文件
+    src/model/FtpManager.cpp
+    
+    # 新Presenter文件
+    src/presenter/FtpPresenter.cpp
+    src/presenter/ModbusPresenter.cpp
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/tinyvsoa)
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include 
+    ${CMAKE_CURRENT_SOURCE_DIR}/tinyvsoa
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 
 # 创建可执行文件

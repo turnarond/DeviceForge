@@ -5,10 +5,13 @@
 #include <QStandardItem>
 #include "ui_DeployMaster.h"
 #include "FtpRemoteItem.h"
-#include "FtpManager.h"
 #include "LogQueryTab.h"
 #include "TelnetDeploy.h"
 #include "ModbusCluster.h"
+#include "src/utils/DeployEvent.h"
+#include "src/framework/EventBus.h"
+#include "src/framework/AppState.h"
+#include "src/model/FtpManager.h"
 
 class OpcUaClientTab; // forward declaration
 class WebSocketClient; // forward declaration
@@ -51,9 +54,11 @@ private:
 
 public slots:
     void appendFtpLog(const QString& log);
+    void onTaskProgress(const DeployEvent& event);
+    void onTaskFinished(const DeployEvent& event);
+    void onLogMessage(const DeployEvent& event);
 
 private slots:
-    // Add your custom slots here
     void onAddFilesClicked();
     void onAddFolderClicked();
     void onFilesDropped(const QStringList& filePaths);
@@ -68,7 +73,7 @@ private slots:
         const QString& pass);
 
 private slots:
-    void buildRemoteFileTree(const QList<FtpFileInfo>& files); // 构建远程文件树
+    void buildRemoteFileTree(const QList<FtpFileInfo>& files);
 
 private:
     void setupLogQueryTab();

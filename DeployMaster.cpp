@@ -20,16 +20,15 @@ DeployMaster::DeployMaster(QWidget* parent)
     ui.setupUi(this);
 
     setupLogQueryTab();
-
     setupTelnetDeployTab();
-
     setupModbusClusterTab();
+    setupOpcUaClientTab();
+    setupWebSocketClientTab();
 
-    setupOpcUaClientTab(); // register OPC UA tab
-
-    setupWebSocketClientTab(); // register WebSocket tab
-
-    //setupDiagnosticClientTab(); // register Diagnostic tab
+    // 设置 splitter 初始大小比例：工作区占75%，日志区占25%
+    ui.splitter_log->setSizes(QList<int>() << 375 << 125);
+    // 设置水平 splitter 初始大小比例：左侧工作区占75%，右侧预览占25%
+    ui.splitter_main->setSizes(QList<int>() << 600 << 200);
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
@@ -37,19 +36,30 @@ DeployMaster::DeployMaster(QWidget* parent)
     connect(ui.btn_addFolders, &QPushButton::clicked, this, &DeployMaster::onAddFolderClicked);
     connect(ui.btn_clearUploadList, &QPushButton::clicked, this, &DeployMaster::onFileItemCleanClicked);
     connect(ui.list_uploadedItems, &DropListWidget::filesDropped, this, &DeployMaster::onFilesDropped);
-
     connect(ui.btn_deploy, &QPushButton::clicked, this, &DeployMaster::onDeployClicked);
     connect(ui.btn_clearLog, &QPushButton::clicked, this, &DeployMaster::onClearLogClicked);
 
+    // 订阅事件总线
+    EventBus::instance()->subscribe(DeployEvent::TaskProgress, this, SLOT(onTaskProgress(const DeployEvent&)));
+    EventBus::instance()->subscribe(DeployEvent::TaskFinished, this, SLOT(onTaskFinished(const DeployEvent&)));
+    EventBus::instance()->subscribe(DeployEvent::LogMessage, this, SLOT(onLogMessage(const DeployEvent&)));
+
+    // 监听应用状态变化
+    connect(AppState::instance(), &AppState::isBusyChanged, this, [this](bool busy) {
+        ui.btn_deploy->setEnabled(!busy);
+    });
+    connect(AppState::instance(), &AppState::taskProgressChanged, this, [this](int progress) {
+        // 更新进度条（如果有）
+    });
+
     // 初始化远端预览功能
     setupRemotePreview();
-
 }
 
 // 在初始化函数中（如 setupUi 后）
 void DeployMaster::setupLogQueryTab()
 {
-    m_logQueryTab = new LogQueryTab(this);
+    m_logQueryTab = new LogQueryTab(this, this);
     // 添加到主窗口的 tabWidget
     ui.tabWidget->addTab(m_logQueryTab, tr("日志查询"));
 
@@ -127,9 +137,7 @@ void DeployMaster::onAddFolderClicked()
 void DeployMaster::onDeployClicked()
 {
     QString user = ui.txt_user->text().trimmed();
-    QString pass = ui.txt_pass->text().trimmed(); // 注意：Qt 无 PasswordBox，需用 QLineEdit + setEchoMode
-    bool shouldReboot = ui.chk_rebootAfterDeploy->isChecked();
-    bool shouldClearRemote = ui.chk_clearRemoteBeforeUpload->isChecked();
+    QString pass = ui.txt_pass->text().trimmed();
     QString remotePath = ui.txt_remotePath->text().trimmed();
     if (!remotePath.endsWith('/')) remotePath += '/';
 
@@ -148,87 +156,55 @@ void DeployMaster::onDeployClicked()
         return;
     }
 
-    ui.btn_deploy->setEnabled(false);
+    bool shouldReboot = ui.chk_rebootAfterDeploy->isChecked();
+    bool shouldClearRemote = ui.chk_clearRemoteBeforeUpload->isChecked();
+
     appendFtpLog(QString("🚀 开始部署 %1 个内容到 %2 台设备...")
         .arg(uploadItems.size()).arg(ips.size()));
 
-    // 启动异步 FTP 上传（仅上传，不处理 Telnet）
-    QtConcurrent::run([=]() {
-        QStringList deploySuccesses, deployFailures;
+    // 构建要上传的文件列表
+    QStringList items;
+    for (const UploadItem& item : uploadItems) {
+        items << item.fullPath;
+    }
 
-        for (const QString& ip : ips) {
-            QString targetIp = ip.trimmed();
-            QString port = targetIp.contains(':') ? "" : "21";
+    // 通过事件总线发布上传请求（携带所有配置选项）
+    QVariantMap data;
+    data["items"] = items;
+    data["targets"] = ips;
+    data["user"] = user;
+    data["pass"] = pass;
+    data["remotePath"] = remotePath;
+    data["shouldReboot"] = shouldReboot;
+    data["shouldClearRemote"] = shouldClearRemote;
 
-            FtpManager ftpm(targetIp, port.toUShort(), user, pass);
-            // 注意：appendFtpLog 不是线程安全的！需用 invokeMethod
-            QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                Q_ARG(QString, QString("➡️ 正在部署到设备：%1").arg(targetIp)));
+    EventBus::instance()->postEvent(DeployEvent(DeployEvent::UploadRequest, data));
+}
 
-            // 🔥 新增：清空远程路径（如果勾选）
-            if (shouldClearRemote) {
-                try {
-                    QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                        Q_ARG(QString, QString("🧹 正在清空远程路径: %1").arg(remotePath)));
-                    ftpm.clearRemoteDirectory(remotePath);
-                    QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                        Q_ARG(QString, QString("✅ 远程路径已清空")));
-                }
-                catch (const std::exception& ex) {
-                    QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                        Q_ARG(QString, QString("❌ 清空失败: %1").arg(QString::fromStdString(ex.what()).left(100))));
-                    // 可选择：跳过该设备，或终止部署？
-                    // 这里建议跳过，记录失败
-                    deployFailures << targetIp;
-                    continue; // 跳过上传
-                }
-            }
+void DeployMaster::onTaskProgress(const DeployEvent& event)
+{
+    int progress = event.data.toInt();
+    // 更新进度条（如果有）
+    appendFtpLog(QString("📊 进度: %1%").arg(progress));
+}
 
-            bool allSuccess = true;
-            for (const UploadItem& item : uploadItems) {
-                try {
-                    if (item.isFolder) {
-                        ftpm.uploadFolder(item.fullPath, remotePath);
-                    }
-                    else {
-                        ftpm.uploadFile(item.fullPath, remotePath);
-                    }
-                    QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                        Q_ARG(QString, QString("✅ 上传成功: %1").arg(item.displayName())));
-                }
-                catch (const std::exception& ex) {
-                    QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                        Q_ARG(QString, QString("❌ 上传失败: %1 -> %2").arg(item.displayName(), QString::fromStdString(ex.what()).left(100))));
-                    allSuccess = false;
-                }
-                QThread::msleep(50);
-            }
+void DeployMaster::onTaskFinished(const DeployEvent& event)
+{
+    QVariantMap result = event.data.toMap();
+    bool success = result["success"].toBool();
+    QStringList successes = result["successes"].toStringList();
+    QStringList failures = result["failures"].toStringList();
 
-            if (allSuccess) {
-                deploySuccesses << targetIp;
-            }
-            else {
-                deployFailures << targetIp;
-            }
-            QThread::msleep(100);
-        }
-        QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-            Q_ARG(QString, QString("🎉 批量部署完成！")));
-        QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-            Q_ARG(QString, QString("📊 部署成功: %1 | 部署失败: %2").arg(deploySuccesses.size()).arg(deployFailures.size())));
-        if (deployFailures.size() > 0) {
-            QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection,
-                Q_ARG(QString, QString("❌ 失败列表:").arg(deployFailures.join(", "))));
-        }
-        // 上传完成后，回到主线程：先汇报结果，再决定是否重启
-        QMetaObject::invokeMethod(this, "onFtpUploadFinished", Qt::QueuedConnection,
-            Q_ARG(QStringList, deploySuccesses),
-            Q_ARG(QStringList, deployFailures),
-            Q_ARG(bool, shouldReboot),
-            Q_ARG(QString, user),
-            Q_ARG(QString, pass)
-        );
-        });
+    appendFtpLog("🎉 批量部署完成！");
+    appendFtpLog(QString("📊 部署成功: %1 | 部署失败: %2").arg(successes.size()).arg(failures.size()));
+    if (!failures.isEmpty()) {
+        appendFtpLog("❌ 失败列表: " + failures.join(", "));
+    }
+}
+
+void DeployMaster::onLogMessage(const DeployEvent& event)
+{
+    appendFtpLog(event.data.toString());
 }
 
 void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
@@ -440,7 +416,8 @@ void DeployMaster::refreshRemoteFiles()
     // 异步刷新远程文件列表
     QtConcurrent::run([=]() {
         try {
-            FtpManager ftpm(currentRemoteIP, 21, user, pass);
+            FtpManager ftpm(currentRemoteIP, 21);
+            ftpm.setCredentials(user, pass);
             QList<FtpFileInfo> files = ftpm.listFtpDirectoryDetailed(currentRemotePath);
             
             // 在主线程更新UI

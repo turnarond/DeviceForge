@@ -115,10 +115,24 @@ void WebSocketClient::startServer()
 
     if (secureMode) {
         // 配置SSL证书
+        // 注意：当前 SSL 配置为空，WSS 模式将无法正常工作。
+        // 要启用 WSS（WebSocket Secure），需要：
+        // 1. 准备 SSL 证书文件（.pem 或 .cert）
+        // 2. 准备 SSL 私钥文件（.key）
+        // 3. 加载证书和私钥到 QSslConfiguration：
+        //    QFile certFile(":/path/to/certificate.pem");
+        //    QFile keyFile(":/path/to/private.key");
+        //    certFile.open(QIODevice::ReadOnly);
+        //    keyFile.open(QIODevice::ReadOnly);
+        //    QSslCertificate cert(&certFile, QSsl::Pem);
+        //    QSslKey key(&keyFile, QSsl::Rsa, QSsl::Pem);
+        //    sslConfig.setLocalCertificate(cert);
+        //    sslConfig.setPrivateKey(key);
+        // 4. 对于生产环境，建议使用 CA 签名的证书
+        //    对于开发测试，可使用自签名证书（需客户端忽略证书验证）
         QSslConfiguration sslConfig;
-        // 注意：在实际使用中，需要设置正确的SSL证书和私钥
-        // 这里仅作为示例，实际部署时需要替换为真实的证书
         m_server->setSslConfiguration(sslConfig);
+        appendMessage("[Server] ⚠️ WSS 模式：SSL证书未配置，连接可能失败", true);
     }
 
     if (!m_server->listen(QHostAddress::Any, port)) {
