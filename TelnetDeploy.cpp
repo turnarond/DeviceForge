@@ -1,7 +1,7 @@
 ﻿#include "TelnetDeploy.h"
 
 #include "ui_tab_telnet.h"
-#include "DeployMaster.h" // 确保能访问 ui->txt_ipList
+#include "DeployMaster.h" // 访问 deviceBusWidget()->allDevices()
 
 #include "TelnetClient.h"
 

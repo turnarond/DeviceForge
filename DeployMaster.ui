@@ -15,12 +15,12 @@
    <string>DeployMaster - FTP &amp; Telnet 批量运维工具</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout" stretch="1,4">
+   <layout class="QVBoxLayout" name="verticalLayout">
     <property name="leftMargin">
      <number>8</number>
     </property>
     <property name="topMargin">
-     <number>6</number>
+     <number>4</number>
     </property>
     <property name="rightMargin">
      <number>8</number>
@@ -29,155 +29,9 @@
      <number>8</number>
     </property>
     <property name="spacing">
-     <number>6</number>
+     <number>4</number>
     </property>
-    <item>
-     <widget class="QFrame" name="frame_commonConfig">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="frameShape">
-       <enum>QFrame::Shape::StyledPanel</enum>
-      </property>
-      <layout class="QHBoxLayout" name="horizontalLayout_common" stretch="3,1">
-       <property name="spacing">
-        <number>4</number>
-       </property>
-       <property name="leftMargin">
-        <number>4</number>
-       </property>
-       <property name="topMargin">
-        <number>2</number>
-       </property>
-       <property name="rightMargin">
-        <number>4</number>
-       </property>
-       <property name="bottomMargin">
-        <number>2</number>
-       </property>
-       <item>
-        <widget class="QGroupBox" name="groupBox_ipList">
-         <property name="title">
-         <string>目标IP列表（每行一个）</string>
-        </property>
-        <layout class="QVBoxLayout" name="verticalLayout_ipList">
-         <property name="spacing">
-          <number>2</number>
-         </property>
-         <property name="leftMargin">
-          <number>4</number>
-         </property>
-         <property name="topMargin">
-          <number>2</number>
-         </property>
-         <property name="rightMargin">
-          <number>4</number>
-         </property>
-         <property name="bottomMargin">
-          <number>2</number>
-         </property>
-         <item>
-          <widget class="QTextEdit" name="txt_ipList">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>60</height>
-            </size>
-           </property>
-            <property name="font">
-             <font>
-              <family>Microsoft YaHei</family>
-              <pointsize>9</pointsize>
-             </font>
-            </property>
-            <property name="lineWrapMode">
-             <enum>QTextEdit::LineWrapMode::NoWrap</enum>
-            </property>
-            <property name="plainText">
-             <string>192.168.2.124
-192.168.2.126
-192.168.2.127
-192.168.2.128</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBox_auth">
-         <property name="title">
-          <string>认证信息</string>
-         </property>
-         <layout class="QFormLayout" name="formLayout_auth">
-          <property name="fieldGrowthPolicy">
-           <enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum>
-          </property>
-          <property name="rowWrapPolicy">
-           <enum>QFormLayout::RowWrapPolicy::DontWrapRows</enum>
-          </property>
-          <property name="verticalSpacing">
-           <number>2</number>
-          </property>
-          <property name="leftMargin">
-           <number>4</number>
-          </property>
-          <property name="topMargin">
-           <number>2</number>
-          </property>
-          <property name="rightMargin">
-           <number>4</number>
-          </property>
-          <property name="bottomMargin">
-           <number>2</number>
-          </property>
-          <item row="0" column="0">
-           <widget class="QLabel" name="label_user">
-            <property name="text">
-             <string>用户名：</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <widget class="QLineEdit" name="txt_user">
-            <property name="text">
-             <string>root</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="label_pass">
-            <property name="text">
-             <string>密码：</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
-           <widget class="QLineEdit" name="txt_pass">
-            <property name="text">
-             <string>SE-2025</string>
-            </property>
-            <property name="echoMode">
-             <enum>QLineEdit::EchoMode::Password</enum>
-            </property>
-           </widget>
-          </item>
-
-         </layout>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
+    <!-- frame_commonConfig（IP列表+认证）已移除，由 DeviceBusWidget 替代 -->
     <item>
      <widget class="QSplitter" name="splitter_log">
       <property name="orientation">

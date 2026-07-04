@@ -31,10 +31,10 @@ public:
         return ui.txt_globalLog;
     }
     QString getFtpUser() const {
-        return ui.txt_user->text().trimmed();
+        return m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
     }
     QString getFtpPass() const {
-        return ui.txt_pass->text().trimmed();
+        return m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
     }
 
 

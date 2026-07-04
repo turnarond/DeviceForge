@@ -148,8 +148,8 @@ void DeployMaster::onAddFolderClicked()
 
 void DeployMaster::onDeployClicked()
 {
-    QString user = ui.txt_user->text().trimmed();
-    QString pass = ui.txt_pass->text().trimmed();
+    QString user = m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
+    QString pass = m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
     QString remotePath = ui.txt_remotePath->text().trimmed();
     if (!remotePath.endsWith('/')) remotePath += '/';
 
@@ -291,29 +291,23 @@ void DeployMaster::appendFtpLog(const QString& log)
 QStringList DeployMaster::getTargetIPs()
 {
     QStringList ips;
-    QString text = ui.txt_ipList->toPlainText(); // 适用于 QTextEdit 和 QPlainTextEdit
-
-    // 按行分割
-    QStringList lines = text.split('\n', Qt::SkipEmptyParts);
-
-    for (QString line : lines) {
-        line = line.trimmed(); // 去除首尾空格
-        if (!line.isEmpty()) {
-            // 可选：简单验证是否像 IP（增强健壮性）
-            // 例如：跳过明显无效的行（如包含字母、多个冒号等）
-            // 这里先只做基本过滤
-            ips << line;
+    if (m_deviceBusWidget) {
+        for (const auto& dev : m_deviceBusWidget->allDevices()) {
+            ips << QString::fromStdString(dev.ip);
         }
     }
-
     return ips;
 }
 
 QStringList DeployMaster::getTargetIPList() const
 {
-    QString text = ui.txt_ipList->toPlainText().trimmed();
-    if (text.isEmpty()) return {};
-    return text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    QStringList ips;
+    if (m_deviceBusWidget) {
+        for (const auto& dev : m_deviceBusWidget->allDevices()) {
+            ips << QString::fromStdString(dev.ip);
+        }
+    }
+    return ips;
 }
 
 DeployMaster::~DeployMaster()
@@ -372,9 +366,9 @@ void DeployMaster::refreshRemoteFiles()
         return;
     }
     
-    QString user = ui.txt_user->text().trimmed();
-    QString pass = ui.txt_pass->text().trimmed();
-    
+    QString user = m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
+    QString pass = m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
+
     // 确保路径格式正确
     if (!currentRemotePath.endsWith('/')) {
         currentRemotePath += '/';

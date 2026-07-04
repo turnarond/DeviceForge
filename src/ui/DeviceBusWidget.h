@@ -33,6 +33,10 @@ public:
     std::vector<DeviceInfo> allDevices() const;
     void setOnlineStatus(const QString& ip, bool online);
 
+    // 凭证访问
+    QString user() const;
+    QString password() const;
+
 signals:
     void deviceSelectionChanged();
     void credentialsChanged(const QString& user, const QString& password);

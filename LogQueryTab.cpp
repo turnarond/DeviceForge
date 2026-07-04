@@ -1,7 +1,7 @@
 // LogQueryTab.cpp
 #include "LogQueryTab.h"
 #include "ui_tab_logquery.h"
-#include "DeployMaster.h" // 确保能访问 ui->txt_ipList
+#include "DeployMaster.h" // 访问 deviceBusWidget()->allDevices()
 
 #include <QTreeWidgetItem>
 #include <QDateTimeEdit>

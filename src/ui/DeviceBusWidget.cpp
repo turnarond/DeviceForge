@@ -235,3 +235,13 @@ void DeviceBusWidget::onRemoveClicked()
         delete m_deviceList->takeItem(m_deviceList->row(item));
     }
 }
+
+QString DeviceBusWidget::user() const
+{
+    return m_userEdit ? m_userEdit->text().trimmed() : QString();
+}
+
+QString DeviceBusWidget::password() const
+{
+    return m_passEdit ? m_passEdit->text().trimmed() : QString();
+}
