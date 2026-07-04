@@ -30,12 +30,8 @@ public:
     QTextEdit* getGlobalLogItem() const {
         return ui.txt_globalLog;
     }
-    QString getFtpUser() const {
-        return m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
-    }
-    QString getFtpPass() const {
-        return m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
-    }
+    QString getFtpUser() const;
+    QString getFtpPass() const;
 
 
 private:

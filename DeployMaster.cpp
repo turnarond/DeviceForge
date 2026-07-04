@@ -310,6 +310,16 @@ QStringList DeployMaster::getTargetIPList() const
     return ips;
 }
 
+QString DeployMaster::getFtpUser() const
+{
+    return m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
+}
+
+QString DeployMaster::getFtpPass() const
+{
+    return m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
+}
+
 DeployMaster::~DeployMaster()
 {
     // 清理远程文件模型
