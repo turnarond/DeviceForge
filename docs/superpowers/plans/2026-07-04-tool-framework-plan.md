@@ -2853,7 +2853,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 | ModbusTool | ModbusCluster → ModbusTool，封装 QModbusTcpClient 进 ModbusAdapter |
 | WebSocketTool | WebSocketClient → WebSocketTool |
 | OpcUaTool | OpcUaClientTab → OpcUaTool（仍为演示模式） |
-| DiagnosticTool | DiagnosticClient → DiagnosticTool（待 tinyvsoa 补全） |
 | 删除旧代码 | 移除根目录所有旧 Tab 类、删除 DeployMaster.ui、清理 FtpPresenter |
 
 ### Phase 3：插件化 & 扩展

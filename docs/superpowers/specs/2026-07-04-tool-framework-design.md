@@ -506,7 +506,6 @@ Tool Backend
 | P2-3 | ModbusCluster → ModbusTool | 中 |
 | P2-4 | WebSocketClient → WebSocketTool | 低 |
 | P2-5 | OpcUaClientTab → OpcUaTool（仍为演示模式） | 低 |
-| P2-6 | DiagnosticClient → DiagnosticTool（待 tinyvsoa 补全） | 高 |
 
 ### Phase 3：插件化 & 扩展
 

@@ -121,7 +121,6 @@ set(SOURCES
     LogQueryTab.cpp
     ModbusCluster.cpp
     WebSocketClient.cpp
-    # DiagnosticClient.cpp — 临时禁用: tinyvsoa 依赖缺失（待 Task 14 清理）
 
     # 日志桥接
     src/logging/LogBridge.cpp

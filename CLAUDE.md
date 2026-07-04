@@ -146,7 +146,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 ### 源码文件清单
 
 **根目录（旧架构源码，逐步迁移中）**：
-`main.cpp` / `DeployMaster.cpp/.h` / `DropListWidget.cpp/.h` / `TelnetClient.cpp/.h` / `TelnetDeploy.cpp/.h` / `ModbusCluster.cpp/.h` / `OpcUaClient.cpp/.h` / `WebSocketClient.cpp/.h` / `DiagnosticClient.cpp/.h` / `LogQueryTab.cpp/.h` / `FtpRemoteItem.h`（数据结构）
+`main.cpp` / `DeployMaster.cpp/.h` / `DropListWidget.cpp/.h` / `TelnetClient.cpp/.h` / `TelnetDeploy.cpp/.h` / `ModbusCluster.cpp/.h` / `OpcUaClient.cpp/.h` / `WebSocketClient.cpp/.h` / `LogQueryTab.cpp/.h` / `FtpRemoteItem.h`（数据结构）
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
@@ -201,9 +201,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - `docs/superpowers/plans/2026-06-14-ui-modernization.md` — QSS 创建/QRC 更新计划
 - `docs/superpowers/plans/2026-06-19-ui-redesign-plan.md` — 布局重构计划
 
-**需求文档（doc/）**：
-- `doc/Qt上位机诊断工具需求规格说明书.md` — 诊断工具 PRD（未来版本参考）
-- `doc/qt上位机与PLC诊断服务通信技术规约.md` — 通信协议技术规约（未来版本参考）
+**需求文档（doc/）**：已随 VSOA 依赖移除而删除
 
 ## 代码规范
 
