@@ -1,9 +1,11 @@
 # DeployMaster 重构设计文档
 
+> ⚠️ **已废弃（Superseded）** — 本文档描述的 MVP+EventBus 架构已被 [DeployMaster 2.0 设计文档](2026-07-04-tool-framework-design.md) 取代。EventBus/ConnectionPool 已删除，FTP 模块已迁移到 Tool 架构。本文档保留仅供历史参考。
+
 | 文档版本 | V1.0 |
 | :--- | :--- |
 | **项目名称** | DeployMaster 架构重构 |
-| **适用阶段** | Phase 1-2：基础框架搭建与核心模块重构 |
+| **适用阶段** | Phase 1-2：基础框架搭建与核心模块重构（已废弃） |
 | **最后更新** | 2026-06-14 |
 
 ---
