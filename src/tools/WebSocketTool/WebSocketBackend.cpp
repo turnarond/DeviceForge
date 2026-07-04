@@ -103,14 +103,24 @@ void WebSocketBackend::stopServer()
 {
     if (!m_server) return;
 
-    // 关闭所有客户端连接
+    // 断开 newConnection 信号，防止 stop 期间新客户端连入
+    QObject::disconnect(m_server, &QWebSocketServer::newConnection, nullptr, nullptr);
+
+    // 收集客户端列表（持锁），然后解锁后再逐个关闭/清理
+    // 必须解锁后操作，因为 client->close() 会同步触发 disconnected 信号，
+    // onServerClientDisconnected 也会获取 m_clientsMutex，导致死锁
+    QList<QWebSocket*> clientsToClean;
     {
         QMutexLocker locker(&m_clientsMutex);
-        for (QWebSocket* client : m_clients) {
-            client->close();
-            delete client;
-        }
+        clientsToClean = m_clients;
         m_clients.clear();
+    }
+
+    for (QWebSocket* client : clientsToClean) {
+        // 断开该客户端所有信号，避免 stopServer 期间触发回调
+        QObject::disconnect(client, nullptr, nullptr, nullptr);
+        client->close();
+        client->deleteLater();
     }
 
     // 清空订阅映射
@@ -123,6 +133,7 @@ void WebSocketBackend::stopServer()
     delete m_server;
     m_server = nullptr;
     m_isRunning = false;
+    m_isServerMode = false;
     if (m_logCb) m_logCb("[Server] 已停止");
 }
 

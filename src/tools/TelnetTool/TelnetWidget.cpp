@@ -395,8 +395,8 @@ void TelnetWidget::onExportAllClicked()
 void TelnetWidget::appendLog(const QString& msg)
 {
     // 将日志追加到详情区域（也作为操作日志视图使用）
-    QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
-    m_detailEdit->append("[" + ts + "] " + msg);
+    QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+    m_detailEdit->appendPlainText("[" + ts + "] " + msg);
 }
 
 void TelnetWidget::clearResults()

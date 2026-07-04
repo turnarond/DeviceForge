@@ -109,9 +109,9 @@ private:
     QStringList m_subscribedTopics;
 
     // --- 状态 ---
-    std::atomic<bool> m_isRunning{false};
-    std::atomic<bool> m_isServerMode{true};
-    std::atomic<bool> m_cancelled{false};
+    bool m_isRunning = false;          // 仅主线程访问
+    bool m_isServerMode = true;        // 仅主线程访问
+    std::atomic<bool> m_cancelled{false}; // svc() 线程读取，主线程写入
 
     std::vector<DeviceInfo> m_devices;
     AuthInfo m_auth;
