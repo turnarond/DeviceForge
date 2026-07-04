@@ -127,6 +127,9 @@ set(SOURCES
     # 日志桥接
     src/logging/LogBridge.cpp
 
+    # 协议适配器
+    src/adapter/FtpAdapter.cpp
+
     # 新框架文件
     src/framework/EventBus.cpp
     src/framework/ConnectionPool.cpp
