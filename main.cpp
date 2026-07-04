@@ -12,6 +12,8 @@
 #include "src/tools/FtpDeployTool/FtpDeployWidget.h"
 #include "src/tools/TelnetTool/TelnetBackend.h"
 #include "src/tools/TelnetTool/TelnetWidget.h"
+#include "src/tools/WebSocketTool/WebSocketBackend.h"
+#include "src/tools/WebSocketTool/WebSocketWidget.h"
 // #include "src/presenter/FtpPresenter.h" — 临时禁用，待 Task 13
 
 int main(int argc, char *argv[])
@@ -47,6 +49,9 @@ int main(int argc, char *argv[])
     ToolRegistry::instance()->registerBuiltin(
         "com.deploymaster.telnet.command", "批量命令", "command",
         "telnet_command", "2.0.0", "通过 Telnet 协议批量执行 Shell 命令");
+    ToolRegistry::instance()->registerBuiltin(
+        "com.deploymaster.websocket.comm", "WebSocket 通信", "communication",
+        "websocket_comm", "2.0.0", "WebSocket Server/Client 通信，支持订阅/发布主题");
 
     // 注册 Tool 工厂到 ToolHost（创建 Backend + Widget 实例）
     // ToolHost 由 DeployMaster 内部创建和管理
@@ -63,6 +68,13 @@ int main(int argc, char *argv[])
         },
         [](QWidget* parent) -> ToolWidget* {
             return new TelnetWidget(parent);
+        });
+    window.toolHost()->registerBuiltinFactory("com.deploymaster.websocket.comm",
+        []() -> std::shared_ptr<ToolBackend> {
+            return std::make_shared<WebSocketBackend>();
+        },
+        [](QWidget* parent) -> ToolWidget* {
+            return new WebSocketWidget(parent);
         });
 
     // 创建 FtpPresenter 实例（订阅 EventBus 事件，连接部署管道）

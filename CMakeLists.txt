@@ -119,8 +119,6 @@ set(SOURCES
     OpcUaClient.cpp
     LogQueryTab.cpp
     ModbusCluster.cpp
-    WebSocketClient.cpp
-
     # 日志桥接
     src/logging/LogBridge.cpp
 
@@ -147,6 +145,8 @@ set(SOURCES
     src/tools/FtpDeployTool/FtpDeployWidget.cpp
     src/tools/TelnetTool/TelnetBackend.cpp
     src/tools/TelnetTool/TelnetWidget.cpp
+    src/tools/WebSocketTool/WebSocketBackend.cpp
+    src/tools/WebSocketTool/WebSocketWidget.cpp
 
     # 新Presenter文件
     # src/presenter/FtpPresenter.cpp — 临时禁用: QPointer<FtpManager> 类型错误（待重构）

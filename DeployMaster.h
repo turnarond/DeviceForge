@@ -14,7 +14,7 @@ class ToolHost;
 class DeviceBusWidget;
 class TelnetWidget;
 class OpcUaClientTab; // forward declaration
-class WebSocketClient; // forward declaration
+class WebSocketWidget; // forward declaration (migrated to Tool architecture)
 
 class DeployMaster : public QMainWindow
 {
@@ -92,6 +92,6 @@ private:
     TelnetWidget* m_telnetDeployTab = nullptr;
     ModbusCluster* m_modbusCluster = nullptr;
     OpcUaClientTab* m_opcUaTab = nullptr; // new
-    WebSocketClient* m_webSocketClient = nullptr; // new
+    WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
 };
 

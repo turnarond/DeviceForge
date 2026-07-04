@@ -52,9 +52,6 @@
     <ClCompile Include="OpcUaClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WebSocketClient.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\logging\LogBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -98,6 +95,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\tools\TelnetTool\TelnetWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tools\WebSocketTool\WebSocketBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tools\WebSocketTool\WebSocketWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\thirdparty\lwcomm\src\comm.cpp">
@@ -259,6 +262,9 @@
     <ClInclude Include="src\tools\TelnetTool\TelnetBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\tools\WebSocketTool\WebSocketBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DeployMaster.rc">
@@ -305,9 +311,6 @@
     <QtMoc Include="OpcUaClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="WebSocketClient.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="src\framework\ToolWidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -324,6 +327,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="src\tools\TelnetTool\TelnetWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="src\tools\WebSocketTool\WebSocketWidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <!-- FtpPresenter/ModbusPresenter .cpp 未编译，去掉 MOC 引用 -->

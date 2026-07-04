@@ -127,7 +127,6 @@
     <ClCompile Include="LogQueryTab.cpp" />
     <ClCompile Include="ModbusCluster.cpp" />
     <ClCompile Include="OpcUaClient.cpp" />
-    <ClCompile Include="WebSocketClient.cpp" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- 新架构源文件（src/）                                            -->
@@ -154,6 +153,8 @@
     <ClCompile Include="src\tools\FtpDeployTool\FtpDeployWidget.cpp" />
     <ClCompile Include="src\tools\TelnetTool\TelnetBackend.cpp" />
     <ClCompile Include="src\tools\TelnetTool\TelnetWidget.cpp" />
+    <ClCompile Include="src\tools\WebSocketTool\WebSocketBackend.cpp" />
+    <ClCompile Include="src\tools\WebSocketTool\WebSocketWidget.cpp" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Thirdparty 源文件                                              -->
@@ -236,7 +237,6 @@
     <QtMoc Include="LogQueryTab.h" />
     <QtMoc Include="ModbusCluster.h" />
     <QtMoc Include="OpcUaClient.h" />
-    <QtMoc Include="WebSocketClient.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- 新架构头文件（MOC 处理 Q_OBJECT 类）                            -->
@@ -248,6 +248,7 @@
     <QtMoc Include="src\ui\DeviceBusWidget.h" />
     <QtMoc Include="src\tools\FtpDeployTool\FtpDeployWidget.h" />
     <QtMoc Include="src\tools\TelnetTool\TelnetWidget.h" />
+    <QtMoc Include="src\tools\WebSocketTool\WebSocketWidget.h" />
     <!-- 旧 Presenter 头文件（.cpp 未编译，去掉 QtMoc 避免未解析符号） -->
   </ItemGroup>
   <!-- ============================================================ -->
@@ -270,6 +271,7 @@
     <ClInclude Include="src\logging\LogBridge.h" />
     <ClInclude Include="src\tools\FtpDeployTool\FtpDeployBackend.h" />
     <ClInclude Include="src\tools\TelnetTool\TelnetBackend.h" />
+    <ClInclude Include="src\tools\WebSocketTool\WebSocketBackend.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Windows 资源                                                   -->

@@ -12,7 +12,8 @@
 #include <QVBoxLayout>
 
 #include "OpcUaClient.h" // add header
-#include "WebSocketClient.h" // add header
+#include "src/tools/WebSocketTool/WebSocketWidget.h" // migrated to Tool architecture
+#include "src/tools/WebSocketTool/WebSocketBackend.h"
 
 #include "src/framework/ToolHost.h"
 #include "src/ui/DeviceBusWidget.h"
@@ -113,11 +114,24 @@ void DeployMaster::setupOpcUaClientTab()
     ui.tabWidget->addTab(opcTab, tr("OPC UA 客户端"));
 }
 
-// new: setup for websocket
+// WebSocket 通信 Tab（通过 ToolHost 创建 Backend + Widget 配对）
 void DeployMaster::setupWebSocketClientTab()
 {
-    m_webSocketClient = new WebSocketClient(this);
-    ui.tabWidget->addTab(m_webSocketClient, tr("WebSocket"));
+    auto* instance = m_toolHost->createTool("com.deploymaster.websocket.comm", this);
+    if (instance && instance->widget) {
+        auto* wsWidget = qobject_cast<WebSocketWidget*>(instance->widget);
+        if (wsWidget) {
+            // 绑定 Backend
+            auto* backend = dynamic_cast<WebSocketBackend*>(instance->backend.get());
+            wsWidget->setBackend(backend);
+            m_webSocketWidget = wsWidget;
+            ui.tabWidget->addTab(m_webSocketWidget, tr("WebSocket"));
+        } else {
+            appendFtpLog("❌ WebSocketTool Widget 类型转换失败");
+        }
+    } else {
+        appendFtpLog("❌ WebSocketTool 创建失败");
+    }
 }
 
 void DeployMaster::onAddFilesClicked()
