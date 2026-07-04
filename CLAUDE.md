@@ -116,6 +116,9 @@ DeployMaster.cpp        src/presenter/            src/model/
 
 ## 注意事项
 
+- **libcurl 运行时依赖**：编译链接 `lib/libcurl_imp.lib`，运行时需要 `lib/libcurl-x64.dll`（已纳入仓库）。CMake 构建后会自动复制 DLL 到输出目录（`add_custom_command(TARGET_POST_BUILD)`）
+- **Visual Studio 调试**：VS 中直接 F5 调试时，如果 DLL 未在输出目录，需手动复制 `lib/libcurl-x64.dll` 到生成目录（如 `x64/Debug/`）
+
 - **FtpManager 迁移**：旧版 `FtpManager.cpp/h` 已从根目录删除，现位于 `src/model/FtpManager.h` 和 `src/model/FtpManager.cpp`
 - **OPC UA 模块为演示模式**：`OpcUaClientTab` 仅含硬编码演示数据，真实实现需引入 open62541 或 Qt OPC UA 模块
 - **DiagnosticClient 依赖 VSOA**：依赖 `tinyvsoa/tinyvsoa.h`，通过 VSOA 协议连接远程设备触发诊断采集和下载

@@ -81,6 +81,14 @@ target_link_libraries(DeployMaster PRIVATE
 	${LIBCURL_IMPL_LIB} 
 )
 
+# 构建后复制 libcurl-x64.dll 到输出目录（运行时依赖）
+add_custom_command(TARGET DeployMaster POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LIB_DIR}/libcurl-x64.dll"
+        "$<TARGET_FILE_DIR:DeployMaster>"
+    COMMENT "Copying libcurl-x64.dll to output directory"
+)
+
 # （可选）设置资源文件或翻译文件
 # qt6_add_resources(RESOURCES myapp.qrc)
 # target_sources(DeployMaster PRIVATE ${RESOURCES})
