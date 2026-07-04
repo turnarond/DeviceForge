@@ -16,6 +16,8 @@
 
 #include "src/framework/ToolHost.h"
 #include "src/ui/DeviceBusWidget.h"
+#include "src/tools/TelnetTool/TelnetWidget.h"
+#include "src/tools/TelnetTool/TelnetBackend.h"
 
 DeployMaster::DeployMaster(QWidget* parent)
     : QMainWindow(parent)
@@ -78,8 +80,23 @@ void DeployMaster::setupLogQueryTab()
 
 void DeployMaster::setupTelnetDeployTab()
 {
-    m_telnetDeployTab = new TelnetDeploy(this);
-    ui.tabWidget->addTab(m_telnetDeployTab, tr("批量命令"));
+    // 通过 ToolHost 创建 TelnetTool 实例（Backend + Widget 配对）
+    auto* instance = m_toolHost->createTool("com.deploymaster.telnet.command", this);
+    if (instance && instance->widget) {
+        auto* telnetWidget = qobject_cast<TelnetWidget*>(instance->widget);
+        if (telnetWidget) {
+            // 绑定 Backend 和 DeviceBus
+            auto* backend = dynamic_cast<TelnetBackend*>(instance->backend.get());
+            telnetWidget->setBackend(backend);
+            telnetWidget->setDeviceBusWidget(m_deviceBusWidget);
+            m_telnetDeployTab = telnetWidget;
+            ui.tabWidget->addTab(m_telnetDeployTab, tr("批量命令"));
+        } else {
+            appendFtpLog("❌ TelnetTool Widget 类型转换失败");
+        }
+    } else {
+        appendFtpLog("❌ TelnetTool 创建失败");
+    }
 }
 
 void DeployMaster::setupModbusClusterTab()

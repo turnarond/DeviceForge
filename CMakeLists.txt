@@ -117,7 +117,6 @@ set(SOURCES
     DropListWidget.cpp
     TelnetClient.cpp
     OpcUaClient.cpp
-    TelnetDeploy.cpp
     LogQueryTab.cpp
     ModbusCluster.cpp
     WebSocketClient.cpp
@@ -146,6 +145,8 @@ set(SOURCES
     # Tool 实现
     src/tools/FtpDeployTool/FtpDeployBackend.cpp
     src/tools/FtpDeployTool/FtpDeployWidget.cpp
+    src/tools/TelnetTool/TelnetBackend.cpp
+    src/tools/TelnetTool/TelnetWidget.cpp
 
     # 新Presenter文件
     # src/presenter/FtpPresenter.cpp — 临时禁用: QPointer<FtpManager> 类型错误（待重构）

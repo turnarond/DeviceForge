@@ -46,9 +46,6 @@
     <ClCompile Include="LogQueryTab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TelnetDeploy.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ModbusCluster.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -95,6 +92,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\tools\FtpDeployTool\FtpDeployWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tools\TelnetTool\TelnetBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tools\TelnetTool\TelnetWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\thirdparty\lwcomm\src\comm.cpp">
@@ -253,6 +256,9 @@
     <ClInclude Include="src\tools\FtpDeployTool\FtpDeployBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\tools\TelnetTool\TelnetBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DeployMaster.rc">
@@ -293,9 +299,6 @@
     <QtMoc Include="LogQueryTab.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="TelnetDeploy.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="ModbusCluster.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -318,6 +321,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="src\tools\FtpDeployTool\FtpDeployWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="src\tools\TelnetTool\TelnetWidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <!-- FtpPresenter/ModbusPresenter .cpp 未编译，去掉 MOC 引用 -->

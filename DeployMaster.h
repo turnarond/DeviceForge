@@ -6,13 +6,13 @@
 #include "ui_DeployMaster.h"
 #include "FtpRemoteItem.h"
 #include "LogQueryTab.h"
-#include "TelnetDeploy.h"
 #include "ModbusCluster.h"
 #include "src/framework/AppState.h"
 #include "src/model/FtpManager.h"
 
 class ToolHost;
 class DeviceBusWidget;
+class TelnetWidget;
 class OpcUaClientTab; // forward declaration
 class WebSocketClient; // forward declaration
 
@@ -89,7 +89,7 @@ private:
     ToolHost* m_toolHost = nullptr;
     DeviceBusWidget* m_deviceBusWidget = nullptr;
     LogQueryTab* m_logQueryTab = nullptr;
-    TelnetDeploy* m_telnetDeployTab = nullptr;
+    TelnetWidget* m_telnetDeployTab = nullptr;
     ModbusCluster* m_modbusCluster = nullptr;
     OpcUaClientTab* m_opcUaTab = nullptr; // new
     WebSocketClient* m_webSocketClient = nullptr; // new

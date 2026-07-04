@@ -10,6 +10,8 @@
 #include "src/framework/ToolRegistry.h"
 #include "src/tools/FtpDeployTool/FtpDeployBackend.h"
 #include "src/tools/FtpDeployTool/FtpDeployWidget.h"
+#include "src/tools/TelnetTool/TelnetBackend.h"
+#include "src/tools/TelnetTool/TelnetWidget.h"
 // #include "src/presenter/FtpPresenter.h" — 临时禁用，待 Task 13
 
 int main(int argc, char *argv[])
@@ -42,6 +44,9 @@ int main(int argc, char *argv[])
     ToolRegistry::instance()->registerBuiltin(
         "com.deploymaster.ftp.deploy", "文件部署", "deploy",
         "ftp_deploy", "2.0.0", "通过 FTP 协议批量上传文件/文件夹到目标设备");
+    ToolRegistry::instance()->registerBuiltin(
+        "com.deploymaster.telnet.command", "批量命令", "command",
+        "telnet_command", "2.0.0", "通过 Telnet 协议批量执行 Shell 命令");
 
     // 注册 Tool 工厂到 ToolHost（创建 Backend + Widget 实例）
     // ToolHost 由 DeployMaster 内部创建和管理
@@ -51,6 +56,13 @@ int main(int argc, char *argv[])
         },
         [](QWidget* parent) -> ToolWidget* {
             return new FtpDeployWidget(parent);
+        });
+    window.toolHost()->registerBuiltinFactory("com.deploymaster.telnet.command",
+        []() -> std::shared_ptr<ToolBackend> {
+            return std::make_shared<TelnetBackend>();
+        },
+        [](QWidget* parent) -> ToolWidget* {
+            return new TelnetWidget(parent);
         });
 
     // 创建 FtpPresenter 实例（订阅 EventBus 事件，连接部署管道）

@@ -124,7 +124,6 @@
     <ClCompile Include="DeployMaster.cpp" />
     <ClCompile Include="DropListWidget.cpp" />
     <ClCompile Include="TelnetClient.cpp" />
-    <ClCompile Include="TelnetDeploy.cpp" />
     <ClCompile Include="LogQueryTab.cpp" />
     <ClCompile Include="ModbusCluster.cpp" />
     <ClCompile Include="OpcUaClient.cpp" />
@@ -153,6 +152,8 @@
     <!-- Tool 实现 -->
     <ClCompile Include="src\tools\FtpDeployTool\FtpDeployBackend.cpp" />
     <ClCompile Include="src\tools\FtpDeployTool\FtpDeployWidget.cpp" />
+    <ClCompile Include="src\tools\TelnetTool\TelnetBackend.cpp" />
+    <ClCompile Include="src\tools\TelnetTool\TelnetWidget.cpp" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Thirdparty 源文件                                              -->
@@ -232,7 +233,6 @@
     <QtMoc Include="DeployMaster.h" />
     <QtMoc Include="DropListWidget.h" />
     <QtMoc Include="TelnetClient.h" />
-    <QtMoc Include="TelnetDeploy.h" />
     <QtMoc Include="LogQueryTab.h" />
     <QtMoc Include="ModbusCluster.h" />
     <QtMoc Include="OpcUaClient.h" />
@@ -247,6 +247,7 @@
     <QtMoc Include="src\framework\AppState.h" />
     <QtMoc Include="src\ui\DeviceBusWidget.h" />
     <QtMoc Include="src\tools\FtpDeployTool\FtpDeployWidget.h" />
+    <QtMoc Include="src\tools\TelnetTool\TelnetWidget.h" />
     <!-- 旧 Presenter 头文件（.cpp 未编译，去掉 QtMoc 避免未解析符号） -->
   </ItemGroup>
   <!-- ============================================================ -->
@@ -268,6 +269,7 @@
     <ClInclude Include="src\adapter\ProtocolRegistry.h" />
     <ClInclude Include="src\logging\LogBridge.h" />
     <ClInclude Include="src\tools\FtpDeployTool\FtpDeployBackend.h" />
+    <ClInclude Include="src\tools\TelnetTool\TelnetBackend.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Windows 资源                                                   -->
