@@ -1,0 +1,2 @@
+common.redundancy.rmapi,5.0
+eventalarm.eaacceptor,5.0

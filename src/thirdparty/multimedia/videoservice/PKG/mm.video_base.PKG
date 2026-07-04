@@ -1,0 +1,4 @@
+depends=['ext.ace', 'common.cvlog', 'common.cvcomm']
+
+files=[['$prjroot/multimedia/video/VideoDBLibrary/Executable', 'Executable'],
+		['$prjroot/multimedia/video/VideoAuth/Executable', 'Executable']]

@@ -1,0 +1,3 @@
+depends=['ext.ace', 'common.cvlog', 'common.cvcomm', 'common.NetQueue']
+
+files=[['$prjroot/multimedia/video/VideoRAPI/Executable', 'Executable']]

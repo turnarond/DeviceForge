@@ -1,0 +1,23 @@
+# 构建产物
+build/
+lib/
+bin/
+.omc
+
+# 测试编译产物
+tests/test_counter
+tests/test_gauge
+tests/test_histogram
+tests/test_prometheus_export
+tests/test_advanced
+tests/test_fixes
+tests/Testing/
+
+# 示例编译产物
+examples/example_classic_service
+examples/vsoa_system_monitor
+
+# 运行时生成文件
+*.lock
+*.log
+examples/log/

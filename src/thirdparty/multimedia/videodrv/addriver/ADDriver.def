@@ -1,0 +1,18 @@
+; CCAgentComm.def : Declares the module parameters for the DLL.
+
+LIBRARY      "ADDriver"
+;DESCRIPTION  'ADDriver Dynamic Link Library'
+
+EXPORTS
+    ; Explicit exports can go here
+VideoGetVersionNumber		@1
+VideoInitDriver				@2
+VideoExitDriver				@3
+VideoLensControl			@4
+VideoPresetPositionControl	@5
+VideoAuxiliaryDeviceControl	@6
+VideoPanControl				@7
+VideoSwitchCameraToMonitor	@8
+VideoGeneralControl			@9
+VideoGetTimerIntvMS			@10
+VideoTimerFunc				@11

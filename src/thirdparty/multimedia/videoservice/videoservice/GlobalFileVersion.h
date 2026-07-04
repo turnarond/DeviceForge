@@ -1,0 +1,9 @@
+#ifndef _GLOBAL_FILE_VERSION_H_
+#define _GLOBAL_FILE_VERSION_H_
+
+#define GLOBAL_FILEVER        5,2,13,0
+#define GLOBAL_PRODUCTVER     5,2,13,0
+#define GLOBAL_STRFILEVER     "5, 2, 13, 0\0"
+#define GLOBAL_STRPRODUCTVER  "5, 2, 13, 0\0"
+
+#endif //_GLOBAL_FILE_VERSION_H_

@@ -1,0 +1,4 @@
+# set default version to 5.0.0
+
+SET(TARGET_VERSION 5.1.0)
+SET(TARGET_API_VERSION 5.0)

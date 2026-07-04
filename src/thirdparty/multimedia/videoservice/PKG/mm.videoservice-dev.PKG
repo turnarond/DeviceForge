@@ -1,0 +1,8 @@
+depends=['common.common_headers-dev']
+
+files=[['$pkgroot/Include', 'Include'],
+	   ['$prjroot/multimedia/video/VideoDBLibrary/Library', 'Library'],
+	   ['$prjroot/multimedia/video/VideoRAPI/Library','Library'],
+	   ['$prjroot/multimedia/video/VideoAuth/Library','Library'],
+	   ['$prjroot/multimedia/video/VideoProtoParse/Library','Library']
+	  ]
