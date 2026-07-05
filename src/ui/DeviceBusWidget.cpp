@@ -211,21 +211,12 @@ void DeviceBusWidget::onAddClicked()
 {
     bool ok;
     QString text = QInputDialog::getText(this, tr("添加设备"),
-        tr("IP:Port（例: 192.168.1.100:21）"),
+        tr("设备 IP 地址（例: 192.168.1.100）"),
         QLineEdit::Normal, "", &ok);
     if (ok && !text.isEmpty()) {
         DeviceInfo di;
-        if (text.contains(':')) {
-            auto parts = text.split(':');
-            di.ip   = parts[0].toStdString();
-            di.port = parts[1].toInt();
-        } else {
-            di.ip   = text.toStdString();
-            di.port = 21; // 默认 FTP
-        }
-        // 根据端口猜测协议
-        di.protocol = di.port == 23 ? "telnet" :
-                      di.port == 502 ? "modbus" : "ftp";
+        di.ip   = text.trimmed().toStdString();
+        di.port = 0; // 端口由各 Tool 自行配置
         addDevice(di);
     }
 }
