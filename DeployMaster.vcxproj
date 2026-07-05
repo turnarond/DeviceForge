@@ -65,11 +65,11 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NOMINMAX;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;lwcomm_EXPORTS;LWEVENT_EXPORTS;lwlog_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -90,11 +90,11 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;lwcomm_EXPORTS;LWEVENT_EXPORTS;lwlog_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -160,33 +160,9 @@
   <!-- Thirdparty 源文件                                              -->
   <!-- ============================================================ -->
   <ItemGroup>
-    <!-- lwcomm -->
-    <ClCompile Include="src\thirdparty\lwcomm\src\comm.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\comm_impl.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\file_helper.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\file_system.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\lwbase64.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\string_helper.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\system_info.cpp" />
-    <ClCompile Include="src\thirdparty\lwcomm\src\time_helper.cpp" />
-    <!-- lwevent -->
-    <ClCompile Include="src\thirdparty\lwevent\lwevent.c">
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">LWEVENT_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <!-- lwmsgq -->
-    <ClCompile Include="src\thirdparty\lwmsgq\lwmsgq.c" />
-    <ClCompile Include="src\thirdparty\lwmsgq\list.c" />
-    <!-- tinyxml2 -->
+    <!-- tinyxml2 (MIT) -->
     <ClCompile Include="src\thirdparty\tinyxml2\tinyxml2.cpp" />
-    <!-- lwlog -->
-    <ClCompile Include="src\thirdparty\lwlog\src\lwlog.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\lwlog_c.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\logger_impl.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\console_appender.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\file_appender.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\pattern_formatter.cpp" />
-    <ClCompile Include="src\thirdparty\lwlog\src\log_config_reader.cpp" />
-    <!-- lwcommunicate -->
+
     <ClCompile Include="src\thirdparty\lwcommunicate\lwconn_base.cpp" />
     <ClCompile Include="src\thirdparty\lwcommunicate\lwconn_device.cpp" />
     <ClCompile Include="src\thirdparty\lwcommunicate\lwconn_manager.cpp" />
@@ -200,12 +176,7 @@
     <ClCompile Include="src\thirdparty\nanopb\pb_encode.c" />
     <ClCompile Include="src\thirdparty\nanopb\pb_decode.c" />
     <ClCompile Include="src\thirdparty\nanopb\pb_common.c" />
-    <!-- lwserverbase (core + logging + metrics, 排除 tests/examples/ConfigManager/ProcessController/vsoa_node) -->
-    <ClCompile Include="src\thirdparty\lwserverbase\core\ServiceBase.cpp" />
-    <ClCompile Include="src\thirdparty\lwserverbase\core\ServiceTask.cpp" />
-    <!-- ServiceManager.cpp 依赖 ConfigManager + ProcessController（Windows 不兼容），ToolHost 直接调用 ServiceTask 方法，不需要它 -->
-    <ClCompile Include="src\thirdparty\lwserverbase\logging\Logger.cpp" />
-    <ClCompile Include="src\thirdparty\lwserverbase\metrics\MetricsCollector.cpp" />
+
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- 数据结构头文件（ClCompile 让它们参与编译，确保无孤立引用）        -->
