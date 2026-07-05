@@ -33,19 +33,35 @@ void FtpDeployWidget::setupUi()
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(8);
 
-    // === 配置区 ===
-    auto* configGroup = new QGroupBox("配置", this);
-    auto* configLayout = new QHBoxLayout(configGroup);
+    // === FTP 配置区（增大设置空间） ===
+    auto* configGroup = new QGroupBox("FTP 设置", this);
+    auto* configLayout = new QGridLayout(configGroup);
+    configLayout->setSpacing(6);
 
-    configLayout->addWidget(new QLabel("远程路径:", this));
+    // 行 0: 远程路径
+    configLayout->addWidget(new QLabel("远程路径:", this), 0, 0);
     m_remotePathEdit = new QLineEdit("/app", this);
     m_remotePathEdit->setPlaceholderText("/app");
-    configLayout->addWidget(m_remotePathEdit, 1);
+    configLayout->addWidget(m_remotePathEdit, 0, 1, 1, 3);
 
-    m_clearCheck = new QCheckBox("部署前清空", this);
-    m_rebootCheck = new QCheckBox("完成后重启", this);
-    configLayout->addWidget(m_clearCheck);
-    configLayout->addWidget(m_rebootCheck);
+    // 行 1: 超时设置
+    configLayout->addWidget(new QLabel("超时(秒):", this), 1, 0);
+    m_timeoutSpin = new QSpinBox(this);
+    m_timeoutSpin->setRange(5, 600);
+    m_timeoutSpin->setValue(30);
+    configLayout->addWidget(m_timeoutSpin, 1, 1);
+
+    // 行 2（原行 1）: 安全选项
+    m_ftpsCheck = new QCheckBox("FTPS 加密传输", this);
+    m_ftpsCheck->setToolTip("使用 FTP over TLS 加密，防止凭证和文件在网络中被窃听");
+    configLayout->addWidget(m_ftpsCheck, 1, 2, 1, 2);
+
+    m_clearCheck = new QCheckBox("部署前清空远程目录", this);
+    configLayout->addWidget(m_clearCheck, 2, 0, 1, 2);
+
+    // 行 3（原行 3）: 部署选项
+    m_rebootCheck = new QCheckBox("部署完成后重启设备", this);
+    configLayout->addWidget(m_rebootCheck, 2, 2, 1, 2);
 
     mainLayout->addWidget(configGroup);
 
@@ -82,26 +98,32 @@ void FtpDeployWidget::setupUi()
 
     mainLayout->addWidget(actionGroup);
 
-    // === 文件列表 + 进度 ===
+    // === 文件列表（缩小占比） ===
     m_fileList = new QListWidget(this);
-    m_fileList->setMinimumHeight(80);
+    m_fileList->setMinimumHeight(60);
+    m_fileList->setMaximumHeight(140);
     m_fileList->setAlternatingRowColors(true);
     m_fileList->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    mainLayout->addWidget(m_fileList, 1);
+    mainLayout->addWidget(m_fileList);
 
+    // === 进度 ===
     m_progressBar = new QProgressBar(this);
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
     m_progressBar->setTextVisible(true);
     m_progressBar->setFormat("%p%");
+    m_progressBar->setMaximumHeight(22);
     mainLayout->addWidget(m_progressBar);
 
     // === 日志区 ===
     m_logView = new QTextEdit(this);
     m_logView->setReadOnly(true);
-    m_logView->setMaximumHeight(120);
+    m_logView->setMaximumHeight(100);
     m_logView->setPlaceholderText("部署日志...");
     mainLayout->addWidget(m_logView);
+
+    // 底部留弹性空间
+    mainLayout->addStretch(1);
 }
 
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
@@ -206,7 +228,8 @@ void FtpDeployWidget::onDeployClicked()
         files,
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
-        m_rebootCheck->isChecked()
+        m_rebootCheck->isChecked(),
+        m_ftpsCheck->isChecked()
     );
 }
 
