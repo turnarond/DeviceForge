@@ -44,20 +44,22 @@ void FtpDeployWidget::setupUi()
     m_remotePathEdit->setPlaceholderText("/app");
     configLayout->addWidget(m_remotePathEdit, 0, 1, 1, 3);
 
-    // 行 1: 安全选项（TODO: 后端支持可配置超时后恢复超时设置）
-    // 超时当前硬编码在 FtpAdapter 中（300s 上传/下载）
-    configLayout->addWidget(new QLabel("超时(秒):", this), 1, 0);
-    auto* timeoutLabel = new QLabel("300 (默认)", this);
-    timeoutLabel->setToolTip("FTP 上传/下载超时当前固定 300 秒，后续版本支持自定义");
-    configLayout->addWidget(timeoutLabel, 1, 1);
+    // 行 1: 端口 | FTPS 加密
+    configLayout->addWidget(new QLabel("端口:", this), 1, 0);
+    m_portSpin = new QSpinBox(this);
+    m_portSpin->setRange(1, 65535);
+    m_portSpin->setValue(21);
+    m_portSpin->setToolTip("FTP 服务端口，默认 21");
+    configLayout->addWidget(m_portSpin, 1, 1);
+
     m_ftpsCheck = new QCheckBox("FTPS 加密传输", this);
     m_ftpsCheck->setToolTip("使用 FTP over TLS 加密，防止凭证和文件在网络中被窃听");
     configLayout->addWidget(m_ftpsCheck, 1, 2, 1, 2);
 
+    // 行 2: 部署选项
     m_clearCheck = new QCheckBox("部署前清空远程目录", this);
     configLayout->addWidget(m_clearCheck, 2, 0, 1, 2);
 
-    // 行 3（原行 3）: 部署选项
     m_rebootCheck = new QCheckBox("部署完成后重启设备", this);
     configLayout->addWidget(m_rebootCheck, 2, 2, 1, 2);
 
