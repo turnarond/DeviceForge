@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的工业级设备批量运维平台。2.0 版本引入插件化 Tool 架构和 Protocol Adapter 抽象层，从 SylixOS PLC 专用工具升级为面向通用工业设备（PLC、嵌入式终端、网络设备等）的可扩展运维平台。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.1.0 | **许可**：内部使用 | **平台**：Windows（Linux 待适配）
+**版本**：2.1.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -66,9 +66,15 @@ darkstyle.qss 深色主题      ToolWidget (基类)          └─ ProtocolRegi
 
 ---
 
-## 构建
+## 快速开始
 
-### CMake（推荐）
+### 预编译版（推荐）
+
+从 [Releases](../../releases) 下载 `DeviceForge-v2.1.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+
+> 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
+
+### 从源码构建
 
 ```bash
 mkdir build && cd build
