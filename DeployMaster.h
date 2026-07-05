@@ -54,7 +54,7 @@ public:
     void initToolTabs();
 
 public slots:
-    void appendFtpLog(const QString& log);
+    void appendGlobalLog(const QString& log);
 
 private slots:
     void onAddFilesClicked();

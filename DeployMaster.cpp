@@ -80,7 +80,7 @@ void DeployMaster::setupFtpDeployTab()
 
     int rc = backend->OnStart(0, nullptr);
     if (rc != 0) {
-        appendFtpLog("❌ FTP 部署 Tool Backend 启动失败 (rc=" + QString::number(rc) + ")");
+        appendGlobalLog("❌ FTP 部署 Tool Backend 启动失败 (rc=" + QString::number(rc) + ")");
         delete widget;
         return;
     }
@@ -108,7 +108,7 @@ void DeployMaster::setupTelnetDeployTab()
 
     int rc = backend->OnStart(0, nullptr);
     if (rc != 0) {
-        appendFtpLog("❌ TelnetTool Backend 启动失败 (rc=" + QString::number(rc) + ")");
+        appendGlobalLog("❌ TelnetTool Backend 启动失败 (rc=" + QString::number(rc) + ")");
         delete widget;
         return;
     }
@@ -143,7 +143,7 @@ void DeployMaster::setupWebSocketClientTab()
 
     int rc = backend->OnStart(0, nullptr);
     if (rc != 0) {
-        appendFtpLog("❌ WebSocketTool Backend 启动失败 (rc=" + QString::number(rc) + ")");
+        appendGlobalLog("❌ WebSocketTool Backend 启动失败 (rc=" + QString::number(rc) + ")");
         delete widget;
         return;
     }
@@ -197,24 +197,24 @@ void DeployMaster::onDeployClicked()
     if (!remotePath.endsWith('/')) remotePath += '/';
 
     if (uploadItems.isEmpty()) {
-        appendFtpLog("❌ 错误：请至少添加一个要上传的文件或文件夹！");
+        appendGlobalLog("❌ 错误：请至少添加一个要上传的文件或文件夹！");
         return;
     }
     if (user.isEmpty() || pass.isEmpty()) {
-        appendFtpLog("❌ 错误：请输入用户名和密码！");
+        appendGlobalLog("❌ 错误：请输入用户名和密码！");
         return;
     }
 
     QStringList ips = getTargetIPs();
     if (ips.isEmpty()) {
-        appendFtpLog("❌ 错误：请至少输入一个目标 IP！");
+        appendGlobalLog("❌ 错误：请至少输入一个目标 IP！");
         return;
     }
 
     bool shouldReboot = ui.chk_rebootAfterDeploy->isChecked();
     bool shouldClearRemote = ui.chk_clearRemoteBeforeUpload->isChecked();
 
-    appendFtpLog(QString("🚀 开始部署 %1 个内容到 %2 台设备...")
+    appendGlobalLog(QString("🚀 开始部署 %1 个内容到 %2 台设备...")
         .arg(uploadItems.size()).arg(ips.size()));
 
     // 构建要上传的文件列表
@@ -224,7 +224,7 @@ void DeployMaster::onDeployClicked()
     }
 
     // TODO: 通过 ToolHost + FtpDeployBackend 触发部署（替换旧 EventBus 路径）
-    appendFtpLog("⚠ 部署功能已迁移至「文件部署」Tool，请使用新的 Tool 界面。");
+    appendGlobalLog("⚠ 部署功能已迁移至「文件部署」Tool，请使用新的 Tool 界面。");
 }
 
 void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
@@ -235,7 +235,7 @@ void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
 {
     QStringList rebootSuccess, rebootFailure;
     if (shouldReboot && !deploySuccesses.isEmpty()) {
-        appendFtpLog("🔄 开始发送重启命令...");
+        appendGlobalLog("🔄 开始发送重启命令...");
 
         // 为每个成功设备创建 TelnetClient（在主线程！）
         for (const QString& ip : deploySuccesses) {
@@ -243,13 +243,13 @@ void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
 
             if (!tc.syncConnectToHost(ip, 23, 3000)) {
                 rebootFailure << ip;
-                appendFtpLog(QString("❌ 连接失败: %1").arg(ip));
+                appendGlobalLog(QString("❌ 连接失败: %1").arg(ip));
                 continue;
             }
 
             if (!tc.syncLogin(user, pass, 5000)) {
                 rebootFailure << ip;
-                appendFtpLog(QString("❌ 登录失败: %1").arg(ip));
+                appendGlobalLog(QString("❌ 登录失败: %1").arg(ip));
                 continue;
             }
 
@@ -257,19 +257,19 @@ void DeployMaster::onFtpUploadFinished(const QStringList& deploySuccesses,
             QThread::msleep(100);
             if (tc.syncSendCommand("reboot -f", 1000)) {
                 rebootSuccess << ip;
-                appendFtpLog(QString("✅ 重启命令已发送: %1").arg(ip));
+                appendGlobalLog(QString("✅ 重启命令已发送: %1").arg(ip));
             }
             else {
                 rebootFailure << ip;
-                appendFtpLog(QString("⚠️ 命令发送异常: %1").arg(ip));
+                appendGlobalLog(QString("⚠️ 命令发送异常: %1").arg(ip));
             }
         }
 
-        appendFtpLog("🎉 批量重启完成！");
-        appendFtpLog(QString("📊 重启成功: %1 | 重启失败: %2")
+        appendGlobalLog("🎉 批量重启完成！");
+        appendGlobalLog(QString("📊 重启成功: %1 | 重启失败: %2")
             .arg(rebootSuccess.size()).arg(rebootFailure.size()));
         if (!rebootFailure.isEmpty())
-            appendFtpLog("❌ 失败列表: " + rebootFailure.join(", "));
+            appendGlobalLog("❌ 失败列表: " + rebootFailure.join(", "));
     }
 
     ui.btn_deploy->setEnabled(true);
@@ -326,7 +326,7 @@ void DeployMaster::addFolderToList(const QString& folderPath)
     }
 }
 
-void DeployMaster::appendFtpLog(const QString& log)
+void DeployMaster::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
 }
@@ -415,7 +415,7 @@ void DeployMaster::onIPSelectionChanged()
 void DeployMaster::refreshRemoteFiles()
 {
     if (currentRemoteIP.isEmpty()) {
-        appendFtpLog("❌ 错误：请选择目标 IP！");
+        appendGlobalLog("❌ 错误：请选择目标 IP！");
         return;
     }
     
@@ -431,11 +431,11 @@ void DeployMaster::refreshRemoteFiles()
     }
     
     if (user.isEmpty() || pass.isEmpty()) {
-        appendFtpLog("❌ 错误：请输入用户名和密码！");
+        appendGlobalLog("❌ 错误：请输入用户名和密码！");
         return;
     }
     
-    appendFtpLog(QString("🔄 正在刷新远程文件列表: %1%2").arg(currentRemoteIP).arg(currentRemotePath));
+    appendGlobalLog(QString("🔄 正在刷新远程文件列表: %1%2").arg(currentRemoteIP).arg(currentRemotePath));
     
     // 异步刷新远程文件列表
     QtConcurrent::run([=]() {
@@ -446,9 +446,9 @@ void DeployMaster::refreshRemoteFiles()
             
             // 在主线程更新UI
             QMetaObject::invokeMethod(this, "buildRemoteFileTree", Qt::QueuedConnection, Q_ARG(QList<FtpFileInfo>, files));
-            QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection, Q_ARG(QString, "✅ 远程文件列表刷新成功"));
+            QMetaObject::invokeMethod(this, "appendGlobalLog", Qt::QueuedConnection, Q_ARG(QString, "✅ 远程文件列表刷新成功"));
         } catch (const std::exception& ex) {
-            QMetaObject::invokeMethod(this, "appendFtpLog", Qt::QueuedConnection, Q_ARG(QString, QString("❌ 刷新失败: %1").arg(QString::fromStdString(ex.what()).left(100))));
+            QMetaObject::invokeMethod(this, "appendGlobalLog", Qt::QueuedConnection, Q_ARG(QString, QString("❌ 刷新失败: %1").arg(QString::fromStdString(ex.what()).left(100))));
         }
     });
 }
@@ -535,14 +535,14 @@ void DeployMaster::onRemoteFileDoubleClicked(const QModelIndex& index)
                 newPath = '/' + newPath;
             }
             currentRemotePath = newPath;
-            appendFtpLog(QString("📝 路径已更改为: %1").arg(currentRemotePath));
+            appendGlobalLog(QString("📝 路径已更改为: %1").arg(currentRemotePath));
             refreshRemoteFiles();
         }
     } else if (isDirectory) {
         // 双击普通目录项，进入该目录
         QString path = item->data(Qt::UserRole).toString();
         currentRemotePath = path;
-        appendFtpLog(QString("📁 进入目录: %1").arg(path));
+        appendGlobalLog(QString("📁 进入目录: %1").arg(path));
         refreshRemoteFiles();
     }
 }
