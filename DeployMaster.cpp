@@ -48,7 +48,7 @@ DeployMaster::DeployMaster(QWidget* parent)
     setupOpcUaClientTab();
 
     // 设置 splitter 初始大小比例：工作区占75%，日志区占25%
-    ui.splitter_log->setSizes(QList<int>() << 350 << 250);
+    ui.splitter_log->setSizes(QList<int>() << 250 << 350);
     // 设置水平 splitter 初始大小比例：左侧工作区占75%，右侧预览占25%
     ui.splitter_main->setSizes(QList<int>() << 600 << 200);
 

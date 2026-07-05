@@ -37,7 +37,7 @@ int TelnetBackend::svc()
 {
     LWLOG_I("TelnetBackend 线程启动");
     // ServiceTask 线程主循环 — 等待取消信号
-    while (!m_cancelled) {
+    while (isRunning()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     LWLOG_I("TelnetBackend 线程退出");
@@ -218,6 +218,7 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
 void TelnetBackend::cancel()
 {
     m_cancelled = true;
+    requestShutdown();
     LWLOG_I("TelnetBackend: 用户取消执行");
 }
 

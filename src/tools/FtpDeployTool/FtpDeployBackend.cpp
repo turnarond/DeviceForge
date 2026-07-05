@@ -37,7 +37,7 @@ int FtpDeployBackend::svc()
 {
     LWLOG_I("FtpDeployBackend 线程启动");
     // ServiceTask 线程主循环 — 等待取消信号
-    while (!m_cancelled) {
+    while (isRunning()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     LWLOG_I("FtpDeployBackend 线程退出");
@@ -190,6 +190,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 void FtpDeployBackend::cancelUpload()
 {
     m_cancelled = true;
+    requestShutdown();
     LWLOG_I("FtpDeployBackend: 用户取消上传");
 }
 
