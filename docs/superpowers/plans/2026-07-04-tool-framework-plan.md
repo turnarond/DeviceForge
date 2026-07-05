@@ -12,6 +12,8 @@
 
 **Scope Note:** 本计划覆盖 Phase 0（基础设施对齐）和 Phase 1（框架搭建）。Phase 2-3 后续。
 
+**状态**: Phase 0-1 ✅ 完成（15 Tasks）。Phase 2 部分完成（2026-07-05）：TelnetTool ✅、WebSocketTool ✅、FtpDeployTool ✅（含 FTPS 加密 + UI 重设计）、安全加固 ✅。待完成：LogQueryTool、ModbusTool 迁移。
+
 ## Global Constraints
 
 - 语言：中文（注释、文档、UI 文案），专业术语除外
