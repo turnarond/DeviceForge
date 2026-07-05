@@ -24,6 +24,7 @@
 #include <QGridLayout>
 
 class FtpDeployBackend;
+class DeviceBusWidget;
 
 class FtpDeployWidget : public ToolWidget {
     Q_OBJECT
@@ -38,8 +39,8 @@ public:
     void onToolStart() override;
     void onToolStop() override;
 
-    // 绑定后端（由 ToolHost 工厂创建后调用）
     void setBackend(FtpDeployBackend* backend);
+    void setDeviceBusWidget(DeviceBusWidget* deviceBus);
 
 private slots:
     void onAddFilesClicked();
@@ -52,6 +53,7 @@ private:
     void appendLog(const QString& msg);
 
     FtpDeployBackend* m_backend = nullptr;
+    DeviceBusWidget*  m_deviceBus = nullptr;
 
     // UI 控件
     QLineEdit*    m_remotePathEdit = nullptr;

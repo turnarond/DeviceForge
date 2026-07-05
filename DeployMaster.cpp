@@ -91,6 +91,7 @@ void DeployMaster::setupFtpDeployTab()
     }
 
     widget->setBackend(backend.get());
+    widget->setDeviceBusWidget(m_deviceBusWidget);
     widget->onToolStart();
     m_ftpBackend = backend;
     m_ftpDeployTab = widget;

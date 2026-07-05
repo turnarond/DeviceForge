@@ -42,7 +42,7 @@ int WebSocketBackend::svc()
     // ServiceTask 线程主循环 — 等待取消信号
     // WebSocket 操作在调用线程（主线程）上通过 Qt 事件循环驱动
     // svc() 线程仅用于保持 ServiceTask 生命周期
-    while (isRunning()) {
+    while (ServiceTask::isRunning()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     LWLOG_I("WebSocketBackend 线程退出");

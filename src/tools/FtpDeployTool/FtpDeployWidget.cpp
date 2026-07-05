@@ -14,6 +14,7 @@
 
 #include "FtpDeployWidget.h"
 #include "FtpDeployBackend.h"
+#include "ui/DeviceBusWidget.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -173,6 +174,11 @@ void FtpDeployWidget::onToolStop()
     emit toolStatusChanged("已停止");
 }
 
+void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
+{
+    m_deviceBus = deviceBus;
+}
+
 void FtpDeployWidget::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(this, "选择要部署的文件");
@@ -219,7 +225,27 @@ void FtpDeployWidget::onDeployClicked()
     m_progressBar->setValue(0);
     m_logView->clear();
 
+    // 从设备总线绑定目标和凭证
+    if (!m_deviceBus) {
+        appendLog("错误：设备总线未关联");
+        m_deployBtn->setEnabled(true);
+        return;
+    }
+    auto devices = m_deviceBus->allDevices();
+    if (devices.empty()) {
+        appendLog("错误：设备总线中没有目标设备");
+        m_deployBtn->setEnabled(true);
+        return;
+    }
+
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
+    m_backend->bindCredentials(auth);
+    m_backend->bindDevices(devices);
+
     appendLog("开始部署...");
+    appendLog(QString("目标设备: %1 台").arg(devices.size()));
     appendLog(QString("目标路径: %1").arg(m_remotePathEdit->text()));
     appendLog(QString("文件数量: %1").arg(files.size()));
     emit toolStatusChanged("部署中...");
