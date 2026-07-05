@@ -153,6 +153,7 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device)
     item->setToolTip(QString::fromStdString(
         device.ip + ":" + std::to_string(device.port) + " [" + device.protocol + "]"));
     m_deviceList->addItem(item);
+    emit deviceSelectionChanged();
 }
 
 void DeviceBusWidget::removeDevice(const QString& ip)
@@ -160,6 +161,7 @@ void DeviceBusWidget::removeDevice(const QString& ip)
     for (int i = 0; i < m_deviceList->count(); ++i) {
         if (m_deviceList->item(i)->data(Qt::UserRole).toString() == ip) {
             delete m_deviceList->takeItem(i);
+            emit deviceSelectionChanged();
             break;
         }
     }
