@@ -84,6 +84,7 @@ private:
     
     // 远端预览相关方法
     void refreshRemoteFiles(); // 刷新远程文件列表
+    void refreshDeviceCombo(); // 根据 DeviceBusWidget 刷新设备下拉框
     void onIPSelectionChanged(); // IP选择变化处理
     void onRemoteFileDoubleClicked(const QModelIndex& index); // 双击文件/文件夹处理
 
@@ -92,6 +93,8 @@ private:
     ToolHost* m_toolHost = nullptr;
     DeviceBusWidget* m_deviceBusWidget = nullptr;
     QLineEdit* m_remotePathEdit = nullptr;  // 远端预览路径（替代旧 ui.txt_remotePath）
+    QComboBox* m_protocolCombo = nullptr;   // 协议选择（FTP / SCP）
+    QPushButton* m_refreshBtn = nullptr;    // 刷新按钮（替代旧 ui.btn_refreshRemote）
     LogQueryTab* m_logQueryTab = nullptr;
     std::shared_ptr<class FtpDeployBackend> m_ftpBackend;
     std::shared_ptr<class TelnetBackend> m_telnetBackend;

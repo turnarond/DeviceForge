@@ -10,6 +10,8 @@
 #include <QStandardItem>
 #include <QInputDialog>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
 
 #include "OpcUaClient.h" // add header
 #include "src/tools/WebSocketTool/WebSocketWidget.h"
@@ -61,6 +63,9 @@ DeployMaster::DeployMaster(QWidget* parent)
     ui.tabWidget->setTabVisible(ui.tabWidget->indexOf(ui.tab_deploy), false);
 
     connect(ui.btn_clearLog, &QPushButton::clicked, this, &DeployMaster::onClearLogClicked);
+
+    // 隐藏旧远端预览控件（将被 m_protocolCombo + m_deviceCombo 替代）
+    ui.btn_refreshRemote->hide();
 
     // 初始化远端预览功能
     setupRemotePreview();
@@ -377,37 +382,103 @@ void DeployMaster::setupRemotePreview()
     // 初始化远程文件模型
     remoteFileModel = new QStandardItemModel(this);
     ui.tree_remoteFiles->setModel(remoteFileModel);
-    
+
+    // --- 协议选择行 ---
+    auto* protoRow = new QHBoxLayout();
+    protoRow->addWidget(new QLabel("协议:", this));
+    m_protocolCombo = new QComboBox(this);
+    m_protocolCombo->addItem("FTP");
+    m_protocolCombo->addItem("SCP (即将推出)");
+    connect(m_protocolCombo, &QComboBox::currentIndexChanged, this, [this](int idx) {
+        if (idx == 1) { // SCP 选中
+            appendGlobalLog("SCP 功能即将推出，请使用 FTP 协议");
+            m_protocolCombo->setCurrentIndex(0); // 回弹到 FTP
+        }
+        refreshDeviceCombo();
+    });
+    protoRow->addWidget(m_protocolCombo);
+    protoRow->addStretch();
+
+    // --- 设备选择行 ---
+    auto* devRow = new QHBoxLayout();
+    devRow->addWidget(new QLabel("设备:", this));
+    // 复用 ui.cmb_targetIPs（保留 .ui 中的 QComboBox）
+    devRow->addWidget(ui.cmb_targetIPs, 1);
+    m_refreshBtn = new QPushButton("刷新", this);
+    connect(m_refreshBtn, &QPushButton::clicked, this, &DeployMaster::refreshRemoteFiles);
+    devRow->addWidget(m_refreshBtn);
+
+    // --- 路径行 ---
+    auto* pathRow = new QHBoxLayout();
+    pathRow->addWidget(new QLabel("路径:", this));
+    pathRow->addWidget(m_remotePathEdit, 1);
+
+    // --- 插入到远端预览面板 ---
+    auto* remoteLayout = qobject_cast<QVBoxLayout*>(ui.groupBox_remotePreview->layout());
+    if (remoteLayout) {
+        // 清除旧的 cmb_targetIPs + btn_refreshRemote（它们已在 .ui 中，需要先移除）
+        // 新的 protoRow、devRow、pathRow 按序插入
+        remoteLayout->insertLayout(0, pathRow);
+        remoteLayout->insertLayout(0, devRow);
+        remoteLayout->insertLayout(0, protoRow);
+    }
+
     // 设置初始路径
     currentRemotePath = m_remotePathEdit->text().trimmed();
-    // 确保路径格式正确
-    if (!currentRemotePath.endsWith('/')) {
-        currentRemotePath += '/';
-    }
-    if (!currentRemotePath.startsWith('/')) {
-        currentRemotePath = '/' + currentRemotePath;
-    }
-    
-    // 连接信号槽
+    if (!currentRemotePath.endsWith('/')) currentRemotePath += '/';
+    if (!currentRemotePath.startsWith('/')) currentRemotePath = '/' + currentRemotePath;
+
+    // 连接信号
     connect(ui.cmb_targetIPs, &QComboBox::currentTextChanged, this, &DeployMaster::onIPSelectionChanged);
-    connect(ui.btn_refreshRemote, &QPushButton::clicked, this, &DeployMaster::refreshRemoteFiles);
     connect(ui.tree_remoteFiles, &QTreeView::doubleClicked, this, &DeployMaster::onRemoteFileDoubleClicked);
-    
-    // 初始化IP下拉框
-    QStringList ips = getTargetIPs();
-    ui.cmb_targetIPs->clear();
-    ui.cmb_targetIPs->addItems(ips);
-    
-    if (!ips.isEmpty()) {
-        currentRemoteIP = ips.first();
-        refreshRemoteFiles();
-    }
+    connect(m_remotePathEdit, &QLineEdit::returnPressed, this, &DeployMaster::refreshRemoteFiles);
+
+    // 监听设备总线变化
+    connect(m_deviceBusWidget, &DeviceBusWidget::deviceSelectionChanged,
+            this, &DeployMaster::refreshDeviceCombo);
+
+    // 初始填充
+    refreshDeviceCombo();
 }
 
 void DeployMaster::onIPSelectionChanged()
 {
     currentRemoteIP = ui.cmb_targetIPs->currentText();
     if (!currentRemoteIP.isEmpty()) {
+        refreshRemoteFiles();
+    }
+}
+
+void DeployMaster::refreshDeviceCombo()
+{
+    QString currentText = ui.cmb_targetIPs->currentText();
+    ui.cmb_targetIPs->blockSignals(true);
+    ui.cmb_targetIPs->clear();
+
+    auto devices = m_deviceBusWidget->allDevices();
+    for (const auto& dev : devices) {
+        QString ip = QString::fromStdString(dev.ip);
+        // 协议过滤：FTP 模式显示端口为 21/0 或协议为 ftp 的设备
+        bool include = false;
+        if (dev.protocol.empty() || dev.protocol == "ftp") {
+            include = (dev.port == 21 || dev.port == 0);
+        }
+        if (include && !ip.isEmpty()) {
+            ui.cmb_targetIPs->addItem(ip, ip);
+        }
+    }
+
+    // 恢复之前选中项
+    int idx = ui.cmb_targetIPs->findText(currentText);
+    if (idx >= 0) {
+        ui.cmb_targetIPs->setCurrentIndex(idx);
+    }
+
+    ui.cmb_targetIPs->blockSignals(false);
+
+    // 如果之前无选中但列表不空，自动选中第一个并刷新
+    if (ui.cmb_targetIPs->currentIndex() < 0 && ui.cmb_targetIPs->count() > 0) {
+        ui.cmb_targetIPs->setCurrentIndex(0);
         refreshRemoteFiles();
     }
 }
