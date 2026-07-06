@@ -168,12 +168,19 @@ QTableWidget {
 
 /* ===== 表头 ===== */
 QHeaderView::section {
-    background: linear-gradient(180deg, #1A2030 0%, #141820 100%);
-    border: 1px solid #F0A030;
-    padding: 6px;
-    color: #FFFFFF;
+    background-color: #1A2030;
+    border: 1px solid #252A33;
+    border-bottom: 2px solid #F0A030;
+    padding: 6px 10px;
+    color: #C8CCD4;
     font-weight: 600;
     font-size: 9pt;
+}
+
+QTableWidget QHeaderView::section,
+QTreeView QHeaderView::section {
+    background-color: #1A2030;
+    color: #C8CCD4;
 }
 
 /* ===== 标签页 ===== */
