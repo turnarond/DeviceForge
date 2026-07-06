@@ -155,12 +155,12 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 - **QRC**：`DeployMaster.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）
 - **QSS**：`darkstyle.qss` — 工业仪表盘深色主题：深黑底 (#0B0E14)、琥珀强调色 (#F0A030)、青绿状态色 (#40C8A0)
-- **UI 文件**：`DeployMaster.ui`（主窗口）+ 7 个 Tab 页面 UI（`BatchDeploy.ui`、`tab_telnet.ui`、`tab_logquery.ui`、`tab_modbus_cluster_test.ui`、`tab_opcua_client.ui`、`tab_websocket.ui`、`tab_diagnostic.ui`）
+- **UI 文件**：`DeployMaster.ui`（主窗口）+ `tab_modbus_cluster_test.ui`、`tab_opcua_client.ui`
 
 ### 源码文件清单
 
 **根目录（旧架构源码，逐步迁移中）**：
-`main.cpp` / `DeployMaster.cpp/.h` / `OpcUaClient.cpp/.h` / `LogQueryTab.cpp/.h`（旧架构，逐步迁移）
+`main.cpp` / `DeployMaster.cpp/.h` / `OpcUaClient.cpp/.h` / `ModbusCluster.cpp/.h`（旧架构文件，逐步迁移或替换）
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
