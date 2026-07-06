@@ -180,7 +180,6 @@
   <ItemGroup>
     <QtRcc Include="DeployMaster.qrc" />
     <QtUic Include="DeployMaster.ui" />
-    <QtUic Include="tab_logquery.ui" />
     <QtUic Include="tab_modbus_cluster_test.ui" />
     <QtUic Include="tab_opcua_client.ui" />
     <!-- tab_diagnostic.ui 已随 DiagnosticClient 删除 -->
