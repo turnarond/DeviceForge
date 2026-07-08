@@ -1,7 +1,9 @@
 /* RelayRecording.cpp */
 #include "RelayRecording.h"
+#include "NetRelayTypes.h"
 #include <QFile>
 #include <QDataStream>
+#include <cstring>
 
 bool RelayRecording::load(const QString& path, NrecFile& out, QString& error)
 {
@@ -14,7 +16,7 @@ bool RelayRecording::load(const QString& path, NrecFile& out, QString& error)
 
     char magic[4];
     if (in.readRawData(magic, 4) != 4 ||
-        magic[0]!='N'||magic[1]!='R'||magic[2]!='E'||magic[3]!='C') {
+        memcmp(magic, nrec::kMagic, 4) != 0) {
         error = "magic 校验失败，非 .nrec 文件"; return false;
     }
     quint16 version; quint8 proto, r0;
@@ -33,6 +35,11 @@ bool RelayRecording::load(const QString& path, NrecFile& out, QString& error)
         if (in.status() != QDataStream::Ok) { error = "记录头截断"; return false; }
         QByteArray payload;
         if (len > 0) {
+            // 防止损坏/恶意文件声明超大 len 导致巨额分配或 int 溢出（len>=0x80000000 时 int(len) 为负→UB）
+            const qint64 remaining = file.size() - file.pos();
+            if (qint64(len) > remaining) {
+                error = "payload 长度超出文件剩余字节，文件损坏"; return false;
+            }
             payload.resize(int(len));
             if (in.readRawData(payload.data(), int(len)) != int(len)) {
                 error = "payload 截断"; return false;
