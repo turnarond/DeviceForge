@@ -15,6 +15,7 @@ class DeviceBusWidget;
 class TelnetWidget;
 class OpcUaClientTab; // forward declaration
 class WebSocketWidget; // forward declaration (migrated to Tool architecture)
+class NetRelayWidget; // forward declaration (网络调试中继 Tool)
 
 class DeployMaster : public QMainWindow
 {
@@ -73,6 +74,7 @@ private:
     void setupModbusClusterTab();
     void setupOpcUaClientTab(); // new
     void setupWebSocketClientTab(); // new
+    void setupNetRelayTab(); // 网络调试中继 Tool
     void setupRemotePreview(); // 初始化远端预览功能
     
     // 远端预览相关方法
@@ -98,5 +100,7 @@ private:
     class ModbusWidget* m_modbusWidget = nullptr;
     OpcUaClientTab* m_opcUaTab = nullptr; // new
     WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
+    std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
+    NetRelayWidget* m_netRelayWidget = nullptr;
 };
 
