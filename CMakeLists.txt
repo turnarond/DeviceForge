@@ -170,3 +170,9 @@ add_custom_command(TARGET DeviceForge POST_BUILD
 # （可选）设置资源文件或翻译文件
 # qt6_add_resources(RESOURCES myapp.qrc)
 # target_sources(DeviceForge PRIVATE ${RESOURCES})
+
+# ============================================================
+# 测试（QtTest + CTest，仅 CMake 构建，不影响 VS/vcxproj 工程）
+# ============================================================
+enable_testing()
+add_subdirectory(tests)
