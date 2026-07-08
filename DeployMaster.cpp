@@ -23,6 +23,8 @@
 #include "src/ui/DeviceBusWidget.h"
 #include "src/tools/TelnetTool/TelnetWidget.h"
 #include "src/tools/TelnetTool/TelnetBackend.h"
+#include "src/tools/NetRelayTool/NetRelayWidget.h"
+#include "src/tools/NetRelayTool/NetRelayBackend.h"
 
 DeployMaster::DeployMaster(QWidget* parent)
     : QMainWindow(parent)
@@ -44,6 +46,7 @@ DeployMaster::DeployMaster(QWidget* parent)
 
     setupFtpDeployTab();
     setupModbusClusterTab();
+    setupNetRelayTab();
     setupOpcUaClientTab();
 
     // 设置 splitter 初始大小比例：工作区占75%，日志区占25%
@@ -135,6 +138,26 @@ void DeployMaster::setupModbusClusterTab()
     m_modbusBackend = backend;
     m_modbusWidget = widget;
     ui.tabWidget->addTab(m_modbusWidget, tr("MODBUS 测试"));
+}
+
+// 网络中继调试 Tool（TCP/UDP 透明代理 + 双向流量捕获）
+void DeployMaster::setupNetRelayTab()
+{
+    auto backend = std::make_shared<NetRelayBackend>();
+    auto* widget = new NetRelayWidget(this);
+
+    int rc = backend->OnStart(0, nullptr);
+    if (rc != 0) {
+        appendGlobalLog("❌ NetRelayTool Backend 启动失败 (rc=" + QString::number(rc) + ")");
+        delete widget;
+        return;
+    }
+
+    widget->setBackend(backend.get());
+    widget->onToolStart();
+    m_netRelayBackend = backend;
+    m_netRelayWidget = widget;
+    ui.tabWidget->addTab(m_netRelayWidget, tr("网络调试"));
 }
 
 // new: setup for opc ua
