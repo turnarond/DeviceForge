@@ -123,6 +123,7 @@ void NetRelayBackend::beginRecordingIfEnabled()
 void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consumerHost,
                                   quint16 consumerPort, double speedFactor)
 {
+    if (m_running) { reportError("中继进行中，无法回放"); return; }
     if (m_mode == RelayMode::Relaying) { reportError("中继进行中，无法回放"); return; }
     if (m_mode == RelayMode::Replaying) { reportError("回放已在进行中"); return; }
 
@@ -234,6 +235,7 @@ void NetRelayBackend::startRelay(RelayProtocol proto, const QString& listenAddr,
             log("[UDP] 正在异步解析上游地址: " + m_upstreamHost.toStdString() + " ...");
             m_pendingBindAddr = bindAddr;
             m_running = true;          // 进入"启动中"状态，isRunning() 反映真实意图
+            m_mode = RelayMode::Relaying;  // 与 m_running 保持一致，堵住 startReplay 的 mode 窗口漏洞
             m_dnsPending = true;
             const int gen = ++m_dnsGeneration;
             m_dnsLookupId = QHostInfo::lookupHost(m_upstreamHost, [this, gen](QHostInfo info) {
@@ -283,6 +285,7 @@ void NetRelayBackend::onUdpHostResolved(QHostInfo info)
     if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
         reportError("DNS 解析失败: " + info.errorString().toStdString() + " (" + m_upstreamHost.toStdString() + ")");
         m_running = false;   // 解析失败，退出"启动中"状态
+        m_mode = RelayMode::Idle;   // 失败不残留 Relaying，避免 mode 卡死
         return;
     }
     m_udpUpstreamAddr = info.addresses().first();
