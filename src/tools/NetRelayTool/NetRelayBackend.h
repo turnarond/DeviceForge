@@ -16,6 +16,9 @@
 #pragma once
 #include "framework/ToolBackend.h"
 #include "NetRelayTypes.h"
+#include "RelayRecorder.h"
+#include "RelayPlayer.h"
+#include <memory>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
@@ -69,6 +72,23 @@ public:
     bool isRunning() const { return m_running; }
     void setMaxConnections(int n) { if (n > 0) m_maxConn = n; }
 
+    // --- 录制 ---
+    void enableRecording(const QString& path);   // startRelay 前调用；启动时打开录制
+    void disableRecording();
+
+    // --- 回放（与中继互斥）---
+    void startReplay(const QString& nrecPath, const QString& consumerHost,
+                     quint16 consumerPort, double speedFactor);
+    void pauseReplay();
+    void resumeReplay();
+    void stopReplay();
+    bool isReplaying() const { return m_mode == RelayMode::Replaying; }
+
+    using ReplayProgressCallback = std::function<void(int played, int total, qint64 tsOffsetMs)>;
+    using ReplayFinishedCallback = std::function<void()>;
+    void setReplayProgressCallback(ReplayProgressCallback cb) { m_replayProgressCb = std::move(cb); }
+    void setReplayFinishedCallback(ReplayFinishedCallback cb) { m_replayFinishedCb = std::move(cb); }
+
     // --- 回调（由 Widget 设置，跨线程通过 QueuedConnection 保护） ---
     using LogCallback     = std::function<void(const std::string&)>;
     using ErrorCallback   = std::function<void(const std::string&)>;
@@ -120,6 +140,10 @@ private:
     void reportError(const std::string& msg);
     void clearCallbacks();                   // 析构安全：置空所有回调
 
+    // 录制辅助
+    void recordData(RelayDirection dir, int sessionId, const QByteArray& data);
+    void beginRecordingIfEnabled();          // 中继成功启动后按需打开录制（TCP/UDP 两分支复用）
+
     // 回调
     LogCallback     m_logCb;
     ErrorCallback   m_errorCb;
@@ -157,6 +181,21 @@ private:
     // 运行状态
     bool                        m_running = false;
     std::atomic<bool>           m_cancelled{false};
+
+    // 模式状态机（中继/回放互斥，spec §6）
+    enum class RelayMode { Idle, Relaying, Replaying };
+    RelayMode m_mode = RelayMode::Idle;
+
+    // 录制
+    bool                           m_recordEnabled = false;
+    QString                        m_recordPath;
+    std::unique_ptr<RelayRecorder> m_recorder;
+    QElapsedTimer                  m_recordElapsed;
+
+    // 回放
+    std::unique_ptr<RelayPlayer>   m_player;
+    ReplayProgressCallback         m_replayProgressCb;
+    ReplayFinishedCallback         m_replayFinishedCb;
 
     // 安全限制常量
     static constexpr qint64 kMaxPendingBytes = 1 * 1024 * 1024;      // TCP pending 缓冲上限 1MB

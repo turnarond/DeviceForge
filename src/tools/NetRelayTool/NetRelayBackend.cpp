@@ -14,6 +14,7 @@
 
 #include "NetRelayBackend.h"
 #include <lwlog/lwlog.h>
+#include <QDateTime>
 #include <thread>
 #include <chrono>
 
@@ -30,6 +31,9 @@ NetRelayBackend::~NetRelayBackend()
         m_dnsPending = false;
     }
     clearCallbacks();
+    // 停止回放并释放 player/recorder，避免中继/回放对象在析构期间回调已销毁的 Widget
+    if (m_player)   { m_player->stop(); m_player.reset(); }
+    if (m_recorder) { m_recorder->close(); m_recorder.reset(); }
     if (m_running || m_tcpServer || m_udpListen) {
         stopRelay();
     }
@@ -78,6 +82,82 @@ void NetRelayBackend::clearCallbacks()
     m_sessionCb = nullptr;
 }
 
+// ============ 录制 ============
+
+void NetRelayBackend::enableRecording(const QString& path)
+{
+    m_recordEnabled = true;
+    m_recordPath = path;
+}
+
+void NetRelayBackend::disableRecording()
+{
+    m_recordEnabled = false;
+    m_recordPath.clear();
+}
+
+void NetRelayBackend::recordData(RelayDirection dir, int sessionId, const QByteArray& data)
+{
+    if (m_recorder && m_recorder->isOpen())
+        m_recorder->append(dir, sessionId, m_recordElapsed.elapsed(), data);
+}
+
+void NetRelayBackend::beginRecordingIfEnabled()
+{
+    m_mode = RelayMode::Relaying;
+    if (m_recordEnabled && !m_recordPath.isEmpty()) {
+        m_recorder = std::make_unique<RelayRecorder>();
+        m_recordElapsed.start();
+        qint64 epoch = QDateTime::currentMSecsSinceEpoch();
+        if (!m_recorder->open(m_recordPath, m_protocol, epoch)) {
+            reportError("录制文件打开失败: " + m_recordPath.toStdString());
+            m_recorder.reset();
+        } else {
+            log("录制已开启: " + m_recordPath.toStdString());
+        }
+    }
+}
+
+// ============ 回放（委托 RelayPlayer）============
+
+void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consumerHost,
+                                  quint16 consumerPort, double speedFactor)
+{
+    if (m_mode == RelayMode::Relaying) { reportError("中继进行中，无法回放"); return; }
+    if (m_mode == RelayMode::Replaying) { reportError("回放已在进行中"); return; }
+
+    m_player = std::make_unique<RelayPlayer>();
+    m_player->setLogCallback([this](const std::string& s){ log(s); });
+    m_player->setErrorCallback([this](const std::string& s){
+        reportError(s);
+        m_mode = RelayMode::Idle;             // 失败回到 Idle
+    });
+    m_player->setProgressCallback([this](int p, int t, qint64 ts){
+        if (m_replayProgressCb) m_replayProgressCb(p, t, ts);
+    });
+    m_player->setFinishedCallback([this](){
+        if (m_replayFinishedCb) m_replayFinishedCb();
+        m_mode = RelayMode::Idle;
+    });
+
+    if (m_player->start(nrecPath, consumerHost, consumerPort, speedFactor)) {
+        m_mode = RelayMode::Replaying;
+    } else {
+        m_player.reset();
+        m_mode = RelayMode::Idle;
+    }
+}
+
+void NetRelayBackend::pauseReplay()  { if (m_player) m_player->pause(); }
+void NetRelayBackend::resumeReplay() { if (m_player) m_player->resume(); }
+
+void NetRelayBackend::stopReplay()
+{
+    if (m_player) { m_player->stop(); m_player.reset(); }
+    if (m_mode == RelayMode::Replaying) m_mode = RelayMode::Idle;
+}
+
+
 // ============ 中继控制 ============
 
 void NetRelayBackend::startRelay(RelayProtocol proto, const QString& listenAddr, quint16 listenPort,
@@ -85,6 +165,10 @@ void NetRelayBackend::startRelay(RelayProtocol proto, const QString& listenAddr,
 {
     if (m_running) {
         reportError("中继已在运行中，请先停止");
+        return;
+    }
+    if (m_mode == RelayMode::Replaying) {
+        reportError("回放进行中，无法启动中继");
         return;
     }
     if (upstreamHost.trimmed().isEmpty() || upstreamPort == 0) {
@@ -132,6 +216,7 @@ void NetRelayBackend::startRelay(RelayProtocol proto, const QString& listenAddr,
         m_running = true;
         log("[TCP] 中继已启动: 监听 " + m_listenAddr.toStdString() + ":" + std::to_string(m_listenPort)
             + " → 上游 " + m_upstreamHost.toStdString() + ":" + std::to_string(m_upstreamPort));
+        beginRecordingIfEnabled();
     } else {
         // UDP: 先尝试直接解析为 IP，失败则异步 DNS（避免阻塞主线程）
         QHostAddress upAddr;
@@ -188,6 +273,7 @@ void NetRelayBackend::startUdpListen(const QHostAddress& bindAddr)
     m_running = true;
     log("[UDP] 中继已启动: 监听 " + m_listenAddr.toStdString() + ":" + std::to_string(m_listenPort)
         + " → 上游 " + m_upstreamHost.toStdString() + ":" + std::to_string(m_upstreamPort));
+    beginRecordingIfEnabled();
 }
 
 void NetRelayBackend::onUdpHostResolved(QHostInfo info)
@@ -256,6 +342,8 @@ void NetRelayBackend::stopRelay()
     }
 
     m_running = false;
+    if (m_recorder) { m_recorder->close(); m_recorder.reset(); log("录制已保存"); }
+    if (m_mode == RelayMode::Relaying) m_mode = RelayMode::Idle;
     if (m_logCb) m_logCb("中继已停止");
 }
 
@@ -336,6 +424,7 @@ void NetRelayBackend::onTcpClientReadyRead(QTcpSocket* client)
 
     pair->session.bytesUp += data.size();
     if (m_dataCb) m_dataCb(RelayDirection::Upstream, pair->session.clientAddr, pair->sessionId, data);
+    recordData(RelayDirection::Upstream, pair->sessionId, data);
 
     if (pair->upstreamConnected && pair->upstream) {
         pair->upstream->write(data);
@@ -365,6 +454,7 @@ void NetRelayBackend::onTcpUpstreamReadyRead(QTcpSocket* upstream)
 
     pair->session.bytesDown += data.size();
     if (m_dataCb) m_dataCb(RelayDirection::Downstream, pair->session.clientAddr, pair->sessionId, data);
+    recordData(RelayDirection::Downstream, pair->sessionId, data);
 
     if (pair->client) {
         pair->client->write(data);
@@ -475,6 +565,7 @@ void NetRelayBackend::onUdpListenReadyRead()
         s->lastActive = m_udpElapsed.elapsed();
         s->session.bytesUp += data.size();
         if (m_dataCb) m_dataCb(RelayDirection::Upstream, s->session.clientAddr, s->sessionId, data);
+        recordData(RelayDirection::Upstream, s->sessionId, data);
 
         s->upstream->writeDatagram(data, m_udpUpstreamAddr, m_upstreamPort);
         if (m_sessionCb) m_sessionCb(s->session);
@@ -495,6 +586,7 @@ void NetRelayBackend::onUdpUpstreamReadyRead(UdpSession* session)
         session->lastActive = m_udpElapsed.elapsed();
         session->session.bytesDown += data.size();
         if (m_dataCb) m_dataCb(RelayDirection::Downstream, session->session.clientAddr, session->sessionId, data);
+        recordData(RelayDirection::Downstream, session->sessionId, data);
 
         m_udpListen->writeDatagram(data, session->clientAddr, session->clientPort);
         if (m_sessionCb) m_sessionCb(session->session);
