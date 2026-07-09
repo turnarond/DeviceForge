@@ -168,12 +168,14 @@ target_link_libraries(DeviceForge PRIVATE
     ${LIBCURL_IMPL_LIB}
 )
 
-# 构建后复制 libcurl-x64.dll 到输出目录（运行时依赖）
+# 构建后复制 libcurl-x64.dll 为 libcurl.dll 到输出目录（运行时依赖）
+# 注意：导入库 libcurl_imp.lib 指向的 DLL 名是 libcurl.dll，必须改名复制
+# （与 vcxproj 的 PostBuild `copy libcurl-x64.dll libcurl.dll` 保持一致）
 add_custom_command(TARGET DeviceForge POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${LIB_DIR}/libcurl-x64.dll"
-        "$<TARGET_FILE_DIR:DeviceForge>"
-    COMMENT "Copying libcurl-x64.dll to output directory"
+        "$<TARGET_FILE_DIR:DeviceForge>/libcurl.dll"
+    COMMENT "Copying libcurl-x64.dll as libcurl.dll to output directory"
 )
 
 # （可选）设置资源文件或翻译文件
