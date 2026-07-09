@@ -171,7 +171,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 ### UI 资源
 
 - **QRC**：`DeployMaster.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）
-- **QSS**：`darkstyle.qss` — 工业仪表盘深色主题：深黑底 (#0B0E14)、琥珀强调色 (#F0A030)、青绿状态色 (#40C8A0)
+- **QSS**：`darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
 - **UI 文件**：`DeployMaster.ui`（主窗口）+ `tab_modbus_cluster_test.ui`、`tab_opcua_client.ui`
 
 ### 源码文件清单
@@ -277,11 +277,20 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 - **测试现状**：NetRelayTool 已建立 QtTest 目标 `tst_nrec`（`tests/`，CMake/CTest），覆盖 .nrec 录制往返/坏文件拒绝/回放上行；其余模块仍无测试。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
-- **深色主题色板**（darkstyle.qss）：
-  - 背景底层: #0B0E14 | 面板/容器: #141820 | 边框: #252A33
+- **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
+  - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
+  - 结构边框: #252A33 | 控件边框: #333B48 | 边框 hover 提亮: #3A4250
   - 主要文字: #C8CCD4 | 次要文字: #7B8494
-  - 强调色（琥珀）: #F0A030 | 强调色 hover: #D48820
-  - 成功色（青绿）: #40C8A0 | 警告色: #F0D050 | 错误色: #E85848
+  - 强调色（琴色）: #F0A030 | 强调色 hover: #F0B840 | 强调色 pressed: #D48820
+  - 进行中/成功（青绿）: #40C8A0 | 错误色: #E85848
+
+- **主题设计原则「琴色是动词」（关键，勿回退）**：琴色 #F0A030 **仅**用于标记"此刻可动作/此刻活跃"的信号态，绝不用作静止结构边框或大面积填充：
+  - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性石墨色（#252A33 / #333B48）
+  - 琴色仅出现在：主操作按钮填充（`#btnPrimary`，全局少数）、`:focus` 输入框边框、`:selected`/`:checked`/活跃 tab、分组标题文字、滑块 handle
+  - 控件"能否操作"靠形态区分：输入框=凹的（填充比面板暗 #0E1219）、次按钮=凸的（填充比面板亮 #232A36）、容器=平的（仅石墨细边）
+  - 进度条用青绿 #40C8A0（进行中），与琴色语义错开
+  - 分隔条 QSplitter::handle 无边框，纯石墨窄条，hover 提亮（**不要**加琴色边框，那会变成"粗黄条"）
+  - **Qt QSS 限制**：不支持 CSS `linear-gradient`/`radial-gradient`/`box-shadow`，一律用纯色或 `qlineargradient(...)`
 
 - **main.cpp 初始化顺序**（关键）：
   1. `QApplication` 创建
