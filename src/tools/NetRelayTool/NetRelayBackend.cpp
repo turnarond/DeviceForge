@@ -80,6 +80,10 @@ void NetRelayBackend::clearCallbacks()
     m_errorCb   = nullptr;
     m_dataCb    = nullptr;
     m_sessionCb = nullptr;
+    // 防止 stop/restart 后残留的回放回调回调进已销毁的 Widget
+    m_replayProgressCb = nullptr;
+    m_replayFinishedCb = nullptr;
+    m_replayErrorCb    = nullptr;
 }
 
 // ============ 录制 ============
@@ -129,9 +133,14 @@ void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consum
 
     m_player = std::make_unique<RelayPlayer>();
     m_player->setLogCallback([this](const std::string& s){ log(s); });
-    m_player->setErrorCallback([this](const std::string& s){
+    // 记录 player 错误回调是否已触发（load/无上行/地址无效等失败会在 start() 返回 false 前先调用）。
+    // 用 shared_ptr 按值捕获：异步 TCP 连接失败在 start() 返回 true 之后才触发，按引用捕获会悬垂。
+    auto errFired = std::make_shared<bool>(false);
+    m_player->setErrorCallback([this, errFired](const std::string& s){
+        *errFired = true;
         reportError(s);
         m_mode = RelayMode::Idle;             // 失败回到 Idle
+        if (m_replayErrorCb) m_replayErrorCb(s);
     });
     m_player->setProgressCallback([this](int p, int t, qint64 ts){
         if (m_replayProgressCb) m_replayProgressCb(p, t, ts);
@@ -146,6 +155,9 @@ void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consum
     } else {
         m_player.reset();
         m_mode = RelayMode::Idle;
+        // start() 的部分 false 分支（如 m_active 竞态）不会调用 player 错误回调；
+        // 仅当 player 错误回调未触发时补发一次，确保每条 false-return 恰好一次回放错误通知。
+        if (!*errFired && m_replayErrorCb) m_replayErrorCb("回放启动失败");
     }
 }
 

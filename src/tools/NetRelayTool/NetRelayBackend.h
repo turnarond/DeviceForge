@@ -86,8 +86,10 @@ public:
 
     using ReplayProgressCallback = std::function<void(int played, int total, qint64 tsOffsetMs)>;
     using ReplayFinishedCallback = std::function<void()>;
+    using ReplayErrorCallback    = std::function<void(const std::string&)>;
     void setReplayProgressCallback(ReplayProgressCallback cb) { m_replayProgressCb = std::move(cb); }
     void setReplayFinishedCallback(ReplayFinishedCallback cb) { m_replayFinishedCb = std::move(cb); }
+    void setReplayErrorCallback(ReplayErrorCallback cb)       { m_replayErrorCb = std::move(cb); }
 
     // --- 回调（由 Widget 设置，跨线程通过 QueuedConnection 保护） ---
     using LogCallback     = std::function<void(const std::string&)>;
@@ -196,6 +198,7 @@ private:
     std::unique_ptr<RelayPlayer>   m_player;
     ReplayProgressCallback         m_replayProgressCb;
     ReplayFinishedCallback         m_replayFinishedCb;
+    ReplayErrorCallback            m_replayErrorCb;
 
     // 安全限制常量
     static constexpr qint64 kMaxPendingBytes = 1 * 1024 * 1024;      // TCP pending 缓冲上限 1MB

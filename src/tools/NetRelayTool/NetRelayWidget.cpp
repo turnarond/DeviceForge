@@ -247,6 +247,17 @@ void NetRelayWidget::setBackend(NetRelayBackend* backend)
             appendLog("回放完成");
             m_btnReplayStart->setEnabled(true);
             m_btnReplayPause->setEnabled(false);
+            m_btnReplayPause->setText("⏸ 暂停");
+            m_btnReplayStop->setEnabled(false);
+            setRelayControlsEnabled(true);
+        }, Qt::QueuedConnection);
+    });
+    m_backend->setReplayErrorCallback([this](const std::string& e){
+        QMetaObject::invokeMethod(this, [this, e]() {
+            appendLog(QString::fromStdString("回放错误: " + e));
+            m_btnReplayStart->setEnabled(true);
+            m_btnReplayPause->setEnabled(false);
+            m_btnReplayPause->setText("⏸ 暂停");
             m_btnReplayStop->setEnabled(false);
             setRelayControlsEnabled(true);
         }, Qt::QueuedConnection);
