@@ -24,6 +24,7 @@
 #include <QSplitter>
 #include <QLabel>
 #include <QTreeWidget>
+#include <QProgressBar>
 #include <QByteArray>
 
 class NetRelayBackend;
@@ -50,6 +51,11 @@ private slots:
     void onStopClicked();
     void onExportClicked();
     void onClearClicked();
+    void onRecordBrowse();
+    void onReplayBrowse();
+    void onReplayStart();
+    void onReplayPause();
+    void onReplayStop();
 
 private:
     void setupUi();
@@ -57,6 +63,7 @@ private:
     void appendHexView(RelayDirection dir, const QString& peer, int sessionId, const QByteArray& data);
     void updateSession(const struct RelaySession& session);
     QString formatHexDump(const QByteArray& data);
+    void setRelayControlsEnabled(bool enabled);   // 回放时禁用中继控件，反之亦然
 
     NetRelayBackend* m_backend = nullptr;
 
@@ -72,6 +79,22 @@ private:
     QPushButton* m_btnStop   = nullptr;
     QPushButton* m_btnExport = nullptr;
     QPushButton* m_btnClear  = nullptr;
+
+    // 录制
+    QCheckBox*   m_chkRecord    = nullptr;
+    QLineEdit*   m_editRecPath  = nullptr;
+    QPushButton* m_btnRecBrowse = nullptr;
+
+    // 回放
+    QLineEdit*    m_editReplayFile  = nullptr;
+    QPushButton*  m_btnReplayBrowse = nullptr;
+    QLineEdit*    m_editReplayHost  = nullptr;
+    QSpinBox*     m_spinReplayPort  = nullptr;
+    QComboBox*    m_comboSpeed      = nullptr;
+    QPushButton*  m_btnReplayStart  = nullptr;
+    QPushButton*  m_btnReplayPause  = nullptr;
+    QPushButton*  m_btnReplayStop   = nullptr;
+    QProgressBar* m_replayProgress  = nullptr;
 
     // 会话列表
     QTreeWidget*     m_sessionTree = nullptr;

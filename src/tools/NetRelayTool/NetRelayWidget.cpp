@@ -101,6 +101,19 @@ void NetRelayWidget::setupUi()
     ctrlRow->addWidget(m_btnStop);
     ctrlRow->addStretch();
     configLayout->addLayout(ctrlRow);
+
+    // ========== 录制勾选行 ==========
+    auto* recRow = new QHBoxLayout();
+    m_chkRecord = new QCheckBox("录制到文件", this);
+    m_editRecPath = new QLineEdit(this);
+    m_editRecPath->setPlaceholderText("录制保存路径 (.nrec)");
+    m_btnRecBrowse = new QPushButton("浏览", this);
+    connect(m_btnRecBrowse, &QPushButton::clicked, this, &NetRelayWidget::onRecordBrowse);
+    recRow->addWidget(m_chkRecord);
+    recRow->addWidget(m_editRecPath, 1);
+    recRow->addWidget(m_btnRecBrowse);
+    configLayout->addLayout(recRow);
+
     mainLayout->addWidget(configGroup);
 
     // ========== 主区域：会话列表 + Hex 视图（水平分割） ==========
@@ -150,6 +163,36 @@ void NetRelayWidget::setupUi()
     mainSplitter->setSizes(QList<int>() << 380 << 600);
     mainLayout->addWidget(mainSplitter, 1);
 
+    // ========== 回放分区 ==========
+    auto* replayGroup = new QGroupBox("回放", this);
+    auto* rl = new QVBoxLayout(replayGroup);
+    auto* rr1 = new QHBoxLayout();
+    rr1->addWidget(new QLabel("录制文件:", this));
+    m_editReplayFile = new QLineEdit(this);
+    m_btnReplayBrowse = new QPushButton("选择", this);
+    connect(m_btnReplayBrowse, &QPushButton::clicked, this, &NetRelayWidget::onReplayBrowse);
+    rr1->addWidget(m_editReplayFile, 1); rr1->addWidget(m_btnReplayBrowse);
+    rr1->addWidget(new QLabel("消费者:", this));
+    m_editReplayHost = new QLineEdit("127.0.0.1", this); m_editReplayHost->setFixedWidth(120);
+    m_spinReplayPort = new QSpinBox(this); m_spinReplayPort->setRange(1, 65535); m_spinReplayPort->setValue(9001);
+    rr1->addWidget(m_editReplayHost); rr1->addWidget(m_spinReplayPort);
+    rr1->addWidget(new QLabel("速率:", this));
+    m_comboSpeed = new QComboBox(this); m_comboSpeed->addItems({"原速", "尽快"});
+    rr1->addWidget(m_comboSpeed);
+    rl->addLayout(rr1);
+    auto* rr2 = new QHBoxLayout();
+    m_btnReplayStart = new QPushButton("▶ 回放", this);
+    m_btnReplayPause = new QPushButton("⏸ 暂停", this); m_btnReplayPause->setEnabled(false);
+    m_btnReplayStop  = new QPushButton("■ 停止", this);  m_btnReplayStop->setEnabled(false);
+    m_replayProgress = new QProgressBar(this); m_replayProgress->setRange(0, 100); m_replayProgress->setValue(0);
+    connect(m_btnReplayStart, &QPushButton::clicked, this, &NetRelayWidget::onReplayStart);
+    connect(m_btnReplayPause, &QPushButton::clicked, this, &NetRelayWidget::onReplayPause);
+    connect(m_btnReplayStop,  &QPushButton::clicked, this, &NetRelayWidget::onReplayStop);
+    rr2->addWidget(m_btnReplayStart); rr2->addWidget(m_btnReplayPause); rr2->addWidget(m_btnReplayStop);
+    rr2->addWidget(m_replayProgress, 1);
+    rl->addLayout(rr2);
+    mainLayout->addWidget(replayGroup);
+
     // ========== 日志区 ==========
     auto* logGroup = new QGroupBox("日志", this);
     auto* logLayout = new QVBoxLayout(logGroup);
@@ -190,6 +233,22 @@ void NetRelayWidget::setBackend(NetRelayBackend* backend)
     m_backend->setSessionCallback([this](const RelaySession& session) {
         QMetaObject::invokeMethod(this, [this, session]() {
             updateSession(session);
+        }, Qt::QueuedConnection);
+    });
+
+    m_backend->setReplayProgressCallback([this](int p, int t, qint64) {
+        QMetaObject::invokeMethod(this, [this, p, t]() {
+            m_replayProgress->setRange(0, t);
+            m_replayProgress->setValue(p);
+        }, Qt::QueuedConnection);
+    });
+    m_backend->setReplayFinishedCallback([this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            appendLog("回放完成");
+            m_btnReplayStart->setEnabled(true);
+            m_btnReplayPause->setEnabled(false);
+            m_btnReplayStop->setEnabled(false);
+            setRelayControlsEnabled(true);
         }, Qt::QueuedConnection);
     });
 }
@@ -235,6 +294,14 @@ void NetRelayWidget::onStartClicked()
 
     m_sessionTree->clear();
 
+    if (m_chkRecord->isChecked()) {
+        QString rp = m_editRecPath->text().trimmed();
+        if (rp.isEmpty()) { QMessageBox::warning(this, "警告", "已勾选录制，请指定录制文件路径"); return; }
+        m_backend->enableRecording(rp);
+    } else {
+        m_backend->disableRecording();
+    }
+
     m_backend->startRelay(proto, listenAddr, listenPort, upstreamHost, upstreamPort);
 
     m_btnStart->setEnabled(false);
@@ -244,6 +311,10 @@ void NetRelayWidget::onStartClicked()
     m_spinListenPort->setEnabled(false);
     m_editUpstreamHost->setEnabled(false);
     m_spinUpstreamPort->setEnabled(false);
+    m_chkRecord->setEnabled(false);
+    m_editRecPath->setEnabled(false);
+    m_btnRecBrowse->setEnabled(false);
+    m_btnReplayStart->setEnabled(false);
     emit toolStatusChanged("运行中");
 }
 
@@ -262,6 +333,10 @@ void NetRelayWidget::onStopClicked()
     m_spinListenPort->setEnabled(true);
     m_editUpstreamHost->setEnabled(true);
     m_spinUpstreamPort->setEnabled(true);
+    m_chkRecord->setEnabled(true);
+    m_editRecPath->setEnabled(true);
+    m_btnRecBrowse->setEnabled(true);
+    m_btnReplayStart->setEnabled(true);
     emit toolStatusChanged("已停止");
 }
 
@@ -302,6 +377,73 @@ void NetRelayWidget::onClearClicked()
     m_exportBuffer.clear();
     m_sessionTree->clear();
     appendLog("数据已清空");
+}
+
+// ============ 录制 / 回放 ============
+
+void NetRelayWidget::onRecordBrowse()
+{
+    QString f = QFileDialog::getSaveFileName(this, "录制保存为",
+        "relay_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + ".nrec",
+        "NRec 录制 (*.nrec);;所有文件 (*.*)");
+    if (!f.isEmpty()) m_editRecPath->setText(f);
+}
+
+void NetRelayWidget::onReplayBrowse()
+{
+    QString f = QFileDialog::getOpenFileName(this, "选择录制文件", QString(),
+        "NRec 录制 (*.nrec);;所有文件 (*.*)");
+    if (!f.isEmpty()) m_editReplayFile->setText(f);
+}
+
+void NetRelayWidget::onReplayStart()
+{
+    if (!m_backend) return;
+    if (m_backend->isRunning()) { QMessageBox::warning(this, "警告", "请先停止中继再回放"); return; }
+    QString file = m_editReplayFile->text().trimmed();
+    if (file.isEmpty()) { QMessageBox::warning(this, "警告", "请选择录制文件"); return; }
+    double speed = (m_comboSpeed->currentIndex() == 0) ? 1.0 : 1e9;  // 尽快=极大倍率
+    m_backend->startReplay(file, m_editReplayHost->text().trimmed(),
+                           quint16(m_spinReplayPort->value()), speed);
+    m_btnReplayStart->setEnabled(false);
+    m_btnReplayPause->setEnabled(true);
+    m_btnReplayStop->setEnabled(true);
+    setRelayControlsEnabled(false);
+    appendLog("回放开始: " + file);
+}
+
+void NetRelayWidget::onReplayPause()
+{
+    if (!m_backend) return;
+    if (m_btnReplayPause->text().startsWith("⏸")) {
+        m_backend->pauseReplay(); m_btnReplayPause->setText("▶ 继续");
+    } else {
+        m_backend->resumeReplay(); m_btnReplayPause->setText("⏸ 暂停");
+    }
+}
+
+void NetRelayWidget::onReplayStop()
+{
+    if (!m_backend) return;
+    m_backend->stopReplay();
+    m_btnReplayStart->setEnabled(true);
+    m_btnReplayPause->setEnabled(false); m_btnReplayPause->setText("⏸ 暂停");
+    m_btnReplayStop->setEnabled(false);
+    setRelayControlsEnabled(true);
+    appendLog("回放已停止");
+}
+
+void NetRelayWidget::setRelayControlsEnabled(bool enabled)
+{
+    m_btnStart->setEnabled(enabled);
+    m_comboProtocol->setEnabled(enabled);
+    m_editListenAddr->setEnabled(enabled);
+    m_spinListenPort->setEnabled(enabled);
+    m_editUpstreamHost->setEnabled(enabled);
+    m_spinUpstreamPort->setEnabled(enabled);
+    m_chkRecord->setEnabled(enabled);
+    m_editRecPath->setEnabled(enabled);
+    m_btnRecBrowse->setEnabled(enabled);
 }
 
 // ============ 日志 ============
