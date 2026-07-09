@@ -6,6 +6,7 @@ add_executable(tst_nrec
     NetRelayTool/tst_nrec.cpp
     ${NETRELAY_DIR}/RelayRecorder.cpp
     ${NETRELAY_DIR}/RelayRecording.cpp
+    ${NETRELAY_DIR}/RelayPlayer.cpp
 )
 target_include_directories(tst_nrec PRIVATE
     ${NETRELAY_DIR}

@@ -160,6 +160,7 @@
     <ClCompile Include="src\tools\NetRelayTool\NetRelayWidget.cpp" />
     <ClCompile Include="src\tools\NetRelayTool\RelayRecorder.cpp" />
     <ClCompile Include="src\tools\NetRelayTool\RelayRecording.cpp" />
+    <ClCompile Include="src\tools\NetRelayTool\RelayPlayer.cpp" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Thirdparty 源文件                                              -->
@@ -235,6 +236,7 @@
     <ClInclude Include="src\tools\NetRelayTool\NetRelayTypes.h" />
     <ClInclude Include="src\tools\NetRelayTool\RelayRecorder.h" />
     <ClInclude Include="src\tools\NetRelayTool\RelayRecording.h" />
+    <ClInclude Include="src\tools\NetRelayTool\RelayPlayer.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Windows 资源                                                   -->

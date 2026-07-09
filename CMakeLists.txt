@@ -132,6 +132,7 @@ set(SOURCES
     src/tools/NetRelayTool/NetRelayWidget.cpp
     src/tools/NetRelayTool/RelayRecorder.cpp
     src/tools/NetRelayTool/RelayRecording.cpp
+    src/tools/NetRelayTool/RelayPlayer.cpp
 
     # 新Presenter文件
     # src/presenter/FtpPresenter.cpp — 临时禁用: QPointer<FtpManager> 类型错误（待重构）
