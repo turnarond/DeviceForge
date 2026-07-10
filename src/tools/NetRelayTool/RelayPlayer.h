@@ -6,6 +6,7 @@
 #include <QTcpSocket>
 #include <QUdpSocket>
 #include <QHostAddress>
+#include <QNetworkInterface>
 #include <QTimer>
 #include <functional>
 #include <string>
@@ -32,6 +33,8 @@ public:
     void setProgressCallback(ProgressCallback cb) { m_progressCb = std::move(cb); }
     void setFinishedCallback(FinishedCallback cb) { m_finishedCb = std::move(cb); }
 
+    void setMulticastInterface(const QString& ifaceAddr) { m_mcastIfaceAddr = ifaceAddr; }
+
 private:
     void scheduleNext();     // 安排下一条上行记录
     void sendCurrent();      // 发送 m_upstream[m_idx] 并递进
@@ -50,6 +53,7 @@ private:
     QUdpSocket*           m_udp = nullptr;
     QHostAddress          m_consumerAddr;
     quint16               m_consumerPort = 0;
+    QString               m_mcastIfaceAddr;   // 组播回灌网卡本地 IP（空=默认）
 
     QTimer*               m_timer = nullptr;  // 单发定时器，按间隔调度
     bool                  m_active = false;

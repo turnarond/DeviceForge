@@ -127,7 +127,8 @@ void NetRelayBackend::beginRecordingIfEnabled()
 // ============ 回放（委托 RelayPlayer）============
 
 void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consumerHost,
-                                  quint16 consumerPort, double speedFactor)
+                                  quint16 consumerPort, double speedFactor,
+                                  const QString& mcastIfaceAddr)
 {
     if (m_running) { reportError("中继进行中，无法回放"); return; }
     if (m_mode == RelayMode::Relaying) { reportError("中继进行中，无法回放"); return; }
@@ -151,6 +152,7 @@ void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consum
         if (m_replayFinishedCb) m_replayFinishedCb();
         m_mode = RelayMode::Idle;
     });
+    m_player->setMulticastInterface(mcastIfaceAddr);
 
     if (m_player->start(nrecPath, consumerHost, consumerPort, speedFactor)) {
         m_mode = RelayMode::Replaying;

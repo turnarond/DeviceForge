@@ -29,15 +29,25 @@ bool RelayPlayer::start(const QString& nrecPath, const QString& consumerHost,
     m_idx = 0;
     m_paused = false;
 
-    QHostAddress addr;
-    if (!addr.setAddress(consumerHost)) {
-        if (consumerHost.compare("localhost", Qt::CaseInsensitive) == 0) addr = QHostAddress::LocalHost;
-        else { QHostInfo hi = QHostInfo::fromName(consumerHost);   // 回放为用户主动操作，允许同步解析
-               if (!hi.addresses().isEmpty()) addr = hi.addresses().first(); }
+    if (m_protocol == RelayProtocol::Multicast) {
+        // 组播回灌：默认目标取文件头组地址/端口，consumerHost/Port 非空则覆盖
+        QString tgtAddr = consumerHost.isEmpty() ? m_file.groupAddr : consumerHost;
+        quint16 tgtPort = (consumerPort == 0) ? m_file.groupPort : consumerPort;
+        QHostAddress gaddr(tgtAddr);
+        if (gaddr.isNull()) { if (m_errorCb) m_errorCb("组播目标地址无效: " + tgtAddr.toStdString()); return false; }
+        m_consumerAddr = gaddr;
+        m_consumerPort = tgtPort;
+    } else {
+        QHostAddress addr;
+        if (!addr.setAddress(consumerHost)) {
+            if (consumerHost.compare("localhost", Qt::CaseInsensitive) == 0) addr = QHostAddress::LocalHost;
+            else { QHostInfo hi = QHostInfo::fromName(consumerHost);   // 回放为用户主动操作，允许同步解析
+                   if (!hi.addresses().isEmpty()) addr = hi.addresses().first(); }
+        }
+        if (addr.isNull()) { if (m_errorCb) m_errorCb("消费者地址无效: " + consumerHost.toStdString()); return false; }
+        m_consumerAddr = addr;
+        m_consumerPort = consumerPort;
     }
-    if (addr.isNull()) { if (m_errorCb) m_errorCb("消费者地址无效: " + consumerHost.toStdString()); return false; }
-    m_consumerAddr = addr;
-    m_consumerPort = consumerPort;
 
     m_timer = new QTimer();
     m_timer->setSingleShot(true);
@@ -57,6 +67,20 @@ bool RelayPlayer::start(const QString& nrecPath, const QString& consumerHost,
                 if (m_tcp) fail("回放连接失败: " + m_tcp->errorString().toStdString());
             });
         m_tcp->connectToHost(m_consumerAddr, m_consumerPort);
+    } else if (m_protocol == RelayProtocol::Multicast) {
+        m_udp = new QUdpSocket();
+        if (!m_mcastIfaceAddr.isEmpty()) {
+            for (const QNetworkInterface& itf : QNetworkInterface::allInterfaces()) {
+                for (const QNetworkAddressEntry& e : itf.addressEntries()) {
+                    if (e.ip().toString() == m_mcastIfaceAddr) {
+                        m_udp->setMulticastInterface(itf); break;
+                    }
+                }
+            }
+        }
+        m_connected = true;            // 组播无连接，直接开调度
+        log("回放: 组播回灌模式，开始重放");
+        scheduleNext();
     } else {
         m_udp = new QUdpSocket();
         m_connected = true;            // UDP 无需连接

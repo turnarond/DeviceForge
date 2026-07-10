@@ -82,7 +82,8 @@ public:
 
     // --- 回放（与中继互斥）---
     void startReplay(const QString& nrecPath, const QString& consumerHost,
-                     quint16 consumerPort, double speedFactor);
+                     quint16 consumerPort, double speedFactor,
+                     const QString& mcastIfaceAddr = QString());
     void pauseReplay();
     void resumeReplay();
     void stopReplay();
