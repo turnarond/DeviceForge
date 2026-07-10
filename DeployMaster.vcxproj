@@ -68,7 +68,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;libssh2.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -85,6 +85,7 @@
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)lib\libcurl-x64.dll" "$(OutDir)libcurl.dll"</Command>
+      <Command>copy /Y "$(ProjectDir)lib\libssh2.dll" "$(OutDir)libssh2.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -94,7 +95,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;libssh2.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -115,6 +116,7 @@
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)lib\libcurl-x64.dll" "$(OutDir)libcurl.dll"</Command>
+      <Command>copy /Y "$(ProjectDir)lib\libssh2.dll" "$(OutDir)libssh2.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <!-- ============================================================ -->
