@@ -7,6 +7,7 @@
 #include "src/adapter/ProtocolRegistry.h"
 #include "src/adapter/FtpAdapter.h"
 #include "src/adapter/TelnetAdapter.h"
+#include "src/adapter/SshAdapter.h"
 #include "src/framework/ToolHost.h"
 #include "src/framework/ToolRegistry.h"
 #include "src/tools/FtpDeployTool/FtpDeployBackend.h"
@@ -31,6 +32,10 @@ int main(int argc, char *argv[])
     ProtocolRegistry::instance()->registerFactory("telnet",
         []() -> std::shared_ptr<IProtocolAdapter> {
             return std::make_shared<TelnetAdapter>();
+        });
+    ProtocolRegistry::instance()->registerFactory("ssh",
+        []() -> std::shared_ptr<IProtocolAdapter> {
+            return std::make_shared<SshAdapter>();
         });
 
     // 加载深色主题样式表

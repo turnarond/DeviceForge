@@ -99,19 +99,12 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
 
             if (m_logCb) m_logCb("--- 设备: " + ip + " ---");
 
-            // 从 ProtocolRegistry 创建 Telnet 适配器
-            auto adapter = ProtocolRegistry::instance()->create("telnet");
+            // 从 ProtocolRegistry 创建协议适配器（telnet / ssh）
+            auto adapter = ProtocolRegistry::instance()->create(
+                m_selectedProtocol.toStdString());
             if (!adapter) {
-                if (m_logCb) m_logCb("Telnet 适配器不可用: " + ip);
+                if (m_logCb) m_logCb(m_selectedProtocol.toStdString() + " 适配器不可用: " + ip);
                 if (m_resultCb) m_resultCb(ip, false, 0, "适配器不可用");
-                failureCount++;
-                continue;
-            }
-
-            auto* telnet = dynamic_cast<TelnetAdapter*>(adapter.get());
-            if (!telnet) {
-                if (m_logCb) m_logCb("Telnet 适配器类型转换失败: " + ip);
-                if (m_resultCb) m_resultCb(ip, false, 0, "适配器类型错误");
                 failureCount++;
                 continue;
             }
@@ -124,10 +117,10 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
 
             // 连接设备
             if (m_logCb) m_logCb("正在连接: " + ip + " ...");
-            if (!telnet->connect(dev, m_auth)) {
-                std::string err = telnet->lastError().empty()
+            if (!adapter->connect(dev, m_auth)) {
+                std::string err = adapter->lastError().empty()
                     ? "连接超时或被拒绝"
-                    : telnet->lastError();
+                    : adapter->lastError();
                 if (m_logCb) m_logCb("连接失败: " + ip + " — " + err);
                 if (m_resultCb) m_resultCb(ip, false, 0, err);
                 failureCount++;
@@ -155,7 +148,7 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
                 if (m_logCb) m_logCb("执行命令[" + std::to_string(ci + 1) + "/"
                                      + std::to_string(commands.size()) + "]: " + cmd);
 
-                auto future = telnet->request(req);
+                auto future = adapter->request(req);
                 auto resp = future.get();  // 阻塞等待响应
 
                 if (resp.success) {
@@ -182,7 +175,7 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
                     endTime - startTime).count());
 
             // 断开连接
-            telnet->disconnect();
+            adapter->disconnect();
 
             if (allOk) {
                 successCount++;
