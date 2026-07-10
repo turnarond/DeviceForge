@@ -20,6 +20,7 @@
 #include <functional>
 #include <atomic>
 #include <QFuture>
+#include <QString>
 
 class TelnetBackend : public ToolBackend {
 public:
@@ -39,6 +40,9 @@ public:
     void bindDevices(const std::vector<DeviceInfo>& devices) override;
     void bindCredentials(const AuthInfo& auth) override;
     void applyConfig(const lwserverbase::config::ConfigValue& config) override;
+
+    // --- 协议选择（"telnet" 或 "ssh"），默认 "telnet"（向后兼容） ---
+    void setProtocol(const QString& proto) { m_selectedProtocol = proto; }
 
     // --- Telnet 命令执行 ---
     // ips: 目标设备 IP 列表
@@ -61,6 +65,7 @@ public:
 private:
     std::vector<DeviceInfo> m_devices;
     AuthInfo m_auth;
+    QString m_selectedProtocol = "telnet";
     std::atomic<bool> m_cancelled{false};
     QFuture<void> m_execFuture;  // 追踪异步执行任务，析构前等待完成
 

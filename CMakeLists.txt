@@ -32,6 +32,16 @@ if(NOT LIBCURL_IMPL_LIB)
     message(FATAL_ERROR "Could not find libcurl_imp.lib in ${LIB_DIR}")
 endif()
 
+# libssh2（SSH 适配器底层依赖，软依赖——未找到时仅警告，构建继续）
+find_library(LIBSSH2_LIB
+    NAMES libssh2
+    PATHS ${LIB_DIR}
+    NO_DEFAULT_PATH
+)
+if(NOT LIBSSH2_LIB)
+    message(WARNING "libssh2.lib not found in ${LIB_DIR} — SSH adapter will not link")
+endif()
+
 # ============================================================
 # Thirdparty 静态库（预编译 .lib，源码为 ACOINFO 内部库）
 # 依赖链: lwcomm -> lwevent -> lwmsgq -> lwlog -> lwcommunicate -> lwserverbase
@@ -108,6 +118,7 @@ set(SOURCES
     # 协议适配器
     src/adapter/FtpAdapter.cpp
     src/adapter/TelnetAdapter.cpp
+    src/adapter/SshAdapter.cpp
     src/adapter/ProtocolRegistry.cpp
 
     # 新框架文件
@@ -166,6 +177,7 @@ target_link_libraries(DeviceForge PRIVATE
     lwserverbase
     tinyxml2
     ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
 )
 
 # 构建后复制 libcurl-x64.dll 为 libcurl.dll 到输出目录（运行时依赖）
@@ -176,6 +188,14 @@ add_custom_command(TARGET DeviceForge POST_BUILD
         "${LIB_DIR}/libcurl-x64.dll"
         "$<TARGET_FILE_DIR:DeviceForge>/libcurl.dll"
     COMMENT "Copying libcurl-x64.dll as libcurl.dll to output directory"
+)
+
+# 构建后复制 libssh2.dll 到输出目录（SSH 适配器运行时依赖）
+add_custom_command(TARGET DeviceForge POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LIB_DIR}/libssh2.dll"
+        "$<TARGET_FILE_DIR:DeviceForge>"
+    COMMENT "Copying libssh2.dll to output directory"
 )
 
 # （可选）设置资源文件或翻译文件

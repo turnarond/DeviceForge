@@ -53,6 +53,7 @@ Telnet 协议不提供加密保护。使用时请注意：
 | FTP | ❌ 明文 | 用户名/密码 | 建议启用 FTPS |
 | FTPS | ✅ TLS | 用户名/密码 | 推荐 |
 | Telnet | ❌ 明文 | 用户名/密码 | 仅限 OT 网络 |
+| SSH | ✅ 加密 | 用户名/密码 | TOFU 主机密钥,推荐替代 Telnet |
 | WebSocket | 可选 TLS | 可选 Token | Server 绑定 localhost |
 | Modbus TCP | ❌ 无 | 无 | 协议本身无安全机制 |
 | 网络中继 | 透传（不改数据） | ❌ 无客户端鉴权 | 默认绑定 127.0.0.1，非回环告警 |

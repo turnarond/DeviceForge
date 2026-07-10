@@ -68,7 +68,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;libssh2.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -85,6 +85,7 @@
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)lib\libcurl-x64.dll" "$(OutDir)libcurl.dll"</Command>
+      <Command>copy /Y "$(ProjectDir)lib\libssh2.dll" "$(OutDir)libssh2.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -94,7 +95,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>./lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);libcurl_imp.lib;libssh2.lib;lwcomm.lib;lwevent.lib;lwmsgq.lib;lwlog.lib;lwcommunicate.lib;lwserverbase.lib;ws2_32.lib;iphlpapi.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -115,6 +116,7 @@
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)lib\libcurl-x64.dll" "$(OutDir)libcurl.dll"</Command>
+      <Command>copy /Y "$(ProjectDir)lib\libssh2.dll" "$(OutDir)libssh2.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <!-- ============================================================ -->
@@ -135,6 +137,7 @@
     <!-- 协议适配器 -->
     <ClCompile Include="src\adapter\FtpAdapter.cpp" />
     <ClCompile Include="src\adapter\TelnetAdapter.cpp" />
+    <ClCompile Include="src\adapter\SshAdapter.cpp" />
     <ClCompile Include="src\adapter\ProtocolRegistry.cpp" />
     <!-- 框架层 -->
     <ClCompile Include="src\framework\AppState.cpp" />
@@ -227,6 +230,7 @@
     <ClInclude Include="src\adapter\ProtocolCapability.h" />
     <ClInclude Include="src\adapter\FtpAdapter.h" />
     <ClInclude Include="src\adapter\TelnetAdapter.h" />
+    <ClInclude Include="src\adapter\SshAdapter.h" />
     <ClInclude Include="src\adapter\ProtocolRegistry.h" />
     <ClInclude Include="src\logging\LogBridge.h" />
     <ClInclude Include="src\tools\FtpDeployTool\FtpDeployBackend.h" />

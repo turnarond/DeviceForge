@@ -15,6 +15,7 @@
 #pragma once
 #include "framework/ToolWidget.h"
 #include <QSpinBox>
+#include <QComboBox>
 #include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QPushButton>
@@ -60,6 +61,7 @@ private:
     DeviceBusWidget* m_deviceBus = nullptr;
 
     // UI 控件
+    QComboBox*       m_protoCombo     = nullptr;  // "Telnet" / "SSH"
     QSpinBox*        m_timeoutSpin    = nullptr;
     QPlainTextEdit*  m_cmdEdit        = nullptr;
     QPushButton*     m_executeBtn     = nullptr;
