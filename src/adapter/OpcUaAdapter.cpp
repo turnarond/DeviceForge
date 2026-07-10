@@ -24,6 +24,7 @@
 #include <open62541.h>
 
 #include <QDateTime>
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -90,6 +91,11 @@ QVariant uaVariantToQtVariant(const UA_Variant& val)
         UA_DateTime dt = *static_cast<UA_DateTime*>(val.data);
         qint64 unixSec = UA_DateTime_toUnixTime(dt);
         return QVariant(QDateTime::fromSecsSinceEpoch(unixSec));
+    }
+    if (val.type == &UA_TYPES[UA_TYPES_BYTESTRING]) {
+        UA_ByteString bs = *static_cast<UA_ByteString*>(val.data);
+        return QVariant(QByteArray(reinterpret_cast<const char*>(bs.data),
+                                   static_cast<int>(bs.length)));
     }
     // 未映射类型：返回无效值
     return QVariant();
