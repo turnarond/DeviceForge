@@ -166,6 +166,8 @@
     <ClCompile Include="src\tools\NetRelayTool\RelayRecording.cpp" />
     <ClCompile Include="src\tools\NetRelayTool\RelayPlayer.cpp" />
     <ClCompile Include="src\tools\OpcUaClientTool\OpcUaClientBackend.cpp" />
+    <ClCompile Include="src\tools\OpcUaClientTool\OpcUaClientWidget.cpp" />
+    <QtMoc Include="src\tools\OpcUaClientTool\OpcUaClientWidget.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Thirdparty 源文件                                              -->

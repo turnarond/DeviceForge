@@ -150,6 +150,7 @@ set(SOURCES
     src/tools/NetRelayTool/RelayRecording.cpp
     src/tools/NetRelayTool/RelayPlayer.cpp
     src/tools/OpcUaClientTool/OpcUaClientBackend.cpp
+    src/tools/OpcUaClientTool/OpcUaClientWidget.cpp
 
     # 新Presenter文件
     # src/presenter/FtpPresenter.cpp — 临时禁用: QPointer<FtpManager> 类型错误（待重构）
