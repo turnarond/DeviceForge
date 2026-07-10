@@ -118,6 +118,7 @@ set(SOURCES
     # 协议适配器
     src/adapter/FtpAdapter.cpp
     src/adapter/TelnetAdapter.cpp
+    src/adapter/SshAdapter.cpp
     src/adapter/ProtocolRegistry.cpp
 
     # 新框架文件
