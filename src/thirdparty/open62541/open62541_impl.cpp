@@ -1,18 +1,6 @@
 // open62541 编译包装 — vcxproj/MSVC 用
-// 在 include 前定义 UA_ENABLE_* 开关
-#define UA_ENABLE_CLIENT 1
-#define UA_ENABLE_SUBSCRIPTIONS 1
-#define UA_ENABLE_SUBSCRIPTIONS_EVENTS 0
-#define UA_ENABLE_NODELIST 1
-#define UA_ENABLE_ENCRYPTION 0
-#define UA_ENABLE_METHODCALLS 0
-#define UA_ENABLE_PUBSUB 0
-#define UA_ENABLE_PUBSUB_DELTAFRAMES 0
-#define UA_ENABLE_PUBSUB_INFORMATIONMODEL 0
-#define UA_ENABLE_HISTORIZING 0
-#define UA_ENABLE_JSON_ENCODING 0
-#define UA_ENABLE_XML_ENCODING 0
-#define UA_ENABLE_DETERMINISTIC_RANDOM 0
-#define UA_MULTITHREADING 0
-
+//
+// 功能开关由 open62541.h 顶部的 #define 块直接控制（单文件分发版特性）。
+// 不要在此 #define UA_ENABLE_X 0——open62541 用 #ifdef/defined() 判断，
+// 定义为 0 反而会激活对应代码路径。已在 open62541.h 关闭 mbedTLS 加密。
 #include "open62541.c"
