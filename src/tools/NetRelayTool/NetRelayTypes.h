@@ -5,7 +5,7 @@
 #include <cstdint>
 
 // 中继协议类型
-enum class RelayProtocol { Tcp, Udp };
+enum class RelayProtocol { Tcp, Udp, Multicast };
 
 // 中继方向：Upstream = 生产者→消费者；Downstream = 消费者→生产者
 enum class RelayDirection { Upstream, Downstream };

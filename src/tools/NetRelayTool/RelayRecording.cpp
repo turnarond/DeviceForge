@@ -3,6 +3,7 @@
 #include "NetRelayTypes.h"
 #include <QFile>
 #include <QDataStream>
+#include <QHostAddress>
 #include <cstring>
 
 bool RelayRecording::load(const QString& path, NrecFile& out, QString& error)
@@ -23,10 +24,22 @@ bool RelayRecording::load(const QString& path, NrecFile& out, QString& error)
     in >> version >> proto >> r0;
     if (version != nrec::kVersion) { error = QString("不支持的版本: %1").arg(version); return false; }
     qint64 startEpoch; in >> startEpoch;
-    for (int i = 0; i < 16; ++i) { quint8 x; in >> x; }  // reserved[16]
+    // reserved 区（16 字节）：组播时含 port(u16)+ipv4(u32)
+    quint16 groupPort; quint32 groupIpv4;
+    in >> groupPort >> groupIpv4;
+    for (int i = 0; i < 10; ++i) { quint8 x; in >> x; }  // 剩余 reserved
 
-    out.protocol = (proto == 0) ? RelayProtocol::Tcp : RelayProtocol::Udp;
+    out.protocol = (proto == 0) ? RelayProtocol::Tcp
+                 : (proto == 1) ? RelayProtocol::Udp
+                 : RelayProtocol::Multicast;
     out.startEpochMs = startEpoch;
+    if (out.protocol == RelayProtocol::Multicast) {
+        out.groupPort = groupPort;
+        out.groupAddr = QHostAddress(groupIpv4).toString();
+    } else {
+        out.groupPort = 0;
+        out.groupAddr.clear();
+    }
     out.records.clear();
 
     while (!in.atEnd()) {

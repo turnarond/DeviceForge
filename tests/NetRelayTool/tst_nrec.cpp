@@ -169,6 +169,41 @@ private slots:
         QCOMPARE(received, QByteArray("AB"));   // 只上行、按序，忽略下行 "x"
         QFile::remove(path);
     }
+
+    void multicastRoundTrip() {
+        QString path = QDir::temp().filePath("tst_mcast.nrec");
+        RelayRecorder rec;
+        QVERIFY(rec.open(path, RelayProtocol::Multicast, 5000, "239.1.2.3", 6000));
+        rec.append(RelayDirection::Upstream, 1, 0,  QByteArray("radar-a"));
+        rec.append(RelayDirection::Upstream, 1, 33, QByteArray("radar-b"));
+        rec.close();
+
+        NrecFile f; QString err;
+        QVERIFY2(RelayRecording::load(path, f, err), qPrintable(err));
+        QCOMPARE(f.protocol, RelayProtocol::Multicast);
+        QCOMPARE(f.groupAddr, QString("239.1.2.3"));
+        QCOMPARE(f.groupPort, quint16(6000));
+        QCOMPARE(f.records.size(), 2);
+        QCOMPARE(f.records[0].payload, QByteArray("radar-a"));
+        QCOMPARE(f.records[1].tsOffsetMs, qint64(33));
+        QFile::remove(path);
+    }
+
+    void udpFileStillLoadsAfterMulticastExtension() {
+        // 旧式 UDP 录制（不传组参数）读取应正常，组字段为空
+        QString path = QDir::temp().filePath("tst_udp_compat.nrec");
+        RelayRecorder rec;
+        QVERIFY(rec.open(path, RelayProtocol::Udp, 1000));
+        rec.append(RelayDirection::Upstream, 1, 0, QByteArray("x"));
+        rec.close();
+        NrecFile f; QString err;
+        QVERIFY2(RelayRecording::load(path, f, err), qPrintable(err));
+        QCOMPARE(f.protocol, RelayProtocol::Udp);
+        QVERIFY(f.groupAddr.isEmpty());
+        QCOMPARE(f.groupPort, quint16(0));
+        QCOMPARE(f.records.size(), 1);
+        QFile::remove(path);
+    }
 };
 
 QTEST_MAIN(TstNrec)

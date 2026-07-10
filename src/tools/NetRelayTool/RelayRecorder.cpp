@@ -1,9 +1,11 @@
 /* RelayRecorder.cpp */
 #include "RelayRecorder.h"
+#include <QHostAddress>
 
 RelayRecorder::~RelayRecorder() { close(); }
 
-bool RelayRecorder::open(const QString& path, RelayProtocol proto, qint64 startEpochMs)
+bool RelayRecorder::open(const QString& path, RelayProtocol proto, qint64 startEpochMs,
+                         const QString& groupAddr, quint16 groupPort)
 {
     close();
     m_file = std::make_unique<QFile>(path);
@@ -16,10 +18,20 @@ bool RelayRecorder::open(const QString& path, RelayProtocol proto, qint64 startE
     // --- 文件头（32 字节，详见 spec §4.1）---
     m_stream->writeRawData(nrec::kMagic, 4);                 // 0: magic
     *m_stream << quint16(nrec::kVersion);                    // 4: version
-    *m_stream << quint8(proto == RelayProtocol::Tcp ? 0 : 1);// 6: protocol
+    quint8 protoByte = (proto == RelayProtocol::Tcp) ? 0
+                     : (proto == RelayProtocol::Udp) ? 1 : 2; // 6: protocol (2=Multicast)
+    *m_stream << protoByte;
     *m_stream << quint8(0);                                  // 7: reserved
     *m_stream << qint64(startEpochMs);                       // 8: start_epoch_ms
-    for (int i = 0; i < 16; ++i) *m_stream << quint8(0);     // 16: reserved[16]
+    // 16..31: reserved 区 → 组播: group_port(u16) + group_ipv4(u32) + 剩余保留
+    *m_stream << quint16(groupPort);                         // 16: group_port
+    quint32 ipv4 = 0;
+    if (!groupAddr.isEmpty()) {
+        QHostAddress a(groupAddr);
+        ipv4 = a.toIPv4Address();                            // 点分→u32；非法为 0
+    }
+    *m_stream << quint32(ipv4);                              // 18: group_ipv4
+    for (int i = 0; i < 10; ++i) *m_stream << quint8(0);     // 22..31: reserved (2+4+10=16)
     return true;
 }
 
