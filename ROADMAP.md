@@ -11,13 +11,15 @@
 | 模块 | 能力 |
 |------|------|
 | 文件部署 | FTP/FTPS 批量上传，TLS 加密 |
-| 批量命令 | Telnet 批量 Shell 命令 |
+| 批量命令 | Telnet / **SSH**（libssh2，密码认证 + TOFU）批量 Shell 命令 |
 | Modbus 测试 | Modbus TCP 批量读写寄存器 |
 | WebSocket 通信 | Server/Client，Token 认证 |
-| **网络调试中继** | TCP/UDP 透明中继旁路抓包 + 流量录制（`.nrec`）+ 按原始时序回放 |
+| **网络调试中继** | TCP/UDP/**组播** 透明中继旁路抓包 + 流量录制（`.nrec`）+ 按原始时序回放 + 组播回灌 |
 | 远端预览 | 远程 FTP 目录浏览 + 下载 |
 
-底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + 工业仪表盘深色主题。
+底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + 工业仪表盘深色主题（「琴色是动词」体系）。
+产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
+测试：`tst_nrec`（QtTest/CTest，12 用例，覆盖 .nrec 往返/损坏拒绝/回放/组播往返）。
 
 ---
 
@@ -32,7 +34,6 @@
 ## 中期
 
 - **🔷 Linux 平台适配** — 当前仅 Windows。工业/嵌入式场景（含 SylixOS）对 Linux 需求大，是跨平台化的关键一步。
-- **SSH Adapter** — 以 SSH 替代明文 Telnet，作为更安全的批量命令通道。
 - **插件化 DLL 加载** — 通过 `QPluginLoader` 支持第三方 Tool 以 DLL 形式动态加载（`ManifestParser` 清单解析已就绪）。
 - **ToolHost 多 Tool 并发** — 当前 Tool 由主窗口直接创建，改为经 ToolHost 统一管理多活跃 Tool。
 
