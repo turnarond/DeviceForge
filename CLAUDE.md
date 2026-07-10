@@ -151,7 +151,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 五个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
 - **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 获取 FtpAdapter）+ FtpDeployWidget（标准三段式布局：配置→操作→结果+日志），支持 FTPS 加密
-- **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate）+ TelnetWidget，批量 Shell 命令，认证失败阻断
+- **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
 - **NetRelayTool**（`src/tools/NetRelayTool/`）：NetRelayBackend（QTcpServer + QUdpSocket）+ NetRelayWidget，TCP/UDP/组播(Multicast) 透明中继代理，双向流量双向原样转发，Hex+ASCII 实时视图 + 导出；支持流量录制（`.nrec` 自定义二进制格式）+ 按原始时序回放上行到消费者（RelayRecorder/RelayRecording/RelayPlayer，RelayMode 中继/回放互斥状态机）；组播录制零影响加入组抄收(.nrec protocol=2 存组地址)+ 回灌原组
@@ -161,7 +161,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 | 功能 Tab | UI 类 | 业务逻辑 | 协议 | 架构状态 |
 |----------|-------|----------|------|----------|
 | 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter | FTP/FTPS (libcurl) | ✅ 已迁移 + FTPS 加密 |
-| 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter | Telnet (lwcommunicate) | ✅ 已迁移 + 安全警告 |
+| 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
 | 日志查询 | 已删除 | 功能由远端预览面板的下载按钮替代 |  | 🗑 已移除 |
 | MODBUS 测试 | ModbusWidget (Tool) | ModbusBackend → QModbusTcpClient | Modbus TCP | ✅ 已迁移 |

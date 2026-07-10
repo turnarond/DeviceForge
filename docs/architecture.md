@@ -59,6 +59,7 @@ IProtocolAdapter (纯虚接口)
 现有实现：
 - **FtpAdapter**：封装 libcurl，支持 FTP/FTPS。提供 uploadFile/uploadFolder/downloadFile/listDirectory 等操作
 - **TelnetAdapter**：基于 lwcommunicate::LWTcpClient，支持请求-响应和流模式
+- **SshAdapter**：基于 libssh2，支持密码认证 + TOFU 主机密钥验证，request-响应模式（SSH exec channel）
 
 > **注意**：部分 Tool（Modbus / WebSocket / NetRelay）直接使用 Qt 原生 socket 类（QModbusTcpClient / QWebSocket / QTcpServer + QUdpSocket），未走 IProtocolAdapter 抽象。适配器层主要服务于 FTP/Telnet 这类请求-响应/流模式协议。
 
