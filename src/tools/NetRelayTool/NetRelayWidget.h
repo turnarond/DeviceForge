@@ -26,6 +26,7 @@
 #include <QTreeWidget>
 #include <QProgressBar>
 #include <QByteArray>
+#include <QNetworkInterface>
 
 class NetRelayBackend;
 enum class RelayDirection;
@@ -69,6 +70,7 @@ private:
 
     // 配置区
     QComboBox*  m_comboProtocol  = nullptr;
+    QComboBox*  m_comboIface      = nullptr;   // 网卡选择（组播用）
     QLineEdit*  m_editListenAddr = nullptr;
     QSpinBox*   m_spinListenPort = nullptr;
     QLineEdit*  m_editUpstreamHost = nullptr;

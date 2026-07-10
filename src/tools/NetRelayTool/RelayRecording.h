@@ -15,6 +15,8 @@ struct NrecRecord {
 struct NrecFile {
     RelayProtocol       protocol = RelayProtocol::Tcp;
     qint64              startEpochMs = 0;
+    QString             groupAddr;          // 组播组地址（点分），非组播为空
+    quint16             groupPort = 0;      // 组播端口，非组播为 0
     QVector<NrecRecord> records;
 };
 

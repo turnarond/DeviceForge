@@ -15,6 +15,8 @@
 #include "NetRelayBackend.h"
 #include <lwlog/lwlog.h>
 #include <QDateTime>
+#include <QNetworkInterface>
+#include <QHostAddress>
 #include <thread>
 #include <chrono>
 
@@ -125,7 +127,8 @@ void NetRelayBackend::beginRecordingIfEnabled()
 // ============ 回放（委托 RelayPlayer）============
 
 void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consumerHost,
-                                  quint16 consumerPort, double speedFactor)
+                                  quint16 consumerPort, double speedFactor,
+                                  const QString& mcastIfaceAddr)
 {
     if (m_running) { reportError("中继进行中，无法回放"); return; }
     if (m_mode == RelayMode::Relaying) { reportError("中继进行中，无法回放"); return; }
@@ -149,6 +152,7 @@ void NetRelayBackend::startReplay(const QString& nrecPath, const QString& consum
         if (m_replayFinishedCb) m_replayFinishedCb();
         m_mode = RelayMode::Idle;
     });
+    m_player->setMulticastInterface(mcastIfaceAddr);
 
     if (m_player->start(nrecPath, consumerHost, consumerPort, speedFactor)) {
         m_mode = RelayMode::Replaying;
@@ -356,10 +360,108 @@ void NetRelayBackend::stopRelay()
         m_udpListen = nullptr;
     }
 
+    // --- 清理组播抓收 socket ---
+    if (m_mcastSocket) {
+        QObject::disconnect(m_mcastSocket, nullptr, nullptr, nullptr);
+        if (!m_mcastGroup.isEmpty())
+            m_mcastSocket->leaveMulticastGroup(QHostAddress(m_mcastGroup));
+        m_mcastSocket->close();
+        m_mcastSocket->deleteLater();
+        m_mcastSocket = nullptr;
+    }
+    m_mcastGroup.clear();
+    m_mcastPort = 0;
+
     m_running = false;
     if (m_recorder) { m_recorder->close(); m_recorder.reset(); log("录制已保存"); }
     if (m_mode == RelayMode::Relaying) m_mode = RelayMode::Idle;
     if (m_logCb) m_logCb("中继已停止");
+}
+
+// ============ 组播抓收 ============
+
+void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 port,
+                                            const QString& ifaceAddr)
+{
+    if (m_running) { reportError("已在运行中，请先停止"); return; }
+    if (m_mode == RelayMode::Replaying) { reportError("回放进行中，无法抓收"); return; }
+
+    // 组播地址校验：IPv4 D 类 224.0.0.0 ~ 239.255.255.255
+    QHostAddress group(groupAddr);
+    quint32 v4 = group.toIPv4Address();
+    bool okProto = (group.protocol() == QAbstractSocket::IPv4Protocol);
+    quint8 firstOctet = quint8((v4 >> 24) & 0xFF);
+    if (!okProto || firstOctet < 224 || firstOctet > 239) {
+        reportError("非法组播地址（须 224.0.0.0~239.255.255.255）: " + groupAddr.toStdString());
+        return;
+    }
+    if (port == 0) { reportError("组播端口无效"); return; }
+
+    // 选定网卡（按本地 IP 匹配）
+    QNetworkInterface iface;
+    if (!ifaceAddr.isEmpty()) {
+        for (const QNetworkInterface& itf : QNetworkInterface::allInterfaces()) {
+            for (const QNetworkAddressEntry& e : itf.addressEntries()) {
+                if (e.ip().toString() == ifaceAddr) { iface = itf; break; }
+            }
+            if (iface.isValid()) break;
+        }
+    }
+
+    m_cancelled = false;
+    m_mcastSocket = new QUdpSocket();
+    // 关键：AnyIPv4（非 Any）+ ShareAddress|ReuseAddressHint（Windows 只认后者，不抢占现有消费者）
+    if (!m_mcastSocket->bind(QHostAddress::AnyIPv4, port,
+            QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+        reportError("组播端口绑定失败: " + m_mcastSocket->errorString().toStdString());
+        delete m_mcastSocket; m_mcastSocket = nullptr;
+        return;
+    }
+    bool joined = iface.isValid()
+        ? m_mcastSocket->joinMulticastGroup(group, iface)
+        : m_mcastSocket->joinMulticastGroup(group);
+    if (!joined) {
+        reportError("加入组播组失败: " + m_mcastSocket->errorString().toStdString());
+        m_mcastSocket->close(); delete m_mcastSocket; m_mcastSocket = nullptr;
+        return;
+    }
+    QObject::connect(m_mcastSocket, &QUdpSocket::readyRead,
+                     [this]() { onMulticastReadyRead(); });
+
+    m_mcastGroup = groupAddr;
+    m_mcastPort = port;
+    m_running = true;
+    m_mode = RelayMode::Relaying;
+
+    // 录制：组播录制把组地址/端口写入 .nrec 头
+    if (m_recordEnabled && !m_recordPath.isEmpty()) {
+        m_recorder = std::make_unique<RelayRecorder>();
+        m_recordElapsed.start();
+        qint64 epoch = QDateTime::currentMSecsSinceEpoch();
+        if (!m_recorder->open(m_recordPath, RelayProtocol::Multicast, epoch, groupAddr, port)) {
+            reportError("录制文件打开失败: " + m_recordPath.toStdString());
+            m_recorder.reset();
+        } else {
+            log("录制已开启: " + m_recordPath.toStdString());
+        }
+    }
+    log("[组播] 已加入 " + groupAddr.toStdString() + ":" + std::to_string(port)
+        + "（额外订阅者，对源与现有消费者无影响）");
+}
+
+void NetRelayBackend::onMulticastReadyRead()
+{
+    if (m_cancelled || !m_mcastSocket) return;
+    while (m_mcastSocket->hasPendingDatagrams()) {
+        QByteArray data;
+        data.resize(int(m_mcastSocket->pendingDatagramSize()));
+        QHostAddress sender; quint16 senderPort = 0;
+        m_mcastSocket->readDatagram(data.data(), data.size(), &sender, &senderPort);
+        if (data.isEmpty()) continue;
+        QString peer = sender.toString() + ":" + QString::number(senderPort);
+        if (m_dataCb) m_dataCb(RelayDirection::Upstream, peer, 1, data);  // 组播单向，方向恒 Upstream，会话号固定 1
+        recordData(RelayDirection::Upstream, 1, data);
+    }
 }
 
 // ============ TCP 处理 ============

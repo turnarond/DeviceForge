@@ -12,7 +12,8 @@ public:
     RelayRecorder() = default;
     ~RelayRecorder();
 
-    bool open(const QString& path, RelayProtocol proto, qint64 startEpochMs);
+    bool open(const QString& path, RelayProtocol proto, qint64 startEpochMs,
+              const QString& groupAddr = QString(), quint16 groupPort = 0);
     void append(RelayDirection dir, int sessionId, qint64 tsOffsetMs, const QByteArray& data);
     void close();
     bool isOpen() const { return m_file && m_file->isOpen(); }
