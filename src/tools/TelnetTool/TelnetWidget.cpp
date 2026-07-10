@@ -46,6 +46,14 @@ void TelnetWidget::setupUi()
     auto* configGroup = new QGroupBox("配置", this);
     auto* configLayout = new QHBoxLayout(configGroup);
 
+    // 协议选择
+    configLayout->addWidget(new QLabel("协议:", this));
+    m_protoCombo = new QComboBox(this);
+    m_protoCombo->addItem("Telnet");
+    m_protoCombo->addItem("SSH");
+    configLayout->addWidget(m_protoCombo);
+    configLayout->addSpacing(16);
+
     configLayout->addWidget(new QLabel("命令超时(秒):", this));
     m_timeoutSpin = new QSpinBox(this);
     m_timeoutSpin->setRange(1, 300);
@@ -318,6 +326,9 @@ void TelnetWidget::onExecuteClicked()
         item->setText(3, "");
         m_resultTree->addTopLevelItem(item);
     }
+
+    // 传递协议选择给 Backend
+    m_backend->setProtocol(m_protoCombo->currentText().toLower());
 
     // 启动后端执行
     m_backend->executeCommand(ips, commands, timeoutSec);
