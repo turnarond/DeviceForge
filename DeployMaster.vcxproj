@@ -63,7 +63,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/open62541;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NOMINMAX;lwcomm_EXPORTS;lwlog_EXPORTS;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -89,7 +89,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/open62541;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NOMINMAX;lwcomm_EXPORTS;lwlog_EXPORTS;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -130,6 +130,8 @@
   <!-- 新架构源文件（src/）                                            -->
   <!-- ============================================================ -->
   <ItemGroup>
+    <!-- open62541 -->
+    <ClCompile Include="src/thirdparty/open62541/open62541_impl.cpp" />
     <!-- 日志桥接 -->
     <ClCompile Include="src\logging\LogBridge.cpp" />
     <!-- 协议适配器 -->

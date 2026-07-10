@@ -163,6 +163,9 @@ include_directories(
 # 创建可执行文件（WIN32：GUI 子系统，不弹 console 黑框；DeployMaster.rc：图标+版本信息）
 add_executable(DeviceForge WIN32 ${SOURCES} DeployMaster.rc)
 
+# --- open62541 (LGPL/MPL, 单文件分发版 v1.5.5) ---
+add_subdirectory(src/thirdparty/open62541)
+
 # 链接 Qt 模块
 target_link_libraries(DeviceForge PRIVATE
     Qt6::Core
@@ -178,6 +181,7 @@ target_link_libraries(DeviceForge PRIVATE
     tinyxml2
     ${LIBCURL_IMPL_LIB}
     ${LIBSSH2_LIB}
+    open62541
 )
 
 # 构建后复制 libcurl-x64.dll 为 libcurl.dll 到输出目录（运行时依赖）
