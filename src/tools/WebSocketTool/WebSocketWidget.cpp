@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: WebSocketWidget.cpp
  *
  * Date: 2026-07-05
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: WebSocket Tool 前端实现 — 纯代码构建 UI，
  *              匹配原 tab_websocket.ui 布局：模式切换 → Server/Client 设置 → 发布/订阅 → 消息日志。

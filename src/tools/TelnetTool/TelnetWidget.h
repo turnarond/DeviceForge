@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: TelnetWidget.h
  *
  * Date: 2026-07-05
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: Telnet 批量命令 Tool 前端 — 继承 ToolWidget，提供标准三段式布局：
  *              [配置] → [命令] → [结果列表 + 详情]

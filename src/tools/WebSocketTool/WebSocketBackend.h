@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: WebSocketBackend.h
  *
  * Date: 2026-07-05
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: WebSocket Tool 后端 — 继承 ToolBackend，直接管理 QWebSocketServer/QWebSocket，
  *              支持 Server（监听多客户端 + 主题订阅）和 Client 两种模式。

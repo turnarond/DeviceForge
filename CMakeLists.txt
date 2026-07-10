@@ -149,8 +149,8 @@ include_directories(
 )
 
 
-# 创建可执行文件
-add_executable(DeviceForge ${SOURCES})
+# 创建可执行文件（WIN32：GUI 子系统，不弹 console 黑框；DeployMaster.rc：图标+版本信息）
+add_executable(DeviceForge WIN32 ${SOURCES} DeployMaster.rc)
 
 # 链接 Qt 模块
 target_link_libraries(DeviceForge PRIVATE

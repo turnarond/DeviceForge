@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: ToolHost.h
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: ToolHost 桥接层 — 负责 Tool 的创建、配对、生命周期管理
  *

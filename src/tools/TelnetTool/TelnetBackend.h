@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: TelnetBackend.h
  *
  * Date: 2026-07-05
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: Telnet 批量命令 Tool 后端 — 继承 ToolBackend，通过 ProtocolRegistry
  *              获取 TelnetAdapter 实例，异步批量执行命令到所有目标设备。

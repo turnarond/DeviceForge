@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2026 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: DeviceBusWidget.cpp
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 设备总线 UI 组件实现
  */

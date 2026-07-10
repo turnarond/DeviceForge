@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: ToolWidget.cpp
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: Tool 前端基类实现 — 为 CMake AUTOMOC 提供编译单元，
  *              确保 Q_OBJECT 宏生成的元对象代码被链接。

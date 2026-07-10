@@ -4,4 +4,7 @@
     <qresource prefix="styles">
         <file>darkstyle.qss</file>
     </qresource>
+    <qresource prefix="icons">
+        <file>app.ico</file>
+    </qresource>
 </RCC>

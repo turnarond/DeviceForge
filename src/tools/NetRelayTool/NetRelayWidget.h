@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: NetRelayWidget.h
  *
  * Date: 2026-07-08
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 网络中继调试 Tool 前端 — 继承 ToolWidget，纯代码构建 UI。
  *              提供协议选择、地址配置、会话列表、Hex+ASCII 实时十六进制视图、导出功能。

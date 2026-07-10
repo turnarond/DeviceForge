@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: FtpDeployWidget.h
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: FTP 部署 Tool 前端 — 继承 ToolWidget，提供标准三段式布局：
  *              [配置] → [操作] → [文件列表 + 进度 + 日志]

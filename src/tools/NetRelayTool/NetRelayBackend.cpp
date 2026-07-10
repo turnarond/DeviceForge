@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: NetRelayBackend.cpp
  *
  * Date: 2026-07-08
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 网络中继调试 Tool 后端实现 — TCP/UDP 透明中继代理。
  *              Qt socket 在主线程事件循环中异步驱动；svc() 线程仅保持 ServiceTask 生命周期。

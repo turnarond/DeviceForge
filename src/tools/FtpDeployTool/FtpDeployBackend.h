@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: FtpDeployBackend.h
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: FTP 部署 Tool 后端 — 继承 ToolBackend，通过 ProtocolRegistry
  *              获取 FtpAdapter 实例，异步批量上传文件到所有绑定设备。

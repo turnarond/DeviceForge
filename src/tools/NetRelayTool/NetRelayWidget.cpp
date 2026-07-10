@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: NetRelayWidget.cpp
  *
  * Date: 2026-07-08
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 网络中继调试 Tool 前端实现 — 纯代码构建 UI，
  *              Hex+ASCII 实时视图、会话列表、数据导出。

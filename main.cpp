@@ -2,6 +2,7 @@
 #include <QtWidgets/QApplication>
 #include <QFile>
 #include <QTextStream>
+#include <QIcon>
 #include "src/logging/LogBridge.h"
 #include "src/adapter/ProtocolRegistry.h"
 #include "src/adapter/FtpAdapter.h"
@@ -19,6 +20,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(":/icons/app.ico"));  // 应用级窗口/任务栏图标
     LogBridge::install();  // Qt -> lwlog 日志桥接
 
     // 注册内置协议适配器
@@ -41,6 +43,7 @@ int main(int argc, char *argv[])
     }
 
     DeployMaster window;
+    window.setWindowIcon(QIcon(":/icons/app.ico"));  // 主窗口图标
 
     // 注册 Tool 到注册表（元数据，用于导航显示）
     ToolRegistry::instance()->registerBuiltin(

@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: NetRelayBackend.h
  *
  * Date: 2026-07-08
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 网络中继调试 Tool 后端 — 继承 ToolBackend，实现 TCP/UDP 透明中继代理。
  *              监听本地端口，接收客户端连接后建立到真实上游服务器的连接，

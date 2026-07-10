@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: WebSocketWidget.h
  *
  * Date: 2026-07-05
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: WebSocket Tool 前端 — 继承 ToolWidget，纯代码构建 UI，
  *              支持 Server/Client 双模式切换、主题订阅/发布、消息日志。

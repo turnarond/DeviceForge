@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2026 ACOINFO CloudNative Team.
+ * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
  * File: DeviceBusWidget.h
  *
  * Date: 2026-07-04
  *
- * Author: Yan.chaodong <yanchaodong@acoinfo.com>
+ * Author: turnarond
  *
  * Description: 设备总线 UI 组件 — 水平胶囊形设备列表，支持添加/删除/选中，
  *              在线状态指示灯和凭证输入。工业仪表盘风格。
