@@ -47,6 +47,53 @@
 - QSplitter 拖动条移除琴色边框（消除"粗黄条"），改纯石墨窄条 + hover 提亮
 - 修复 Qt QSS 不支持的 CSS 语法：`linear-gradient`/`radial-gradient` → 纯色；移除无效 `box-shadow`
 
+### 产品化打磨（去公司标识 + 图标 + 版本信息 + 关 console）
+
+#### 去公司标识
+- 全项目去除「南京翼辉」与「ACOINFO」字样，改为个人身份 `turnarond`（LICENSE 用真名 `yanchaodong`）
+- 24 个源码版权头 `ACOINFO CloudNative Team` → `turnarond`；作者去公司邮箱
+- `DeployMaster.rc` CompanyName → `turnarond`；`QSettings` 组织名 → `turnarond`
+- 保留 lw* 第三方库的客观来源描述（`architecture.md` / `CMakeLists.txt`）
+
+#### 应用图标
+- 新增 `app.ico`（16/32/48/256 多尺寸，由 logo.png 生成）
+- QRC 打包 `:/icons/app.ico`；`main.cpp` 加 `setWindowIcon`（任务栏 + 窗口左上角）
+
+#### exe 版本/版权信息
+- CMake 编译 `DeployMaster.rc`（图标 + VERSIONINFO 进 exe）
+- 字段定稿：ProductName=DeviceForge / CompanyName=turnarond / FileDescription=工业级设备批量运维平台 / 版本 2.1.0
+
+#### 关闭 console 黑框
+- CMake `add_executable(DeviceForge WIN32 ...)` — PE 子系统=2(GUI)，双击不再弹黑框
+- 与 vcxproj `SubSystem=Windows` 对齐
+
+### 组播录制回灌（NetRelayTool Multicast）
+
+- **组播录制**：以额外订阅者身份加入组播组抓收数据（`bind(AnyIPv4, ShareAddress|ReuseAddressHint)` 零影响），录制 .nrec（protocol=2 + reserved 区存组 IPv4 地址/端口）
+- **组播回灌**：按原始时序重发录制数据回原组播组（默认原组可改），支持网卡选择
+- `.nrec` 格式扩展：version 不变，用 reserved 16 字节存 port(u16)+ipv4(u32)，旧文件向后兼容
+- UI：协议下拉加 Multicast + 网卡下拉
+
+### SSH 适配器（批量命令扩展）
+
+- 扩展现有 Telnet Tab 支持 SSH：新建 `SshAdapter`（IProtocolAdapter 子类，libssh2 实现）
+- 密码认证 + TOFU 主机密钥（首次自动接受，指纹变化告警）；TelnetBackend 协议感知化
+- libssh2 以预编译库集成（CMake + vcxproj 双构建，DLL 自动复制）
+- UI：TelnetWidget 加协议下拉（Telnet / SSH）
+
+### 构建修复
+
+- **QRC 未纳入 CMake**：`.qrc` 加入 SOURCES，修复 CMake 版 exe 从未内嵌深色主题的缺陷
+- **libcurl DLL 命名**：CMake POST_BUILD 改名复制 `libcurl-x64.dll` → `libcurl.dll`（与 vcxproj 对齐）——此前冒烟测试靠手动 cp 掩盖
+- vcxproj PostBuild 修复：合并 libcurl + libssh2 复制为单 Command，避免相互覆盖
+- 记入项目记忆 `cmake-vcxproj-parity-traps`：此后修改构建配置须逐项比对两套系统对等
+
+### 质量提升
+
+- **首个单元测试目标** `tst_nrec`（QtTest + CTest，CMake 构建）12 用例，覆盖 .nrec 往返/损坏拒绝/回放上行/组播往返/旧文件兼容
+- SSH adapter 代码审查：发现 13 处问题（2 Critical + 7 Important + 4 Minor），全部修复
+- 两次全分支 opus 审查 + 预合并复审
+
 ---
 
 ## [2.0.0] — 2026-07-04
