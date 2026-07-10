@@ -232,7 +232,7 @@ void TelnetWidget::onExecuteClicked()
 
     // Telnet 明文凭证警告（首次弹出，可勾选不再提示）
     {
-        QSettings settings("ACOINFO", "DeployMaster");
+        QSettings settings("turnarond", "DeviceForge");
         if (!settings.value("Telnet/SecurityWarningDontShowAgain", false).toBool()) {
             QMessageBox warnBox(this);
             warnBox.setWindowTitle("安全警告");
