@@ -98,7 +98,9 @@ private:
     TelnetWidget* m_telnetDeployTab = nullptr;
     std::shared_ptr<class ModbusBackend> m_modbusBackend;
     class ModbusWidget* m_modbusWidget = nullptr;
-    OpcUaClientTab* m_opcUaTab = nullptr; // new
+    OpcUaClientTab* m_opcUaTab = nullptr; // 旧演示 Tab（已废弃，保留声明避免破坏其它引用）
+    std::shared_ptr<class OpcUaClientBackend> m_opcUaClientBackend;
+    class OpcUaClientWidget* m_opcUaClientWidget = nullptr;
     WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
     std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
     NetRelayWidget* m_netRelayWidget = nullptr;
