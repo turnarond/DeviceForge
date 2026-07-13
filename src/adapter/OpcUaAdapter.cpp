@@ -505,6 +505,34 @@ QMap<QString, QString> OpcUaAdapter::writeNodes(const QStringList& nodeIds,
     return results;
 }
 
+// 常见 OPC UA 内置 DataType 节点 → 友好名映射
+static QString dataTypeIdToName(const QString& nodeId)
+{
+    if (nodeId.startsWith("ns=0;i=")) {
+        bool ok = false;
+        const int id = nodeId.mid(6).toInt(&ok);
+        if (!ok) return nodeId;
+        switch (id) {
+        case 1:  return "Boolean";
+        case 2:  return "SByte";
+        case 3:  return "Byte";
+        case 4:  return "Int16";
+        case 5:  return "UInt16";
+        case 6:  return "Int32";
+        case 7:  return "UInt32";
+        case 8:  return "Int64";
+        case 9:  return "UInt64";
+        case 10: return "Float";
+        case 11: return "Double";
+        case 12: return "String";
+        case 13: return "DateTime";
+        case 15: return "ByteString";
+        default:  break;
+        }
+    }
+    return nodeId;
+}
+
 QString OpcUaAdapter::browseRoot()
 {
     std::lock_guard<std::recursive_mutex> lk(m_clientMutex);
@@ -516,7 +544,7 @@ QString OpcUaAdapter::browseRoot()
     // 浏览 Objects Folder (ns=0;i=85) 的正向子节点
     UA_BrowseRequest bReq;
     UA_BrowseRequest_init(&bReq);
-    bReq.requestedMaxReferencesPerNode = 0;  // 0 = 不限制
+    bReq.requestedMaxReferencesPerNode = 0;
     bReq.nodesToBrowse = UA_BrowseDescription_new();
     bReq.nodesToBrowseSize = 1;
     bReq.nodesToBrowse[0].nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
@@ -525,8 +553,13 @@ QString OpcUaAdapter::browseRoot()
     bReq.nodesToBrowse[0].includeSubtypes = true;
 
     UA_BrowseResponse bResp = UA_Client_Service_browse(m_client, bReq);
+    UA_BrowseRequest_clear(&bReq);
 
+    // 第一遍：构建 JSON 数组，同时收集 Variable 节点用于批量读 DataType
     QJsonArray arr;
+    QVector<UA_NodeId> varNodeIds;
+    QVector<int> varIndices;
+
     if (bResp.responseHeader.serviceResult == UA_STATUSCODE_GOOD) {
         for (size_t i = 0; i < bResp.resultsSize; ++i) {
             const UA_BrowseResult& br = bResp.results[i];
@@ -537,16 +570,56 @@ QString OpcUaAdapter::browseRoot()
                 node["browseName"] = uaStringToQString(ref.browseName.name);
                 node["displayName"] = uaStringToQString(ref.displayName.text);
                 node["nodeClass"] = static_cast<int>(ref.nodeClass);
+
+                if (ref.nodeClass == UA_NODECLASS_VARIABLE) {
+                    node["dataType"] = ""; // 占位
+                    varNodeIds.append(ref.nodeId.nodeId);
+                    varIndices.append(arr.size());
+                } else {
+                    node["dataType"] = "";
+                }
                 arr.append(node);
             }
         }
     } else {
         setError(uaStatusToString(bResp.responseHeader.serviceResult));
     }
-
-    // bReq.nodesToBrowse 由 UA_BrowseDescription_new 分配，随 request clear 释放
-    UA_BrowseRequest_clear(&bReq);
     UA_BrowseResponse_clear(&bResp);
+
+    // 第二遍：批量读 Variable 节点的 DataType 属性（一次网络往返）
+    if (!varNodeIds.isEmpty()) {
+        QVector<UA_ReadValueId> rvids(varNodeIds.size());
+        for (int i = 0; i < varNodeIds.size(); ++i) {
+            UA_ReadValueId_init(&rvids[i]);
+            rvids[i].attributeId = UA_ATTRIBUTEID_DATATYPE;
+            rvids[i].nodeId = varNodeIds[i];
+        }
+
+        UA_ReadRequest rdReq;
+        UA_ReadRequest_init(&rdReq);
+        rdReq.nodesToRead = rvids.data();
+        rdReq.nodesToReadSize = static_cast<size_t>(rvids.size());
+
+        UA_ReadResponse rdResp = UA_Client_Service_read(m_client, rdReq);
+        if (rdResp.responseHeader.serviceResult == UA_STATUSCODE_GOOD) {
+            for (int i = 0; i < varIndices.size(); ++i) {
+                if (i >= static_cast<int>(rdResp.resultsSize)) continue;
+                const UA_DataValue& dv = rdResp.results[i];
+                if (dv.hasValue && UA_Variant_isScalar(&dv.value) &&
+                    dv.value.type == &UA_TYPES[UA_TYPES_NODEID]) {
+                    UA_NodeId typeId = *static_cast<UA_NodeId*>(dv.value.data);
+                    QString typeStr = dataTypeIdToName(uaNodeIdToQString(typeId));
+                    QJsonObject obj = arr[varIndices[i]].toObject();
+                    obj["dataType"] = typeStr;
+                    arr[varIndices[i]] = obj;
+                }
+            }
+        }
+        for (int i = 0; i < rvids.size(); ++i) {
+            UA_NodeId_clear(&rvids[i].nodeId);
+        }
+        UA_ReadResponse_clear(&rdResp);
+    }
 
     return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
 }
