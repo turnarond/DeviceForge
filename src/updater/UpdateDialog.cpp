@@ -9,6 +9,7 @@
  */
 #include "UpdateDialog.h"
 #include "UpdateChecker.h"
+#include <QCloseEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -158,4 +159,12 @@ QString UpdateDialog::formatSize(int64_t bytes) const {
     if (bytes < 1024 * 1024) return QString::number(bytes / 1024.0, 'f', 1) + " KB";
     if (bytes < 1024 * 1024 * 1024) return QString::number(bytes / (1024.0 * 1024.0), 'f', 1) + " MB";
     return QString::number(bytes / (1024.0 * 1024.0 * 1024.0), 'f', 2) + " GB";
+}
+
+// 点击窗口标题栏 X 关闭 = 取消当前操作,状态回 idle
+void UpdateDialog::closeEvent(QCloseEvent* event) {
+    if (m_checker && m_checker->state() == UpdateState::Downloading) {
+        m_checker->cancelDownload();
+    }
+    QDialog::closeEvent(event);
 }

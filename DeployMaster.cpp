@@ -12,7 +12,8 @@
 #include <QLabel>
 #include <QStatusBar>   // Task 5: 状态栏版本标签
 #include <QMenuBar>     // Task 5: 帮助菜单(检查更新)
-#include <QTimer>       // Task 5: 延迟 5 秒自动检查
+#include <QTimer>
+#include <QMouseEvent>       // Task 5: 延迟 5 秒自动检查
 #include <QAction>      // Task 5: 菜单项
 
 #include "OpcUaClient.h" // add header
@@ -612,14 +613,21 @@ static QString currentVersionString() {
 void DeployMaster::setupUpdateChecker()
 {
     m_updateChecker = std::make_shared<UpdateChecker>();
+    // 使用 CMake 编译宏设置当前版本,避免硬编码漂移
+    m_updateChecker->setCurrentVersion(
+        std::to_string(DEVICEFORGE_VERSION_MAJOR) + "." +
+        std::to_string(DEVICEFORGE_VERSION_MINOR) + "." +
+        std::to_string(DEVICEFORGE_VERSION_PATCH));
     // UpdateChecker 内部业务用 QtConcurrent 异步执行,无需启动 ServiceTask 工作线程
-    // （checkForUpdate / downloadUpdate 内部自己 QtConcurrent::run,无需占用 svc 线程）
 
     // 状态栏版本标签（右侧永久挂件）
     m_versionLabel = new QLabel(this);
     m_versionLabel->setText(currentVersionString() + " (检查中...)");
     m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
+    // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
+    connect(m_versionLabel, &QLabel::linkActivated, this, &DeployMaster::onVersionLabelClicked);
+    m_versionLabel->installEventFilter(this);
     statusBar()->addPermanentWidget(m_versionLabel);
 
     // 菜单栏: 帮助 -> 检查更新
@@ -754,4 +762,16 @@ void DeployMaster::onVersionLabelClicked()
         m_updateDialog->raise();
         m_updateDialog->activateWindow();
     }
+}
+
+ //eventFilter — 处理版本标签鼠标点击（非 RichText 状态下 label 不 emit linkActivated）
+bool DeployMaster::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_versionLabel && event->type() == QEvent::MouseButtonRelease) {
+        // 仅在非 Ready 状态且当前为纯文本时（富文本的 a href 走 linkActivated）
+        if (m_updateChecker && m_updateChecker->state() != UpdateState::Ready) {
+            onVersionLabelClicked();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }

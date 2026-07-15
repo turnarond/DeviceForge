@@ -28,6 +28,9 @@ public:
     DeployMaster(QWidget* parent = nullptr);
     ~DeployMaster();
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 public:
     QStringList getTargetIPList() const;
     QTextEdit* getGlobalLogItem() const {

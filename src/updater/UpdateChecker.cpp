@@ -11,6 +11,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QProcess>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
@@ -592,17 +593,61 @@ void UpdateChecker::cancelDownload() {
 }
 
 void UpdateChecker::installUpdate() {
-    // 占位:Task 3 实现
-    // 计划:启动新进程执行 m_extractDir 下的更新器,自身退出
     if (m_state.load() != UpdateState::Installed) {
         reportError("当前未处于可安装状态");
         return;
     }
-    if (m_extractDir.empty()) {
+
+    // 读取共享数据(加锁)
+    std::string extractDir, installDir, zip;
+    {
+        std::lock_guard<std::mutex> lk(m_dataMutex);
+        extractDir = m_extractDir;
+        zip = m_zipPath;
+    }
+    installDir = QCoreApplication::applicationDirPath().toStdString();
+
+    if (extractDir.empty()) {
         reportError("缺少解压目录");
         return;
     }
-    // 实际启动 installer 由 Task 3 完成,此处仅记录日志
-    std::cerr << "[UpdateChecker] installUpdate: 启动更新器 "
-              << m_extractDir << std::endl;
+
+    // 准备临时目录
+    std::string tmpDir = QDir::tempPath().toStdString() + "/DeviceForge-updater";
+    std::string backupDir = tmpDir + "/backup";
+
+    // 写 updater_manifest.json (JSON 字符串需要转义反斜杠)
+    auto jsonEscape = [](const std::string& s) -> std::string {
+        std::string out;
+        for (char c : s) {
+            if (c == '\\') out += "\\\\";
+            else if (c == '"') out += "\\\"";
+            else out += c;
+        }
+        return out;
+    };
+
+    QString manifestPath = QString::fromStdString(tmpDir) + "/updater_manifest.json";
+    QFile mf(manifestPath);
+    if (mf.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        std::string json =
+            "{\n"
+            "  \"tempDir\": \"" + jsonEscape(extractDir) + "\",\n"
+            "  \"installDir\": \"" + jsonEscape(installDir) + "\",\n"
+            "  \"exeName\": \"DeviceForge.exe\",\n"
+            "  \"backupDir\": \"" + jsonEscape(backupDir) + "\"\n"
+            "}\n";
+        mf.write(json.c_str(), static_cast<qint64>(json.size()));
+        mf.close();
+    }
+
+    // 启动 Updater.exe(与 DeviceForge.exe 同级目录)
+    QString updaterPath = QString::fromStdString(installDir) + "/Updater.exe";
+    QString logPath = QString::fromStdString(tmpDir) + "/updater.log";
+
+    QStringList args;
+    args << "--manifest" << manifestPath << "--log" << logPath;
+
+    QProcess::startDetached(updaterPath, args);
+    QCoreApplication::quit();
 }

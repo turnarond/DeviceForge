@@ -31,6 +31,9 @@ public:
     // 进度条更新(百分比/已下载/总数)
     void setProgress(int pct, int64_t downloaded, int64_t total);
 
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
     void onActionClicked();
     void onCancelClicked();

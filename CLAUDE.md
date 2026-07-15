@@ -29,6 +29,24 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
+### 测试（CTest / QtTest）
+
+根 `CMakeLists.txt` 已 `enable_testing()`，测试目标在 `tests/`（当前仅 `tst_nrec`，覆盖 NetRelayTool 的 .nrec 录制/回放，12 用例）。
+
+```bash
+# 在 build/ 目录，先编译测试目标
+cmake --build . --config Release --target tst_nrec
+
+# 运行全部测试
+ctest -C Release --output-on-failure
+
+# 运行单个测试 / 单个用例（QtTest 支持按用例名过滤）
+ctest -C Release -R tst_nrec --output-on-failure
+.\tests\Release\tst_nrec.exe testRoundTrip   # 直接跑某个测试函数
+```
+
+> CTest 已通过 `ENVIRONMENT_MODIFICATION` 把 Qt bin 目录注入 PATH，避免 Windows 上 `0xc0000135`（DLL_NOT_FOUND）。直接运行 `tst_nrec.exe` 时若报缺 DLL，需手动把 `C:\Qt\6.10.1\msvc2022_64\bin` 加入 PATH。
+
 > **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.1.0)` + `add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
 
 ### Visual Studio
@@ -136,6 +154,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - **ProtocolCapability**：协议能力声明结构体（requestResponse/streaming/broadcast/publishSubscribe/maxConnections）
 - **FtpAdapter**：实现 IProtocolAdapter，内部复用 libcurl。额外暴露 FTP 特有操作（uploadFile/uploadFolder/downloadFile/listDirectory/deleteFile/deleteDirectory/clearRemoteDirectory）
 - **TelnetAdapter**：实现 IProtocolAdapter，基于 `lwcommunicate::LWTcpClient`。支持请求-响应 + 流模式
+- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2（密码认证 + TOFU 主机指纹信任）。为 TelnetTool 提供 SSH 通道（批量 Shell 命令），底层 libssh2 为软依赖（见构建注意事项）
 - **ProtocolRegistry**（单例）：协议适配器工厂注册表（registerFactory/create/isRegistered/registeredProtocols）
 
 ### 日志桥接（src/logging/）
@@ -181,7 +200,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
-- `src/adapter/`：IProtocolAdapter.h / ProtocolCapability.h / FtpAdapter(.cpp/.h) / TelnetAdapter(.cpp/.h) / ProtocolRegistry(.cpp/.h)
+- `src/adapter/`：IProtocolAdapter.h / ProtocolCapability.h / FtpAdapter(.cpp/.h) / TelnetAdapter(.cpp/.h) / SshAdapter(.cpp/.h) / ProtocolRegistry(.cpp/.h)
 - `src/logging/`：LogBridge(.cpp/.h)
 - `src/ui/`：DeviceBusWidget(.cpp/.h)
 - `src/tools/FtpDeployTool/`：FtpDeployBackend(.cpp/.h) / FtpDeployWidget(.cpp/.h)
@@ -230,6 +249,12 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - `docs/运营流程.md` — 运营流程
 - `docs/images/` — README 使用的界面截图（文件部署/批量命令/MODBUS/WebSocket/OPCUA）
 
+**仓库根目录规划/发布文档（面向社区/用户）**：
+- `ROADMAP.md` — 路线图与版本状态（当前 v2.1.0；v2.2 候选：OPC UA 真实实现、中继增强、SCP 预览；中期：Linux 适配、插件化 DLL 加载、ToolHost 多 Tool 并发）。含 Non-Goals（不做云端/SaaS、不做完整 SCADA、中继坚持"原样转发"）
+- `CHANGELOG.md` / `RELEASE_NOTES.md` — 变更历史与发布说明
+- `CONTRIBUTING.md` — 贡献指南
+- `README.md` — 项目介绍与功能概览
+
 **DeviceForge（原名 DeployMaster 2.0）设计文档**：
 - `docs/superpowers/specs/2026-07-04-tool-framework-design.md` — DeployMaster 2.0 通用设备运维平台设计（lwserverbase + Tool 框架 + IProtocolAdapter + 插件化架构）
 - `docs/superpowers/plans/2026-07-04-tool-framework-plan.md` — Phase 0-1 框架搭建实施计划（15 Tasks，已全部完成）
@@ -259,6 +284,8 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 ## 注意事项
 
 - **libcurl 运行时依赖**：编译链接 `lib/libcurl_imp.lib`，运行时需要 `lib/libcurl-x64.dll`（已纳入仓库）。CMake 构建后会自动复制 DLL 到输出目录（`add_custom_command(TARGET POST_BUILD)`），VS 手动调试时需自行复制到生成目录（如 `x64/Debug/`）
+
+- **libssh2 软依赖（SSH 适配器）**：CMake 用 `find_library(NAMES libssh2)` 在 `lib/` 中查找，**未找到时仅 `message(WARNING)` 并继续构建**——此时 SshAdapter 不会正确链接/工作，但整体不失败。运行时依赖 `lib/libssh2.dll`（CMake `POST_BUILD` 自动复制到输出目录）。若 SSH 功能不可用，先确认 `lib/libssh2.lib` 与 `lib/libssh2.dll` 存在
 
 - **thirdparty 静态库依赖链**：
   ```
