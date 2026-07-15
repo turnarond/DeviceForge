@@ -45,7 +45,8 @@ public:
                      const std::string& remotePath,
                      bool clearBeforeDeploy,
                      bool rebootAfterDeploy,
-                     bool useFtps = false);
+                     bool useFtps = false,
+                     int port = 21);
     void cancelUpload();
 
     // 进度回调设置（由 Widget 调用，跨线程安全）

@@ -19,6 +19,7 @@
 #include <lwlog/lwlog.h>
 #include <thread>
 #include <chrono>
+#include <filesystem>
 
 FtpDeployBackend::FtpDeployBackend()
 {
@@ -64,7 +65,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                                     const std::string& remotePath,
                                     bool clearBeforeDeploy,
                                     bool rebootAfterDeploy,
-                                    bool useFtps)
+                                    bool useFtps,
+                                    int port)
 {
     m_cancelled = false;
     m_remotePath = remotePath;
@@ -76,7 +78,9 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
         m_uploadFuture.waitForFinished();
     }
 
-    m_uploadFuture = QtConcurrent::run([this, localFiles, useFtps]() {
+    m_uploadFuture = QtConcurrent::run([this, localFiles, useFtps, port]() {
+        namespace fs = std::filesystem;
+
         std::vector<std::string> successes, failures;
 
         if (m_devices.empty()) {
@@ -88,7 +92,13 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
         for (size_t i = 0; i < m_devices.size(); ++i) {
             if (m_cancelled) break;
 
-            const auto& device = m_devices[i];
+            auto device = m_devices[i];  // 拷贝，允许覆盖端口
+
+            // 使用 Tool 级端口覆盖设备默认端口（端口由各 Tool 自行配置）
+            if (port > 0) {
+                device.port = port;
+            }
+
             std::string deviceKey = device.ip + ":" + std::to_string(device.port);
 
             // 从 ProtocolRegistry 创建 FTP 适配器
@@ -135,30 +145,48 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                 if (m_progressCb) m_progressCb(pct);
             });
 
-            // 上传所有文件
+            // 上传所有文件/文件夹
             bool allOk = true;
             for (const auto& file : localFiles) {
                 if (m_cancelled) break;
 
-                // 从完整路径中提取文件名
-                std::string fileName = file;
-                size_t lastSlash = file.find_last_of("/\\");
-                if (lastSlash != std::string::npos) {
-                    fileName = file.substr(lastSlash + 1);
-                }
+                std::error_code ec;
 
-                std::string remoteFile = m_remotePath;
-                if (!remoteFile.empty() && remoteFile.back() != '/') {
-                    remoteFile += '/';
-                }
-                remoteFile += fileName;
+                if (fs::is_directory(file, ec)) {
+                    // 文件夹：递归上传整个目录
+                    std::string folderName = fs::path(file).filename().string();
+                    if (m_logCb) m_logCb("上传文件夹: " + folderName + " -> " + deviceKey);
 
-                if (m_logCb) m_logCb("上传: " + fileName + " -> " + deviceKey);
+                    if (ftp->uploadFolder(file, m_remotePath)) {
+                        if (m_logCb) m_logCb(folderName + " 上传完成 (" + deviceKey + ")");
+                    } else {
+                        if (m_logCb) m_logCb(folderName + " 上传失败: " + ftp->lastError());
+                        allOk = false;
+                    }
+                } else if (!ec) {
+                    // 单文件上传
+                    std::string fileName = file;
+                    size_t lastSlash = file.find_last_of("/\\");
+                    if (lastSlash != std::string::npos) {
+                        fileName = file.substr(lastSlash + 1);
+                    }
 
-                if (ftp->uploadFile(file, remoteFile)) {
-                    if (m_logCb) m_logCb(fileName + " 上传完成 (" + deviceKey + ")");
+                    std::string remoteFile = m_remotePath;
+                    if (!remoteFile.empty() && remoteFile.back() != '/') {
+                        remoteFile += '/';
+                    }
+                    remoteFile += fileName;
+
+                    if (m_logCb) m_logCb("上传: " + fileName + " -> " + deviceKey);
+
+                    if (ftp->uploadFile(file, remoteFile)) {
+                        if (m_logCb) m_logCb(fileName + " 上传完成 (" + deviceKey + ")");
+                    } else {
+                        if (m_logCb) m_logCb(fileName + " 上传失败: " + ftp->lastError());
+                        allOk = false;
+                    }
                 } else {
-                    if (m_logCb) m_logCb(fileName + " 上传失败: " + ftp->lastError());
+                    if (m_logCb) m_logCb("无法访问路径: " + file);
                     allOk = false;
                 }
             }

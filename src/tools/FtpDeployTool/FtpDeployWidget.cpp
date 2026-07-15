@@ -192,7 +192,7 @@ void FtpDeployWidget::onAddFolderClicked()
 {
     QString dir = QFileDialog::getExistingDirectory(this, "选择要部署的文件夹");
     if (!dir.isEmpty()) {
-        m_fileList->addItem(dir + "/*");
+        m_fileList->addItem(dir);
         appendLog("已添加文件夹: " + dir);
     }
 }
@@ -255,7 +255,8 @@ void FtpDeployWidget::onDeployClicked()
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
-        m_ftpsCheck->isChecked()
+        m_ftpsCheck->isChecked(),
+        m_portSpin->value()
     );
 }
 

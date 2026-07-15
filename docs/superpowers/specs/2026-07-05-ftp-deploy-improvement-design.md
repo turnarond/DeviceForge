@@ -23,12 +23,12 @@
 
 | 组件 | 默认端口 | 说明 |
 |------|----------|------|
-| FtpDeployWidget | 21 | 移除端口输入框，FTP 固定 21。后续高级设置可加回 |
+| FtpDeployWidget | 21 | 保留端口 SpinBox（用户可配置，默认 21）。端口通过 `startUpload(&hellip;, port)` 传入 Backend，覆盖 `DeviceInfo.port` |
 | TelnetWidget | 23 | 保持不变 |
 | WebSocketWidget | 8080 | 保持不变 |
 | （未来 SSH/SCP） | 22 | 新建时设置 |
 
-FtpDeployBackend::startUpload() 中端口从 `DeviceInfo.port` 获取，若为 0 则使用默认 21。
+FtpDeployBackend::startUpload() 接受 `int port` 参数（默认 21），覆盖 `DeviceInfo.port`（`DeviceBusWidget` 添加设备时 `port=0`，端口由各 Tool 自行配置）。FtpAdapter::connect() 中 `device.port > 0 ? device.port : 21` 兜底。
 
 ---
 
@@ -144,8 +144,8 @@ DeviceBusWidget::deviceSelectionChanged()
 
 | 文件 | 变更 |
 |------|------|
-| `src/tools/FtpDeployTool/FtpDeployWidget.h` | 移除 `m_portSpin` |
-| `src/tools/FtpDeployTool/FtpDeployWidget.cpp` | setupUi 移除端口行；`onDeployClicked()` 端口使用默认 21 |
+| `src/tools/FtpDeployTool/FtpDeployWidget.h` | 保留 `m_portSpin`（已修正注释） |
+| `src/tools/FtpDeployTool/FtpDeployWidget.cpp` | `onDeployClicked()` 传递 `m_portSpin->value()` 到 `startUpload()` |
 | `DeployMaster.h` | 新增 `m_remotePathEdit`、`protocolCombo`、`refreshDeviceCombo()` |
 | `DeployMaster.cpp` | 远端预览面板重建（协议选择+设备同步）；`setupRemotePreview()` 重写；`appendFtpLog` → `appendGlobalLog` |
 | `src/ui/DeviceBusWidget.h` | 确认 `deviceSelectionChanged` 信号在设备增删时 emit |
