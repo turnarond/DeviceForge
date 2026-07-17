@@ -1,0 +1,5 @@
+ext.ace,5.6.7
+ext.tinyxml,1.0.0
+common.common_headers,1.0.0
+common.cvcomm,1.0.0
+common.cvlog, 1.0.0

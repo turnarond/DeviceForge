@@ -1,0 +1,108 @@
+#pragma once
+
+#include <QtWidgets/QMainWindow>
+#include <QComboBox>
+#include <QPushButton>
+#include <QLineEdit>
+#include <QStandardItemModel>
+#include <QStandardItem>
+#include "ui_DeployMaster.h"
+#include "src/framework/AppState.h"
+#include "src/model/FtpManager.h"
+
+class ToolHost;
+class DeviceBusWidget;
+class TelnetWidget;
+class OpcUaClientTab; // forward declaration
+class WebSocketWidget; // forward declaration (migrated to Tool architecture)
+class NetRelayWidget; // forward declaration (网络调试中继 Tool)
+
+class DeployMaster : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    DeployMaster(QWidget* parent = nullptr);
+    ~DeployMaster();
+
+public:
+    QStringList getTargetIPList() const;
+    QTextEdit* getGlobalLogItem() const {
+        return ui.txt_globalLog;
+    }
+    QString getFtpUser() const;
+    QString getFtpPass() const;
+
+
+private:
+    QString lastUsedDirectory; // 记录上次使用的目录
+    // 旧 deploy 列表已清理
+    
+    // 远端预览相关
+    QString currentRemoteIP; // 当前选中的远程设备IP
+    QString currentRemotePath; // 当前浏览的远程路径
+    QStandardItemModel* remoteFileModel; // 远程文件树模型
+
+private:
+    void addFileToList(const QString& filePath); // 添加文件到列表的函数
+    void addFolderToList(const QString& folderPath); // 添加文件夹到列表的函数    
+    QStringList getTargetIPs();
+
+public:
+    ToolHost* toolHost() const { return m_toolHost; }
+    DeviceBusWidget* deviceBusWidget() const { return m_deviceBusWidget; }
+
+    void initToolTabs();
+
+public slots:
+    void appendGlobalLog(const QString& log);
+
+private slots:
+    void onAddFilesClicked();
+    void onAddFolderClicked();
+    void onFilesDropped(const QStringList& filePaths);
+    void onFileItemCleanClicked();
+    void onDeployClicked();
+    void onClearLogClicked();
+
+private slots:
+    void buildRemoteFileTree(const QList<FtpFileInfo>& files);
+
+private:
+    void setupFtpDeployTab();
+    void setupTelnetDeployTab();
+    void setupModbusClusterTab();
+    void setupOpcUaClientTab(); // new
+    void setupWebSocketClientTab(); // new
+    void setupNetRelayTab(); // 网络调试中继 Tool
+    void setupRemotePreview(); // 初始化远端预览功能
+    
+    // 远端预览相关方法
+    void refreshRemoteFiles(); // 刷新远程文件列表
+    void refreshDeviceCombo();
+    void onIPSelectionChanged();
+    void onRemoteFileDoubleClicked(const QModelIndex& index);
+    void onDownloadRemoteFile();
+
+private:
+    Ui::DeployMaster ui;
+    ToolHost* m_toolHost = nullptr;
+    DeviceBusWidget* m_deviceBusWidget = nullptr;
+    QLineEdit* m_remotePathEdit = nullptr;  // 远端预览路径（替代旧 ui.txt_remotePath）
+    QComboBox* m_protocolCombo = nullptr;   // 协议选择（FTP / SCP）
+    QPushButton* m_refreshBtn = nullptr;    // 刷新按钮（替代旧 ui.btn_refreshRemote）
+    std::shared_ptr<class FtpDeployBackend> m_ftpBackend;
+    std::shared_ptr<class TelnetBackend> m_telnetBackend;
+    std::shared_ptr<class WebSocketBackend> m_webSocketBackend;
+    class FtpDeployWidget* m_ftpDeployTab = nullptr;
+    TelnetWidget* m_telnetDeployTab = nullptr;
+    std::shared_ptr<class ModbusBackend> m_modbusBackend;
+    class ModbusWidget* m_modbusWidget = nullptr;
+    OpcUaClientTab* m_opcUaTab = nullptr; // 旧演示 Tab（已废弃，保留声明避免破坏其它引用）
+    std::shared_ptr<class OpcUaClientBackend> m_opcUaClientBackend;
+    class OpcUaClientWidget* m_opcUaClientWidget = nullptr;
+    WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
+    std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
+    NetRelayWidget* m_netRelayWidget = nullptr;
+};
+

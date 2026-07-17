@@ -1,0 +1,3 @@
+depends=['ext.ace', 'common.cvcomm', 'common.cvlog']
+
+files=[['$prjroot/Executable', 'Executable']]

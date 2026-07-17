@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <author>turnarond</author>
+ <class>TabModbusCluster</class>
+ <widget class="QWidget" name="TabModbusCluster">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>960</width>
+    <height>620</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Modbus 批量同步测试工具</string>
+  </property>
+  <layout class="QHBoxLayout" name="mainLayout" stretch="3,1">
+   <property name="spacing">
+    <number>6</number>
+   </property>
+   <property name="leftMargin">
+    <number>6</number>
+   </property>
+   <property name="topMargin">
+    <number>6</number>
+   </property>
+   <property name="rightMargin">
+    <number>6</number>
+   </property>
+   <property name="bottomMargin">
+    <number>6</number>
+   </property>
+   <property name="layoutStretch" stdset="0">
+    <string>2,1</string>
+   </property>
+   <item>
+    <widget class="QTableWidget" name="table_registerMatrix">
+     <property name="font">
+      <font>
+       <family>Courier New</family>
+       <pointsize>10</pointsize>
+      </font>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::EditTrigger::DoubleClicked|QAbstractItemView::EditTrigger::SelectedClicked</set>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectionBehavior::SelectItems</enum>
+     </property>
+     <property name="rowCount">
+      <number>10</number>
+     </property>
+     <property name="columnCount">
+      <number>4</number>
+     </property>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <row/>
+     <column>
+      <property name="text">
+       <string>读取时间</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>寄存器地址</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>待写值</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>设备A</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="rightPanelLayout">
+     <property name="spacing">
+      <number>6</number>
+     </property>
+     <item>
+      <widget class="QGroupBox" name="groupBox_config">
+       <property name="title">
+        <string>配置</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_config">
+        <item row="0" column="0">
+         <widget class="QLabel" name="label_port">
+          <property name="text">
+           <string>Modbus 端口：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLineEdit" name="lineEdit_port">
+          <property name="text">
+           <string>502</string>
+          </property>
+          <property name="maxLength">
+           <number>5</number>
+          </property>
+          <property name="placeholderText">
+           <string>502</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="2">
+         <widget class="QLabel" name="label_slaveId">
+          <property name="text">
+           <string>从站 ID：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="3">
+         <widget class="QLineEdit" name="lineEdit_slaveId">
+          <property name="text">
+           <string>1</string>
+          </property>
+          <property name="maxLength">
+           <number>3</number>
+          </property>
+          <property name="placeholderText">
+           <string>1~247</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="label_startAddr">
+          <property name="text">
+           <string>起始地址：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QSpinBox" name="spin_startAddr">
+          <property name="minimum">
+           <number>0</number>
+          </property>
+          <property name="maximum">
+           <number>65535</number>
+          </property>
+          <property name="value">
+           <number>1000</number>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="2">
+         <widget class="QLabel" name="label_length">
+          <property name="text">
+           <string>长度（数量）：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="3">
+         <widget class="QSpinBox" name="spin_length">
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>125</number>
+          </property>
+          <property name="value">
+           <number>10</number>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0" colspan="4">
+         <layout class="QHBoxLayout" name="hLayout_regType">
+          <item>
+           <widget class="QLabel" name="label_regType">
+            <property name="text">
+             <string>寄存器类型：</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="cmb_regType">
+            <item>
+             <property name="text">
+              <string>保持寄存器 (Holding Registers, 4x)</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>线圈 (Coils, 0x)</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox_control">
+       <property name="title">
+        <string>操作</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_control">
+        <item>
+         <widget class="QPushButton" name="btn_readAll">
+          <property name="styleSheet">
+           <string notr="true">background-color: #2196F3; color: white;</string>
+          </property>
+          <property name="text">
+           <string>▶ 读取并对比</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="hLayout_refreshRow">
+          <item>
+           <widget class="QPushButton" name="btn_startAutoRefresh">
+            <property name="text">
+             <string>🔁 定时刷新（关闭）</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="spin_refreshInterval">
+            <property name="suffix">
+             <string> 秒</string>
+            </property>
+            <property name="minimum">
+             <number>1</number>
+            </property>
+            <property name="maximum">
+             <number>60</number>
+            </property>
+            <property name="value">
+             <number>5</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_refresh">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_writeSelected">
+          <property name="styleSheet">
+           <string notr="true">background-color: #FF9800; color: white;</string>
+          </property>
+          <property name="text">
+           <string>🔥 写入选定设备</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer_control">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>10</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_duration">
+          <property name="text">
+           <string>⏱️ 设备操作耗时:</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox_writeOptions">
+       <property name="title">
+        <string>写入选项</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_writeOptions">
+        <item>
+         <widget class="QRadioButton" name="radio_writeSingleValue">
+          <property name="text">
+           <string>向选定设备的所有寄存器写入相同值</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="spin_singleValue">
+          <property name="minimum">
+           <number>0</number>
+          </property>
+          <property name="maximum">
+           <number>65535</number>
+          </property>
+          <property name="value">
+           <number>100</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="radio_writeRandomValues">
+          <property name="text">
+           <string>向选定设备的所有寄存器写入随机值</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="radio_writeSpecificValues">
+          <property name="text">
+           <string>按表格中的待写值写入</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_selectDevices">
+          <property name="text">
+           <string>选择要写入的设备：</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_updateDeviceList">
+          <property name="text">
+           <string>更新设备列表</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <spacer name="verticalSpacer_rightBottom">
+       <property name="orientation">
+        <enum>Qt::Orientation::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>40</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QListWidget" name="list_selectedDevices">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>80</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="selectionMode">
+        <enum>QAbstractItemView::SelectionMode::MultiSelection</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,12 @@
+# 服务配置文件
+
+# 日志配置
+log.path = logs
+log.file = simple_service.log
+
+# 进程配置
+process.daemon = false
+
+# 业务配置
+message = Hello, VSOA Framework!
+interval = 2000

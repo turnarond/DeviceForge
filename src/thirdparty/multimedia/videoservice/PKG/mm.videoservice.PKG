@@ -1,0 +1,5 @@
+depends=['ext.ace', 'common.cvlog', 'common.cvcomm', 'authmanager.amapi','mm.video_base']
+
+files=[['$prjroot/multimedia/video/VideoService/Executable', 'Executable'],
+	   ['$prjroot/multimedia/video/VideoTimeSynchService/Executable', 'Executable']
+	   ]

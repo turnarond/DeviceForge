@@ -1,0 +1,13 @@
+{
+    "node": {
+        "service_name": "system-monitor",
+        "version": "1.0.0",
+        "server_host": "0.0.0.0",
+        "server_port": 0,
+        "shutdown_timeout_ms": 5000,
+        "vsoa_spin_interval_ms": 50
+    },
+    "process": {
+        "daemon": false
+    }
+}

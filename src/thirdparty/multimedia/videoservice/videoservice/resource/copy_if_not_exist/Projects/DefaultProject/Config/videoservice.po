@@ -1,0 +1,1408 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: videoservice\n"
+"POT-Creation-Date: 2014-08-29 14:53+0800\n"
+"PO-Revision-Date: 2014-08-29 14:58+0800\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 1.6.8\n"
+"X-Poedit-Basepath: .\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Poedit-SourceCharset: UTF-8\n"
+"X-Poedit-KeywordsList: _;gettext;N_;gettext_noop\n"
+"Language: zh_Hans_CN\n"
+"X-Poedit-SearchPath-0: D:\\vob\\iCentroView\\iCV-Server5\\Source\\multimedia"
+"\\videoservice\\videoservice\n"
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:46
+#, c-format
+msgid "Begin to Load Driver DLL %s "
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:51
+#, c-format
+msgid "Begin to Load Driver DLL %s."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:60
+#, c-format
+msgid "Load Driver DLL(%s) success!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:85
+#, c-format
+msgid "StartTask(DriveDLL:%s) Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:123
+msgid "CDevCtrlTask::svc() begin"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:130
+msgid "Fail to get driver initialization function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:136
+msgid "Fail to initialize driver!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:147
+msgid "Fail to get row spacing."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:153
+msgid "Fail to get the driver timer function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:163
+#, c-format
+msgid "The cycle that Driver(%s) timer function was called is %d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:186
+msgid "Fail to execte driver function by time!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:192
+msgid "Fail to get the driver timing function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:198
+#, c-format
+msgid "CDevCtrlTask::svc() Q number %d!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:206
+msgid "CDevCtrlTask::svc() rcv a MB_STOP Msg, exit!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:226
+msgid "CDevCtrlTask::svc() ProcessDriverCtrlCmd Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:233
+msgid "CDevCtrlTask::svc() RetControlCommand Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:246
+msgid "VideoLogout Driver Error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:253
+msgid "Fail to get driver exit function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:260
+msgid "Fail to exti driver."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:264
+msgid "CDevCtrlTask::svc() end"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:315
+#, c-format
+msgid "Device driver(%s) get command, illegal parsed camera id."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:331
+#, c-format
+msgid ""
+"Device driver(%s) get command, when video switch by name mode, illegal "
+"parsed device id."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:338
+#, c-format
+msgid ""
+"Device driver(%s) get command, when video switch by name mode, illegal "
+"parsed device in channel."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:345
+#, c-format
+msgid ""
+"Device driver(%s) get command, when video switch by name mode, illegal "
+"parsed device out channel."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:360
+#, c-format
+msgid "Device driver(%s) get unknown command code(%d)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:438
+#, c-format
+msgid "User(%s)of group(%s), want to get camemra(%d) infomation failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:446
+#, c-format
+msgid "User(%s)of group(%s) has no right to control camera(%d)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:469
+#, c-format
+msgid "VideoSwitch  control device(%s), Login IP:%s,PORT:%d,EXTENT:%s"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:472
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:510
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:568
+#, c-format
+msgid "VideoSwitch  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:477
+msgid "Fail to get device loging in fucntion pointer."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:482
+msgid "Fail to log in device."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:507
+#, c-format
+msgid "VideoSwitch  control device(%s), Logout DeviceID:%d,size:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:515
+msgid "Fail to get device loging out fucntion pointer."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:521
+msgid "Fail to log out device."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:564
+#, c-format
+msgid ""
+"VideoSwitch  control device(%s),CameraLinkChannel:%d,MonitorLinkChannel:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:573
+msgid "Fail to get device switching function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:578
+msgid "Fail to switch video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:608
+#, c-format
+msgid "LensControl() control device(%s), error to parse command code."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:615
+#, c-format
+msgid "LensControl() control device(%s), error to parse control type."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:623
+#, c-format
+msgid "LensControl() control device(%s), error to parse speed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:631
+#, c-format
+msgid "LensControl() control device(%s), error to parse elapse time"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:644
+#, c-format
+msgid ""
+"LensControl  control device(%s), CtrlPort:%d,lControlCode:%d,lSpeed:%d,"
+"lElapseTime:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:648
+#, c-format
+msgid "LensControl  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:653
+msgid "Fail to get device control lens function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:658
+msgid "Fail to control lens for driver!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:687
+#, c-format
+msgid "PanControl() control device(%s), error to parse command code."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:695
+#, c-format
+msgid "PanControl() control device(%s), error to parse control type."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:703
+#, c-format
+msgid "PanControl() control device(%s), error to parse speed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:712
+#, c-format
+msgid "PanControl() control device(%s), error to parse elapse time."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:725
+#, c-format
+msgid "PanControl  control device(%s), CtrlPort:%d,lControlCode:%d,lSpeed:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:728
+#, c-format
+msgid "PanControl  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:733
+msgid "Fail to get device control pan function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:738
+msgid "Fail to control pan for driver!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:769
+#, c-format
+msgid "AddPSP  control device(%s), get error information of psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:779
+#, c-format
+msgid "AddPSP  control device(%s), get error description of psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:788
+#, c-format
+msgid "AddPSP  control device(%s), get error index of psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:801
+#, c-format
+msgid "AddPSP  control device(%s), CtrlPort:%d, lChannelCam:%d, PSPNo:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:807
+msgid "Fail to control preset!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:816
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1823
+msgid "Failed to add psp information to database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:820
+#, c-format
+msgid "AddPSP  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:825
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:884
+msgid "Fail to get setting preset function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:853
+#, c-format
+msgid "PSPControl  control device(%s), error to get psp information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:861
+#, c-format
+msgid ""
+"PSPControl  control device(%s), failed to find psp information by name(%s) "
+"and camera id(%d)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:875
+#, c-format
+msgid "PSPControl  control device(%s), CtrlPort:%d,lChannelCam:%d, PSPNo:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:879
+#, c-format
+msgid "PSPControl  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:889
+msgid "Fail to control preset for driver!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:918
+#, c-format
+msgid "AuxControl() control device(%s), failed to parse command code."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:925
+#, c-format
+msgid "AuxControl() control device(%s), failed to parse control type."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:933
+#, c-format
+msgid "AuxControl() control device(%s), failed to parse speed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:941
+#, c-format
+msgid "AuxControl() control device(%s), failed to parse elapse time."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:953
+#, c-format
+msgid ""
+"AuxControl  control device(%s), CtrlPort:%d,lControlCode:%d,lSpeed:%d,"
+"lElapseTime:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:957
+#, c-format
+msgid "AuxControl  control device(%s), RetCode:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:963
+msgid "Fail to get device control additional device function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:968
+msgid "Fail to control additional device."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:991
+#, c-format
+msgid "GeneralControl  control device(%s), MsgBuf:%s"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:993
+#, c-format
+msgid "AuxControl  control device(%s)"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:998
+msgid "Fail to get device conmmon control action function pointer!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:1003
+msgid "Fail to common cotrol!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/DevCtrlTask.cpp:1029
+#, c-format
+msgid "DriverTaskThread(%s) send to client return information(%s), RetCode: %d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:180
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:587
+msgid "Parse zone id failed when get camera information of one zone."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:545
+msgid "When get camera, GetCameraListByZoneAndUserInfo run failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:558
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2921
+msgid "PackCameraListToBuffer."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:594
+msgid "Get camera information by camera name, GetAllCameraBuffer run failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:624
+msgid ""
+"When get camera information by camera name, parse camera information failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:633
+msgid "Failed to get camera information by camera name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:642
+msgid "Failed to get camera information by camera name, PackCameraToBuffer."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:705
+msgid "GetAllModeNameBuffer, parse newest time failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:750
+msgid "Call ParseBufferToMode interface failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:758
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:952
+msgid "Add mode to database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:793
+msgid "Delete mode from database successfully, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:797
+msgid "Delete mode from database failed, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:800
+msgid "Delete mode from database, failed to parse mode name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:836
+msgid "Modify mode information in database successfully."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:840
+msgid "Modify mode information in database failed, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:843
+msgid "Modify mode information in database, parse new mode name failed, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:846
+msgid "Modify mode information in database, parse old mode name failed, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:875
+msgid "When get mode layout, parse mode name failed, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:882
+msgid "Failed to get mode information, ."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:927
+msgid "GetPSP, parse newest time failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:975
+msgid "When delete PSP, failed to parse PSP name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:983
+msgid "Delete PSP from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1019
+#, c-format
+msgid "When modify PSP, parse old PSP name failed,CamID:%d, "
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1026
+#, c-format
+msgid "When modify PSP, parse new PSP name failed,CamID:%d, old PSP name:%s, "
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1032
+#, c-format
+msgid ""
+"Modify PSP information in database failed,CamID:%d, old PSP name:%s, new PSP "
+"name:%s, "
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1094
+msgid "QuerySnapInfo, parse zone name failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1101
+msgid "QuerySnapInfo, parse camera id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1110
+msgid "QuerySnapInfo, parse start time failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1118
+msgid "QuerySnapInfo, parse end time failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1126
+msgid "QuerySnapInfo, parse snaptype failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1134
+msgid "QuerySnapPictureByUserInfo, failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1162
+msgid "GetSnapPic, parse snap id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1172
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1223
+msgid "GetSnapPicBufByUser, failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1202
+msgid "DownloadSnapPic, parse snap count failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1211
+msgid "DownloadSnapPic, parse snap id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1271
+msgid "Add snap pictrue."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1297
+msgid "CInfoMgrCmd::CapturePicAddTo parser nCaptureID failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1304
+msgid "CInfoMgrCmd::CapturePicAddTo parse nCaptureID failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1329
+msgid "DelSnapInfo, parse snap count failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1339
+msgid "DelSnapInfo, parse camera id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1346
+msgid "DelSnapInfo, parse snap id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1354
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1415
+msgid "GetCameraIDBySnapID, failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1361
+msgid "DelSnapPicBufByUser, failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1388
+msgid "ModifySnapInfo, parse snap id failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1422
+msgid "ModifySnapPicInfoByUser snap pictrue,"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1459
+msgid "LockCamera, parse camera LockType."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1468
+msgid "LockCamera, parse camera LockSeconds."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1477
+#, c-format
+msgid "User(%s) of group(%s), want to get camera(%d) information failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1485
+#, c-format
+msgid "User(%s) of group(%s) want to release camera(%d) lock"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1491
+#, c-format
+msgid "User(%s) of group(%s) want to lock camera(%d)"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1796
+msgid "AddPSP  Parse Psp Name error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1806
+msgid "AddPSP  Parse Psp description error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1815
+msgid "AddPSP  Parse Psp index error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1850
+msgid "CInfoMgrCmd::AddRecord fail to parse and add video information!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1862
+msgid "CInfoMgrCmd::AddRecord fail to add video information!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1869
+msgid "CInfoMgrCmd::AddRecord fail to save the length of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1894
+msgid "CInfoMgrCmd::ModifyRecordInfo fail to parse the information of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1900
+msgid "CInfoMgrCmd::ModifyRecordInfo fail to modify the information of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1929
+msgid "CInfoMgrCmd::QueryRecordInfo fail to parse the start time of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1938
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1945
+msgid "CInfoMgrCmd::QueryRecordInfo fail to query the information of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1973
+msgid "CInfoMgrCmd::DownloadRecord fail to parse the ID of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:1983
+msgid ""
+"CInfoMgrCmd::DownloadRecord fail to check the authority of user when "
+"downloading video information!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2031
+msgid "CInfoMgrCmd::DeleteRecord fail to parse the ID of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2039
+msgid "CInfoMgrCmd::DeleteRecord fail to delete the information of video!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2084
+msgid "CallSwitchDriverTask get command, illegal parsed camera id."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2092
+msgid "VideoSwitch, error when parse monitor id"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2105
+msgid ""
+"CallSwitchDriverTask get command, when video switch by name mode, illegal "
+"parsed camera name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2111
+msgid ""
+"CallSwitchDriverTask get command, illegal when get camera id by camera name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2119
+msgid "CallSwitchDriverTask, error when parse monitor name"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2125
+msgid ""
+"CallSwitchDriverTask get command, illegal when get monitor id by monitor "
+"name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2152
+msgid "CallSwitchDriverTask::GetLinkDeviceByMonitorID() error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2176
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2542
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:481
+#, c-format
+msgid "The task of device that can control the camera(%s) has not started."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2205
+msgid ""
+"CInfoMgrCmd::CallSwitchDriverTask  fail to return packing back switching "
+"codec list!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2364
+msgid "CInfoMgrCmd::GetRealDevToCam fail to parse authority mode."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2628
+msgid "CInfoMgrCmd::FreeEncodeDevToCam fail to parse codec ID."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2639
+msgid "CInfoMgrCmd::FreeEncodeDevToCam fail to parse channel ID."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2895
+msgid ""
+"When get matrix information by matrix name, parse matrix information failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2904
+msgid "Failed to get matrix information by matrix name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/InfoMgrCmd.cpp:2913
+msgid "When get camera, GetCameraListByMatrixAndUserInfo run failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:58
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:53
+msgid "StartTask() Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:96
+msgid "CMsgDispatchTask::svc() begin"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:101
+msgid "Not AllDriverTask Start."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:118
+msgid "Fail to process message from the client!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:124
+msgid "CMsgDispatchTask::svc() rcv a MB_STOP Msg, exit!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:133
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:250
+#, c-format
+msgid "DispatchCmdMessage error, ret: <%d>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:141
+msgid "Not AllDriverTask End."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:143
+msgid "CMsgDispatchTask::svc() end"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:367
+msgid "DispatchCmdMessage(), failed to parse camera name."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:378
+msgid "DispatchCmdMessage(), failed to parse camera id."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:389
+#, c-format
+msgid "DispatchCmdMessage(), find camera information failed by camera id(%d)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/MsgDispatchTask.cpp:523
+#, c-format
+msgid "DirectRetErrCode(), retrun error code(%s) to Client."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:91
+#, c-format
+msgid "CVNDK_Init(SYNC_SEND), RetCode: %d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:99
+#, c-format
+msgid "CVNDK_RegLocalQueue(%d) Failed, RetCode: %d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:108
+#, c-format
+msgid "CVNDK_Listen(%d) Failed, RetCode: %d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:112
+#, c-format
+msgid "CVNDK_Listen(%d) Success"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:134
+#, c-format
+msgid "CVNDK_ReleaseQueue(%d) Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:138
+msgid "CVNDK_Finalize() Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:159
+msgid "CNetWrapper::SendToClient() PrintClientInfo Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:164
+msgid "Send To Client Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:170
+#, c-format
+msgid "Send:<%s>"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:204
+msgid "CNetWrapper::RecvFromClient() PrintClientInfo Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/NetWrapper.cpp:210
+#, c-format
+msgid "Receive:<%s>"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:60
+msgid "StartTask() Failed"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:105
+msgid "CRemoteProcTask::svc() begin"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:126
+msgid "CRemoteProcTask::svc() rcv a MB_STOP Msg, exit!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:153
+msgid "CRemoteProcTask::svc() end"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:174
+#, c-format
+msgid "SendRequestToRemoteSvr lTotalMsgLen(%d) less than the minimal length"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:218
+#, c-format
+msgid "Failed to find server information by VideoServerID(%d)"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:231
+#, c-format
+msgid ""
+"Transmit to remote host machine and remote backup machine failed, CamID(%d)"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:255
+msgid "RecvResponseFromRemoteSvr(), parse command code error"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:263
+msgid "RecvResponseFromRemoteSvr(), parse StampID error"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:305
+#, c-format
+msgid "Send to <%s:%d> transmit informaion<length:%d> failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:308
+#, c-format
+msgid "Send to <%s:%d> transmit information <length:%d> success."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:332
+#, c-format
+msgid "CVNDK_RegLocalQueue(%d) Failed"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:354
+#, c-format
+msgid "CVNDK_ReleaseQueue(%d) Failed"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:379
+#, c-format
+msgid ""
+"Delete a command information that remote server has not retrun, RetCmdCode:"
+"%d,CamID:%d,StampID:%d"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/RemoteProcTask.cpp:400
+#, c-format
+msgid "DirectRetErrCode retrun error code(%s) to Client!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:91
+msgid "CTimerTask::svc() begin"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:111
+#, c-format
+msgid "CTimerTask::svc() Q number %d!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:117
+msgid "CTimerTask::svc() rcv a MB_STOP Msg, exit!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:133
+msgid "CTimerTask::svc() ProcessDriverCtrlCmd Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:139
+msgid "CTimerTask::svc() end"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:193
+msgid "Fail to package message head!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:200
+msgid "Fail to package command message!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:240
+msgid "Fail to parse message head!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:254
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:318
+msgid "Fail to parse message content!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:286
+#, c-format
+msgid "Fail to check camera <%s> whether is not existed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:348
+msgid "Fail to package message head to send client!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/TimerTask.cpp:356
+msgid "Fail to send message to client!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:84
+#, c-format
+msgid "Config file name<%s\\%s> length exceed maximum length<%d>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:98
+#, c-format
+msgid "Load config file(%s) error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:108
+#, c-format
+msgid ""
+"Parse config file(%s) information error, cann't find node 'VideoServer'."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:118
+#, c-format
+msgid "Get local machine IP(%s) failed, cann't find %s in config file."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:126
+#, c-format
+msgid "Read config files(%s) successfully."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:158
+msgid "VideoExitInfoDB failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:164
+msgid "ExitLockAuth failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:201
+msgid "Read all config information successfully!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:205
+msgid "ExitVideoConfigDB failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:209
+msgid "InitLockAuth failed!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:243
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:298
+#, c-format
+msgid "Config file name<%s\\%s> length exceed the maximum length<%d>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:253
+msgid "Initialize config database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:271
+msgid "Quit config database Error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:275
+msgid "Quit config database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:308
+msgid "Initialize process database Error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:312
+msgid "Initialize process database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:330
+msgid "Read all service information error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:353
+#, c-format
+msgid ""
+"There is no server information in config database that matching local IP(%s)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:361
+msgid "Read each of all zone information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:369
+msgid "Read each of all Product information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:377
+msgid "Read each of all device information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:426
+msgid "Read each of all monitor information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:492
+msgid "Read each of all snap type information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:501
+msgid "Read each of all camera information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:596
+#, c-format
+msgid "Cann't find camera information by camera id(%d)."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:641
+msgid "GetRMStatus Error!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:762
+#, c-format
+msgid "GetZoneListByUserInfo,user:<%s> group:<%s> authlabel:<%s>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:803
+#, c-format
+msgid "GetZoneCamMonListByUserInfo,user:<%s> group:<%s> authlabel:<%s>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:849
+#, c-format
+msgid "GetMonitorListByZoneAndUserInfo,user:<%s> group:<%s> authlabel:<%s>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:891
+#, c-format
+msgid "GetCameraListByZoneAndUserInfo,user:<%s> group:<%s> authlabel:<%s>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:919
+msgid "Fail to read mode information!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:992
+msgid "Default partion"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:997
+#, c-format
+msgid "VerifyUserZoneRight,user:<%s> group:<%s> authlabel:<%s>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1045
+#, c-format
+msgid "User(%s) has no right to delete mode."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1053
+msgid "Delete mode from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1079
+#, c-format
+msgid "User(%s) has no right to modify mode."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1086
+msgid "Modify mode from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1113
+#, c-format
+msgid "User(%s) has no right to get mode."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1120
+msgid "Get mode from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1152
+msgid "Fail to read preset position information!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1177
+#, c-format
+msgid "User(%s) has no right to add psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1184
+msgid "Add psp to database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1211
+#, c-format
+msgid "User(%s) has no right to delete psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1218
+msgid "Delete psp from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1246
+#, c-format
+msgid "User(%s) has no right to modify psp."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1253
+msgid "Modify psp from database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1282
+#, c-format
+msgid "User(%s) has no right to add snap pictrue."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1290
+msgid "Add snap pictrue to database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1305
+#, c-format
+msgid "User(%s) has no right to delete snap pictrue."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1313
+msgid "Delete snap pictrue to database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1327
+#, c-format
+msgid "User(%s) has no right to modify snap pictrue."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1335
+msgid "Modify snap pictrue information to database failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1354
+msgid "QuerySnapPictureByUserInfo read snap picture list error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1381
+msgid "All partions"
+msgstr "所有分区"
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1411
+msgid "All types"
+msgstr "所有类型"
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1446
+msgid "GetCameraIDBySnapID read snap picture list error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1478
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1486
+msgid "GetSnapPicBufByUser read snap picture buffer error."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1509
+msgid "Fail to read a camera preset list!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1570
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1599
+msgid "Fail to add custom partition."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1625
+msgid "Fail to delete custom partition."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1654
+msgid "Fail to read camera index."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1688
+msgid "Fail to add camera index."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1720
+msgid "Fail to delete camera index."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1772
+msgid "Fail to read capture picture content."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1778
+#, c-format
+msgid "The count of capture achieve <%d>."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1786
+msgid "CVideoCfg::CapturePicAddTo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1793
+msgid "CVideoCfg::CapturePicAddTo Fail to add picture to database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1825
+msgid "CVideoCfg::AddRecordOfCameraByUserInfo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1832
+msgid "CVideoCfg::AddRecordOfCameraByUserInfo Fail to add video to database."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1864
+msgid "CVideoCfg::ModifyRecordByUserInfo fail to get video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1872
+msgid "CVideoCfg::ModifyRecordByUserInfo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1880
+msgid "CVideoCfg::ModifyRecordByUserInfo fail to modify video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1913
+msgid "CVideoCfg::QueryRecordByUserInfo fail to query video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1952
+msgid "CVideoCfg::QueryRecordByUserInfo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1983
+msgid "CVideoCfg::DownloadRecordByUserInfo fail to get video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:1994
+msgid "CVideoCfg::DownloadRecordByUserInfo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2023
+msgid "CVideoCfg::DeleteRecordByUserInfo fail to get video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2031
+msgid "CVideoCfg::DeleteRecordByUserInfo fail to verify permission."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2039
+msgid "CVideoCfg::DeleteRecordByUserInfo fail to delete video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2049
+msgid "CVideoCfg::DeleteRecordByUserInfo fail to get video file."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2075
+msgid "CVideoCfg::SaveRecord fail to get video information."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoCfg.cpp:2085
+msgid "CVideoCfg::SaveRecord fail to save video file."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:55
+msgid "Send To Event Failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:99
+#, c-format
+msgid "|  <<Welcome to use iCV video system >>   |\n"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:100
+#, c-format
+msgid "|  Input following command to set\t\t\t|\n"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:101
+#, c-format
+msgid "|  q/Q:exit\t\t\t\t\t\t\t\t|\n"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:102
+#, c-format
+msgid "|  Other key:display tips\t\t\t\t\t|\n"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:145
+msgid "Start VideoServer, Current Status: Active status"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:148
+msgid "Start VideoServer, Current Status: Inactive status"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:151
+msgid "Start VideoServer, Current Status: Unknown status"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:154
+msgid "Start VideoServer, Current Status: Error status"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:169
+msgid "Redundant state is non active, not start a thread."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:184
+msgid "LoadAllConfig failed."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:212
+#, c-format
+msgid "|      Start VideoServer Success     |\n"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:220
+#, c-format
+msgid "Stop VideoServer, current status: %ld"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:223
+msgid "VideoService Stopped"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:267
+#, c-format
+msgid "VideoService redundant state from %ld to %ld, restarting ..."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:276
+msgid "VideoService redundant state changed, but fail to try restarting!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:292
+msgid "VideoService received restart command, restarting..."
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:298
+msgid "VideoService received restart command, but fail to try restarting!"
+msgstr ""
+
+#: D:\vob\iCentroView\iCV-Server5\Source\multimedia\videoservice\videoservice/VideoService.cpp:305
+msgid "VideoService received stop command, Exiting..."
+msgstr ""

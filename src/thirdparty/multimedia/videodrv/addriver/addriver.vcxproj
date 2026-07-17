@@ -1,0 +1,293 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|Win32">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|Win32">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGUID>{FD6D3E64-89D4-4975-AE23-04AAB02749ED}</ProjectGUID>
+    <Keyword>Win32Proj</Keyword>
+    <Platform>Win32</Platform>
+    <ProjectName>addriver</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+    <PropertyGroup>
+      <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\..\executable\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">addriver.dir\Debug\</IntDir>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">addriver</TargetName>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">.dll</TargetExt>
+      <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</LinkIncremental>
+      <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</GenerateManifest>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\..\executable\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">addriver.dir\Release\</IntDir>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">addriver</TargetName>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.dll</TargetExt>
+      <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
+      <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</GenerateManifest>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">..\..\..\..\executable\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">addriver.dir\MinSizeRel\</IntDir>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">addriver</TargetName>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">.dll</TargetExt>
+      <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkIncremental>
+      <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">true</GenerateManifest>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">..\..\..\..\executable\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">addriver.dir\RelWithDebInfo\</IntDir>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">addriver</TargetName>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">.dll</TargetExt>
+      <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">true</LinkIncremental>
+      <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">true</GenerateManifest>
+    </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <AdditionalOptions> /Zm1000 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="Debug";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>Debug</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"Debug\";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalOptions> /machine:X86 /debug %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cvcomm.lib;..\..\..\..\library\cvlog.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cppsqlite.lib;sqlite3.lib;intl.lib;iconv.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>../../../../Source/buildtools//../../Library;../../../../Source/buildtools//../../Library/$(Configuration);;../../../../Source/buildtools//../../Executable;../../../../Source/buildtools//../../Executable/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <ImportLibrary>../../../../library/addriver.lib</ImportLibrary>
+      <LinkIncremental>true</LinkIncremental>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+      <StackReserveSize>10000000</StackReserveSize>
+      <SubSystem>Console</SubSystem>
+      <Version></Version>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <AdditionalOptions> /Zm1000 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat></DebugInformationFormat>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="Release";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>Release</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"Release\";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalOptions> /machine:X86 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cvcomm.lib;..\..\..\..\library\cvlog.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cppsqlite.lib;sqlite3.lib;intl.lib;iconv.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>../../../../Source/buildtools//../../Library;../../../../Source/buildtools//../../Library/$(Configuration);;../../../../Source/buildtools//../../Executable;../../../../Source/buildtools//../../Executable/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <ImportLibrary>../../../../library/addriver.lib</ImportLibrary>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+      <StackReserveSize>10000000</StackReserveSize>
+      <SubSystem>Console</SubSystem>
+      <Version></Version>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">
+    <ClCompile>
+      <AdditionalOptions> /Zm1000 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>MinSpace</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat></DebugInformationFormat>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="MinSizeRel";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>MinSizeRel</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"MinSizeRel\";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalOptions> /machine:X86 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cvcomm.lib;..\..\..\..\library\cvlog.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cppsqlite.lib;sqlite3.lib;intl.lib;iconv.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>../../../../Source/buildtools//../../Library;../../../../Source/buildtools//../../Library/$(Configuration);;../../../../Source/buildtools//../../Executable;../../../../Source/buildtools//../../Executable/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <ImportLibrary>../../../../library/addriver.lib</ImportLibrary>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+      <StackReserveSize>10000000</StackReserveSize>
+      <SubSystem>Console</SubSystem>
+      <Version></Version>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">
+    <ClCompile>
+      <AdditionalOptions> /Zm1000 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="RelWithDebInfo";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>RelWithDebInfo</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;LIC_VERIFY_NO_CV_LICENSE;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"RelWithDebInfo\";addriver_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>../../../../Source/buildtools//..//ext/commonheaders/include;../../../../Source/buildtools//..//common/cvcomm/include;../../../../Source/buildtools//..//common/cppsqlite/include;../../../../Source/buildtools//..//common/cviobuffer/include;../../../../Source/buildtools//..//common/cvlog/include;../../../../Source/buildtools//..//common/epass2lite/include;../../../../Source/buildtools//..//common/exceptionreport/include;../../../../Source/buildtools//..//common/libexpr/include;../../../../Source/buildtools//..//common/licverify/include;../../../../Source/buildtools//..//common/cvrpc/include;../../../../Source/buildtools//..//common/servicebase/include;../../../../Source/buildtools//..//common/sqlitepersist/include;../../../../Source/buildtools//..//ext/lzma/include;../../../../Source/buildtools//..//ext/tinyxml/include;../../../../Source/buildtools//..//ext/tinyxml/include/tinyxml;../../../../Source/buildtools//..//common/procmngr/cvprocessmgr/include;../../../../Source/buildtools//..//common/procmngr/pmrapi/include;../../../../Source/buildtools//..//common/redundancy/rmapi/include;../../../../Source/buildtools//..//common/rmdatasync/rmdsapi/include;../../../../Source/buildtools//..//common/shmqueue/include;../../../../Source/buildtools//..//authority/amsvrlib/include;../../../../Source/buildtools//..//configcenter/ccservice/ccbaselib/include;../../../../Source/buildtools//..//driversdk/commdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvdrvcfgloader/include;../../../../Source/buildtools//..//driversdk/cvsock/include;../../../../Source/buildtools//..//driversdk/cvcommunicate/include;../../../../Source/buildtools//..//driversdk/cvtcp/include;../../../../Source/buildtools//..//driversdk/cvudp/include;../../../../Source/buildtools//..//driversdk/drvbase/devicebase/include;../../../../Source/buildtools//..//driversdk/iodatasync/iodatasync/include;../../../../Source/buildtools//..//driversdk/iodrvtempl/iodrvt/include;../../../../Source/buildtools//..//eventalarm/eaacceptor/include;../../../../Source/buildtools//..//eventalarm/easervice/eaapi/include;../../../../Source/buildtools//..//htd/htdapi/include;../../../../Source/buildtools//..//multimedia/dwservice/dwapi/include;../../../../Source/buildtools//..//multimedia/led/ledbaselib/include;../../../../Source/buildtools//..//multimedia/videoservice/videodblibrary/include;../../../../Source/buildtools//..//multimedia/dwdrv/saijing/sunkingdriver/include;../../../../Source/buildtools//..//pdb/drvctrl/drvctrlrapi/include;../../../../Source/buildtools//..//pdb/pbscanner/rdalib/include;../../../../Source/buildtools//..//response/crsapi/include;../../../../Source/buildtools//..//response/crsdblibrary/include;../../../../Source/buildtools//..//response/plugins/include;../../../../Source/buildtools//..//transfer/sqltransferframe/include;../../../../Source/buildtools//..//ext/netqueue/include;../../../../Source/buildtools//..//../include;../../../../Source/buildtools//..//../include/common;../../../../Source/buildtools//..//../include/sqlite;../../../../Source/common/cppsqlite/pkgs/Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalOptions> /machine:X86 /debug %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cvcomm.lib;..\..\..\..\library\cvlog.lib;..\..\..\..\library\tinyxml.lib;ace.lib;..\..\..\..\library\cppsqlite.lib;sqlite3.lib;intl.lib;iconv.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>../../../../Source/buildtools//../../Library;../../../../Source/buildtools//../../Library/$(Configuration);;../../../../Source/buildtools//../../Executable;../../../../Source/buildtools//../../Executable/$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <ImportLibrary>../../../../library/addriver.lib</ImportLibrary>
+      <LinkIncremental>true</LinkIncremental>
+      <ProgramDataBaseFileName>../../../../executable/addriver.pdb</ProgramDataBaseFileName>
+      <StackReserveSize>10000000</StackReserveSize>
+      <SubSystem>Console</SubSystem>
+      <Version></Version>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\..\..\Source\multimedia\videodrv\addriver\version.rc" />
+    <ClCompile Include="..\..\..\..\Source\multimedia\videodrv\addriver\ADDriver.cpp" />
+    <ClCompile Include="..\..\..\..\Source\multimedia\videodrv\addriver\ADMatrixDriver.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../Source/ZERO_CHECK.vcxproj">
+      <Project>872C0152-F41F-4EB9-AD1E-C275A07C1349</Project>
+    </ProjectReference>
+    <ProjectReference Include="../../../../Source/common/cvcomm/cvcomm.vcxproj">
+      <Project>894C4192-37A7-4887-A93F-85E5FFDDC10F</Project>
+    </ProjectReference>
+    <ProjectReference Include="../../../../Source/common/cvlog/cvlog.vcxproj">
+      <Project>F46D6939-559F-4135-A80E-CEFDACC5C54D</Project>
+    </ProjectReference>
+    <ProjectReference Include="../../../../Source/ext/tinyxml/tinyxml.vcxproj">
+      <Project>C6EF9B7C-B1BB-42EE-9FAF-5093EDD2CCC5</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
