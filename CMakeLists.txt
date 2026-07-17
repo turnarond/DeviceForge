@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 查找 Qt6 包（按需添加模块）
+# 注意：当前系统安装的是 Qt 6.11.1，请勿随意降级
 find_package(Qt6 REQUIRED COMPONENTS
     Core
     Gui
@@ -165,6 +166,21 @@ include_directories(
 
 # 创建可执行文件（WIN32：GUI 子系统，不弹 console 黑框；DeployMaster.rc：图标+版本信息）
 add_executable(DeviceForge WIN32 ${SOURCES} DeployMaster.rc)
+
+# 设置所有配置类型的调试信息生成（包括 RelWithDebInfo）
+# RelWithDebInfo 默认不生成 PDB，需要显式启用才能调试
+set_target_properties(DeviceForge PROPERTIES
+    DEBUG_POSTFIX "d"
+    RELWITHDEBINFO_POSTFIX ""
+)
+
+# 确保所有配置都生成调试信息
+target_compile_options(DeviceForge PRIVATE
+    $<$<CONFIG:RelWithDebInfo>:/Zi>
+)
+target_link_options(DeviceForge PRIVATE
+    $<$<CONFIG:RelWithDebInfo>:/DEBUG>
+)
 
 # --- open62541 (LGPL/MPL, 单文件分发版 v1.5.5) ---
 add_subdirectory(src/thirdparty/open62541)

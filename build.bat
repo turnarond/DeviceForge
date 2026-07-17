@@ -18,13 +18,18 @@ echo.
 REM ---------- Configuration ----------
 set PROJECT_ROOT=%~dp0
 set BUILD_DIR=%PROJECT_ROOT%build
-set QT_PREFIX=C:\Qt\6.10.1\msvc2022_64
+set QT_PREFIX=c:\Qt\6.11.1\msvc2022_64
 
 REM ---------- Check Qt ----------
 echo [1/4] Checking Qt installation...
 if not exist "%QT_PREFIX%\bin\qmake.exe" (
-    echo [ERROR] Qt 6.10.1 not found at: %QT_PREFIX%
+    echo [ERROR] Qt not found at: %QT_PREFIX%
     echo        Please edit this script and set QT_PREFIX to your Qt path
+    echo.
+    echo        Common Qt paths:
+    echo          C:\Qt\6.11.1\msvc2022_64
+    echo          C:\Qt\6.10.1\msvc2022_64
+    echo          D:\Qt\6.11.1\msvc2022_64
     pause
     exit /b 1
 )
@@ -44,7 +49,7 @@ if errorlevel 1 (
     echo.
     echo [ERROR] CMake configuration failed!
     echo        Please check:
-    echo          - Qt version (should be 6.10.1)
+    echo          - Qt version (check QT_PREFIX in this script)
     echo          - Qt MSVC compiler (should be msvc2022_64)
     echo          - Qt Visual Studio Tools extension installed
     pause
