@@ -1,92 +1,131 @@
 # DeviceForge 构建指南
 
-## 环境要求
+## 前置要求
 
-| 组件 | 版本 |
-|------|------|
-| Windows | 10/11 (x64) |
-| Visual Studio | 2022 (v143 工具集) |
-| Qt | 6.10.1 (MSVC 2022 64-bit) |
-| CMake | 3.16+ |
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Visual Studio 2022 | v17.x | MSVC v143 工具集 |
+| Qt | 6.10.1 | msvc2022_64 版本 |
+| CMake | 3.16+ | VS2022 自带或 [下载](https://cmake.org/download/) |
 
-## 安装 Qt
+## 快速开始
 
-1. 下载 [Qt Online Installer](https://www.qt.io/download-qt-installer)
-2. 选择组件：Qt 6.10.1 → MSVC 2022 64-bit
-3. 安装 Qt Visual Studio Tools 扩展（VS 菜单 → 扩展 → 管理扩展 → 搜索 Qt）
+### 方法 1：一键构建脚本（推荐）
 
-## CMake 构建（推荐）
+```cmd
+build.bat
+```
+
+脚本会自动完成：
+1. ✅ 检查 Qt 6.10.1 安装路径
+2. ✅ 运行 CMake 配置（生成 VS2022 工程）
+3. ✅ 编译 Release 版本
+4. ✅ 显示运行路径
+
+### 方法 2：CMake 手动构建
 
 ```bash
-# 克隆仓库
-git clone https://github.com/turnarond/DeviceForge.git
-cd DeviceForge
+# 1. 配置（生成 VS2022 工程）
+mkdir build
+cd build
+cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2022_64"
 
-# 配置
-mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2022_64"
-
-# 编译 Release
+# 2. 编译 Release
 cmake --build . --config Release
 
-# 运行
+# 3. 运行
 .\Release\DeviceForge.exe
 ```
 
-## Visual Studio 构建
+### 方法 3：Visual Studio 直接打开
 
-1. 用 VS2022 打开 `DeployMaster.vcxproj`
-2. 配置 Qt 版本：项目属性 → Qt Project Settings → Qt Installation
-3. 切换到 Release 配置
-4. 生成 → 生成解决方案
-5. 确保 `lib/libcurl-x64.dll` 在输出目录（已通过构建后脚本自动复制）
-
-> 单元测试目标 `tst_nrec` 仅在 CMake 构建中提供，不包含在 VS/vcxproj 工程内。
-
-## 运行测试
-
-单元测试目标 `tst_nrec`（QtTest + CTest）随 CMake 构建自动生成，需要 Qt Test 模块。
-
-```bash
-cd build
-# 构建测试目标
-cmake --build . --config Release --target tst_nrec
-# 运行（CTest 已配置 Qt DLL 路径）
-ctest -C Release -R tst_nrec --output-on-failure
+```cmd
+start DeployMaster.sln
 ```
 
-覆盖内容：`.nrec` 录制往返、坏 magic / 坏版本 / 超长 length / 截断文件拒绝、回放上行端到端（10 个用例）。
+或直接在 VS2022 中打开 `DeployMaster.sln`，选择 `Release|x64`，按 F5。
 
-## 依赖说明
+## Qt 路径配置
 
-| 依赖 | 位置 | 类型 |
-|------|------|------|
-| lwcomm/lwlog/lwcommunicate/lwserverbase 等 | `lib/*.lib` | 预编译静态库（仅头文件可见） |
-| libcurl | `lib/libcurl-x64.dll` + `lib/libcurl_imp.lib` | 运行时 DLL |
-| tinyxml2 | `src/thirdparty/tinyxml2/tinyxml2.cpp` | 源码编译（MIT） |
-| nanopb | `src/thirdparty/nanopb/pb_*.c` | 源码编译（zlib） |
+如果 Qt 安装在其他位置，修改以下任一方式：
 
-## 打包发布
-
+**CMake 命令**：
 ```bash
-# 1. 编译 Release
-cmake --build . --config Release
-
-# 2. 创建发布目录
-mkdir dist\DeviceForge
-copy build\Release\DeviceForge.exe dist\DeviceForge\
-copy lib\libcurl-x64.dll dist\DeviceForge\
-copy darkstyle.qss dist\DeviceForge\
-
-# 3. 运行 Qt 部署工具
-C:\Qt\6.10.1\msvc2022_64\bin\windeployqt.exe dist\DeviceForge\DeviceForge.exe --release --no-translations
-
-# 4. 打包
-powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.1.0-win64.zip
+cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="D:\Qt\6.10.1\msvc2022_64"
 ```
 
-## CI/CD
+**build.bat**：编辑脚本中的 `QT_PREFIX` 变量：
+```batch
+set QT_PREFIX=D:\Qt\6.10.1\msvc2022_64
+```
 
-GitHub Actions (`.github/workflows/msbuild.yml`)：push/PR 到 `main` 时自动构建 Debug 配置。
+## 构建输出
 
-> CI 使用 Qt 6.9.2，本地开发使用 Qt 6.10.1。注意避免使用仅新版 API。
+| 构建系统 | 输出目录 | 可执行文件 |
+|---------|---------|-----------|
+| CMake | `build/Release/` | `DeviceForge.exe` |
+| VS/vcxproj | `x64/Release/` | `DeployMaster.exe` |
+
+> ⚠️ **注意**：两套构建系统输出的 exe 名不同，勿混淆。CMake 产物是 `DeviceForge.exe`，VS/vcxproj 产物是 `DeployMaster.exe`。
+
+## 常见问题
+
+### Qt 路径错误
+
+**错误**：
+```
+CMake Error: Could not find Qt6
+```
+
+**解决**：
+1. 确认 `C:\Qt\6.10.1\msvc2022_64\lib\cmake\Qt6` 目录存在
+2. 或修改 `CMAKE_PREFIX_PATH` 指向你的 Qt 安装路径
+
+### libcurl DLL 未找到
+
+VS F5 调试时，如果 `libcurl-x64.dll` 不在输出目录，需手动复制：
+
+```cmd
+copy lib\libcurl-x64.dll x64\Debug\
+```
+
+CMake 构建已通过 `POST_BUILD` 自动复制到输出目录。
+
+### libssh2 未找到（SSH 功能不可用）
+
+SSH 适配器依赖 libssh2（**软依赖**，未找到时仅警告）：
+
+```cmd
+dir lib\libssh2*
+```
+
+应看到：
+- `lib\libssh2.lib`（导入库）
+- `lib\libssh2.dll`（运行时 DLL）
+
+如缺失，联系项目维护者或查看 `src/adapter/SshAdapter.cpp` 集成说明。
+
+### 清理构建
+
+```cmd
+# 清理 CMake 构建
+rmdir /s /q build
+
+# 清理 VS 构建
+rmdir /s /q x64
+
+# 清理 VS 临时文件
+rmdir /s /q .vs
+```
+
+## 测试
+
+```bash
+# 在 build/ 目录运行全部测试
+ctest -C Release --output-on-failure
+
+# 运行单个测试
+.\tests\Release\tst_nrec.exe testRoundTrip
+```
+
+更多细节见 [CLAUDE.md](../CLAUDE.md)
