@@ -18,6 +18,8 @@
 #include "src/tools/FtpDeployTool/FtpDeployBackend.h"
 #include "src/tools/ModbusTool/ModbusWidget.h"
 #include "src/tools/ModbusTool/ModbusBackend.h"
+#include "src/tools/OpcUaClientTool/OpcUaClientWidget.h"
+#include "src/tools/OpcUaClientTool/OpcUaClientBackend.h"
 
 #include "src/framework/ToolHost.h"
 #include "src/ui/DeviceBusWidget.h"
@@ -160,12 +162,24 @@ void DeployMaster::setupNetRelayTab()
     ui.tabWidget->addTab(m_netRelayWidget, tr("网络调试"));
 }
 
-// new: setup for opc ua
+// OPC UA 客户端 Tool（open62541 真实实现，替代旧演示 Tab）
 void DeployMaster::setupOpcUaClientTab()
 {
-    // OpcUaClientTab is optional and uses placeholder implementation
-    OpcUaClientTab* opcTab = new OpcUaClientTab(this);
-    ui.tabWidget->addTab(opcTab, tr("OPC UA 客户端"));
+    auto backend = std::make_shared<OpcUaClientBackend>();
+    auto* widget = new OpcUaClientWidget(this);
+
+    int rc = backend->OnStart(0, nullptr);
+    if (rc != 0) {
+        appendGlobalLog("❌ OPC UA Client Backend 启动失败 (rc=" + QString::number(rc) + ")");
+        delete widget;
+        return;
+    }
+
+    widget->setBackend(backend.get());
+    widget->onToolStart();
+    m_opcUaClientBackend = backend;
+    m_opcUaClientWidget = widget;
+    ui.tabWidget->addTab(m_opcUaClientWidget, tr("OPC UA 客户端"));
 }
 
 // WebSocket 通信 Tab（直接创建 Backend + Widget，不通过 ToolHost）

@@ -140,6 +140,54 @@ class TelnetAdapter : public IProtocolAdapter {
 
 ---
 
+## SshAdapter — SSH 适配器
+
+位于 `src/adapter/SshAdapter.h`。基于 libssh2，密码认证 + TOFU 主机密钥验证。
+
+```cpp
+class SshAdapter : public IProtocolAdapter {
+    std::string protocolId() const override { return "ssh"; }
+    // request：打开 exec channel 执行单条命令，返回输出 + exit code
+    // 首次连接自动记录主机指纹（TOFU）；指纹变化时报错（防 MITM）
+    // libssh2 内建传输加密
+};
+```
+
+---
+
+## OpcUaAdapter — OPC UA 客户端适配器
+
+位于 `src/adapter/OpcUaAdapter.h`。基于 open62541 v1.5.5，OPC UA 客户端。首期 None 安全策略 + 匿名认证。
+
+```cpp
+class OpcUaAdapter : public IProtocolAdapter {
+public:
+    // IProtocolAdapter 实现
+    std::string protocolId() const override { return "opcua"; }
+    bool connect(const DeviceInfo&, const AuthInfo&) override;  // device.ip 为完整 opc.tcp:// URL 或 host
+    void disconnect() override;
+
+    // OPC UA 特有操作（批量读/写 + 浏览）
+    QVariantMap readNodes(const QStringList& nodeIds);                 // NodeId → 值（QVariant）
+    QMap<QString, QString> writeNodes(const QStringList& nodeIds,      // 每节点返回状态码字符串
+                                      const QVariantList& values);
+    QString browseRoot();                                              // Objects 节点直接子节点，JSON
+
+    // DataChange 订阅（MonitoredItem）
+    using DataChangeCb = std::function<void(const QString& nodeId, const QVariant& value,
+                                            quint64 timestampMs, const QString& quality)>;
+    quint32 subscribeDataChange(const QStringList& nodeIds, DataChangeCb cb);  // 返回 subscriptionId(0=失败)
+    void unsubscribeAll();
+    void runIterate(int timeoutMs);   // 驱动 open62541 事件循环，派发 DataChange 回调（由 Backend svc 线程调用）
+};
+```
+
+> **NodeId 格式**：`ns=<命名空间>;i=<整型>` 或 `ns=<命名空间>;s=<字符串>`，内部用 `UA_NodeId_parse` 解析。
+>
+> **线程安全**：open62541 以 `UA_MULTITHREADING=0` 编译，`UA_Client` 非线程安全。所有 `UA_Client` 访问由内部 `recursive_mutex` 串行化；`subscribeDataChange` 的回调在 `runIterate`（svc 线程）内触发，使用方需将 UI 更新 marshal 到 GUI 线程。
+
+---
+
 ## DeviceBusWidget — 设备总线
 
 位于 `src/ui/DeviceBusWidget.h`。

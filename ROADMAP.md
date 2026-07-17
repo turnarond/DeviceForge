@@ -15,6 +15,7 @@
 | Modbus 测试 | Modbus TCP 批量读写寄存器 |
 | WebSocket 通信 | Server/Client，Token 认证 |
 | **网络调试中继** | TCP/UDP/**组播** 透明中继旁路抓包 + 流量录制（`.nrec`）+ 按原始时序回放 + 组播回灌 |
+| **OPC UA 客户端** | open62541 客户端：连接（None+匿名）+ 批量读/写节点 + DataChange 订阅 + 地址空间浏览 |
 | 远端预览 | 远程 FTP 目录浏览 + 下载 |
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + 工业仪表盘深色主题（「琴色是动词」体系）。
@@ -27,7 +28,7 @@
 
 按当前评估的优先级排列。带 🔷 的是社区呼声可显著提前的项。
 
-- **🔷 OPC UA 客户端真实实现** — 目前为演示模式（硬编码数据）。计划接入 open62541 或 Qt OPC UA 模块，补齐功能表最后一块。
+- **OPC UA 客户端增强** — 首期为 None+匿名连接。后续加安全策略加密（Basic256Sha256）、用户名/证书认证、Method 调用、数组类型展开。
 - **网络中继增强** — 非回环绑定改为模态确认弹窗、连接背压节流（`setReadBufferSize` + `bytesToWrite`）、客户端来源 allowlist（暴露到不可信网段时必需）。
 - **远端预览 SCP 支持** — UI 已预留协议选择，待接入 SCP/SFTP 后端。
 

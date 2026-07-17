@@ -63,7 +63,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/open62541;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NOMINMAX;lwcomm_EXPORTS;lwlog_EXPORTS;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -89,7 +89,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>./include;./src;./src/thirdparty;./src/thirdparty/open62541;./src/thirdparty/lwcomm;./src/thirdparty/lwevent;./src/thirdparty/lwmsgq;./src/thirdparty/lwlog;./src/thirdparty/lwlog/src;./src/thirdparty/lwcommunicate;./src/thirdparty/lwserverbase;./src/thirdparty/lwserverbase/core;./src/thirdparty/lwserverbase/config;./src/thirdparty/lwserverbase/logging;./src/thirdparty/lwserverbase/metrics;./src/thirdparty/lwserverbase/include;./src/thirdparty/tinyxml2;./src/thirdparty/nanopb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NOMINMAX;lwcomm_EXPORTS;lwlog_EXPORTS;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -130,12 +130,15 @@
   <!-- 新架构源文件（src/）                                            -->
   <!-- ============================================================ -->
   <ItemGroup>
+    <!-- open62541（单文件分发版，作为 C 编译——与 CMake/nanopb 一致；勿用 .cpp 包装，否则 /permissive- 下字符串字面量 const 化会破坏 UA_STRING(char*)） -->
+    <ClCompile Include="src\thirdparty\open62541\open62541.c" />
     <!-- 日志桥接 -->
     <ClCompile Include="src\logging\LogBridge.cpp" />
     <!-- 协议适配器 -->
     <ClCompile Include="src\adapter\FtpAdapter.cpp" />
     <ClCompile Include="src\adapter\TelnetAdapter.cpp" />
     <ClCompile Include="src\adapter\SshAdapter.cpp" />
+    <ClCompile Include="src\adapter\OpcUaAdapter.cpp" />
     <ClCompile Include="src\adapter\ProtocolRegistry.cpp" />
     <!-- 框架层 -->
     <ClCompile Include="src\framework\AppState.cpp" />
@@ -162,6 +165,9 @@
     <ClCompile Include="src\tools\NetRelayTool\RelayRecorder.cpp" />
     <ClCompile Include="src\tools\NetRelayTool\RelayRecording.cpp" />
     <ClCompile Include="src\tools\NetRelayTool\RelayPlayer.cpp" />
+    <ClCompile Include="src\tools\OpcUaClientTool\OpcUaClientBackend.cpp" />
+    <ClCompile Include="src\tools\OpcUaClientTool\OpcUaClientWidget.cpp" />
+    <QtMoc Include="src\tools\OpcUaClientTool\OpcUaClientWidget.h" />
   </ItemGroup>
   <!-- ============================================================ -->
   <!-- Thirdparty 源文件                                              -->
@@ -229,6 +235,7 @@
     <ClInclude Include="src\adapter\FtpAdapter.h" />
     <ClInclude Include="src\adapter\TelnetAdapter.h" />
     <ClInclude Include="src\adapter\SshAdapter.h" />
+    <ClInclude Include="src\adapter\OpcUaAdapter.h" />
     <ClInclude Include="src\adapter\ProtocolRegistry.h" />
     <ClInclude Include="src\logging\LogBridge.h" />
     <ClInclude Include="src\tools\FtpDeployTool\FtpDeployBackend.h" />
