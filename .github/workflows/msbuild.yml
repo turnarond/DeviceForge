@@ -29,7 +29,7 @@ jobs:
         arch: 'win64_msvc2022_64'
 
     - name: Configure CMake
-      run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+      run: cmake -B build -S . -A x64 -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
 
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_CONFIGURATION }} --parallel
