@@ -7,6 +7,7 @@
 #include <QUrl>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPointer>
 #include <algorithm>
 #include <QString>
 #include <QtConcurrent/QtConcurrent>
@@ -654,9 +655,11 @@ void DeployMaster::onDownloadRemoteFile()
 
     // 全部在后台线程执行：先递归扫描目录，再逐文件下载
     QString ip = currentRemoteIP;
+    QPointer<DeployMaster> self(this);
     QtConcurrent::run([=]() {
-        auto log = [this](const QString& msg) {
-            QMetaObject::invokeMethod(this, "appendGlobalLog",
+        if (!self) return;
+        auto log = [self](const QString& msg) {
+            if (self) QMetaObject::invokeMethod(self, "appendGlobalLog",
                 Qt::QueuedConnection, Q_ARG(QString, msg));
         };
 
@@ -779,7 +782,9 @@ void DeployMaster::onViewRemoteFile()
 
     appendGlobalLog("🔍 正在查看: " + fileName);
     QString ip = currentRemoteIP;
+    QPointer<DeployMaster> self(this);
     QtConcurrent::run([=]() {
+        if (!self) return;
         try {
             // 先列出目录获取文件大小
             FtpManager ftm(ip, 21);
@@ -803,7 +808,7 @@ void DeployMaster::onViewRemoteFile()
             QDir().mkpath(tempDir);
             QString localPath = tempDir + "/" + fileName;
 
-            FtpManager ftm2(currentRemoteIP, 21);
+            FtpManager ftm2(ip, 21);
             ftm2.setCredentials(user, pass);
             ftm2.downloadFile(remotePath, localPath);
 
@@ -857,7 +862,9 @@ void DeployMaster::onDeleteRemoteFile()
 
     appendGlobalLog(QString("🗑 正在删除 %1 个条目...").arg(items.size()));
     QString ip = currentRemoteIP;
+    QPointer<DeployMaster> self(this);
     QtConcurrent::run([=]() {
+        if (!self) return;
         int ok = 0, fail = 0;
         for (const auto& di : items) {
             try {
@@ -898,11 +905,14 @@ void DeployMaster::onRenameRemoteFile()
 
     appendGlobalLog(QString("✏ 重命名: %1 → %2").arg(oldName, newName));
     QString ip = currentRemoteIP;
+    QString path = currentRemotePath;
+    QPointer<DeployMaster> self(this);
     QtConcurrent::run([=]() {
+        if (!self) return;
         try {
             FtpManager ftm(ip, 21);
             ftm.setCredentials(user, pass);
-            bool result = ftm.renameFtpFile(currentRemotePath, oldName, newName);
+            bool result = ftm.renameFtpFile(path, oldName, newName);
             QMetaObject::invokeMethod(this, [this, oldName, newName, result]() {
                 if (result) {
                     appendGlobalLog(QString("✅ 重命名成功: %1 → %2").arg(oldName, newName));
