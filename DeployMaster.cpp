@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
+#include <algorithm>
 #include <QString>
 #include <QtConcurrent/QtConcurrent>
 #include <QStyleFactory>
@@ -333,6 +334,7 @@ void DeployMaster::setupRemotePreview()
     remoteFileModel = new QStandardItemModel(this);
     ui.tree_remoteFiles->setModel(remoteFileModel);
     ui.tree_remoteFiles->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    ui.tree_remoteFiles->setEditTriggers(QAbstractItemView::NoEditTriggers); // 禁用双击重命名
 
     // --- 协议选择行 ---
     auto* protoRow = new QHBoxLayout();
@@ -485,6 +487,21 @@ void DeployMaster::refreshRemoteFiles()
     });
 }
 
+// 将字节数转为人类可读格式: B / KB / MB / GB
+static QString formatFileSize(qint64 bytes) {
+    if (bytes < 0) return "?";
+    if (bytes < 1024)
+        return QString::number(bytes) + " B";
+    double val = bytes / 1024.0;
+    if (val < 1024.0)
+        return QString::number(val, 'f', 1) + " KB";
+    val /= 1024.0;
+    if (val < 1024.0)
+        return QString::number(val, 'f', 1) + " MB";
+    val /= 1024.0;
+    return QString::number(val, 'f', 2) + " GB";
+}
+
 void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
 {
     // 清空现有模型
@@ -520,8 +537,16 @@ void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
         rootItem->appendRow(parentItem);
     }
     
+    // 排序：目录在前，文件在后，各自按名称字母排序
+    QList<FtpFileInfo> sorted = files;
+    std::sort(sorted.begin(), sorted.end(), [](const FtpFileInfo& a, const FtpFileInfo& b) {
+        if (a.isDirectory != b.isDirectory)
+            return a.isDirectory > b.isDirectory; // 目录排在文件前
+        return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+    });
+
     // 添加文件和文件夹
-    for (const FtpFileInfo& file : files) {
+    for (const FtpFileInfo& file : sorted) {
         QStandardItem* item;
         if (file.isDirectory) {
             item = new QStandardItem(file.name);
@@ -531,12 +556,13 @@ void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
             item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
             item->setData(file.name, Qt::UserRole + 3); // 存储原始目录名
         } else {
-            item = new QStandardItem(QString("%1 (%2 bytes)").arg(file.name).arg(file.size));
+            QString sizeStr = formatFileSize(file.size);
+            item = new QStandardItem(QString("%1 (%2)").arg(file.name, sizeStr));
             item->setIcon(QApplication::style()->standardIcon(QStyle::SP_FileIcon));
             item->setData(currentRemotePath + file.name, Qt::UserRole);
             item->setData(false, Qt::UserRole + 1); // 标记为文件
             item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
-            item->setData(file.name, Qt::UserRole + 3); // 存储原始文件名（不含路径，不含大小后缀）
+            item->setData(file.name, Qt::UserRole + 3); // 存储原始文件名
         }
         rootItem->appendRow(item);
     }
