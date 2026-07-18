@@ -86,8 +86,8 @@ private:
     std::atomic<bool> m_cancelled{false};
     std::string m_zipPath;            // GUARDED_BY(m_dataMutex)
     std::string m_extractDir;         // GUARDED_BY(m_dataMutex)
-    std::string m_currentVersion{"2.1.0"};
-    std::string m_repo{"DeviceForge/DeviceForge"};
+    std::string m_currentVersion{"2.2.0"};
+    std::string m_repo{"turnarond/DeviceForge"};
 
     // 回调
     std::function<void(UpdateState)> m_stateCb;
