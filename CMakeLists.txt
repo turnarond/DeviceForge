@@ -38,14 +38,10 @@ endif()
 
 # 查找 Qt6 包（按需添加模块）
 # 注意：当前系统安装的是 Qt 6.11.1，请勿随意降级
+# CI 环境 Qt 6.9.2 可能缺 SerialBus/WebSockets，使用 OPTIONAL_COMPONENTS
 find_package(Qt6 REQUIRED COMPONENTS
-    Core
-    Gui
-    Widgets
-    Network
-    SerialBus
-    WebSockets
-    Concurrent
+    Core Gui Widgets Network Concurrent
+    OPTIONAL_COMPONENTS SerialBus WebSockets
 )
 qt_standard_project_setup(REQUIRES 6.8)
 
