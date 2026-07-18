@@ -22,6 +22,10 @@
 #include "OpcUaAdapter.h"
 #include <open62541.h>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #include <QDateTime>
 #include <QByteArray>
 #include <QJsonArray>
@@ -199,12 +203,15 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
     cc->timeout = 30000;
     cc->securityMode = UA_MESSAGESECURITYMODE_NONE;
     cc->securityPolicies = (UA_SecurityPolicy*)UA_malloc(sizeof(UA_SecurityPolicy));
+    QString diag;
     if (cc->securityPolicies) {
         UA_SecurityPolicy_None(&cc->securityPolicies[0], UA_BYTESTRING_NULL, cc->logging);
         cc->securityPoliciesSize = 1;
+        diag = QString("policies=%1 mode=%2")
+                   .arg((int)cc->securityPoliciesSize).arg((int)cc->securityMode);
+    } else {
+        diag = QString("UA_malloc failed");
     }
-    // 启用 open62541 TRACE 级别日志
-    UA_Log_Stdout_withLevel(UA_LOGLEVEL_TRACE);
 
     // 组装 endpoint URL
     QString url;
@@ -217,21 +224,21 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
             url = ip;
         }
     }
-    qDebug() << "[OpcUa] config: policiesSize=" << (int)cc->securityPoliciesSize
-             << " securityMode=" << (int)cc->securityMode
-             << " url=" << url;
-    if (cc->securityPoliciesSize > 0) {
-        QByteArray uri = QByteArray(reinterpret_cast<const char*>(
-            cc->securityPolicies[0].policyUri.data),
-            (int)cc->securityPolicies[0].policyUri.length);
-        qDebug() << "[OpcUa] securityPolicies[0].policyUri=" << uri;
-    }
+
+#ifdef Q_OS_WIN
+    // redirect open62541 stdout/stderr → VS Output window
+    UA_Log_Stdout_withLevel(UA_LOGLEVEL_TRACE);
+#endif
 
     UA_StatusCode ret = UA_Client_connect(m_client, url.toUtf8().constData());
-    qDebug() << "[OpcUa] UA_Client_connect returned:" << (unsigned long)ret
-             << uaStatusToString(ret);
+    // VS Output 窗口诊断（即使 console 关闭也能看到）
+    QString dbg = QString("OpcUaAdapter::connect %1 → %2 (%3)")
+                      .arg(url, uaStatusToString(ret), diag);
+    OutputDebugStringW(reinterpret_cast<LPCWSTR>(dbg.utf16()));
+    OutputDebugStringW(L"\n");
     if (ret != UA_STATUSCODE_GOOD) {
-        setError(uaStatusToString(ret));
+        setError(uaStatusToString(ret)
+                 + QString(" (%1)").arg(diag));
         UA_Client_delete(m_client);
         m_client = nullptr;
         return false;
