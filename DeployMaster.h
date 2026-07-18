@@ -95,6 +95,10 @@ private:
     void onIPSelectionChanged();
     void onRemoteFileDoubleClicked(const QModelIndex& index);
     void onDownloadRemoteFile();
+    void onViewRemoteFile();    // 查看文件（下载到临时目录 + 系统默认程序打开）
+    void onDeleteRemoteFile();  // 删除选中文件/文件夹
+    void onRenameRemoteFile();  // 重命名选中文件/文件夹
+    void onRemoteFileContextMenu(const QPoint& pos); // 右键上下文菜单
 
 private:
     Ui::DeployMaster ui;

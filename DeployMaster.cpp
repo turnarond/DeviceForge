@@ -2,6 +2,11 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
+#include <QDesktopServices>
+#include <QStandardPaths>
+#include <QUrl>
+#include <QMenu>
+#include <QMessageBox>
 #include <algorithm>
 #include <QString>
 #include <QtConcurrent/QtConcurrent>
@@ -335,6 +340,9 @@ void DeployMaster::setupRemotePreview()
     ui.tree_remoteFiles->setModel(remoteFileModel);
     ui.tree_remoteFiles->setSelectionMode(QAbstractItemView::ExtendedSelection);
     ui.tree_remoteFiles->setEditTriggers(QAbstractItemView::NoEditTriggers); // 禁用双击重命名
+    ui.tree_remoteFiles->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui.tree_remoteFiles, &QTreeView::customContextMenuRequested,
+            this, &DeployMaster::onRemoteFileContextMenu);
 
     // --- 协议选择行 ---
     auto* protoRow = new QHBoxLayout();
@@ -721,6 +729,204 @@ void DeployMaster::onDownloadRemoteFile()
             }
         }
         log(QString("✅ 下载完成: %1 成功, %2 失败").arg(success).arg(failed));
+    });
+}
+
+// ============================================================
+// 右键上下文菜单 — 下载 / 查看 / 重命名 / 删除
+// ============================================================
+
+void DeployMaster::onRemoteFileContextMenu(const QPoint& pos)
+{
+    QModelIndex index = ui.tree_remoteFiles->indexAt(pos);
+    bool isDir = index.isValid() ? index.data(Qt::UserRole + 1).toBool() : false;
+    bool isRoot = index.isValid() ? index.data(Qt::UserRole + 2).toBool() : false;
+
+    QMenu menu(ui.tree_remoteFiles);
+
+    if (index.isValid() && !isRoot) {
+        menu.addAction("下载", this, &DeployMaster::onDownloadRemoteFile);
+        if (!isDir) {
+            menu.addAction("查看", this, &DeployMaster::onViewRemoteFile);
+        }
+        menu.addSeparator();
+        menu.addAction("重命名", this, &DeployMaster::onRenameRemoteFile);
+        menu.addAction(isDir ? "删除目录" : "删除文件", this, &DeployMaster::onDeleteRemoteFile);
+    } else if (isRoot) {
+        menu.addAction("编辑路径...", this, [this]() {
+            bool ok;
+            QString newPath = QInputDialog::getText(this, "编辑远程路径",
+                "请输入新的远程路径:", QLineEdit::Normal, currentRemotePath, &ok);
+            if (ok && !newPath.isEmpty()) {
+                if (!newPath.endsWith('/')) newPath += '/';
+                if (!newPath.startsWith('/')) newPath = '/' + newPath;
+                currentRemotePath = newPath;
+                appendGlobalLog(QString("📝 路径已更改为: %1").arg(currentRemotePath));
+                refreshRemoteFiles();
+            }
+        });
+    }
+    menu.addSeparator();
+    menu.addAction("刷新", this, &DeployMaster::refreshRemoteFiles);
+
+    menu.exec(ui.tree_remoteFiles->viewport()->mapToGlobal(pos));
+}
+
+// 查看文件：下载到临时目录 + 系统默认程序打开（≤5MB）
+void DeployMaster::onViewRemoteFile()
+{
+    QModelIndex idx = ui.tree_remoteFiles->currentIndex();
+    if (!idx.isValid()) return;
+    QStandardItem* item = remoteFileModel->itemFromIndex(idx);
+    if (!item) return;
+    bool isDir = item->data(Qt::UserRole + 1).toBool();
+    if (isDir) return;
+
+    QString remotePath = item->data(Qt::UserRole).toString();
+    QString fileName = item->data(Qt::UserRole + 3).toString();
+    qint64 fileSize = -1;
+    // 从显示文本提取大小（作为近似值，用于5MB限制检查）
+    QList<FtpFileInfo> dummy; // 我们需要从当前列表中获取大小，但这里先异步检查
+
+    QString user = m_deviceBusWidget->user();
+    QString pass = m_deviceBusWidget->password();
+
+    appendGlobalLog("🔍 正在查看: " + fileName);
+    QtConcurrent::run([=]() {
+        try {
+            // 先列出目录获取文件大小
+            FtpManager ftm(currentRemoteIP, 21);
+            ftm.setCredentials(user, pass);
+            QString parentDir = remotePath.left(remotePath.lastIndexOf('/'));
+            if (parentDir.isEmpty()) parentDir = "/";
+            QList<FtpFileInfo> files = ftm.listFtpDirectoryDetailed(parentDir);
+            qint64 actualSize = -1;
+            for (const auto& f : files) {
+                if (f.name == fileName) { actualSize = f.size; break; }
+            }
+            if (actualSize > 5 * 1024 * 1024) {
+                QMetaObject::invokeMethod(this, [this, fileName]() {
+                    appendGlobalLog(QString("⚠ 文件 %1 超过 5MB，请使用下载功能").arg(fileName));
+                }, Qt::QueuedConnection);
+                return;
+            }
+
+            QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                + "/DeviceForge/view";
+            QDir().mkpath(tempDir);
+            QString localPath = tempDir + "/" + fileName;
+
+            FtpManager ftm2(currentRemoteIP, 21);
+            ftm2.setCredentials(user, pass);
+            ftm2.downloadFile(remotePath, localPath);
+
+            QMetaObject::invokeMethod(this, [this, localPath, fileName]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+                appendGlobalLog("✅ 已打开: " + fileName);
+            }, Qt::QueuedConnection);
+        } catch (const std::exception& e) {
+            QMetaObject::invokeMethod(this, [this, msg = QString::fromStdString(e.what())]() {
+                appendGlobalLog("❌ 查看失败: " + msg);
+            }, Qt::QueuedConnection);
+        }
+    });
+}
+
+// 删除选中文件/文件夹
+void DeployMaster::onDeleteRemoteFile()
+{
+    QModelIndexList selected = ui.tree_remoteFiles->selectionModel()->selectedIndexes();
+    if (selected.isEmpty()) return;
+
+    // 收集要删除的条目
+    struct DelItem { QString parentDir; QString name; bool isDir; };
+    QList<DelItem> items;
+    for (const auto& idx : selected) {
+        if (idx.column() != 0) continue;
+        QStandardItem* item = remoteFileModel->itemFromIndex(idx);
+        if (!item) continue;
+        bool isDir = item->data(Qt::UserRole + 1).toBool();
+        bool isRoot = item->data(Qt::UserRole + 2).toBool();
+        if (isRoot) continue;
+        QString remotePath = item->data(Qt::UserRole).toString();
+        QString name = item->data(Qt::UserRole + 3).toString();
+        // 从 remotePath 提取 parentDir
+        QString parentDir = currentRemotePath;
+        items.append({parentDir, name, isDir});
+    }
+    if (items.isEmpty()) return;
+
+    QStringList names;
+    for (const auto& di : items) names << di.name;
+    int ret = QMessageBox::warning(this, "确认删除",
+        QString("确定要删除以下 %1 个条目吗？\n\n%2\n\n此操作不可撤销！")
+            .arg(items.size())
+            .arg(names.join("\n")),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
+    QString user = m_deviceBusWidget->user();
+    QString pass = m_deviceBusWidget->password();
+
+    appendGlobalLog(QString("🗑 正在删除 %1 个条目...").arg(items.size()));
+    QtConcurrent::run([=]() {
+        int ok = 0, fail = 0;
+        for (const auto& di : items) {
+            try {
+                FtpManager ftm(currentRemoteIP, 21);
+                ftm.setCredentials(user, pass);
+                bool result = di.isDir
+                    ? ftm.deleteFtpDirectory(di.parentDir, di.name)
+                    : ftm.deleteFtpFile(di.parentDir, di.name);
+                if (result) ++ok; else ++fail;
+            } catch (...) { ++fail; }
+        }
+        QMetaObject::invokeMethod(this, [this, ok, fail]() {
+            appendGlobalLog(QString("✅ 删除完成: %1 成功, %2 失败").arg(ok).arg(fail));
+            if (ok > 0) refreshRemoteFiles();
+        }, Qt::QueuedConnection);
+    });
+}
+
+// 重命名选中文件/文件夹
+void DeployMaster::onRenameRemoteFile()
+{
+    QModelIndex idx = ui.tree_remoteFiles->currentIndex();
+    if (!idx.isValid()) return;
+    QStandardItem* item = remoteFileModel->itemFromIndex(idx);
+    if (!item) return;
+    bool isRoot = item->data(Qt::UserRole + 2).toBool();
+    if (isRoot) return;
+
+    QString oldName = item->data(Qt::UserRole + 3).toString();
+    bool ok;
+    QString newName = QInputDialog::getText(this, "重命名",
+        QString("新名称（当前: %1）:").arg(oldName),
+        QLineEdit::Normal, oldName, &ok);
+    if (!ok || newName.isEmpty() || newName == oldName) return;
+
+    QString user = m_deviceBusWidget->user();
+    QString pass = m_deviceBusWidget->password();
+
+    appendGlobalLog(QString("✏ 重命名: %1 → %2").arg(oldName, newName));
+    QtConcurrent::run([=]() {
+        try {
+            FtpManager ftm(currentRemoteIP, 21);
+            ftm.setCredentials(user, pass);
+            bool result = ftm.renameFtpFile(currentRemotePath, oldName, newName);
+            QMetaObject::invokeMethod(this, [this, oldName, newName, result]() {
+                if (result) {
+                    appendGlobalLog(QString("✅ 重命名成功: %1 → %2").arg(oldName, newName));
+                    refreshRemoteFiles();
+                } else {
+                    appendGlobalLog("❌ 重命名失败（服务器拒绝）");
+                }
+            }, Qt::QueuedConnection);
+        } catch (const std::exception& e) {
+            QMetaObject::invokeMethod(this, [this, msg = QString::fromStdString(e.what())]() {
+                appendGlobalLog("❌ 重命名失败: " + msg);
+            }, Qt::QueuedConnection);
+        }
     });
 }
 

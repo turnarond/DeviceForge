@@ -482,6 +482,45 @@ bool FtpManager::deleteFtpDirectory(const QString& parentDir, const QString& dir
     return res == CURLE_OK;
 }
 
+bool FtpManager::renameFtpFile(const QString& parentDir, const QString& oldName,
+                               const QString& newName) {
+    QString cleanDir = parentDir;
+    if (!cleanDir.startsWith('/')) cleanDir.prepend('/');
+    if (!cleanDir.endsWith('/')) cleanDir += '/';
+    QString oldPath = cleanDir + oldName;
+    QString newPath = cleanDir + newName;
+
+    QUrl url;
+    url.setScheme("ftp");
+    url.setHost(m_host);
+    url.setPort(m_port);
+    url.setPath(oldPath);
+    QString urlStr = url.toString(QUrl::FullyEncoded);
+    QByteArray urlBytes = urlStr.toUtf8();
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return false;
+
+    curl_easy_setopt(curl, CURLOPT_URL, urlBytes.constData());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, (m_user + ":" + m_pass).toStdString().c_str());
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    // RNFR + RNTO 必须在同一个 curl_slist 中按序发送
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands,
+        QString("RNFR %1").arg(oldPath).toUtf8().constData());
+    commands = curl_slist_append(commands,
+        QString("RNTO %1").arg(newPath).toUtf8().constData());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK;
+}
+
 QStringList FtpManager::listFtpDirectory(const QString& remoteDir) {
     QList<FtpFileInfo> detailed = listFtpDirectoryDetailed(remoteDir);
     QStringList names;

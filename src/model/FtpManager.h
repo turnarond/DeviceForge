@@ -38,6 +38,8 @@ public:
     void clearRemoteDirectory(const QString& remoteDir);
     bool deleteFtpFile(const QString& parentDir, const QString& filename);
     bool deleteFtpDirectory(const QString& parentDir, const QString& dirname);
+    bool renameFtpFile(const QString& parentDir, const QString& oldName,
+                       const QString& newName);
     QStringList listFtpDirectory(const QString& remoteDir);
     QList<FtpFileInfo> listFtpDirectoryDetailed(const QString& remoteDir);
 
