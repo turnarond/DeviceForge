@@ -197,6 +197,9 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
     UA_ClientConfig* cc = UA_Client_getConfig(m_client);
     UA_ClientConfig_setDefault(cc);
     cc->timeout = 30000;
+    // UA_ClientConfig_setDefault 不设 securityMode(注释: "OK to leave as 0"),
+    // 但 encryption 关闭时需显式指定 None 否则握手协商失败 → BadInternalError
+    cc->securityMode = UA_MESSAGESECURITYMODE_NONE;
 
     // 组装 endpoint URL：允许 device.ip 直接为完整 "opc.tcp://..." 或仅 host
     QString url = QString::fromStdString(device.ip);
