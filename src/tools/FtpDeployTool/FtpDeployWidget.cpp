@@ -41,8 +41,8 @@ void FtpDeployWidget::setupUi()
 
     // 行 0: 远程路径
     configLayout->addWidget(new QLabel("远程路径:", this), 0, 0);
-    m_remotePathEdit = new QLineEdit("/app", this);
-    m_remotePathEdit->setPlaceholderText("/app");
+    m_remotePathEdit = new QLineEdit("/", this);
+    m_remotePathEdit->setPlaceholderText("/");
     configLayout->addWidget(m_remotePathEdit, 0, 1, 1, 3);
 
     // 行 1: 端口 | FTPS 加密

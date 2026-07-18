@@ -23,6 +23,28 @@ static qint64 parseListSize(const QString& line) {
     return -1;
 }
 
+// 检测 FTP LIST 输出是否目录项（权限首字符 'd'）
+static bool parseListIsDir(const QString& line) {
+    QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) return false;
+    // Unix-style: "drwxr-xr-x ..." → 首字符 'd' 表示目录
+    // Windows/IIS: 首字符可能是数字（日期），不是标准权限
+    QChar first = trimmed[0];
+    return first == QLatin1Char('d');
+}
+
+// 解析权限字符串（FTP LIST 第一列）
+static QString parseListPermissions(const QString& line) {
+    QStringList parts = line.trimmed().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (parts.size() >= 1) {
+        QString first = parts[0];
+        // Unix-style: 10-character permission string
+        if (first.size() >= 10 && (first[0] == 'd' || first[0] == '-'))
+            return first;
+    }
+    return QString();
+}
+
 static QString parseListFilename(const QString& line) {
     QStringList parts = line.trimmed().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
     if (parts.size() >= 9) {
@@ -460,6 +482,45 @@ bool FtpManager::deleteFtpDirectory(const QString& parentDir, const QString& dir
     return res == CURLE_OK;
 }
 
+bool FtpManager::renameFtpFile(const QString& parentDir, const QString& oldName,
+                               const QString& newName) {
+    QString cleanDir = parentDir;
+    if (!cleanDir.startsWith('/')) cleanDir.prepend('/');
+    if (!cleanDir.endsWith('/')) cleanDir += '/';
+    QString oldPath = cleanDir + oldName;
+    QString newPath = cleanDir + newName;
+
+    QUrl url;
+    url.setScheme("ftp");
+    url.setHost(m_host);
+    url.setPort(m_port);
+    url.setPath(oldPath);
+    QString urlStr = url.toString(QUrl::FullyEncoded);
+    QByteArray urlBytes = urlStr.toUtf8();
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return false;
+
+    curl_easy_setopt(curl, CURLOPT_URL, urlBytes.constData());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, (m_user + ":" + m_pass).toStdString().c_str());
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    // RNFR + RNTO 必须在同一个 curl_slist 中按序发送
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands,
+        QString("RNFR \"%1\"").arg(oldPath).toUtf8().constData());
+    commands = curl_slist_append(commands,
+        QString("RNTO \"%1\"").arg(newPath).toUtf8().constData());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK;
+}
+
 QStringList FtpManager::listFtpDirectory(const QString& remoteDir) {
     QList<FtpFileInfo> detailed = listFtpDirectoryDetailed(remoteDir);
     QStringList names;
@@ -522,7 +583,9 @@ QList<FtpFileInfo> FtpManager::listFtpDirectoryDetailed(const QString& remoteDir
         info.name = parseListFilename(line);
         info.size = parseListSize(line);
         info.lastModified = parseListTime(line);
-        
+        info.isDirectory = parseListIsDir(line);
+        info.permissions = parseListPermissions(line);
+
         if (!info.name.isEmpty()) {
             result.append(info);
         }

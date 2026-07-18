@@ -8,26 +8,28 @@
 namespace {
 
     void qtMessageHandler(QtMsgType type, const QMessageLogContext& ctx, const QString& msg) {
-        std::string str = msg.toStdString();
+        // 用 toLocal8Bit() 兼容预编译 lwlog（无 /utf-8，本地代码页内部处理）
+        std::string str = msg.toLocal8Bit().toStdString();
 
         switch (type) {
         case QtDebugMsg:
-            LWLOG_D(str.c_str());
+            LWLOG_D(str);
             break;
         case QtWarningMsg:
-            LWLOG_W(str.c_str());
+            LWLOG_W(str);
             break;
         case QtCriticalMsg:
         case QtFatalMsg:
-            LWLOG_E(str.c_str());
+            LWLOG_E(str);
             break;
         case QtInfoMsg:
-            LWLOG_I(str.c_str());
+            LWLOG_I(str);
             break;
         }
 
-        // 同时输出到控制台（调试用）
-        fprintf(stderr, "[Qt] %s\n", str.c_str());
+        // stderr 输出用 UTF-8（与 /utf-8 保持一致）
+        QByteArray utf8 = msg.toUtf8();
+        fprintf(stderr, "[Qt] %s\n", utf8.constData());
         if (type == QtFatalMsg) {
             abort();
         }

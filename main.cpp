@@ -19,12 +19,17 @@
 #include "src/tools/WebSocketTool/WebSocketBackend.h"
 #include "src/tools/WebSocketTool/WebSocketWidget.h"
 // #include "src/presenter/FtpPresenter.h" — 临时禁用，待 Task 13
+#include <curl/curl.h>
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setWindowIcon(QIcon(":/icons/app.ico"));  // 应用级窗口/任务栏图标
     LogBridge::install();  // Qt -> lwlog 日志桥接
+
+    // libcurl 全局初始化(UpdateChecker 跨线程使用)
+    // 进程退出由 OS 回收，无需显式 curl_global_cleanup
+    curl_global_init(CURL_GLOBAL_DEFAULT);
 
     // libssh2 进程级初始化（仅一次）— SshAdapter 不再各自 init/exit，
     // 避免每实例反复拆建全局状态。进程退出由 OS 回收，无需显式 libssh2_exit()

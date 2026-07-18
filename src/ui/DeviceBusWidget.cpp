@@ -55,6 +55,7 @@ static QIcon offlineIcon() { static QIcon icon = createOfflineIcon(); return ico
 
 DeviceBusWidget::DeviceBusWidget(QWidget* parent) : QWidget(parent)
 {
+    setObjectName("deviceBusContainer");
     setupUi();
 }
 

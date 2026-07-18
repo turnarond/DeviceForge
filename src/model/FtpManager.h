@@ -12,6 +12,8 @@ struct FtpFileInfo {
     QString name;
     QDateTime lastModified;
     qint64 size = -1;
+    bool isDirectory = false;
+    QString permissions; // FTP LIST 权限字符串（首字符 d=目录, -=文件）
 };
 
 class FtpManager {
@@ -36,6 +38,8 @@ public:
     void clearRemoteDirectory(const QString& remoteDir);
     bool deleteFtpFile(const QString& parentDir, const QString& filename);
     bool deleteFtpDirectory(const QString& parentDir, const QString& dirname);
+    bool renameFtpFile(const QString& parentDir, const QString& oldName,
+                       const QString& newName);
     QStringList listFtpDirectory(const QString& remoteDir);
     QList<FtpFileInfo> listFtpDirectoryDetailed(const QString& remoteDir);
 

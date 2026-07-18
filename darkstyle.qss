@@ -617,7 +617,8 @@ QPushButton#btnDeviceAdd:pressed, QPushButton#btnDeviceRemove:pressed {
 }
 
 /* 设备总线凭证输入框 */
-QLineEdit#deviceBusUser, QLineEdit#deviceBusPass {
+#deviceBusContainer QLineEdit#deviceBusUser,
+#deviceBusContainer QLineEdit#deviceBusPass {
     background: #141820;
     border: 1px solid #252A33;
     border-radius: 4px;
@@ -626,6 +627,7 @@ QLineEdit#deviceBusUser, QLineEdit#deviceBusPass {
     font-size: 11px;
 }
 
-QLineEdit#deviceBusUser:focus, QLineEdit#deviceBusPass:focus {
+#deviceBusContainer QLineEdit#deviceBusUser:focus,
+#deviceBusContainer QLineEdit#deviceBusPass:focus {
     border-color: #F0A030;
 }

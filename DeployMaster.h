@@ -9,6 +9,7 @@
 #include "ui_DeployMaster.h"
 #include "src/framework/AppState.h"
 #include "src/model/FtpManager.h"
+#include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
 
 class ToolHost;
 class DeviceBusWidget;
@@ -16,6 +17,8 @@ class TelnetWidget;
 class OpcUaClientTab; // forward declaration
 class WebSocketWidget; // forward declaration (migrated to Tool architecture)
 class NetRelayWidget; // forward declaration (网络调试中继 Tool)
+class UpdateChecker;  // 在线更新检查服务（Task 3）
+class UpdateDialog;   // 在线更新对话框（Task 4）
 
 class DeployMaster : public QMainWindow
 {
@@ -24,6 +27,9 @@ class DeployMaster : public QMainWindow
 public:
     DeployMaster(QWidget* parent = nullptr);
     ~DeployMaster();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 public:
     QStringList getTargetIPList() const;
@@ -76,6 +82,12 @@ private:
     void setupWebSocketClientTab(); // new
     void setupNetRelayTab(); // 网络调试中继 Tool
     void setupRemotePreview(); // 初始化远端预览功能
+
+    // 在线更新集成（Task 5）
+    void setupUpdateChecker();
+    void onCheckUpdateTriggered(bool isAuto = false);
+    void onVersionLabelClicked();
+    void onUpdateStateChanged(UpdateState state);
     
     // 远端预览相关方法
     void refreshRemoteFiles(); // 刷新远程文件列表
@@ -83,6 +95,10 @@ private:
     void onIPSelectionChanged();
     void onRemoteFileDoubleClicked(const QModelIndex& index);
     void onDownloadRemoteFile();
+    void onViewRemoteFile();    // 查看文件（下载到临时目录 + 系统默认程序打开）
+    void onDeleteRemoteFile();  // 删除选中文件/文件夹
+    void onRenameRemoteFile();  // 重命名选中文件/文件夹
+    void onRemoteFileContextMenu(const QPoint& pos); // 右键上下文菜单
 
 private:
     Ui::DeployMaster ui;
@@ -104,5 +120,12 @@ private:
     WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
     std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
     NetRelayWidget* m_netRelayWidget = nullptr;
+
+    // 在线更新（Task 5）
+    std::shared_ptr<UpdateChecker> m_updateChecker; // 在线更新 ServiceTask
+    UpdateDialog*  m_updateDialog     = nullptr;    // 非模态更新对话框
+    QAction*       m_checkUpdateAction = nullptr;   // 帮助菜单:检查更新
+    QLabel*        m_versionLabel     = nullptr;    // 状态栏:当前版本标签(可点击)
+    bool           m_autoCheck        = false;      // 自动检查标志(静默失败)
 };
 

@@ -368,3 +368,7 @@ build_release/
 dist/
 *.zip
 build_opc/
+DeployMaster.vcxproj.bak
+# 内部运营文档/推广文章（不随代码发布）
+docs/运营流程.md
+docs/articles/
