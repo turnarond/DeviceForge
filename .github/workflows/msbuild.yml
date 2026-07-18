@@ -27,7 +27,8 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
-        modules: 'qtserialbus'
+        modules: 'qtserialbus qtwebsockets'
+        cache: 'false'
 
     - name: Configure CMake
       run: cmake -B build -S . -A x64 -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
