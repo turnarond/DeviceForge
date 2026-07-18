@@ -192,6 +192,10 @@ set(SOURCES
     src/tools/OpcUaClientTool/OpcUaClientBackend.cpp
     src/tools/OpcUaClientTool/OpcUaClientWidget.cpp
 
+    # 在线更新模块
+    src/updater/UpdateChecker.cpp
+    src/updater/UpdateDialog.cpp
+
     # Thirdparty 源文件
     src/thirdparty/tinyxml2/tinyxml2.cpp
     src/thirdparty/nanopb/pb_encode.c

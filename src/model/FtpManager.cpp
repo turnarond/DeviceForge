@@ -23,6 +23,28 @@ static qint64 parseListSize(const QString& line) {
     return -1;
 }
 
+// 检测 FTP LIST 输出是否目录项（权限首字符 'd'）
+static bool parseListIsDir(const QString& line) {
+    QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) return false;
+    // Unix-style: "drwxr-xr-x ..." → 首字符 'd' 表示目录
+    // Windows/IIS: 首字符可能是数字（日期），不是标准权限
+    QChar first = trimmed[0];
+    return first == QLatin1Char('d');
+}
+
+// 解析权限字符串（FTP LIST 第一列）
+static QString parseListPermissions(const QString& line) {
+    QStringList parts = line.trimmed().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (parts.size() >= 1) {
+        QString first = parts[0];
+        // Unix-style: 10-character permission string
+        if (first.size() >= 10 && (first[0] == 'd' || first[0] == '-'))
+            return first;
+    }
+    return QString();
+}
+
 static QString parseListFilename(const QString& line) {
     QStringList parts = line.trimmed().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
     if (parts.size() >= 9) {
@@ -522,7 +544,9 @@ QList<FtpFileInfo> FtpManager::listFtpDirectoryDetailed(const QString& remoteDir
         info.name = parseListFilename(line);
         info.size = parseListSize(line);
         info.lastModified = parseListTime(line);
-        
+        info.isDirectory = parseListIsDir(line);
+        info.permissions = parseListPermissions(line);
+
         if (!info.name.isEmpty()) {
             result.append(info);
         }

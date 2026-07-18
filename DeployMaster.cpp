@@ -1,4 +1,5 @@
 #include "DeployMaster.h"
+#include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QString>
@@ -68,7 +69,7 @@ DeployMaster::DeployMaster(QWidget* parent)
 
     // 旧"批量部署" Tab 已完全迁移至「文件部署」Tool Tab
     // 将远端路径输入框移到远端预览面板，隐藏整个旧 Tab
-    m_remotePathEdit = new QLineEdit("/apps/m580cn/bin/", this);
+    m_remotePathEdit = new QLineEdit("/", this);
     ui.verticalLayout_remote->insertWidget(1, m_remotePathEdit);
     // 清除日志按钮移到底部日志区
     ui.groupBox_log->layout()->addWidget(ui.btn_clearLog);
@@ -328,9 +329,10 @@ DeployMaster::~DeployMaster()
 
 void DeployMaster::setupRemotePreview()
 {
-    // 初始化远程文件模型
+    // 初始化远程文件模型，启用多选批量下载
     remoteFileModel = new QStandardItemModel(this);
     ui.tree_remoteFiles->setModel(remoteFileModel);
+    ui.tree_remoteFiles->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // --- 协议选择行 ---
     auto* protoRow = new QHBoxLayout();
@@ -517,20 +519,20 @@ void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
     // 添加文件和文件夹
     for (const FtpFileInfo& file : files) {
         QStandardItem* item;
-        if (file.size == -1) { // 目录（size为-1表示可能是目录）
+        if (file.isDirectory) {
             item = new QStandardItem(file.name);
-            // 使用Qt标准目录图标
             item->setIcon(QApplication::style()->standardIcon(QStyle::SP_DirIcon));
             item->setData(currentRemotePath + file.name + "/", Qt::UserRole);
             item->setData(true, Qt::UserRole + 1); // 标记为目录
             item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
+            item->setData(file.name, Qt::UserRole + 3); // 存储原始目录名
         } else {
             item = new QStandardItem(QString("%1 (%2 bytes)").arg(file.name).arg(file.size));
-            // 使用Qt标准文件图标
             item->setIcon(QApplication::style()->standardIcon(QStyle::SP_FileIcon));
             item->setData(currentRemotePath + file.name, Qt::UserRole);
             item->setData(false, Qt::UserRole + 1); // 标记为文件
             item->setData(false, Qt::UserRole + 2); // 标记为非根目录项
+            item->setData(file.name, Qt::UserRole + 3); // 存储原始文件名（不含路径，不含大小后缀）
         }
         rootItem->appendRow(item);
     }
@@ -569,44 +571,126 @@ void DeployMaster::onRemoteFileDoubleClicked(const QModelIndex& index)
         currentRemotePath = path;
         appendGlobalLog(QString("📁 进入目录: %1").arg(path));
         refreshRemoteFiles();
+    } else {
+        // 双击文件 → 选中并下载
+        ui.tree_remoteFiles->selectionModel()->select(index,
+            QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onDownloadRemoteFile();
     }
 }
 
 void DeployMaster::onDownloadRemoteFile()
 {
-    QModelIndex idx = ui.tree_remoteFiles->currentIndex();
-    if (!idx.isValid()) {
-        appendGlobalLog("请先选择要下载的文件");
+    // 获取所有选中项（支持多选 + 目录递归下载）
+    QModelIndexList selected = ui.tree_remoteFiles->selectionModel()->selectedIndexes();
+    if (selected.isEmpty()) {
+        appendGlobalLog("请先选择要下载的文件或文件夹");
         return;
     }
-    QStandardItem* item = remoteFileModel->itemFromIndex(idx);
-    if (!item) return;
-    bool isDir = item->data(Qt::UserRole + 1).toBool();
-    if (isDir) {
-        appendGlobalLog("暂不支持下载目录，请选择单个文件");
-        return;
+
+    // 去重（QTreeView 可能返回同一行多个列）
+    QList<QModelIndex> uniqueRows;
+    for (const auto& idx : selected) {
+        if (idx.column() == 0) uniqueRows.append(idx);
     }
-    QString remotePath = item->data(Qt::UserRole).toString();
-    QString fileName = item->text().trimmed();
+    if (uniqueRows.isEmpty()) return;
+
+    // 收集用户选中的条目信息 {remotePath, isDir, localName}
+    struct SelectedEntry { QString remotePath; bool isDir; QString localName; };
+    QList<SelectedEntry> entries;
+
+    for (const auto& idx : uniqueRows) {
+        QStandardItem* item = remoteFileModel->itemFromIndex(idx);
+        if (!item) continue;
+        bool isDir = item->data(Qt::UserRole + 1).toBool();
+        bool isRoot = item->data(Qt::UserRole + 2).toBool();
+        if (isRoot) continue;
+
+        QString remotePath = item->data(Qt::UserRole).toString();
+        QString name = item->data(Qt::UserRole + 3).toString();
+
+        SelectedEntry e;
+        e.remotePath = remotePath;
+        e.isDir = isDir;
+        e.localName = name;
+        entries.append(e);
+    }
+
+    if (entries.isEmpty()) return;
+
     QString localDir = QFileDialog::getExistingDirectory(this, "选择保存目录");
     if (localDir.isEmpty()) return;
 
-    appendGlobalLog("下载: " + fileName + " → " + localDir);
+    QString user = m_deviceBusWidget->user();
+    QString pass = m_deviceBusWidget->password();
+
+    appendGlobalLog(QString("⬇ 开始下载 %1 个条目 → %2").arg(entries.size()).arg(localDir));
+
+    // 全部在后台线程执行：先递归扫描目录，再逐文件下载
     QtConcurrent::run([=]() {
-        try {
-            FtpManager ftm(currentRemoteIP, 21);
-            ftm.setCredentials(
-                m_deviceBusWidget->user(),
-                m_deviceBusWidget->password());
-            ftm.downloadFile(remotePath, localDir + "/" + fileName);
-            QMetaObject::invokeMethod(this, [this, fileName]() {
-                appendGlobalLog("下载完成: " + fileName);
-            }, Qt::QueuedConnection);
-        } catch (const std::exception& e) {
-            QMetaObject::invokeMethod(this, [this, msg = QString::fromStdString(e.what())]() {
-                appendGlobalLog("下载失败: " + msg);
-            }, Qt::QueuedConnection);
+        auto log = [this](const QString& msg) {
+            QMetaObject::invokeMethod(this, "appendGlobalLog",
+                Qt::QueuedConnection, Q_ARG(QString, msg));
+        };
+
+        // 递归收集目录下所有文件
+        struct FlatItem { QString remotePath; QString localName; };
+        std::function<void(const QString&, const QString&, QList<FlatItem>&)> scanDir;
+        scanDir = [&](const QString& dirPath, const QString& prefix, QList<FlatItem>& out) {
+            try {
+                FtpManager ftm(currentRemoteIP, 21);
+                ftm.setCredentials(user, pass);
+                QList<FtpFileInfo> children = ftm.listFtpDirectoryDetailed(dirPath);
+                for (const auto& c : children) {
+                    QString childRemote = dirPath;
+                    if (!childRemote.endsWith('/')) childRemote += '/';
+                    childRemote += c.name;
+                    if (c.isDirectory) {
+                        scanDir(childRemote + "/", prefix + c.name + "/", out);
+                    } else {
+                        out.append({childRemote, prefix + c.name});
+                    }
+                }
+            } catch (const std::exception& e) {
+                log(QString("⚠ 扫描失败 %1: %2").arg(dirPath).arg(QString::fromStdString(e.what()).left(80)));
+            }
+        };
+
+        QList<FlatItem> allFiles;
+        for (const auto& e : entries) {
+            if (e.isDir) {
+                log(QString("📁 扫描目录: %1").arg(e.localName));
+                scanDir(e.remotePath, e.localName + "/", allFiles);
+            } else {
+                allFiles.append({e.remotePath, e.localName});
+            }
         }
+
+        int total = allFiles.size();
+        if (total == 0) {
+            log("没有可下载的文件（所选条目中无文件）");
+            return;
+        }
+        log(QString("共 %1 个文件待下载").arg(total));
+
+        int success = 0, failed = 0;
+        for (int i = 0; i < total; ++i) {
+            const auto& f = allFiles[i];
+            QString localPath = localDir + "/" + f.localName;
+            QDir().mkpath(QFileInfo(localPath).absolutePath());
+            try {
+                FtpManager ftm(currentRemoteIP, 21);
+                ftm.setCredentials(user, pass);
+                ftm.downloadFile(f.remotePath, localPath);
+                ++success;
+                log(QString("  [%1/%2] ✅ %3").arg(i + 1).arg(total).arg(f.localName));
+            } catch (const std::exception& ex) {
+                ++failed;
+                log(QString("  [%1/%2] ❌ %3: %4").arg(i + 1).arg(total).arg(f.localName)
+                    .arg(QString::fromStdString(ex.what()).left(80)));
+            }
+        }
+        log(QString("✅ 下载完成: %1 成功, %2 失败").arg(success).arg(failed));
     });
 }
 
