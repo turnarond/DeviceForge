@@ -172,15 +172,14 @@ set(SOURCES
     src/ui/DeviceBusWidget.cpp
 
     # Tool 实现
-    # Modbus/WebSocket 工具依赖可选 Qt 模块
-    $<IF:$<TARGET_EXISTS:Qt6::SerialBus>,src/tools/ModbusTool/ModbusBackend.cpp,>
-    $<IF:$<TARGET_EXISTS:Qt6::SerialBus>,src/tools/ModbusTool/ModbusWidget.cpp,>
+    src/tools/ModbusTool/ModbusBackend.cpp
+    src/tools/ModbusTool/ModbusWidget.cpp
     src/tools/FtpDeployTool/FtpDeployBackend.cpp
     src/tools/FtpDeployTool/FtpDeployWidget.cpp
     src/tools/TelnetTool/TelnetBackend.cpp
     src/tools/TelnetTool/TelnetWidget.cpp
-    $<IF:$<TARGET_EXISTS:Qt6::WebSockets>,src/tools/WebSocketTool/WebSocketBackend.cpp,>
-    $<IF:$<TARGET_EXISTS:Qt6::WebSockets>,src/tools/WebSocketTool/WebSocketWidget.cpp,>
+    src/tools/WebSocketTool/WebSocketBackend.cpp
+    src/tools/WebSocketTool/WebSocketWidget.cpp
     src/tools/NetRelayTool/NetRelayBackend.cpp
     src/tools/NetRelayTool/NetRelayWidget.cpp
     src/tools/NetRelayTool/RelayRecorder.cpp
@@ -227,14 +226,6 @@ add_subdirectory(src/thirdparty/open62541)
 qt_add_resources(DeviceForge
     DeployMaster.qrc
 )
-
-# 条件编译：CI 环境 Qt 6.9.2 可能缺 SerialBus/WebSockets
-if(NOT TARGET Qt6::SerialBus)
-    target_compile_definitions(DeviceForge PRIVATE DEVICEFORGE_NO_SERIALBUS)
-endif()
-if(NOT TARGET Qt6::WebSockets)
-    target_compile_definitions(DeviceForge PRIVATE DEVICEFORGE_NO_WEBSOCKETS)
-endif()
 
 # 链接 Qt 模块 + thirdparty 库
 set(QT_LIBS
