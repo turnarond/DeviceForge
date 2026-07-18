@@ -24,12 +24,16 @@
 #include <QAction>      // Task 5: 菜单项
 
 #include "OpcUaClient.h" // add header
+#ifndef DEVICEFORGE_NO_WEBSOCKETS
 #include "src/tools/WebSocketTool/WebSocketWidget.h"
 #include "src/tools/WebSocketTool/WebSocketBackend.h"
+#endif
 #include "src/tools/FtpDeployTool/FtpDeployWidget.h"
 #include "src/tools/FtpDeployTool/FtpDeployBackend.h"
+#ifndef DEVICEFORGE_NO_SERIALBUS
 #include "src/tools/ModbusTool/ModbusWidget.h"
 #include "src/tools/ModbusTool/ModbusBackend.h"
+#endif
 #include "src/tools/OpcUaClientTool/OpcUaClientWidget.h"
 #include "src/tools/OpcUaClientTool/OpcUaClientBackend.h"
 
@@ -63,7 +67,9 @@ DeployMaster::DeployMaster(QWidget* parent)
     m_toolHost = new ToolHost(this);
 
     setupFtpDeployTab();
+#ifndef DEVICEFORGE_NO_SERIALBUS
     setupModbusClusterTab();
+#endif
     setupNetRelayTab();
     setupOpcUaClientTab();
 
@@ -97,7 +103,9 @@ DeployMaster::DeployMaster(QWidget* parent)
 void DeployMaster::initToolTabs()
 {
     setupTelnetDeployTab();
+#ifndef DEVICEFORGE_NO_WEBSOCKETS
     setupWebSocketClientTab();
+#endif
 }
 
 // 在初始化函数中（如 setupUi 后）
@@ -144,6 +152,7 @@ void DeployMaster::setupTelnetDeployTab()
 
 void DeployMaster::setupModbusClusterTab()
 {
+#ifndef DEVICEFORGE_NO_SERIALBUS
     auto backend = std::make_shared<ModbusBackend>();
     auto* widget = new ModbusWidget(this);
 
@@ -159,6 +168,9 @@ void DeployMaster::setupModbusClusterTab()
     m_modbusBackend = backend;
     m_modbusWidget = widget;
     ui.tabWidget->addTab(m_modbusWidget, tr("MODBUS 测试"));
+#else
+    Q_UNUSED(this);
+#endif
 }
 
 // 网络中继调试 Tool（TCP/UDP 透明代理 + 双向流量捕获）
@@ -204,6 +216,7 @@ void DeployMaster::setupOpcUaClientTab()
 // WebSocket 通信 Tab（直接创建 Backend + Widget，不通过 ToolHost）
 void DeployMaster::setupWebSocketClientTab()
 {
+#ifndef DEVICEFORGE_NO_WEBSOCKETS
     auto backend = std::make_shared<WebSocketBackend>();
     auto* widget = new WebSocketWidget(this);
 
@@ -219,6 +232,9 @@ void DeployMaster::setupWebSocketClientTab()
     m_webSocketBackend = backend;
     m_webSocketWidget = widget;
     ui.tabWidget->addTab(m_webSocketWidget, tr("WebSocket"));
+#else
+    Q_UNUSED(this);
+#endif
 }
 
 void DeployMaster::onAddFilesClicked()
