@@ -27,7 +27,7 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
-        modules: 'qtserialbus qtwebsockets'
+        modules: 'qtserialport qtserialbus qtwebsockets'
         cache: 'false'
 
     - name: Configure CMake
