@@ -228,14 +228,17 @@ qt_add_resources(DeviceForge
 )
 
 # 链接 Qt 模块 + thirdparty 库
+set(QT_LIBS
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Concurrent
+)
+if(TARGET Qt6::SerialBus)
+    list(APPEND QT_LIBS Qt6::SerialBus)
+endif()
+if(TARGET Qt6::WebSockets)
+    list(APPEND QT_LIBS Qt6::WebSockets)
+endif()
 target_link_libraries(DeviceForge PRIVATE
-    Qt6::Core
-    Qt6::Gui
-    Qt6::Widgets
-    Qt6::Network
-    Qt6::SerialBus
-    Qt6::WebSockets
-    Qt6::Concurrent
+    ${QT_LIBS}
     lwlog
     lwcomm
     lwcommunicate
