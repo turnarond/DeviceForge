@@ -987,19 +987,14 @@ void DeployMaster::setupUpdateChecker()
             }, Qt::QueuedConnection);
         });
 
-    // 错误回调（静默错误,更新 UI 状态到 Error）
+    // 错误回调（setState(Error) 已通过状态回调处理标签更新）
     m_updateChecker->setErrorCallback([this](const std::string& msg) {
         QMetaObject::invokeMethod(this, [this, msg]() {
-            Q_UNUSED(msg);
             if (m_updateDialog) {
                 m_updateDialog->setState(UpdateState::Error);
             }
-            // 自动检查失败静默（spec §7: 不弹窗、不改变状态栏）
-            // 手动检查失败才显示 "检查失败"
-            if (!m_autoCheck) {
-                m_versionLabel->setText(currentVersionString() + " (检查失败)");
-                m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
-            }
+            // 日志记录实际错误原因
+            appendGlobalLog(QString("检查更新失败: %1").arg(QString::fromStdString(msg)));
         }, Qt::QueuedConnection);
     });
 
@@ -1069,7 +1064,6 @@ void DeployMaster::onUpdateStateChanged(UpdateState state)
             m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         }
         m_checkUpdateAction->setText("检查更新...");
-        m_autoCheck = false;  // 重置标志
         break;
 
     case UpdateState::Downloading:
