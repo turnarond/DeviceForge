@@ -193,14 +193,14 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
         setError(QStringLiteral("OPC UA 客户端创建失败"));
         return false;
     }
-    // None 安全策略 + 匿名认证
+    // None 安全策略 + 匿名认证（encryption 已关闭）
     UA_ClientConfig* cc = UA_Client_getConfig(m_client);
     UA_ClientConfig_setDefault(cc);
-    // 仅允许 None 安全策略（encryption 已关闭），跳过证书校验
     cc->securityMode = UA_MESSAGESECURITYMODE_NONE;
-    #ifdef UA_ENABLE_ENCRYPTION
-    cc->securityPolicyUri = UA_STRING_ALLOC("http://opcfoundation.org/UA/SecurityPolicy#None");
-    #endif
+    cc->securityPolicyUri = UA_STRING(const_cast<char*>(
+        "http://opcfoundation.org/UA/SecurityPolicy#None"));
+    // 连接超时 (ms)，默认 5000 可能对慢网络不够
+    cc->timeout = 30000;
 
     // 组装 endpoint URL：允许 device.ip 直接为完整 "opc.tcp://..." 或仅 host
     QString url = QString::fromStdString(device.ip);
