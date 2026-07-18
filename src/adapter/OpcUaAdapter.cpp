@@ -198,23 +198,38 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
     UA_ClientConfig_setDefault(cc);
     cc->timeout = 30000;
     cc->securityMode = UA_MESSAGESECURITYMODE_NONE;
-    // UA_ClientConfig_setDefault 不填充 securityPolicies(encryption 关闭时),
-    // initSecurityPolicy 遍历不到 None 策略 → BadInternalError
-    // securityPolicies 由 UA_ClientConfig_clear 负责释放(UA_Client_delete 调用)
     cc->securityPolicies = (UA_SecurityPolicy*)UA_malloc(sizeof(UA_SecurityPolicy));
     if (cc->securityPolicies) {
         UA_SecurityPolicy_None(&cc->securityPolicies[0], UA_BYTESTRING_NULL, cc->logging);
         cc->securityPoliciesSize = 1;
     }
+    // 启用 open62541 TRACE 级别日志
+    UA_Log_Stdout_withLevel(UA_LOGLEVEL_TRACE);
 
-    // 组装 endpoint URL：允许 device.ip 直接为完整 "opc.tcp://..." 或仅 host
-    QString url = QString::fromStdString(device.ip);
-    if (!url.startsWith(QStringLiteral("opc.tcp://"), Qt::CaseInsensitive)) {
-        int port = device.port > 0 ? device.port : 4840;
-        url = QStringLiteral("opc.tcp://%1:%2").arg(url).arg(port);
+    // 组装 endpoint URL
+    QString url;
+    {
+        QString ip = QString::fromStdString(device.ip);
+        if (!ip.startsWith(QStringLiteral("opc.tcp://"), Qt::CaseInsensitive)) {
+            int port = device.port > 0 ? device.port : 4840;
+            url = QStringLiteral("opc.tcp://%1:%2").arg(ip).arg(port);
+        } else {
+            url = ip;
+        }
+    }
+    qDebug() << "[OpcUa] config: policiesSize=" << (int)cc->securityPoliciesSize
+             << " securityMode=" << (int)cc->securityMode
+             << " url=" << url;
+    if (cc->securityPoliciesSize > 0) {
+        QByteArray uri = QByteArray(reinterpret_cast<const char*>(
+            cc->securityPolicies[0].policyUri.data),
+            (int)cc->securityPolicies[0].policyUri.length);
+        qDebug() << "[OpcUa] securityPolicies[0].policyUri=" << uri;
     }
 
     UA_StatusCode ret = UA_Client_connect(m_client, url.toUtf8().constData());
+    qDebug() << "[OpcUa] UA_Client_connect returned:" << (unsigned long)ret
+             << uaStatusToString(ret);
     if (ret != UA_STATUSCODE_GOOD) {
         setError(uaStatusToString(ret));
         UA_Client_delete(m_client);
