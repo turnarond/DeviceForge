@@ -12,6 +12,7 @@
  */
 
 #include "DeviceBusWidget.h"
+#include "config/ConfigStore.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
@@ -20,6 +21,7 @@
 #include <QIcon>
 #include <QPixmap>
 #include <QPainter>
+#include <QDateTime>
 
 // 创建在线指示灯图标
 static QIcon createOnlineIcon()
@@ -57,6 +59,10 @@ DeviceBusWidget::DeviceBusWidget(QWidget* parent) : QWidget(parent)
 {
     setObjectName("deviceBusContainer");
     setupUi();
+
+    // 启动时加载历史设备列表（ConfigStore 须已 open；否则返回空 list）
+    // 当前 UI 没有 IP 下拉框，仅缓存供 Task 7 决定展示位置
+    m_recentDevices = ConfigStore::instance().list(QStringLiteral("device.list"), 20);
 }
 
 void DeviceBusWidget::setupUi()
@@ -154,6 +160,20 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device)
     item->setToolTip(QString::fromStdString(
         device.ip + ":" + std::to_string(device.port) + " [" + device.protocol + "]"));
     m_deviceList->addItem(item);
+
+    // 持久化到 ConfigStore（key = "ip:port"，覆盖式更新）
+    QVariantMap dev;
+    dev.insert(QStringLiteral("ip"), ipStr);
+    dev.insert(QStringLiteral("port"), device.port);
+    dev.insert(QStringLiteral("displayName"),
+               device.alias.empty() ? ipStr : QString::fromStdString(device.alias));
+    dev.insert(QStringLiteral("note"), QString::fromStdString(device.note));
+    dev.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
+    ConfigStore::instance().save(
+        QStringLiteral("device.list"),
+        QStringLiteral("%1:%2").arg(ipStr).arg(device.port),
+        dev);
+
     emit deviceSelectionChanged();
 }
 

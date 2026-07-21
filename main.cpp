@@ -12,6 +12,7 @@
 #include "src/adapter/OpcUaAdapter.h"
 #include "src/framework/ToolHost.h"
 #include "src/framework/ToolRegistry.h"
+#include "src/config/ConfigStore.h"
 #include "src/tools/FtpDeployTool/FtpDeployBackend.h"
 #include "src/tools/FtpDeployTool/FtpDeployWidget.h"
 #include "src/tools/TelnetTool/TelnetBackend.h"
@@ -26,6 +27,10 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setWindowIcon(QIcon(":/icons/app.ico"));  // 应用级窗口/任务栏图标
     LogBridge::install();  // Qt -> lwlog 日志桥接
+
+    // 打开 ConfigStore（单例；用于 device.list / SettingsDialog 等持久化）
+    // SettingsDialog 内部有防御性 open，但 DeviceBusWidget 启动期需要它已 open
+    ConfigStore::instance().open();
 
     // libcurl 全局初始化(UpdateChecker 跨线程使用)
     // 进程退出由 OS 回收，无需显式 curl_global_cleanup
@@ -108,5 +113,9 @@ int main(int argc, char *argv[])
     // Q_UNUSED(ftpPresenter); // 生命周期由 parent 管理
 
     window.show();
-    return app.exec();
+    const int rc = app.exec();
+
+    // 关闭 ConfigStore（释放 QSql 连接；进程退出前）
+    ConfigStore::instance().close();
+    return rc;
 }
