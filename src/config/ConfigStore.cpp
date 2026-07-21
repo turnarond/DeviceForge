@@ -48,27 +48,32 @@ bool ConfigStore::open(const QString& dbPath)
         QSqlDatabase::removeDatabase(kConnName);
     }
 
-    QSqlDatabase d = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), kConnName);
-    d.setDatabaseName(path);
-    if (!d.open())
-        return false;
-
-    QSqlQuery q(d);
-    const bool ok = q.exec(
-        QStringLiteral(
-            "CREATE TABLE IF NOT EXISTS config_items ("
-            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "  type TEXT NOT NULL,"
-            "  key TEXT NOT NULL,"
-            "  value TEXT NOT NULL,"
-            "  created_at INTEGER NOT NULL,"
-            "  updated_at INTEGER NOT NULL,"
-            "  UNIQUE(type, key))"));
-    if (!ok)
-        return false;
-
-    m_open = true;
-    return true;
+    {
+        QSqlDatabase d = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), kConnName);
+        d.setDatabaseName(path);
+        if (!d.open()) {
+            // d 析构后再 removeDatabase（与 close() 一致）
+        } else {
+            QSqlQuery q(d);
+            const bool ok = q.exec(
+                QStringLiteral(
+                    "CREATE TABLE IF NOT EXISTS config_items ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  type TEXT NOT NULL,"
+                    "  key TEXT NOT NULL,"
+                    "  value TEXT NOT NULL,"
+                    "  created_at INTEGER NOT NULL,"
+                    "  updated_at INTEGER NOT NULL,"
+                    "  UNIQUE(type, key))"));
+            if (ok) {
+                m_open = true;
+                return true;
+            }
+            d.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(kConnName);
+    return false;
 }
 
 void ConfigStore::close()
@@ -174,15 +179,21 @@ QList<QVariantMap> ConfigStore::list(const QString& type, int limit)
 
     while (q.next()) {
         QVariantMap m;
-        m.insert(QStringLiteral("type"), q.value(0).toString());
-        m.insert(QStringLiteral("key"), q.value(1).toString());
-        m.insert(QStringLiteral("updated_at"), q.value(3).toLongLong());
         const QJsonDocument doc = QJsonDocument::fromJson(q.value(2).toString().toUtf8());
         if (doc.isObject()) {
             const QVariantMap inner = doc.object().toVariantMap();
-            for (auto it = inner.constBegin(); it != inner.constEnd(); ++it)
+            for (auto it = inner.constBegin(); it != inner.constEnd(); ++it) {
+                // 保留 SQL 元字段，避免 value JSON 中同名键覆盖 type/key/updated_at
+                if (it.key() == QLatin1String("type")
+                    || it.key() == QLatin1String("key")
+                    || it.key() == QLatin1String("updated_at"))
+                    continue;
                 m.insert(it.key(), it.value());
+            }
         }
+        m.insert(QStringLiteral("type"), q.value(0).toString());
+        m.insert(QStringLiteral("key"), q.value(1).toString());
+        m.insert(QStringLiteral("updated_at"), q.value(3).toLongLong());
         out.append(m);
     }
     return out;
