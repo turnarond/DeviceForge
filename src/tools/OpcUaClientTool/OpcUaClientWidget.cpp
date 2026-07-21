@@ -16,6 +16,7 @@
 
 #include "OpcUaClientWidget.h"
 #include "OpcUaClientBackend.h"
+#include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -96,7 +97,16 @@ static QString nodeClassToBackground(const QString& className)
     return "transparent";
 }
 
-OpcUaClientWidget::OpcUaClientWidget(QWidget* parent) : ToolWidget(parent) { setupUi(); }
+OpcUaClientWidget::OpcUaClientWidget(QWidget* parent) : ToolWidget(parent)
+{
+    setupUi();
+
+    for (const auto& it : ConfigStore::instance().list("opcua.endpoint", 20)) {
+        const QString url = it["url"].toString();
+        if (m_endpointEdit->findText(url) < 0)
+            m_endpointEdit->addItem(url);
+    }
+}
 
 // ============================================================
 // setupUi — 编程式布局（无 .ui 文件）
@@ -117,7 +127,10 @@ void OpcUaClientWidget::setupUi()
     // 行 1：Endpoint + 连接按钮
     auto* row1 = new QHBoxLayout();
     row1->addWidget(new QLabel("Endpoint:", this));
-    m_endpointEdit = new QLineEdit("opc.tcp://192.168.1.10:4840", this);
+    m_endpointEdit = new QComboBox(this);
+    m_endpointEdit->setEditable(true);
+    m_endpointEdit->setMinimumWidth(280);
+    m_endpointEdit->lineEdit()->setPlaceholderText("opc.tcp://192.168.1.10:4840");
     row1->addWidget(m_endpointEdit, 1);
     m_connectBtn = new QPushButton("连接", this);
     row1->addWidget(m_connectBtn);
@@ -303,6 +316,15 @@ void OpcUaClientWidget::setBackend(OpcUaClientBackend* backend)
     m_backend->setConnectionCallback([this](bool connected) {
         QMetaObject::invokeMethod(this, [this, connected]() {
             updateConnectionStatus(connected);
+            if (connected) {
+                const QString endpoint = m_endpointEdit->currentText().trimmed();
+                if (m_endpointEdit->findText(endpoint) < 0)
+                    m_endpointEdit->addItem(endpoint);
+                // ConfigStore 时间戳统一用毫秒（与 DeviceBusWidget / ConfigStore 测试一致）
+                const QVariantMap value{{"url", endpoint},
+                                        {"updated_at", QDateTime::currentMSecsSinceEpoch()}};
+                ConfigStore::instance().save("opcua.endpoint", endpoint, value);
+            }
         }, Qt::QueuedConnection);
     });
 
@@ -375,7 +397,7 @@ void OpcUaClientWidget::onConnectClicked()
     if (m_connected) {
         m_backend->disconnectFromServer();
     } else {
-        const QString endpoint = m_endpointEdit->text().trimmed();
+        const QString endpoint = m_endpointEdit->currentText().trimmed();
         if (endpoint.isEmpty()) {
             appendLog("请填写 Endpoint 地址");
             return;

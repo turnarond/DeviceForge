@@ -67,7 +67,7 @@ private:
     bool    m_connected    = false;
 
     // 连接配置
-    QLineEdit*   m_endpointEdit        = nullptr;
+    QComboBox*   m_endpointEdit        = nullptr;
     QPushButton* m_connectBtn          = nullptr;
     QComboBox*   m_securityPolicyCombo = nullptr;
     QComboBox*   m_authCombo           = nullptr;
