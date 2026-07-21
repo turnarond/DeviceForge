@@ -60,7 +60,7 @@ IProtocolAdapter (纯虚接口)
 - **FtpAdapter**：封装 libcurl，支持 FTP/FTPS。提供 uploadFile/uploadFolder/downloadFile/listDirectory 等操作
 - **TelnetAdapter**：基于 lwcommunicate::LWTcpClient，支持请求-响应和流模式
 - **SshAdapter**：基于 libssh2，支持密码认证 + TOFU 主机密钥验证，request-响应模式（SSH exec channel）
-- **OpcUaAdapter**：基于 open62541，OPC UA 客户端。支持 None 安全策略 + 匿名认证、批量读/写节点、DataChange 订阅（MonitoredItem）、地址空间浏览。`recursive_mutex` 串行化所有 `UA_Client` 访问（open62541 以 `UA_MULTITHREADING=0` 编译，客户端非线程安全）
+- **OpcUaAdapter**：基于 open62541，OPC UA 客户端。支持 None 安全策略 + 匿名认证、批量读/写节点、DataChange 订阅（MonitoredItem）、地址空间浏览。`recursive_mutex` 串行化所有 `UA_Client` 访问（open62541 以 `UA_MULTITHREADING=0` 编译，客户端非线程安全）。`browseRoot()` 对引用结果做 `UA_NodeId_copy` 深拷贝，避免 `UA_BrowseResponse_clear` 后的悬垂指针。
 
 > **注意**：部分 Tool（Modbus / WebSocket / NetRelay）直接使用 Qt 原生 socket 类（QModbusTcpClient / QWebSocket / QTcpServer + QUdpSocket），未走 IProtocolAdapter 抽象。适配器层主要服务于 FTP/Telnet 这类请求-响应/流模式协议。
 

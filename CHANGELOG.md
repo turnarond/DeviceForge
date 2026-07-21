@@ -1,5 +1,44 @@
 # Changelog
 
+## [2.2.0] — 2026-07-21
+
+### OPC UA 客户端完整化 + UI 重构 + 第一个连接鲁棒性补丁
+
+完成 OPC UA 客户端的端到端打通（地址空间浏览 → DataChange 订阅），重写浏览面板 UI（5 列 + 类型友好名 + 节点类色块 + 分批渲染 + × 删除按钮），并对 open62541 amalgamation 打了一个针对非规范服务端的连接鲁棒性 patch。
+
+### 新增
+
+#### OPC UA 客户端增强（`src/adapter/OpcUaAdapter.cpp` + `src/tools/OpcUaClientTool/`）
+- **地址空间浏览 5 列重构**：`# | 显示名 | NodeId | 数据类型 | 节点类`（`OpcUaClientWidget.cpp`）
+  - 数据类型友好名映射：`i=24 → Int32`、`i=12 → String` 等，覆盖 OPC UA 内置 16 种类型
+  - 节点类色块：Variable（青绿）/ Object（石蓝）/ Folder（深石）/ Method（琴色）
+  - 搜索框即时过滤 + "共 N 项 · 匹配 M" 计数
+- **浏览性能优化**：每 100 行 `viewport()->update()` 分批渲染，避免 300+ 节点时 UI 卡顿
+- **× 删除按钮**：批量表（读/写）和订阅表每行末尾加删除按钮，点击删除该行；按几何反查行号避免索引漂移
+- **Tab 文字提亮**：`QTabBar::tab` 未选中态 `#7B8494 → #A8ACB8`（在深黑底上对比度 +30%）
+- **连接状态文字着色**：已连接态 `#40C8A0`（青绿）/ 未连接态 `#C8CCD4`（主文字色），通过 `QPalette` 实现
+
+#### 测试基础设施
+- **tst_opcua_encode**：本机编码隔离测试，不连服务器，验证 open62541 类型注册完整（`AnonymousIdentityToken`、`ActivateSessionRequest` 等）
+- **tst_opcua_loopback**：进程内 `UA_Server` + `UA_Client` 端到端环回测试，验证客户端类使用正确（与远端设备无关）
+
+### 修复
+
+#### OPC UA 连接鲁棒性（`src/thirdparty/open62541/open62541.c`）
+- **`activateSessionAsync` policyId 深拷贝**：某些设备（GetEndpoints 返回的 EndpointUrl 与连接 URL 不一致，如 `opc.tcp://0.0.0.0:4840` 或主机名 URL）会触发 open62541 内部端点 UAF，使 `utp->policyId` 在 ActivateSession 时已是悬垂指针。DeviceForge patch 在使用前对 policyId 做 `UA_String_copy` 深拷贝，匿名认证回退为空 policyId。UaExpert（基于不同栈）同样容忍此类服务端
+- **`browseRoot` NodeId 深拷贝**：`varNodeIds.append(ref.nodeId.nodeId)` 浅拷贝在 `UA_BrowseResponse_clear` 后会让 varNodeIds 中的 string/bytestring/guid NodeId 持有悬垂指针；改为 `UA_NodeId_copy` 深拷贝，循环结束统一 `UA_NodeId_clear`
+
+#### OPC UA 客户端类清理（`src/adapter/OpcUaAdapter.cpp`）
+- 移除 `connect()` 中重复的 `UA_ClientConfig_setDefault`（`UA_Client_new` 已内部调用），消除 `securityPolicies` / `applicationUri` 浅拷贝覆盖已分配指针的内存泄漏
+- 移除诊断 stdout 重定向（`_dup`/`freopen`），正常连接由 open62541 内部 logger 记录到 stderr
+
+### 已知问题
+
+- 部分非规范 OPC UA 服务端（如触发 UAF 的设备）需要补丁才能连接；DeviceForge patch 已在 amalgamation 内闭环，无需用户配置
+- 仅 None 安全策略 + 匿名认证，Basic256Sha256 / 用户名 / 证书认证为后续版本计划
+
+---
+
 ## [2.1.0] — 2026-07-09
 
 ### 工具迁移 + 网络调试中继 + 首个测试目标
