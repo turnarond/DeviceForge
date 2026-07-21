@@ -26,6 +26,24 @@ if(_qt_core_dll)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- DpapiCrypto 单元测试（Windows DPAPI + base64；非 Windows 为 no-op stub）---
+add_executable(tst_dpapi_crypto
+    config/tst_dpapi_crypto.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
+)
+target_include_directories(tst_dpapi_crypto PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_dpapi_crypto PRIVATE Qt6::Core Qt6::Test)
+if(WIN32)
+    target_link_libraries(tst_dpapi_crypto PRIVATE crypt32)
+endif()
+add_test(NAME tst_dpapi_crypto COMMAND tst_dpapi_crypto)
+if(_qt_bin_dir)
+    set_tests_properties(tst_dpapi_crypto PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- OPC UA 编码隔离测试（不连服务器，纯本机验证 open62541 编码路径）---
 add_executable(tst_opcua_encode opcua_encode/tst_opcua_encode.c)
 target_link_libraries(tst_opcua_encode PRIVATE open62541)
