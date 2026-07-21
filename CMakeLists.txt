@@ -196,6 +196,9 @@ set(SOURCES
     src/updater/UpdateChecker.cpp
     src/updater/UpdateDialog.cpp
 
+    # 本地配置存储（ConfigStore v2.3；Task 1 仅 DpapiCrypto）
+    src/config/DpapiCrypto.cpp
+
     # Thirdparty 源文件
     src/thirdparty/tinyxml2/tinyxml2.cpp
     src/thirdparty/nanopb/pb_encode.c
@@ -252,6 +255,9 @@ target_link_libraries(DeviceForge PRIVATE
     ${LIBSSH2_LIB}
     open62541
 )
+if(WIN32)
+    target_link_libraries(DeviceForge PRIVATE crypt32)
+endif()
 
 # ============================================================
 # 在线更新模块 — 版本宏定义
