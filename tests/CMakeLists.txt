@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Network Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql)
 
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
@@ -22,6 +22,8 @@ if(NOT _qt_core_dll)
 endif()
 if(_qt_core_dll)
     get_filename_component(_qt_bin_dir "${_qt_core_dll}" DIRECTORY)
+    get_filename_component(_qt_prefix "${_qt_bin_dir}" DIRECTORY)
+    set(_qt_plugin_dir "${_qt_prefix}/plugins")
     set_tests_properties(tst_nrec PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
@@ -42,6 +44,22 @@ add_test(NAME tst_dpapi_crypto COMMAND tst_dpapi_crypto)
 if(_qt_bin_dir)
     set_tests_properties(tst_dpapi_crypto PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- ConfigStore 单元测试（SQLite + JSON 导入导出）---
+add_executable(tst_config_store
+    config/tst_config_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_config_store PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_config_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_config_store COMMAND tst_config_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_config_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
 
 # --- OPC UA 编码隔离测试（不连服务器，纯本机验证 open62541 编码路径）---

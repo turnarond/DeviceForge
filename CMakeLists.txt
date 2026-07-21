@@ -46,6 +46,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     SerialBus
     WebSockets
     Concurrent
+    Sql
 )
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -196,8 +197,9 @@ set(SOURCES
     src/updater/UpdateChecker.cpp
     src/updater/UpdateDialog.cpp
 
-    # 本地配置存储（ConfigStore v2.3；Task 1 仅 DpapiCrypto）
+    # 本地配置存储（ConfigStore v2.3）
     src/config/DpapiCrypto.cpp
+    src/config/ConfigStore.cpp
 
     # Thirdparty 源文件
     src/thirdparty/tinyxml2/tinyxml2.cpp
@@ -236,7 +238,7 @@ qt_add_resources(DeviceForge
 
 # 链接 Qt 模块 + thirdparty 库
 set(QT_LIBS
-    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Concurrent
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Concurrent Qt6::Sql
 )
 if(TARGET Qt6::SerialBus)
     list(APPEND QT_LIBS Qt6::SerialBus)
