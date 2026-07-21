@@ -1,5 +1,6 @@
 #include "ModbusWidget.h"
 #include "ModbusBackend.h"
+#include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -7,7 +8,26 @@
 #include <QHeaderView>
 #include <QDateTime>
 
-ModbusWidget::ModbusWidget(QWidget* parent) : ToolWidget(parent) { setupUi(); }
+ModbusWidget::ModbusWidget(QWidget* parent) : ToolWidget(parent)
+{
+    setupUi();
+
+    // 恢复最近一条 modbus.slave 配置
+    const auto hist = ConfigStore::instance().list(QStringLiteral("modbus.slave"), 1);
+    if (!hist.isEmpty()) {
+        const QVariantMap& h = hist.first();
+        if (m_regTypeCombo)
+            m_regTypeCombo->setCurrentIndex(h.value(QStringLiteral("regType")).toInt());
+        if (m_startAddrSpin)
+            m_startAddrSpin->setValue(h.value(QStringLiteral("startAddr")).toInt());
+        if (m_countSpin)
+            m_countSpin->setValue(h.value(QStringLiteral("count")).toInt());
+        if (m_slaveIdSpin)
+            m_slaveIdSpin->setValue(h.value(QStringLiteral("slaveId")).toInt());
+        if (m_intervalSpin)
+            m_intervalSpin->setValue(h.value(QStringLiteral("intervalMs")).toInt());
+    }
+}
 
 void ModbusWidget::setupUi()
 {
@@ -100,6 +120,20 @@ void ModbusWidget::onToolStop() { appendLog("Modbus 测试工具已停止"); }
 void ModbusWidget::onReadClicked()
 {
     if (!m_backend) return;
+    // 保存当前从站配置
+    {
+        QVariantMap v{
+            {QStringLiteral("regType"), m_regTypeCombo ? m_regTypeCombo->currentIndex() : 0},
+            {QStringLiteral("startAddr"), m_startAddrSpin ? m_startAddrSpin->value() : 0},
+            {QStringLiteral("count"), m_countSpin ? m_countSpin->value() : 10},
+            {QStringLiteral("slaveId"), m_slaveIdSpin ? m_slaveIdSpin->value() : 1},
+            {QStringLiteral("intervalMs"), m_intervalSpin ? m_intervalSpin->value() : 1000},
+            {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
+        };
+        const int sid = m_slaveIdSpin ? m_slaveIdSpin->value() : 1;
+        ConfigStore::instance().save(QStringLiteral("modbus.slave"),
+                                     QStringLiteral("slave:%1").arg(sid), v);
+    }
     QModbusDataUnit::RegisterType t = static_cast<QModbusDataUnit::RegisterType>(m_regTypeCombo->currentIndex() + 1);
     if (m_regTypeCombo->currentIndex() > 1) t = static_cast<QModbusDataUnit::RegisterType>(m_regTypeCombo->currentIndex());
     m_resultTable->setRowCount(0);

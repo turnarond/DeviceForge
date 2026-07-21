@@ -15,6 +15,7 @@
 #include "TelnetWidget.h"
 #include "TelnetBackend.h"
 #include "ui/DeviceBusWidget.h"
+#include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -34,6 +35,18 @@ TelnetWidget::TelnetWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+
+    // 恢复最近一条 telnet.prefs
+    const auto hist = ConfigStore::instance().list(QStringLiteral("telnet.prefs"), 1);
+    if (!hist.isEmpty()) {
+        const QVariantMap& h = hist.first();
+        if (m_protoCombo) {
+            const int idx = m_protoCombo->findText(h.value(QStringLiteral("protocol")).toString());
+            if (idx >= 0) m_protoCombo->setCurrentIndex(idx);
+        }
+        if (m_timeoutSpin)
+            m_timeoutSpin->setValue(h.value(QStringLiteral("timeoutSec")).toInt());
+    }
 }
 
 void TelnetWidget::setupUi()
@@ -230,6 +243,17 @@ void TelnetWidget::onExecuteClicked()
     if (!m_deviceBus) {
         QMessageBox::warning(this, "错误", "设备总线未关联");
         return;
+    }
+
+    // 保存协议/超时偏好（主机与密码来自 DeviceBus，不在此重复存密文）
+    {
+        QVariantMap v{
+            {QStringLiteral("protocol"), m_protoCombo ? m_protoCombo->currentText() : QStringLiteral("Telnet")},
+            {QStringLiteral("timeoutSec"), m_timeoutSpin ? m_timeoutSpin->value() : 10},
+            {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
+        };
+        ConfigStore::instance().save(QStringLiteral("telnet.prefs"),
+                                     QStringLiteral("default"), v);
     }
 
     auto devices = m_deviceBus->allDevices();

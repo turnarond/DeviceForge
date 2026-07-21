@@ -14,6 +14,7 @@
 
 #include "WebSocketWidget.h"
 #include "WebSocketBackend.h"
+#include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -25,6 +26,23 @@ WebSocketWidget::WebSocketWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+
+    // 恢复最近一条 websocket.endpoint 配置
+    const auto hist = ConfigStore::instance().list(QStringLiteral("websocket.endpoint"), 1);
+    if (!hist.isEmpty()) {
+        const QVariantMap& h = hist.first();
+        const QString mode = h.value(QStringLiteral("mode")).toString();
+        if (mode == QStringLiteral("server")) {
+            m_radioServer->setChecked(true);
+            m_spinPort->setValue(h.value(QStringLiteral("port")).toInt());
+            m_chkWss->setChecked(h.value(QStringLiteral("ssl")).toBool());
+        } else if (mode == QStringLiteral("client")) {
+            m_radioClient->setChecked(true);
+            const QString url = h.value(QStringLiteral("url")).toString();
+            if (!url.isEmpty())
+                m_editUrl->setText(url);
+        }
+    }
 }
 
 void WebSocketWidget::setupUi()
@@ -244,6 +262,14 @@ void WebSocketWidget::onStartClicked()
     if (m_radioServer->isChecked()) {
         int port = m_spinPort->value();
         bool ssl = m_chkWss->isChecked();
+        QVariantMap v{
+            {QStringLiteral("mode"), QStringLiteral("server")},
+            {QStringLiteral("port"), port},
+            {QStringLiteral("ssl"), ssl},
+            {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
+        };
+        ConfigStore::instance().save(QStringLiteral("websocket.endpoint"),
+                                     QStringLiteral("server:%1").arg(port), v);
         m_backend->startServer(port, ssl);
         emit toolStatusChanged("Server 启动中...");
     } else {
@@ -256,6 +282,12 @@ void WebSocketWidget::onStartClicked()
             m_radioClient->setEnabled(true);
             return;
         }
+        QVariantMap v{
+            {QStringLiteral("mode"), QStringLiteral("client")},
+            {QStringLiteral("url"), url},
+            {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
+        };
+        ConfigStore::instance().save(QStringLiteral("websocket.endpoint"), url, v);
         m_backend->startClient(url.toStdString());
         emit toolStatusChanged("Client 连接中...");
     }

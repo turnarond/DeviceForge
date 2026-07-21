@@ -14,6 +14,7 @@
 
 #include "NetRelayWidget.h"
 #include "NetRelayBackend.h"
+#include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -32,6 +33,22 @@ NetRelayWidget::NetRelayWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+
+    // 恢复最近一条 netrelay.server 配置
+    const auto hist = ConfigStore::instance().list(QStringLiteral("netrelay.server"), 1);
+    if (!hist.isEmpty()) {
+        const QVariantMap& h = hist.first();
+        if (m_comboProtocol)
+            m_comboProtocol->setCurrentIndex(h.value(QStringLiteral("protocol")).toInt());
+        if (m_editListenAddr)
+            m_editListenAddr->setText(h.value(QStringLiteral("listenAddr")).toString());
+        if (m_spinListenPort)
+            m_spinListenPort->setValue(h.value(QStringLiteral("listenPort")).toInt());
+        if (m_editUpstreamHost)
+            m_editUpstreamHost->setText(h.value(QStringLiteral("upstreamHost")).toString());
+        if (m_spinUpstreamPort)
+            m_spinUpstreamPort->setValue(h.value(QStringLiteral("upstreamPort")).toInt());
+    }
 }
 
 void NetRelayWidget::setupUi()
@@ -324,6 +341,24 @@ void NetRelayWidget::onStartClicked()
             (protoIdx == 2) ? "请输入有效的组播组地址和端口（复用上游地址/端口）"
                             : "请输入有效的上游地址和端口");
         return;
+    }
+
+    // 保存中继监听/上游配置（无密码字段）
+    {
+        QVariantMap v{
+            {QStringLiteral("protocol"), protoIdx},
+            {QStringLiteral("listenAddr"), listenAddr},
+            {QStringLiteral("listenPort"), static_cast<int>(listenPort)},
+            {QStringLiteral("upstreamHost"), upstreamHost},
+            {QStringLiteral("upstreamPort"), static_cast<int>(upstreamPort)},
+            {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
+        };
+        const QString key = QStringLiteral("%1:%2->%3:%4")
+                                .arg(listenAddr)
+                                .arg(listenPort)
+                                .arg(upstreamHost)
+                                .arg(upstreamPort);
+        ConfigStore::instance().save(QStringLiteral("netrelay.server"), key, v);
     }
 
     m_sessionTree->clear();
