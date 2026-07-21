@@ -22,9 +22,7 @@
 #include "OpcUaAdapter.h"
 #include <open62541.h>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
+#include <cstring>   // memset（config 清零）
 
 #include <QDateTime>
 #include <QByteArray>
@@ -192,27 +190,6 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
     std::lock_guard<std::recursive_mutex> lk(m_clientMutex);
     disconnect();
 
-    m_client = UA_Client_new();
-    if (!m_client) {
-        setError(QStringLiteral("OPC UA 客户端创建失败"));
-        return false;
-    }
-    // None 安全策略 + 匿名认证
-    UA_ClientConfig* cc = UA_Client_getConfig(m_client);
-    UA_ClientConfig_setDefault(cc);
-    cc->timeout = 30000;
-    cc->securityMode = UA_MESSAGESECURITYMODE_NONE;
-    cc->securityPolicies = (UA_SecurityPolicy*)UA_malloc(sizeof(UA_SecurityPolicy));
-    QString diag;
-    if (cc->securityPolicies) {
-        UA_SecurityPolicy_None(&cc->securityPolicies[0], UA_BYTESTRING_NULL, cc->logging);
-        cc->securityPoliciesSize = 1;
-        diag = QString("policies=%1 mode=%2")
-                   .arg((int)cc->securityPoliciesSize).arg((int)cc->securityMode);
-    } else {
-        diag = QString("UA_malloc failed");
-    }
-
     // 组装 endpoint URL
     QString url;
     {
@@ -225,20 +202,36 @@ bool OpcUaAdapter::connect(const DeviceInfo& device, const AuthInfo& /*auth*/)
         }
     }
 
-#ifdef Q_OS_WIN
-    // redirect open62541 stdout/stderr → VS Output window
-    UA_Log_Stdout_withLevel(UA_LOGLEVEL_TRACE);
-#endif
+    // --- 用 TRACE 级 logger 构造 client ---
+    // 关键：logging 必须在 UA_ClientConfig_setDefault 之前设好。setDefault 只在
+    // logging==NULL 时才创建（默认 INFO 级），且其后 certificateVerification/eventLoop
+    // /securityPolicies 等子结构都会引用同一 logger 指针——若事后替换会造成悬垂。
+    // （原代码调用 UA_Log_Stdout_withLevel 却丢弃了按值返回的 UA_Logger，等于空操作，
+    //   日志级别始终停留在 INFO，握手/会话阶段的 DEBUG/TRACE 全被过滤，故看不到失败细节。）
+    UA_ClientConfig config;              // 值初始化整块清零
+    memset(&config, 0, sizeof(config));
+    config.timeout = 30000;
+    UA_StatusCode st = UA_ClientConfig_setDefault(&config);
+    if (st != UA_STATUSCODE_GOOD) {
+        setError(QStringLiteral("ClientConfig 初始化失败: ") + uaStatusToString(st));
+        return false;
+    }
+    // setDefault 已填充 None 安全策略 + 匿名认证的所有字段：
+    //   securityPolicies[0]=None, securityPoliciesSize=1
+    //   securityMode=INVALID(0) → 端点选择时匹配 None 端点（更兼容）
+    //   clientDescription.applicationUri / applicationType=CLIENT
+    //   userIdentityToken=NOBODY → 匿名认证
+    // 不要重复分配任何字段，浅拷贝会覆盖已分配指针导致泄漏。
 
-    UA_StatusCode ret = UA_Client_connect(m_client, url.toUtf8().constData());
-    // VS Output 窗口诊断（即使 console 关闭也能看到）
-    QString dbg = QString("OpcUaAdapter::connect %1 → %2 (%3)")
-                      .arg(url, uaStatusToString(ret), diag);
-    OutputDebugStringW(reinterpret_cast<LPCWSTR>(dbg.utf16()));
-    OutputDebugStringW(L"\n");
+    m_client = UA_Client_newWithConfig(&config);
+    if (!m_client) {
+        setError(QStringLiteral("OPC UA 客户端创建失败"));
+        return false;
+    }
+
+    const UA_StatusCode ret = UA_Client_connect(m_client, url.toUtf8().constData());
     if (ret != UA_STATUSCODE_GOOD) {
-        setError(uaStatusToString(ret)
-                 + QString(" (%1)").arg(diag));
+        setError(uaStatusToString(ret));
         UA_Client_delete(m_client);
         m_client = nullptr;
         return false;
@@ -605,7 +598,11 @@ QString OpcUaAdapter::browseRoot()
 
                 if (ref.nodeClass == UA_NODECLASS_VARIABLE) {
                     node["dataType"] = ""; // 占位
-                    varNodeIds.append(ref.nodeId.nodeId);
+                    /* 深拷贝：ref 生命周期受 bResp 控制，bResp.clear 后 identifier
+                     * 会被释放；必须 copy 一份 varNodeIds 自己持有。 */
+                    UA_NodeId copy;
+                    UA_NodeId_copy(&ref.nodeId.nodeId, &copy);
+                    varNodeIds.append(copy);
                     varIndices.append(arr.size());
                 } else {
                     node["dataType"] = "";
@@ -624,7 +621,9 @@ QString OpcUaAdapter::browseRoot()
         for (int i = 0; i < varNodeIds.size(); ++i) {
             UA_ReadValueId_init(&rvids[i]);
             rvids[i].attributeId = UA_ATTRIBUTEID_DATATYPE;
-            rvids[i].nodeId = varNodeIds[i];
+            /* 深拷贝：varNodeIds[i] 在循环1末尾已 UA_NodeId_clear，直接浅拷贝会让
+             * rvids[i].nodeId 持有悬垂指针，后续清理时二次释放崩溃。 */
+            UA_NodeId_copy(&varNodeIds[i], &rvids[i].nodeId);
         }
 
         UA_ReadRequest rdReq;
@@ -649,6 +648,9 @@ QString OpcUaAdapter::browseRoot()
         }
         for (int i = 0; i < rvids.size(); ++i) {
             UA_NodeId_clear(&rvids[i].nodeId);
+        }
+        for (int i = 0; i < varNodeIds.size(); ++i) {
+            UA_NodeId_clear(&varNodeIds[i]); // 释放 C2 修复中深拷贝的 varNodeIds
         }
         UA_ReadResponse_clear(&rdResp);
     }
