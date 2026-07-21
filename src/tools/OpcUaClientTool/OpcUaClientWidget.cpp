@@ -20,10 +20,81 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QScrollBar>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+
+// ============================================================
+// 辅助：OPC UA 类型映射
+// ============================================================
+
+// OPC UA 内置类型 NodeId → 友好名
+// 处理 "i=24" / "ns=0;i=24" / "ns=2;i=3001" 三种格式
+static QString dataTypeIdToName(const QString& nodeId)
+{
+    bool ok = false;
+    int id = -1;
+    if (nodeId.startsWith("ns=0;i=")) {
+        id = nodeId.mid(7).toInt(&ok);
+    } else if (nodeId.startsWith("i=")) {
+        id = nodeId.mid(2).toInt(&ok);
+    } else if (nodeId.contains("i=")) {
+        id = nodeId.section("i=", -1).toInt(&ok);
+    }
+    if (ok) {
+        switch (id) {
+        case  1: return "Boolean";
+        case  2: return "SByte";
+        case  3: return "Byte";
+        case  4: return "Int16";
+        case  5: return "UInt16";
+        case  6: return "Int32";
+        case  7: return "UInt32";
+        case  8: return "Int64";
+        case  9: return "UInt64";
+        case 10: return "Float";
+        case 11: return "Double";
+        case 12: return "String";
+        case 13: return "DateTime";
+        case 14: return "UInt8";
+        case 15: return "ByteString";
+        case 16: return "XmlElement";
+        case 17: return "NodeId";
+        case 18: return "ExpandedNodeId";
+        case 22: return "StatusCode";
+        case 24: return "Int32";     // 常见 Int32 别名
+        default: break;
+        }
+    }
+    return nodeId;
+}
+
+// nodeClass 数字 → 友好名
+static QString nodeClassToName(int nodeClass)
+{
+    switch (nodeClass) {
+    case 1:  return "Object";
+    case 2:  return "Variable";
+    case 4:  return "Method";
+    case 8:  return "Folder";
+    case 16: return "View";
+    case 32: return "ObjectType";
+    case 64: return "VariableType";
+    default:  return QString::number(nodeClass);
+    }
+}
+
+// nodeClass → QSS 背景色（工业仪表盘色板）
+static QString nodeClassToBackground(const QString& className)
+{
+    if (className == "Variable") return "#1a3a30";
+    if (className == "Object")   return "#1e2030";
+    if (className == "Folder")   return "#2a2520";
+    if (className == "Method")   return "#2a2010";
+    return "transparent";
+}
 
 OpcUaClientWidget::OpcUaClientWidget(QWidget* parent) : ToolWidget(parent) { setupUi(); }
 
@@ -92,19 +163,27 @@ void OpcUaClientWidget::setupUi()
     browseTop->addWidget(m_browseCount);
     browseLayout->addLayout(browseTop);
 
-    // 扁平表格：# / 显示名 / NodeId / 类型  (verticalHeader 即行号)
-    m_browseTable = new QTableWidget(0, 3, this);
-    m_browseTable->setHorizontalHeaderLabels({"显示名", "NodeId", "类型"});
+    // 扁平表格：# / 显示名 / NodeId / 数据类型 / 节点类
+    m_browseTable = new QTableWidget(0, 5, this);
+    m_browseTable->setHorizontalHeaderLabels({"#", "显示名", "NodeId", "数据类型", "节点类"});
     m_browseTable->setAlternatingRowColors(true);
     m_browseTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_browseTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_browseTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_browseTable->setSortingEnabled(true);
+    m_browseTable->verticalHeader()->setVisible(false); // # 列代替行号
+
+    // 列宽：#(40) / 显示名(200固定) / NodeId(自适应) / 数据类型(90) / 节点类(90)
     m_browseTable->horizontalHeader()->setStretchLastSection(false);
-    m_browseTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_browseTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
-    m_browseTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_browseTable->verticalHeader()->setVisible(true); // 行号 1..N, 排序后自动重排
+    m_browseTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    m_browseTable->horizontalHeader()->resizeSection(0, 40);
+    m_browseTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_browseTable->horizontalHeader()->resizeSection(1, 200);
+    m_browseTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
+    m_browseTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
+    m_browseTable->horizontalHeader()->resizeSection(3, 90);
+    m_browseTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
+    m_browseTable->horizontalHeader()->resizeSection(4, 90);
     browseLayout->addWidget(m_browseTable, 1);
     mainSplitter->addWidget(browseGroup);
 
@@ -141,11 +220,13 @@ void OpcUaClientWidget::setupUi()
     btnRow->addStretch();
     rwLayout->addLayout(btnRow);
 
-    m_batchTable = new QTableWidget(0, 3, this);
-    m_batchTable->setHorizontalHeaderLabels({"NodeId", "值", "质量"});
-    m_batchTable->horizontalHeader()->setStretchLastSection(true);
+    m_batchTable = new QTableWidget(0, 4, this);
+    m_batchTable->setHorizontalHeaderLabels({"NodeId", "值", "质量", ""});
     m_batchTable->setAlternatingRowColors(true);
     m_batchTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_batchTable->horizontalHeader()->setStretchLastSection(true);
+    m_batchTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
+    m_batchTable->horizontalHeader()->resizeSection(3, 28);
     rwLayout->addWidget(m_batchTable, 1);
     rightLayout->addWidget(rwGroup, 1);
 
@@ -161,11 +242,13 @@ void OpcUaClientWidget::setupUi()
     subBtnRow->addStretch();
     subLayout->addLayout(subBtnRow);
 
-    m_subscriptionTable = new QTableWidget(0, 3, this);
-    m_subscriptionTable->setHorizontalHeaderLabels({"NodeId", "最新值", "时间戳"});
-    m_subscriptionTable->horizontalHeader()->setStretchLastSection(true);
+    m_subscriptionTable = new QTableWidget(0, 4, this);
+    m_subscriptionTable->setHorizontalHeaderLabels({"NodeId", "最新值", "时间戳", ""});
     m_subscriptionTable->setAlternatingRowColors(true);
     m_subscriptionTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_subscriptionTable->horizontalHeader()->setStretchLastSection(true);
+    m_subscriptionTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
+    m_subscriptionTable->horizontalHeader()->resizeSection(3, 28);
     subLayout->addWidget(m_subscriptionTable, 1);
     rightLayout->addWidget(subGroup, 1);
     mainSplitter->addWidget(rightWidget);
@@ -193,6 +276,11 @@ void OpcUaClientWidget::setupUi()
     connect(m_writeBtn,      &QPushButton::clicked,       this, &OpcUaClientWidget::onWriteClicked);
     connect(m_subscribeBtn,  &QPushButton::clicked,       this, &OpcUaClientWidget::onSubscribeClicked);
     connect(m_refreshTimer,  &QTimer::timeout,            this, &OpcUaClientWidget::onRefreshTimer);
+
+    // 列3(cellWidget)是×删除按钮
+    // × 删除按钮在 setCellWidget 上，cellClicked 信号不可靠——
+    // 按钮自己的 clicked 会消费事件，cellClicked 不再触发
+    // (row 索引会因前面 removeRow 而错位，故在点击时按几何反查行号)
 
     updateConnectionStatus(false);
 }
@@ -241,6 +329,15 @@ void OpcUaClientWidget::setBackend(OpcUaClientBackend* backend)
                 m_batchTable->setItem(row, 0, new QTableWidgetItem(nodeId));
                 m_batchTable->setItem(row, 1, new QTableWidgetItem(valStr));
                 m_batchTable->setItem(row, 2, new QTableWidgetItem(quality));
+                auto* delBtn = new QPushButton("×");
+                delBtn->setFixedSize(24, 24);
+                delBtn->setCursor(Qt::PointingHandCursor);
+                connect(delBtn, &QPushButton::clicked, this, [this, tbl=m_batchTable, btn=delBtn]() {
+                    QPoint p = btn->parentWidget()->mapTo(tbl->viewport(), btn->pos());
+                    int r = tbl->rowAt(p.y());
+                    if (r >= 0) onRemoveBatchRow(r);
+                });
+                m_batchTable->setCellWidget(row, 3, delBtn);
             }
 
             // 更新订阅表
@@ -327,8 +424,9 @@ void OpcUaClientWidget::onBrowseSearchChanged(const QString& text)
 
 void OpcUaClientWidget::onBrowseRowActivated(int row, int /*column*/)
 {
-    QTableWidgetItem* nameItem = m_browseTable->item(row, 0);
-    QTableWidgetItem* nidItem  = m_browseTable->item(row, 1);
+    // col1=显示名 col2=NodeId
+    QTableWidgetItem* nameItem = m_browseTable->item(row, 1);
+    QTableWidgetItem* nidItem  = m_browseTable->item(row, 2);
     if (nidItem) {
         m_nodeIdEdit->setText(nidItem->text());
         appendLog(QString("选中: %1 (%2)").arg(nameItem ? nameItem->text() : "", nidItem->text()));
@@ -337,8 +435,9 @@ void OpcUaClientWidget::onBrowseRowActivated(int row, int /*column*/)
 
 void OpcUaClientWidget::populateBrowseTable(const QString& json)
 {
-    m_browseTable->setSortingEnabled(false); // 填表期间禁排序，避免逐行触发
+    m_browseTable->setSortingEnabled(false); // 填表期间禁排序
     m_browseTable->setRowCount(0);
+    m_browseTable->verticalScrollBar()->setSingleStep(20); // 改善滚动手感
     m_browseSearch->clear();
     m_browseTotal = 0;
 
@@ -361,25 +460,48 @@ void OpcUaClientWidget::populateBrowseTable(const QString& json)
     m_browseTotal = arr.size();
     m_browseTable->setRowCount(m_browseTotal);
 
+    const int BATCH = 100; // 每 100 行刷新一次 viewport（防卡顿）
     for (int i = 0; i < m_browseTotal; ++i) {
         const QJsonObject obj = arr[i].toObject();
         const QString nodeId      = obj.value("nodeId").toString();
         const QString displayName = obj.value("displayName").toString();
         const QString browseName  = obj.value("browseName").toString();
-        const QString dataType    = obj.value("dataType").toString();
-        const QString label = displayName.isEmpty() ? browseName : displayName;
+        const QString rawDataType  = obj.value("dataType").toString();
+        const int nodeClass       = obj.value("nodeClass").toInt(-1);
 
+        const QString label = displayName.isEmpty() ? browseName : displayName;
+        const QString typeName = dataTypeIdToName(rawDataType);
+        const QString className = nodeClassToName(nodeClass);
+        const QString classBg   = nodeClassToBackground(className);
+
+        // 列0: #
+        m_browseTable->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
+
+        // 列1: 显示名
         auto* nameItem = new QTableWidgetItem(label.isEmpty() ? nodeId : label);
         nameItem->setToolTip(nodeId);
-        m_browseTable->setItem(i, 0, nameItem);
+        m_browseTable->setItem(i, 1, nameItem);
 
+        // 列2: NodeId
         auto* nidItem = new QTableWidgetItem(nodeId);
         nidItem->setToolTip(nodeId);
-        m_browseTable->setItem(i, 1, nidItem);
+        m_browseTable->setItem(i, 2, nidItem);
 
-        m_browseTable->setItem(i, 2, new QTableWidgetItem(dataType));
+        // 列3: 数据类型（友好名）
+        m_browseTable->setItem(i, 3, new QTableWidgetItem(typeName));
+
+        // 列4: 节点类（色块背景）
+        auto* classItem = new QTableWidgetItem(className);
+        classItem->setBackground(QBrush(QColor(classBg)));
+        classItem->setForeground(QBrush(QColor("#C8CCD4")));
+        m_browseTable->setItem(i, 4, classItem);
+
+        // 分批渲染：每 BATCH 行刷新一次可见区域
+        if ((i + 1) % BATCH == 0)
+            m_browseTable->viewport()->update();
     }
 
+    m_browseTable->viewport()->update(); // 最后一批
     m_browseCount->setText(QString("共 %1 项").arg(m_browseTotal));
     m_browseTable->setSortingEnabled(true);
     appendLog(QString("地址空间浏览完成，共 %1 个节点").arg(m_browseTotal));
@@ -476,6 +598,29 @@ void OpcUaClientWidget::upsertSubscriptionRow(const QString& nodeId)
     m_subscriptionTable->setItem(row, 0, new QTableWidgetItem(nodeId));
     m_subscriptionTable->setItem(row, 1, new QTableWidgetItem("—"));
     m_subscriptionTable->setItem(row, 2, new QTableWidgetItem("—"));
+    auto* delBtn = new QPushButton("×");
+    delBtn->setFixedSize(24, 24);
+    delBtn->setCursor(Qt::PointingHandCursor);
+    connect(delBtn, &QPushButton::clicked, this, [this, tbl=m_subscriptionTable, btn=delBtn]() {
+        QPoint p = btn->parentWidget()->mapTo(tbl->viewport(), btn->pos());
+        int r = tbl->rowAt(p.y());
+        if (r >= 0) onRemoveSubscriptionRow(r);
+    });
+    m_subscriptionTable->setCellWidget(row, 3, delBtn);
+}
+
+// ============================================================
+// 辅助：删除按钮
+// ============================================================
+
+void OpcUaClientWidget::onRemoveBatchRow(int row)
+{
+    m_batchTable->removeRow(row);
+}
+
+void OpcUaClientWidget::onRemoveSubscriptionRow(int row)
+{
+    m_subscriptionTable->removeRow(row);
 }
 
 // ============================================================
@@ -485,15 +630,19 @@ void OpcUaClientWidget::upsertSubscriptionRow(const QString& nodeId)
 void OpcUaClientWidget::updateConnectionStatus(bool connected)
 {
     m_connected = connected;
+    QPalette pal = m_statusLabel->palette();
     if (connected) {
         m_statusLabel->setText("● 已连接");
+        pal.setColor(QPalette::WindowText, QColor("#40C8A0")); // 青绿，已连接态
         m_connectBtn->setText("断开");
     } else {
         m_statusLabel->setText("○ 未连接");
+        pal.setColor(QPalette::WindowText, QColor("#C8CCD4")); // 主文字色，未连接态
         m_connectBtn->setText("连接");
         if (m_refreshTimer && m_refreshTimer->isActive()) m_refreshTimer->stop();
         if (m_subscribeBtn) { m_subscribeBtn->setChecked(false); m_subscribeBtn->setText("订阅"); }
     }
+    m_statusLabel->setPalette(pal);
 }
 
 void OpcUaClientWidget::appendLog(const QString& msg)

@@ -52,6 +52,8 @@ private slots:
     void onWriteClicked();
     void onSubscribeClicked();
     void onRefreshTimer();
+    void onRemoveBatchRow(int row);
+    void onRemoveSubscriptionRow(int row);
 
 private:
     void setupUi();
@@ -83,7 +85,7 @@ private:
     QLineEdit*    m_valueEdit  = nullptr;
     QPushButton*  m_readBtn    = nullptr;
     QPushButton*  m_writeBtn   = nullptr;
-    QTableWidget* m_batchTable = nullptr;
+    QTableWidget* m_batchTable = nullptr; // 列: NodeId | 值 | 质量 | × | ×
 
     // 订阅面板
     QTableWidget* m_subscriptionTable = nullptr;
