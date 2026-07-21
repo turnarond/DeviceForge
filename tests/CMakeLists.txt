@@ -25,3 +25,13 @@ if(_qt_core_dll)
     set_tests_properties(tst_nrec PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- OPC UA 编码隔离测试（不连服务器，纯本机验证 open62541 编码路径）---
+add_executable(tst_opcua_encode opcua_encode/tst_opcua_encode.c)
+target_link_libraries(tst_opcua_encode PRIVATE open62541)
+add_test(NAME tst_opcua_encode COMMAND tst_opcua_encode)
+
+# --- OPC UA 环回隔离测试（进程内起服务端，验证客户端类正确性，与远端无关）---
+add_executable(tst_opcua_loopback opcua_encode/tst_opcua_loopback.cpp)
+target_link_libraries(tst_opcua_loopback PRIVATE open62541)
+add_test(NAME tst_opcua_loopback COMMAND tst_opcua_loopback)
