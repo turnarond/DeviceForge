@@ -245613,7 +245613,15 @@ activateSessionAsync(UA_Client *client) {
 
     /* Set the User Identity Token. If not defined use an anonymous token. Use
      * the PolicyId from the UserTokenPolicy. All token types have the PolicyId
-     * string as the first element. */
+     * string as the first element.
+     *
+     * [DeviceForge patch] utp->policyId may alias endpoint memory that has been
+     * freed/reused between GetEndpoints and ActivateSession (open62541 internal
+     * UAF triggered by non-conformant servers whose GetEndpoints returns a
+     * different EndpointUrl from the discovery URL). Deep-copy here so the
+     * anonymous token owns its policyId buffer and survives subsequent server
+     * responses. The token's deep copy is freed by UA_ActivateSessionRequest_clear
+     * via the UA_ExtensionObject_setValueNoDelete content type's clear fn. */
     UA_AnonymousIdentityToken anonToken;
     retval = UA_ExtensionObject_copy(&client->config.userIdentityToken,
                                      &request.userIdentityToken);
@@ -245627,9 +245635,13 @@ activateSessionAsync(UA_Client *client) {
         }
     } else {
         UA_AnonymousIdentityToken_init(&anonToken);
+        retval = UA_String_copy(&utp->policyId, &anonToken.policyId);
+        if(retval != UA_STATUSCODE_GOOD) {
+            UA_ActivateSessionRequest_clear(&request);
+            return retval;
+        }
         UA_ExtensionObject_setValueNoDelete(&request.userIdentityToken, &anonToken,
                                             &UA_TYPES[UA_TYPES_ANONYMOUSIDENTITYTOKEN]);
-        anonToken.policyId = utp->policyId;
     }
 
     switch(utp->tokenType) {
