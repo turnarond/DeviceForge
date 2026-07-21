@@ -200,6 +200,7 @@ set(SOURCES
     # 本地配置存储（ConfigStore v2.3）
     src/config/DpapiCrypto.cpp
     src/config/ConfigStore.cpp
+    src/config/SettingsDialog.cpp
 
     # Thirdparty 源文件
     src/thirdparty/tinyxml2/tinyxml2.cpp

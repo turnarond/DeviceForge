@@ -23,6 +23,7 @@
 #include <QTimer>
 #include <QMouseEvent>       // Task 5: 延迟 5 秒自动检查
 #include <QAction>      // Task 5: 菜单项
+#include <QKeySequence>
 
 #include "OpcUaClient.h" // add header
 #include "src/tools/WebSocketTool/WebSocketWidget.h"
@@ -44,6 +45,7 @@
 #include "src/updater/UpdateChecker.h"  // Task 5: 在线更新服务
 #include "src/updater/UpdateDialog.h"   // Task 5: 在线更新对话框
 #include "src/utils/FormatUtils.h"      // formatFileSize()
+#include "config/SettingsDialog.h"      // 配置管理面板
 
 DeployMaster::DeployMaster(QWidget* parent)
     : QMainWindow(parent)
@@ -90,6 +92,20 @@ DeployMaster::DeployMaster(QWidget* parent)
 
     // 初始化远端预览功能
     setupRemotePreview();
+
+    // 配置管理：文件菜单「设置...」Ctrl+,
+    {
+        auto* settingsAct = new QAction(QStringLiteral("设置..."), this);
+        settingsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+,")));
+        connect(settingsAct, &QAction::triggered, this, [this]() {
+            SettingsDialog dlg(this);
+            dlg.exec();
+        });
+        if (ui.menu_file)
+            ui.menu_file->addAction(settingsAct);
+        else
+            menuBar()->addAction(settingsAct);
+    }
 
     // 在线更新集成（Task 5）：菜单"帮助-检查更新" + 状态栏版本标签 + 5 秒后自动检查
     setupUpdateChecker();
