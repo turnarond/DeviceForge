@@ -13,6 +13,7 @@
 
 #include "DeviceBusWidget.h"
 #include "config/ConfigStore.h"
+#include "config/DpapiCrypto.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
@@ -63,6 +64,18 @@ DeviceBusWidget::DeviceBusWidget(QWidget* parent) : QWidget(parent)
     // 启动时加载历史设备列表（ConfigStore 须已 open；否则返回空 list）
     // 当前 UI 没有 IP 下拉框，仅缓存供 Task 7 决定展示位置
     m_recentDevices = ConfigStore::instance().list(QStringLiteral("device.list"), 20);
+
+    // 恢复最近一条 FTP/设备总线凭证（密码字段为 DPAPI base64 密文）
+    const auto creds = ConfigStore::instance().list(QStringLiteral("ftp.credential"), 1);
+    if (!creds.isEmpty()) {
+        const QVariantMap& c = creds.first();
+        if (m_userEdit)
+            m_userEdit->setText(c.value(QStringLiteral("username")).toString());
+        if (m_passEdit) {
+            const QString cipher = c.value(QStringLiteral("password")).toString();
+            m_passEdit->setText(DpapiCrypto::unprotect(cipher));
+        }
+    }
 }
 
 void DeviceBusWidget::setupUi()
@@ -128,6 +141,34 @@ void DeviceBusWidget::setupUi()
     };
     connect(m_userEdit, &QLineEdit::textChanged, this, emitCredChanged);
     connect(m_passEdit, &QLineEdit::textChanged, this, emitCredChanged);
+
+    // 失焦时隐式保存凭证（密码经 DPAPI 加密后入库）
+    auto saveCreds = [this]() {
+        const QString user = m_userEdit ? m_userEdit->text().trimmed() : QString();
+        const QString pass = m_passEdit ? m_passEdit->text() : QString();
+        if (user.isEmpty() && pass.isEmpty())
+            return;
+        QVariantMap cred;
+        cred.insert(QStringLiteral("username"), user);
+        cred.insert(QStringLiteral("password"), DpapiCrypto::protect(pass));
+        cred.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
+        // 若当前有选中设备，附带 host/port 方便回填与区分
+        const auto selected = selectedDevices();
+        QString key = user.isEmpty() ? QStringLiteral("_default") : user;
+        if (!selected.empty()) {
+            const auto& d = selected.front();
+            const QString host = QString::fromStdString(d.ip);
+            const int port = d.port > 0 ? d.port : 21;
+            cred.insert(QStringLiteral("host"), host);
+            cred.insert(QStringLiteral("port"), port);
+            key = QStringLiteral("%1@%2:%3").arg(user.isEmpty() ? QStringLiteral("anon") : user,
+                                                 host,
+                                                 QString::number(port));
+        }
+        ConfigStore::instance().save(QStringLiteral("ftp.credential"), key, cred);
+    };
+    connect(m_userEdit, &QLineEdit::editingFinished, this, saveCreds);
+    connect(m_passEdit, &QLineEdit::editingFinished, this, saveCreds);
 
     credRow->addWidget(userLabel);
     credRow->addWidget(m_userEdit);
