@@ -5,7 +5,7 @@
 
 ---
 
-## 已完成 (v2.0 → v2.1.0 → v2.2.0)
+## 已完成 (v2.0 → v2.1.0 → v2.2.0 → v2.3.0)
 
 | 模块 | 说明 | 版本 |
 |------|------|------|
@@ -20,28 +20,29 @@
 | **远端预览面板** | FTP 远程文件树浏览 + 多选下载 + 右键操作（查看/重命名/删除）+ 目录递归 | v2.2.0 |
 | **构建系统** | CMake 标准构建（qt_standard_project_setup），Debug/Release/RelWithDebInfo，/FS PDB 共享 | v2.2.0 |
 | **UI 主题** | 「琴色是动词」工业深色主题，QSS 体系，全控件统一 | v2.0 |
+| **本地配置持久化（ConfigStore）** | SQLite 单表 + Windows DPAPI 密码加密；设备/OPC UA endpoint/Modbus 从站/NetRelay/WebSocket/Telnet 偏好 + FTP 凭证全部自动恢复；统一设置面板（Ctrl+,）查看/导入/导出 | v2.3.0 |
 
 ---
 
-## 短期规划 (v2.3)
+## 短期规划 (v2.4)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
 | **OPC UA 安全策略扩展** | 高 | 支持 Basic256/Basic256Sha256 + 证书认证 |
 | **远端预览 SCP 支持** | 中 | UI 已预留协议选择器，需要 scp 传输层实现 |
 | **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
-| **密码本地加密存储** | 低 | 可选的"记住密码"功能，本地 AES 加密存储 |
+| **SettingsDialog 完整编辑** | 低 | 当前编辑为只读 JSON 弹窗；完整编辑写回留待后续 |
 
 ---
 
-## 中期规划 (v2.4+)
+## 中期规划 (v2.5+)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **Linux/SylixOS 适配** | 高 | CMake 构建已就绪，主要补 system-specific 路径和文件操作 |
+| **Linux/SylixOS 适配** | 🔴 高 | DpapiCrypto 在非 Windows 需替换为 libsecret；CMake 构建已就绪 |
 | **ToolHost 多 Tool 并发** | 中 | 当前 DeployMaster 直接创建 Tool，待 ToolHost 支持多 Tool 并行管理 |
 | **插件化加载 (QPluginLoader)** | 中 | DLL 动态加载 .dll Tool 插件，manifest.xml 入口点 |
-| **单元测试扩展** | 中 | 从当前 tst_nrec (12 用例) 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
+| **单元测试扩展** | 中 | 从 tst_nrec / tst_config_store / tst_dpapi_crypto / tst_opcua_* 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
 
 ---
 

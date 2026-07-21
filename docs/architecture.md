@@ -62,6 +62,21 @@ IProtocolAdapter (纯虚接口)
 - **SshAdapter**：基于 libssh2，支持密码认证 + TOFU 主机密钥验证，request-响应模式（SSH exec channel）
 - **OpcUaAdapter**：基于 open62541，OPC UA 客户端。支持 None 安全策略 + 匿名认证、批量读/写节点、DataChange 订阅（MonitoredItem）、地址空间浏览。`recursive_mutex` 串行化所有 `UA_Client` 访问（open62541 以 `UA_MULTITHREADING=0` 编译，客户端非线程安全）。`browseRoot()` 对引用结果做 `UA_NodeId_copy` 深拷贝，避免 `UA_BrowseResponse_clear` 后的悬垂指针。
 
+### 配置与凭证层（v2.3.0+）
+
+- **ConfigStore**（`src/config/ConfigStore.{h,cpp}`）：单例，SQLite 单表 `config_items(type, key, value, created_at, updated_at)`，提供 `save/load/exists/remove/list/exportTo/importFrom`。`main.cpp` 在 `DeployMaster` 前后分别调用 `open()` / `close()`。数据库位于 `%APPDATA%/DeviceForge/config.db`。
+- **DpapiCrypto**（`src/config/DpapiCrypto.{h,cpp}`）：Windows `CryptProtectData/CryptUnprotectData` + base64；非 Windows 平台 stub + `qCWarning`。密码字段经 `DpapiCrypto::protect` 加密后入库，绑定 Windows 当前用户账号。
+- **SettingsDialog**（`src/config/SettingsDialog.{h,cpp}`）：文件菜单 → 设置（Ctrl+,）。类型过滤、搜索、查看（编辑为只读 JSON 弹窗）、删除二次确认、清空全部、JSON 导入/导出；敏感字段遮罩。
+
+各 Tool 接入点（`type` namespace）：
+- `device.list`：设备总线（IP/port/displayName/note/updated_at）
+- `ftp.credential`：用户/密码（密码 DPAPI）+ host/port（来自设备总线）
+- `opcua.endpoint`：URL 历史（启动时填入下拉）
+- `websocket.endpoint`：Server 端口或 Client URL
+- `modbus.slave`：从站 ID 与寄存器参数
+- `netrelay.server`：监听地址/端口与上游地址/端口
+- `telnet.prefs`：协议（Telnet/SSH）与超时
+
 > **注意**：部分 Tool（Modbus / WebSocket / NetRelay）直接使用 Qt 原生 socket 类（QModbusTcpClient / QWebSocket / QTcpServer + QUdpSocket），未走 IProtocolAdapter 抽象。适配器层主要服务于 FTP/Telnet 这类请求-响应/流模式协议。
 
 ## NetRelayTool — 网络调试中继 + 录制回放

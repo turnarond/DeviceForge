@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.3.0] — 2026-07-21
+
+### 本地配置持久化（ConfigStore）
+
+新增 SQLite + Windows DPAPI 配置层，所有 Tool 的输入面板（设备、OPC UA endpoint、FTP/SSH/Telnet 凭证、Modbus 从站、NetRelay 监听参数、WebSocket URL）首次启动即可恢复历史；密码字段经 Windows DPAPI 加密入库。
+
+### 新增
+
+- **ConfigStore 单例**（`src/config/ConfigStore.{h,cpp}`）：SQLite 单表 `config_items(type, key, value, created_at, updated_at)`，`ON CONFLICT` upsert；`save/load/exists/remove/list/exportTo/importFrom` API；时间戳统一毫秒
+- **DpapiCrypto 跨平台封装**（`src/config/DpapiCrypto.{h,cpp}`）：Windows `CryptProtectData/CryptUnprotectData` + base64；非 Windows 平台 stub + qCWarning
+- **SettingsDialog 设置面板**（`src/config/SettingsDialog.{h,cpp}`）：文件菜单 → 设置（Ctrl+,）；类型过滤、搜索、查看（编辑为只读 JSON 弹窗）、删除二次确认、清空全部、JSON 导入/导出；敏感字段遮罩
+- **设备总线集成**：设备添加持久化 `device.list`（key=`ip:port`），启动加载历史；用户/密码失焦保存到 `ftp.credential`（密码 DPAPI）
+- **OPC UA Tool 集成**：`m_endpointEdit` 改为可编辑 QComboBox，启动加载历史 `opcua.endpoint`；连接成功时 upsert 当前 URL
+- **WebSocket Tool 集成**：保存/恢复 server 端口与 client URL
+- **Modbus Tool 集成**：保存/恢复从站 ID 与寄存器参数
+- **NetRelay Tool 集成**：保存/恢复监听与上游地址
+- **Telnet Tool 集成**：保存/恢复协议与超时偏好（凭证统一走设备总线）
+- **应用启动/关闭**：`main.cpp` 在 `DeployMaster` 前后分别 `ConfigStore::open()` / `close()`
+
+### 测试
+
+- **tst_config_store**（`tests/config/tst_config_store.cpp`）：基本读写往返、唯一键 upsert、list 按 updated_at 倒序、remove、import/export round-trip；启动测试用 temp 数据库隔离
+- **tst_dpapi_crypto**（`tests/config/tst_dpapi_crypto.cpp`）：Windows DPAPI 加解密往返；非 Windows 平台由 stub 通过（无 DPAPI 路径）
+
+### 部署注意
+
+- 部署时需包含 `plugins/sqldrivers/qsqlite.dll`（Qt SQL SQLite 驱动）
+- 密码密文绑定 Windows 当前用户账号；复制数据库到其他机器/用户无法解密
+
+---
+
 ## [2.2.0] — 2026-07-21
 
 ### OPC UA 客户端完整化 + UI 重构 + 第一个连接鲁棒性补丁
