@@ -17,6 +17,8 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QVariantMap>
+#include <QList>
 #include <vector>
 #include "framework/DeviceInfo.h"
 
@@ -37,6 +39,9 @@ public:
     QString user() const;
     QString password() const;
 
+    // 历史设备列表（ConfigStore device.list，按 updated_at DESC；启动时缓存）
+    QList<QVariantMap> historyDevices() const { return m_recentDevices; }
+
 signals:
     void deviceSelectionChanged();
     void credentialsChanged(const QString& user, const QString& password);
@@ -54,4 +59,5 @@ private:
     QPushButton* m_removeButton = nullptr;
     QLineEdit*   m_userEdit     = nullptr;
     QLineEdit*   m_passEdit     = nullptr;
+    QList<QVariantMap> m_recentDevices;       // ConfigStore device.list 启动缓存
 };

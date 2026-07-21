@@ -23,6 +23,7 @@ struct DeviceInfo {
     int port = 0;
     std::string protocol; // "ftp", "telnet", "modbus"...
     std::string alias;    // 用户自定义别名
+    std::string note;     // 备注（用于 ConfigStore device.list 持久化）
 };
 
 struct AuthInfo {
