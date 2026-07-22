@@ -3,6 +3,8 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <wincrypt.h>
+#include <QLoggingCategory>
+Q_LOGGING_CATEGORY(lcDpapi, "deviceforge.dpapi")
 
 // CryptProtectData / CryptUnprotectData 需要完整签名；不可用 (DATA_BLOB*, DATA_BLOB*) 简化指针
 static QByteArray dpapiProtect(const QByteArray& in)
@@ -12,6 +14,7 @@ static QByteArray dpapiProtect(const QByteArray& in)
     inBlob.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(in.constData()));
     DATA_BLOB outBlob{};
     if (!CryptProtectData(&inBlob, nullptr, nullptr, nullptr, nullptr, 0, &outBlob)) {
+        qCWarning(lcDpapi) << "CryptProtectData failed, GetLastError=" << GetLastError();
         return {};
     }
     QByteArray out(reinterpret_cast<char*>(outBlob.pbData),
@@ -27,6 +30,7 @@ static QByteArray dpapiUnprotect(const QByteArray& in)
     inBlob.pbData = reinterpret_cast<BYTE*>(const_cast<char*>(in.constData()));
     DATA_BLOB outBlob{};
     if (!CryptUnprotectData(&inBlob, nullptr, nullptr, nullptr, nullptr, 0, &outBlob)) {
+        qCWarning(lcDpapi) << "CryptUnprotectData failed, GetLastError=" << GetLastError();
         return {};
     }
     QByteArray out(reinterpret_cast<char*>(outBlob.pbData),
@@ -38,13 +42,21 @@ static QByteArray dpapiUnprotect(const QByteArray& in)
 QString DpapiCrypto::protect(const QString& plain)
 {
     const QByteArray bin = dpapiProtect(plain.toUtf8());
+    if (bin.isEmpty() && !plain.isEmpty()) {
+        qCWarning(lcDpapi) << "DpapiCrypto::protect returned empty (encrypt failed)";
+        return {};
+    }
     return QString::fromLatin1(bin.toBase64());
 }
 
 QString DpapiCrypto::unprotect(const QString& cipher)
 {
+    if (cipher.isEmpty())
+        return {};
     const QByteArray bin = QByteArray::fromBase64(cipher.toLatin1());
     const QByteArray plain = dpapiUnprotect(bin);
+    if (plain.isEmpty())
+        qCWarning(lcDpapi) << "DpapiCrypto::unprotect returned empty (decrypt failed or empty plain)";
     return QString::fromUtf8(plain);
 }
 

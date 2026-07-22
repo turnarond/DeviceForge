@@ -29,7 +29,8 @@ public:
     explicit DeviceBusWidget(QWidget* parent = nullptr);
 
     // 设备列表操作
-    void addDevice(const DeviceInfo& device);
+    // persist=false：从 ConfigStore 恢复时只更新 UI，避免启动时反复写库
+    void addDevice(const DeviceInfo& device, bool persist = true);
     void removeDevice(const QString& ip);
     std::vector<DeviceInfo> selectedDevices() const;
     std::vector<DeviceInfo> allDevices() const;

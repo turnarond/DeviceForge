@@ -18,13 +18,12 @@
 
 namespace {
 
-// 已知配置类型（与后续 Task 4–6 持久化键对齐）
+// 已知配置类型（与各 Tool 持久化 type 对齐）
 const char* kKnownTypes[] = {
     "device.list",
     "opcua.endpoint",
     "ftp.credential",
-    "telnet.credential",
-    "ssh.credential",
+    "telnet.prefs",
     "modbus.slave",
     "netrelay.server",
     "websocket.endpoint",
@@ -195,13 +194,26 @@ void SettingsDialog::onEditClicked()
         return;
     const QString type = m_table->item(row, 0)->text();
     const QString key = m_table->item(row, 1)->text();
-    const QVariantMap v = ConfigStore::instance().load(type, key);
+    QVariantMap v = ConfigStore::instance().load(type, key);
     if (v.isEmpty()) {
         QMessageBox::information(this, QStringLiteral("查看配置"),
                                  QStringLiteral("配置不存在或已删除。"));
         return;
     }
-    // 简化：JSON 只读查看（完整编辑留给后续任务）
+    // 遮罩敏感字段（密码/token 等）；完整编辑写回留给后续任务
+    static const QStringList kSensitive = {
+        QStringLiteral("password"), QStringLiteral("pass"),
+        QStringLiteral("token"), QStringLiteral("secret")
+    };
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        const QString k = it.key().toLower();
+        for (const QString& s : kSensitive) {
+            if (k.contains(s) && !it.value().toString().isEmpty()) {
+                it.value() = QStringLiteral("***");
+                break;
+            }
+        }
+    }
     const QString preview = QString::fromUtf8(
         QJsonDocument(QJsonObject::fromVariantMap(v)).toJson(QJsonDocument::Indented));
     QMessageBox::information(this, QStringLiteral("查看配置"),
@@ -250,7 +262,12 @@ void SettingsDialog::onImportClicked()
     if (path.isEmpty())
         return;
     if (ConfigStore::instance().importFrom(path)) {
-        QMessageBox::information(this, QStringLiteral("导入"), QStringLiteral("已导入"));
+        QMessageBox::information(
+            this, QStringLiteral("导入"),
+            QStringLiteral(
+                "已导入。\n\n"
+                "注意：密码等密文字段由 Windows DPAPI 绑定当前用户账号；\n"
+                "若从其他机器/用户导出，密文可能无法解密，需重新输入密码。"));
         populateTable();
     } else {
         QMessageBox::warning(this, QStringLiteral("导入失败"), QStringLiteral("解析失败"));

@@ -23,6 +23,7 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QDateTime>
+#include <QDebug>
 
 // 创建在线指示灯图标
 static QIcon createOnlineIcon()
@@ -61,9 +62,20 @@ DeviceBusWidget::DeviceBusWidget(QWidget* parent) : QWidget(parent)
     setObjectName("deviceBusContainer");
     setupUi();
 
-    // 启动时加载历史设备列表（ConfigStore 须已 open；否则返回空 list）
-    // 当前 UI 没有 IP 下拉框，仅缓存供 Task 7 决定展示位置
+    // 启动时加载历史设备到 UI 胶囊列表（ConfigStore 须已 open）
     m_recentDevices = ConfigStore::instance().list(QStringLiteral("device.list"), 20);
+    for (const QVariantMap& row : m_recentDevices) {
+        DeviceInfo di;
+        di.ip   = row.value(QStringLiteral("ip")).toString().toStdString();
+        di.port = row.value(QStringLiteral("port")).toInt();
+        const QString display = row.value(QStringLiteral("displayName")).toString();
+        if (!display.isEmpty() && display != row.value(QStringLiteral("ip")).toString())
+            di.alias = display.toStdString();
+        di.note = row.value(QStringLiteral("note")).toString().toStdString();
+        if (di.ip.empty())
+            continue;
+        addDevice(di, /*persist=*/false);
+    }
 
     // 恢复最近一条 FTP/设备总线凭证（密码字段为 DPAPI base64 密文）
     const auto creds = ConfigStore::instance().list(QStringLiteral("ftp.credential"), 1);
@@ -73,7 +85,11 @@ DeviceBusWidget::DeviceBusWidget(QWidget* parent) : QWidget(parent)
             m_userEdit->setText(c.value(QStringLiteral("username")).toString());
         if (m_passEdit) {
             const QString cipher = c.value(QStringLiteral("password")).toString();
-            m_passEdit->setText(DpapiCrypto::unprotect(cipher));
+            if (!cipher.isEmpty()) {
+                const QString plain = DpapiCrypto::unprotect(cipher);
+                if (!plain.isEmpty() || cipher.isEmpty())
+                    m_passEdit->setText(plain);
+            }
         }
     }
 }
@@ -148,9 +164,14 @@ void DeviceBusWidget::setupUi()
         const QString pass = m_passEdit ? m_passEdit->text() : QString();
         if (user.isEmpty() && pass.isEmpty())
             return;
+        const QString cipher = DpapiCrypto::protect(pass);
+        if (!pass.isEmpty() && cipher.isEmpty()) {
+            qWarning("DeviceBus: DPAPI 加密密码失败，跳过凭证保存以免清空已存密文");
+            return;
+        }
         QVariantMap cred;
         cred.insert(QStringLiteral("username"), user);
-        cred.insert(QStringLiteral("password"), DpapiCrypto::protect(pass));
+        cred.insert(QStringLiteral("password"), cipher);
         cred.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
         // 若当前有选中设备，附带 host/port 方便回填与区分
         const auto selected = selectedDevices();
@@ -165,7 +186,8 @@ void DeviceBusWidget::setupUi()
                                                  host,
                                                  QString::number(port));
         }
-        ConfigStore::instance().save(QStringLiteral("ftp.credential"), key, cred);
+        if (!ConfigStore::instance().save(QStringLiteral("ftp.credential"), key, cred))
+            qWarning("DeviceBus: 保存 ftp.credential 失败 key=%s", qPrintable(key));
     };
     connect(m_userEdit, &QLineEdit::editingFinished, this, saveCreds);
     connect(m_passEdit, &QLineEdit::editingFinished, this, saveCreds);
@@ -179,7 +201,7 @@ void DeviceBusWidget::setupUi()
     mainLayout->addLayout(credRow);
 }
 
-void DeviceBusWidget::addDevice(const DeviceInfo& device)
+void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
 {
     // 防止重复添加（按 IP 去重）
     QString ipStr = QString::fromStdString(device.ip);
@@ -202,27 +224,34 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device)
         device.ip + ":" + std::to_string(device.port) + " [" + device.protocol + "]"));
     m_deviceList->addItem(item);
 
-    // 持久化到 ConfigStore（key = "ip:port"，覆盖式更新）
-    QVariantMap dev;
-    dev.insert(QStringLiteral("ip"), ipStr);
-    dev.insert(QStringLiteral("port"), device.port);
-    dev.insert(QStringLiteral("displayName"),
-               device.alias.empty() ? ipStr : QString::fromStdString(device.alias));
-    dev.insert(QStringLiteral("note"), QString::fromStdString(device.note));
-    dev.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
-    ConfigStore::instance().save(
-        QStringLiteral("device.list"),
-        QStringLiteral("%1:%2").arg(ipStr).arg(device.port),
-        dev);
+    if (persist) {
+        // 持久化到 ConfigStore（key = "ip:port"，覆盖式更新）
+        QVariantMap dev;
+        dev.insert(QStringLiteral("ip"), ipStr);
+        dev.insert(QStringLiteral("port"), device.port);
+        dev.insert(QStringLiteral("displayName"),
+                   device.alias.empty() ? ipStr : QString::fromStdString(device.alias));
+        dev.insert(QStringLiteral("note"), QString::fromStdString(device.note));
+        dev.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
+        const QString key = QStringLiteral("%1:%2").arg(ipStr).arg(device.port);
+        if (!ConfigStore::instance().save(QStringLiteral("device.list"), key, dev))
+            qWarning("DeviceBus: 保存 device.list 失败 key=%s", qPrintable(key));
+    }
 
     emit deviceSelectionChanged();
 }
 
 void DeviceBusWidget::removeDevice(const QString& ip)
 {
+    int port = 0;
     for (int i = 0; i < m_deviceList->count(); ++i) {
         if (m_deviceList->item(i)->data(Qt::UserRole).toString() == ip) {
+            port = m_deviceList->item(i)->data(Qt::UserRole + 2).toInt();
             delete m_deviceList->takeItem(i);
+            // 同步删除持久化记录
+            ConfigStore::instance().remove(
+                QStringLiteral("device.list"),
+                QStringLiteral("%1:%2").arg(ip).arg(port));
             emit deviceSelectionChanged();
             break;
         }
@@ -285,10 +314,13 @@ void DeviceBusWidget::onAddClicked()
 
 void DeviceBusWidget::onRemoveClicked()
 {
-    auto selected = m_deviceList->selectedItems();
-    for (auto* item : selected) {
-        delete m_deviceList->takeItem(m_deviceList->row(item));
-    }
+    const auto selected = m_deviceList->selectedItems();
+    // 先收集 IP，避免 takeItem 过程中迭代失效
+    QStringList ips;
+    for (auto* item : selected)
+        ips.append(item->data(Qt::UserRole).toString());
+    for (const QString& ip : ips)
+        removeDevice(ip);
 }
 
 QString DeviceBusWidget::user() const

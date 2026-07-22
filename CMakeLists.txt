@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # 项目名称和版本
-project(DeviceForge VERSION 2.2.0 LANGUAGES C CXX)
+project(DeviceForge VERSION 2.3.0 LANGUAGES C CXX)
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -303,6 +303,27 @@ add_custom_command(TARGET DeviceForge POST_BUILD
         "$<TARGET_FILE_DIR:DeviceForge>"
     COMMENT "Copying libssh2.dll to output directory"
 )
+
+# ConfigStore 依赖 Qt SQL SQLite 驱动（qsqlite.dll）
+# 部署时必须带上 plugins/sqldrivers/qsqlite.dll，否则 ConfigStore::open() 失败
+get_target_property(_qt_core_loc Qt6::Core IMPORTED_LOCATION_RELEASE)
+if(NOT _qt_core_loc)
+    get_target_property(_qt_core_loc Qt6::Core IMPORTED_LOCATION)
+endif()
+if(_qt_core_loc)
+    get_filename_component(_qt_bin_dir "${_qt_core_loc}" DIRECTORY)
+    set(_qt_sqldriver "${_qt_bin_dir}/../plugins/sqldrivers/qsqlite.dll")
+    if(EXISTS "${_qt_sqldriver}")
+        add_custom_command(TARGET DeviceForge POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:DeviceForge>/plugins/sqldrivers"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_qt_sqldriver}"
+                "$<TARGET_FILE_DIR:DeviceForge>/plugins/sqldrivers/qsqlite.dll"
+            COMMENT "Copying Qt qsqlite.dll for ConfigStore"
+        )
+    endif()
+endif()
 
 # ============================================================
 # 测试（QtTest + CTest，仅 CMake 构建，不影响 VS/vcxproj 工程）

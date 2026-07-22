@@ -66,6 +66,8 @@ bool ConfigStore::open(const QString& dbPath)
                     "  updated_at INTEGER NOT NULL,"
                     "  UNIQUE(type, key))"));
             if (ok) {
+                q.exec(QStringLiteral(
+                    "CREATE INDEX IF NOT EXISTS idx_config_type ON config_items(type)"));
                 m_open = true;
                 return true;
             }
