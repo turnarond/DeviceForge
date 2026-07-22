@@ -372,3 +372,8 @@ DeployMaster.vcxproj.bak
 # 内部运营文档/推广文章（不随代码发布）
 docs/运营流程.md
 docs/articles/
+
+# 本地/内部工具与 CI/设计草稿（不随代码发布）
+.codegraph/
+.github/
+docs/superpowers/
