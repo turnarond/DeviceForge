@@ -47,6 +47,7 @@ private:
     QLabel*       m_currentVersion = nullptr;
     QLabel*       m_newVersion     = nullptr;
     QLabel*       m_fileSize       = nullptr;
+    QLabel*       m_downloadUrl    = nullptr;
     QTextBrowser* m_releaseNotes   = nullptr;
     QProgressBar* m_progress       = nullptr;
     QLabel*       m_progressLabel  = nullptr;
