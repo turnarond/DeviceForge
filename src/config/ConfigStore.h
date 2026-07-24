@@ -2,8 +2,10 @@
 #include <QString>
 #include <QVariantMap>
 #include <QList>
+#include <QSqlDatabase>
 
 // SQLite 单表配置存储（type+key 唯一，value 为 JSON 文本）
+// 连接对象由 ConfigStore 持有，避免仅用 connection name 取回时的悬空/析构时序问题。
 class ConfigStore {
 public:
     static ConfigStore& instance();
@@ -24,6 +26,14 @@ public:
 
 private:
     ConfigStore() = default;
+    ~ConfigStore();
+    ConfigStore(const ConfigStore&) = delete;
+    ConfigStore& operator=(const ConfigStore&) = delete;
+
+    bool ensureOpen() const;
+
     QString m_dbPath;
+    QString m_connName; // 每次 open 生成唯一连接名，避免 removeDatabase 竞态
+    QSqlDatabase m_db;
     bool m_open = false;
 };
