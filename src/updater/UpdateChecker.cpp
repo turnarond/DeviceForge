@@ -626,6 +626,20 @@ void UpdateChecker::installUpdate() {
         return;
     }
 
+    // 自动穿透：若接压目录内只有一个子目录且包含 DeviceForge.exe，
+    // 则使用该子目录作为 tempDir（zip 可能带根目录层级）。
+    {
+        QDir ed(QString::fromStdString(extractDir));
+        const auto entries = ed.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo& fi : entries) {
+            QString candidateExe = fi.absoluteFilePath() + "/DeviceForge.exe";
+            if (QFile::exists(candidateExe)) {
+                extractDir = fi.absoluteFilePath().toStdString();
+                break;
+            }
+        }
+    }
+
     // 准备临时目录
     std::string tmpDir = QDir::tempPath().toStdString() + "/DeviceForge-updater";
     std::string backupDir = tmpDir + "/backup";

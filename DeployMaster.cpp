@@ -1090,16 +1090,19 @@ void DeployMaster::onUpdateStateChanged(UpdateState state)
             m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         }
         m_checkUpdateAction->setText("检查更新...");
+        if (m_updateDialog) m_updateDialog->setState(state);
         break;
 
     case UpdateState::Downloading:
         m_versionLabel->setText(ver + " (下载中...)");
         m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
+        if (m_updateDialog) m_updateDialog->setState(state);
         break;
 
     case UpdateState::Installed:
         m_versionLabel->setText(ver + " (已下载,待安装)");
         m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
+        if (m_updateDialog) m_updateDialog->setState(state);
         break;
     }
 }

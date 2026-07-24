@@ -45,6 +45,14 @@ void UpdateDialog::setupUi() {
     infoLayout->addWidget(m_currentVersion);
     infoLayout->addWidget(m_newVersion);
     infoLayout->addWidget(m_fileSize);
+
+    // 下载地址（可点击外链）
+    m_downloadUrl = new QLabel(this);
+    m_downloadUrl->setTextFormat(Qt::RichText);
+    m_downloadUrl->setOpenExternalLinks(true);
+    m_downloadUrl->setVisible(false);  // 仅在有 URL 时显示
+    infoLayout->addWidget(m_downloadUrl);
+
     main->addWidget(infoGroup);
 
     // 更新内容组
@@ -84,6 +92,13 @@ void UpdateDialog::setReleaseInfo(const ReleaseInfo& info) {
     m_info = info;
     m_newVersion->setText(QString("最新版本: %1").arg(QString::fromStdString(info.tagName)));
     m_fileSize->setText(QString("文件大小: %1").arg(formatFileSize(info.assetSize)));
+    // 下载直链（可点击，浏览器打开）
+    if (!info.downloadUrl.empty()) {
+        QString url = QString::fromStdString(info.downloadUrl);
+        m_downloadUrl->setText(QString("<a href='%1' style='color:#F0A030;'>%1</a>").arg(url));
+        m_downloadUrl->setToolTip("在浏览器中打开下载 (GitHub)");
+        m_downloadUrl->setVisible(true);
+    }
     m_releaseNotes->setMarkdown(QString::fromStdString(info.body));
 }
 
