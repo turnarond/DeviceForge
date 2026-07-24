@@ -8,8 +8,8 @@
  *   - 浏览根节点树 browseRoot()（返回 JSON 字符串）
  *   - request()    读单个节点（请求-响应模式）
  *
- * open62541 client 在 UA_MULTITHREADING=0 下非线程安全，
- * 调用方需保证同一实例的方法串行调用（放入单一后台线程）。
+ * open62541 以 UA_MULTITHREADING=100 编译，UA_THREADSAFE 函数内部已加锁；
+ * recursive_mutex 保护适配器自身状态（m_subscriptionId / m_monContexts 等）。
  */
 #pragma once
 #include "IProtocolAdapter.h"
@@ -76,10 +76,10 @@ private:
     QString           m_lastError;
     StreamCallback    m_streamCb;
 
-    // 线程安全：open62541 在 UA_MULTITHREADING=0 下非线程安全，UA_Client 必须串行访问。
-    // readNodes/writeNodes/request/browseRoot 可能在 GUI 线程或 std::async 后台线程调用，
-    // 而 runIterate 在 ServiceTask(svc) 线程调用——两者都触碰 m_client。
-    // 规则：所有触碰 m_client 的方法体（含 request 的 async lambda 内部）必须持有 m_clientMutex。
+    // 线程安全：open62541 以 UA_MULTITHREADING=100 编译（UA_THREADSAFE 函数内部已加锁），
+    // 但 readNodes/writeNodes/request/browseRoot 可能在 GUI 线程调用，
+    // runIterate 在 ServiceTask(svc) 线程调用——两者都触碰 m_client 及适配器状态。
+    // m_clientMutex 保护 m_subscriptionId / m_monContexts / m_connected / m_lastError 等适配器自身成员。
     // 采用 recursive_mutex，因 connect() 内部会调用 disconnect()（二者均需锁）。
     // DataChange 静态回调在 runIterate 期间同线程触发，仅调用用户 std::function（不回调本类
     // 任何加锁方法），故不依赖递归，但递归锁也使其无害。

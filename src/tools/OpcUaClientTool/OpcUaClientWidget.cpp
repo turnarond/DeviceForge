@@ -277,10 +277,7 @@ void OpcUaClientWidget::setupUi()
     m_logView->setMaximumHeight(80);
     mainLayout->addWidget(m_logView);
 
-    // ---------- 定时器 + 信号连接 ----------
-    m_refreshTimer = new QTimer(this);
-    m_refreshTimer->setInterval(1000);
-
+    // ---------- 信号连接 ----------
     connect(m_connectBtn,    &QPushButton::clicked,       this, &OpcUaClientWidget::onConnectClicked);
     connect(m_browseBtn,     &QPushButton::clicked,       this, &OpcUaClientWidget::onBrowseClicked);
     connect(m_browseSearch,  &QLineEdit::textChanged,     this, &OpcUaClientWidget::onBrowseSearchChanged);
@@ -288,7 +285,6 @@ void OpcUaClientWidget::setupUi()
     connect(m_readBtn,       &QPushButton::clicked,       this, &OpcUaClientWidget::onReadClicked);
     connect(m_writeBtn,      &QPushButton::clicked,       this, &OpcUaClientWidget::onWriteClicked);
     connect(m_subscribeBtn,  &QPushButton::clicked,       this, &OpcUaClientWidget::onSubscribeClicked);
-    connect(m_refreshTimer,  &QTimer::timeout,            this, &OpcUaClientWidget::onRefreshTimer);
 
     // 列3(cellWidget)是×删除按钮
     // × 删除按钮在 setCellWidget 上，cellClicked 信号不可靠——
@@ -383,7 +379,6 @@ void OpcUaClientWidget::onToolStart() { appendLog("OPC UA 客户端已就绪"); 
 
 void OpcUaClientWidget::onToolStop()
 {
-    if (m_refreshTimer->isActive()) m_refreshTimer->stop();
     appendLog("OPC UA 客户端已停止");
 }
 
@@ -587,26 +582,12 @@ void OpcUaClientWidget::onSubscribeClicked()
         }
         upsertSubscriptionRow(nodeId);
         m_backend->subscribeNodes(QStringList{nodeId});
-        m_refreshTimer->start();
         m_subscribeBtn->setText("停止");
     } else {
-        m_refreshTimer->stop();
         m_subscribeBtn->setText("订阅");
         m_backend->unsubscribeAll();
         appendLog("订阅已停止");
     }
-}
-
-void OpcUaClientWidget::onRefreshTimer()
-{
-    if (!m_backend || !m_connected) return;
-    // 轮询订阅表中的全部节点
-    QStringList subs;
-    for (int r = 0; r < m_subscriptionTable->rowCount(); ++r) {
-        if (m_subscriptionTable->item(r, 0))
-            subs.append(m_subscriptionTable->item(r, 0)->text());
-    }
-    if (!subs.isEmpty()) m_backend->readNodes(subs);
 }
 
 void OpcUaClientWidget::upsertSubscriptionRow(const QString& nodeId)
@@ -661,7 +642,6 @@ void OpcUaClientWidget::updateConnectionStatus(bool connected)
         m_statusLabel->setText("○ 未连接");
         pal.setColor(QPalette::WindowText, QColor("#C8CCD4")); // 主文字色，未连接态
         m_connectBtn->setText("连接");
-        if (m_refreshTimer && m_refreshTimer->isActive()) m_refreshTimer->stop();
         if (m_subscribeBtn) { m_subscribeBtn->setChecked(false); m_subscribeBtn->setText("订阅"); }
     }
     m_statusLabel->setPalette(pal);
