@@ -27,6 +27,7 @@
 #include <QVariantMap>
 #include <QVariantList>
 #include <QMap>
+#include <QFuture>
 #include <memory>
 #include <atomic>
 
@@ -70,7 +71,10 @@ private:
     std::shared_ptr<OpcUaAdapter> m_adapter;
     std::atomic<bool> m_subscribed{false};
     std::atomic<bool> m_running{false};
+    QFuture<void> m_subscribeFuture;   // QtConcurrent::run 返回值，析构时等待
 
+    // 回调在 setXxxCallback 中由 GUI 线程一次性设置，之后仅 svc 线程读取；
+    // setDataChangeCallback 必须在 subscribeNodes 之前调用，之后不再修改。
     LogCallback        m_logCb;
     ConnectionCallback m_connCb;
     DataChangeCallback m_dataCb;
