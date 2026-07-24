@@ -1,6 +1,5 @@
 #include "ConfigStore.h"
 
-#include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QStandardPaths>
@@ -10,8 +9,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDateTime>
-
-static const char kConnName[] = "config_store";
+#include <QUuid>
+#include <QDebug>
 
 ConfigStore& ConfigStore::instance()
 {
@@ -19,113 +18,147 @@ ConfigStore& ConfigStore::instance()
     return s;
 }
 
-static QSqlDatabase db()
+ConfigStore::~ConfigStore()
 {
-    return QSqlDatabase::database(kConnName);
+    close();
+}
+
+bool ConfigStore::ensureOpen() const
+{
+    return m_open && m_db.isValid() && m_db.isOpen();
 }
 
 bool ConfigStore::open(const QString& dbPath)
 {
-    if (m_open) {
+    if (m_open)
         close();
-    }
 
     QString path = dbPath;
     if (path.isEmpty()) {
         const QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        QDir().mkpath(base);
+        if (base.isEmpty()) {
+            qWarning() << "ConfigStore: AppDataLocation empty";
+            return false;
+        }
+        if (!QDir().mkpath(base)) {
+            qWarning() << "ConfigStore: cannot create" << base;
+            return false;
+        }
         path = base + QStringLiteral("/config.db");
     }
-    m_dbPath = path;
 
-    // 连接名复用：若残留则先移除
-    if (QSqlDatabase::contains(kConnName)) {
-        {
-            QSqlDatabase old = QSqlDatabase::database(kConnName);
-            if (old.isOpen())
-                old.close();
-        }
-        QSqlDatabase::removeDatabase(kConnName);
-    }
-
+    // 确保父目录存在（测试 temp 路径也适用）
     {
-        QSqlDatabase d = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), kConnName);
-        d.setDatabaseName(path);
-        if (!d.open()) {
-            // d 析构后再 removeDatabase（与 close() 一致）
-        } else {
-            QSqlQuery q(d);
-            const bool ok = q.exec(
-                QStringLiteral(
-                    "CREATE TABLE IF NOT EXISTS config_items ("
-                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                    "  type TEXT NOT NULL,"
-                    "  key TEXT NOT NULL,"
-                    "  value TEXT NOT NULL,"
-                    "  created_at INTEGER NOT NULL,"
-                    "  updated_at INTEGER NOT NULL,"
-                    "  UNIQUE(type, key))"));
-            if (ok) {
-                q.exec(QStringLiteral(
-                    "CREATE INDEX IF NOT EXISTS idx_config_type ON config_items(type)"));
-                m_open = true;
-                return true;
-            }
-            d.close();
+        const QFileInfo fi(path);
+        const QString dir = fi.absolutePath();
+        if (!dir.isEmpty() && !QDir().mkpath(dir)) {
+            qWarning() << "ConfigStore: cannot create dir" << dir;
+            return false;
         }
     }
-    QSqlDatabase::removeDatabase(kConnName);
-    return false;
+
+    m_dbPath = path;
+    // 唯一连接名：避免全局固定名在测试 open/close 循环中与残留对象冲突
+    m_connName = QStringLiteral("config_store_%1")
+                     .arg(QUuid::createUuid().toString(QUuid::Id128));
+
+    m_db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connName);
+    if (!m_db.isValid()) {
+        qWarning() << "ConfigStore: QSQLITE driver unavailable";
+        QSqlDatabase::removeDatabase(m_connName);
+        m_connName.clear();
+        return false;
+    }
+    m_db.setDatabaseName(path);
+    if (!m_db.open()) {
+        qWarning() << "ConfigStore: open failed" << path << m_db.lastError().text();
+        m_db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(m_connName);
+        m_connName.clear();
+        return false;
+    }
+
+    QSqlQuery q(m_db);
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS config_items ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  type TEXT NOT NULL,"
+            "  key TEXT NOT NULL,"
+            "  value TEXT NOT NULL,"
+            "  created_at INTEGER NOT NULL,"
+            "  updated_at INTEGER NOT NULL,"
+            "  UNIQUE(type, key))"))) {
+        qWarning() << "ConfigStore: CREATE TABLE failed" << q.lastError().text();
+        m_db.close();
+        m_db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(m_connName);
+        m_connName.clear();
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_config_type ON config_items(type)"));
+
+    m_open = true;
+    return true;
 }
 
 void ConfigStore::close()
 {
-    if (QSqlDatabase::contains(kConnName)) {
-        {
-            QSqlDatabase d = db();
-            if (d.isOpen())
-                d.close();
+    if (!m_connName.isEmpty()) {
+        // 先释放持有的连接对象，再 removeDatabase
+        if (m_db.isValid()) {
+            if (m_db.isOpen())
+                m_db.close();
+            m_db = QSqlDatabase();
         }
-        QSqlDatabase::removeDatabase(kConnName);
+        if (QSqlDatabase::contains(m_connName))
+            QSqlDatabase::removeDatabase(m_connName);
+        m_connName.clear();
     }
+    m_dbPath.clear();
     m_open = false;
 }
 
 bool ConfigStore::save(const QString& type, const QString& key,
                        const QVariantMap& value)
 {
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return false;
 
-    const QString json = QString::fromUtf8(
-        QJsonDocument(QJsonObject::fromVariantMap(value)).toJson(QJsonDocument::Compact));
-    // 毫秒：便于 list 按 updated_at 区分短间隔写入（秒精度在测试/快速连写会撞点）
+    const QByteArray jsonBytes =
+        QJsonDocument(QJsonObject::fromVariantMap(value)).toJson(QJsonDocument::Compact);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    QSqlQuery q(d);
-    q.prepare(
-        QStringLiteral(
+    QSqlQuery q(m_db);
+    if (!q.prepare(QStringLiteral(
             "INSERT INTO config_items(type, key, value, created_at, updated_at) "
             "VALUES(:t, :k, :v, :c, :u) "
             "ON CONFLICT(type, key) DO UPDATE SET "
-            "  value=excluded.value, updated_at=excluded.updated_at"));
+            "  value=excluded.value, updated_at=excluded.updated_at"))) {
+        qWarning() << "ConfigStore::save prepare failed" << q.lastError().text();
+        return false;
+    }
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":k"), key);
-    q.bindValue(QStringLiteral(":v"), json);
+    q.bindValue(QStringLiteral(":v"), QString::fromUtf8(jsonBytes));
     q.bindValue(QStringLiteral(":c"), now);
     q.bindValue(QStringLiteral(":u"), now);
-    return q.exec();
+    if (!q.exec()) {
+        qWarning() << "ConfigStore::save exec failed" << q.lastError().text();
+        return false;
+    }
+    return true;
 }
 
 QVariantMap ConfigStore::load(const QString& type, const QString& key)
 {
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return {};
 
-    QSqlQuery q(d);
-    q.prepare(QStringLiteral("SELECT value FROM config_items WHERE type=:t AND key=:k"));
+    QSqlQuery q(m_db);
+    if (!q.prepare(QStringLiteral(
+            "SELECT value FROM config_items WHERE type=:t AND key=:k")))
+        return {};
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":k"), key);
     if (!q.exec() || !q.next())
@@ -139,12 +172,13 @@ QVariantMap ConfigStore::load(const QString& type, const QString& key)
 
 bool ConfigStore::exists(const QString& type, const QString& key)
 {
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return false;
 
-    QSqlQuery q(d);
-    q.prepare(QStringLiteral("SELECT 1 FROM config_items WHERE type=:t AND key=:k"));
+    QSqlQuery q(m_db);
+    if (!q.prepare(QStringLiteral(
+            "SELECT 1 FROM config_items WHERE type=:t AND key=:k")))
+        return false;
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":k"), key);
     return q.exec() && q.next();
@@ -152,12 +186,13 @@ bool ConfigStore::exists(const QString& type, const QString& key)
 
 bool ConfigStore::remove(const QString& type, const QString& key)
 {
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return false;
 
-    QSqlQuery q(d);
-    q.prepare(QStringLiteral("DELETE FROM config_items WHERE type=:t AND key=:k"));
+    QSqlQuery q(m_db);
+    if (!q.prepare(QStringLiteral(
+            "DELETE FROM config_items WHERE type=:t AND key=:k")))
+        return false;
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":k"), key);
     return q.exec();
@@ -166,14 +201,14 @@ bool ConfigStore::remove(const QString& type, const QString& key)
 QList<QVariantMap> ConfigStore::list(const QString& type, int limit)
 {
     QList<QVariantMap> out;
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return out;
 
-    QSqlQuery q(d);
-    q.prepare(QStringLiteral(
-        "SELECT type, key, value, updated_at FROM config_items "
-        "WHERE type=:t ORDER BY updated_at DESC LIMIT :n"));
+    QSqlQuery q(m_db);
+    if (!q.prepare(QStringLiteral(
+            "SELECT type, key, value, updated_at FROM config_items "
+            "WHERE type=:t ORDER BY updated_at DESC LIMIT :n")))
+        return out;
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":n"), limit);
     if (!q.exec())
@@ -185,7 +220,6 @@ QList<QVariantMap> ConfigStore::list(const QString& type, int limit)
         if (doc.isObject()) {
             const QVariantMap inner = doc.object().toVariantMap();
             for (auto it = inner.constBegin(); it != inner.constEnd(); ++it) {
-                // 保留 SQL 元字段，避免 value JSON 中同名键覆盖 type/key/updated_at
                 if (it.key() == QLatin1String("type")
                     || it.key() == QLatin1String("key")
                     || it.key() == QLatin1String("updated_at"))
@@ -203,11 +237,10 @@ QList<QVariantMap> ConfigStore::list(const QString& type, int limit)
 
 bool ConfigStore::exportTo(const QString& jsonPath)
 {
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return false;
 
-    QSqlQuery q(d);
+    QSqlQuery q(m_db);
     if (!q.exec(QStringLiteral(
             "SELECT type, key, value, created_at, updated_at FROM config_items")))
         return false;
@@ -217,7 +250,6 @@ bool ConfigStore::exportTo(const QString& jsonPath)
         QJsonObject o;
         o.insert(QStringLiteral("type"), q.value(0).toString());
         o.insert(QStringLiteral("key"), q.value(1).toString());
-        // value 列为 JSON 文本；导出时保持字符串形态以便 import 原样写回
         o.insert(QStringLiteral("value"), q.value(2).toString());
         o.insert(QStringLiteral("created_at"), q.value(3).toLongLong());
         o.insert(QStringLiteral("updated_at"), q.value(4).toLongLong());
@@ -241,20 +273,22 @@ bool ConfigStore::importFrom(const QString& jsonPath)
     if (!doc.isArray())
         return false;
 
-    QSqlDatabase d = db();
-    if (!d.isOpen())
+    if (!ensureOpen())
         return false;
 
-    if (!d.transaction())
+    if (!m_db.transaction())
         return false;
 
     for (const QJsonValue& v : doc.array()) {
         const QJsonObject o = v.toObject();
-        QSqlQuery q(d);
-        q.prepare(QStringLiteral(
-            "INSERT OR REPLACE INTO config_items"
-            "(type, key, value, created_at, updated_at) "
-            "VALUES(:t, :k, :v, :c, :u)"));
+        QSqlQuery q(m_db);
+        if (!q.prepare(QStringLiteral(
+                "INSERT OR REPLACE INTO config_items"
+                "(type, key, value, created_at, updated_at) "
+                "VALUES(:t, :k, :v, :c, :u)"))) {
+            m_db.rollback();
+            return false;
+        }
         q.bindValue(QStringLiteral(":t"), o.value(QStringLiteral("type")).toString());
         q.bindValue(QStringLiteral(":k"), o.value(QStringLiteral("key")).toString());
         q.bindValue(QStringLiteral(":v"), o.value(QStringLiteral("value")).toString());
@@ -263,13 +297,13 @@ bool ConfigStore::importFrom(const QString& jsonPath)
         q.bindValue(QStringLiteral(":u"),
                     o.value(QStringLiteral("updated_at")).toVariant().toLongLong());
         if (!q.exec()) {
-            d.rollback();
+            m_db.rollback();
             return false;
         }
     }
 
-    if (!d.commit()) {
-        d.rollback();
+    if (!m_db.commit()) {
+        m_db.rollback();
         return false;
     }
     return true;
