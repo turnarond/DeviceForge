@@ -116,7 +116,7 @@ bool findAsset(const std::string& json, const std::string& namePattern,
 
         // 仅检查含有 browser_download_url 的对象(asset 对象)
         if (obj.find("\"browser_download_url\"") == std::string::npos) {
-            pos = objEnd;
+            pos = pos + 1;   // 步进到下一个 {，不掉过嵌套对象
             continue;
         }
 
@@ -129,7 +129,7 @@ bool findAsset(const std::string& json, const std::string& namePattern,
 
         // spec §4: 仅接受 zip 资产
         if (contentType != "application/zip" && contentType != "application/x-zip-compressed") {
-            pos = objEnd;
+            pos = pos + 1;
             continue;
         }
 
@@ -145,7 +145,7 @@ bool findAsset(const std::string& json, const std::string& namePattern,
             return true;
         }
 
-        pos = objEnd;
+        pos = pos + 1;   // 未匹配则继续扫描嵌套对象
     }
     return false;
 }
