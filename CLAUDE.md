@@ -309,7 +309,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - **EventBus 已移除**：`DeployEvent` 元类型注册、EventBus 事件订阅等已从 `main.cpp` 和 `DeployMaster.cpp` 中移除。`src/utils/DeployEvent.h` 仍保留，待所有引用清理后删除
 
 
-- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend` + `OpcUaAdapter`。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。`OpcUaAdapter` 用 `recursive_mutex` 串行化所有 `UA_Client` 访问（`UA_MULTITHREADING=0`，客户端非线程安全）。旧 `OpcUaClientTab` 演示桩保留声明但不再实例化，待清理
+- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend` + `OpcUaAdapter`。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩保留声明但不再实例化，待清理
 
 - **密码不持久化**：程序不保存密码，每次启动需手动输入
 

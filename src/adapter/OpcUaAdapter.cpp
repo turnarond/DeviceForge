@@ -316,7 +316,7 @@ std::future<Response> OpcUaAdapter::request(const Request& req)
     });
 }
 
-// subscribe：OPC UA 数据变更订阅。open62541 client 在 UA_MULTITHREADING=0 下非线程安全，
+// subscribe：OPC UA 数据变更订阅。open62541 以 UA_MULTITHREADING=100 编译，
 // 需与 read/write 串行调度并由外部循环驱动 UA_Client_run_iterate，暂未纳入首期骨架。
 void OpcUaAdapter::subscribe(const Request& /*req*/, StreamCallback onData)
 {
@@ -379,6 +379,9 @@ quint32 OpcUaAdapter::subscribeDataChange(const QStringList& nodeIds, DataChange
     }
 
     UA_CreateSubscriptionRequest subReq = UA_CreateSubscriptionRequest_default();
+    // 设置有限超时：_default() 中 timeoutHint=0 在 __Client_Service 内被视为
+    // "无限等待"（UA_UINT32_MAX），若服务器不支持订阅或不响应，调用线程将永久阻塞。
+    subReq.requestHeader.timeoutHint = 5000;
     UA_CreateSubscriptionResponse subResp =
         UA_Client_Subscriptions_create(m_client, subReq, nullptr, nullptr, nullptr);
     if (subResp.responseHeader.serviceResult != UA_STATUSCODE_GOOD) {

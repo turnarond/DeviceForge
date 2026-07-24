@@ -51,7 +51,6 @@ private slots:
     void onReadClicked();
     void onWriteClicked();
     void onSubscribeClicked();
-    void onRefreshTimer();
     void onRemoveBatchRow(int row);
     void onRemoveSubscriptionRow(int row);
 
@@ -63,7 +62,6 @@ private:
     void upsertSubscriptionRow(const QString& nodeId);
 
     OpcUaClientBackend* m_backend = nullptr;
-    QTimer* m_refreshTimer = nullptr;
     bool    m_connected    = false;
 
     // 连接配置

@@ -1,7 +1,7 @@
 # DeviceForge 路线图 (Roadmap)
 
 > 工业级设备批量运维平台 — 白皮书  
-> 最后更新: 2026-07-18
+> 最后更新: 2026-07-24
 
 ---
 
@@ -15,7 +15,7 @@
 | **Modbus 集群测试** | QModbusTcpClient 批量读写寄存器，QTimer 自动刷新 | v2.0 |
 | **网络调试中继** | TCP/UDP/组播透明中继代理，双向流量捕获 + Hex 实时视图 | v2.1.0 |
 | **网络调试录制回放** | `.nrec` 自定义二进制格式录制 + 按原始时序回放，组播零影响加入抄收 | v2.1.0 |
-| **OPC UA 客户端** | open62541 v1.5.5，读/写/订阅/浏览，None 安全策略 + 匿名认证；地址空间浏览 5 列 UI + 类型友好名 + 节点类色块 + × 删除按钮；针对非规范服务端的 ActivateSession policyId 深拷贝补丁 | v2.2.0 |
+| **OPC UA 客户端** | open62541 v1.5.5，读/写/订阅/浏览，None 安全策略 + 匿名认证；地址空间浏览 5 列 UI + 类型友好名 + 节点类色块 + × 删除按钮；针对非规范服务端的 ActivateSession policyId 深拷贝补丁；订阅卡死修复（请求超时 + 后台线程 + 移除冗余轮询） | v2.2.0 / v2.3.0 |
 | **在线更新 (OTA)** | GitHub Releases API 查询 + zip 下载 + 校验 + 解压 + Updater.exe 独立替换进程 | v2.2.0 |
 | **远端预览面板** | FTP 远程文件树浏览 + 多选下载 + 右键操作（查看/重命名/删除）+ 目录递归 | v2.2.0 |
 | **构建系统** | CMake 标准构建（qt_standard_project_setup），Debug/Release/RelWithDebInfo，/FS PDB 共享 | v2.2.0 |
@@ -64,6 +64,7 @@
 | v2.0 | 2026-07-05 | DeviceForge 命名 + Tool 框架 + FTP/Telnet/Modbus/WebSocket |
 | v2.1.0 | 2026-07-10 | NetRelayTool (中继+录制回放) + SSH 适配器 + 琴色主题 + OPC UA |
 | v2.2.0 | 2026-07-18 | 在线更新 OTA + 远端预览重构 + CMake 标准构建 + 7 模块全绿 |
+| v2.3.0 | 2026-07-24 | ConfigStore 本地持久化 (SQLite + DPAPI) + OPC UA 订阅卡死修复 + CI Debug SEGFAULT 修复 |
 
 ---
 

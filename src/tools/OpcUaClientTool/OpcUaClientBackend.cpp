@@ -11,15 +11,17 @@
  * Description: OPC UA 客户端 Tool 后端实现 — 通过 OpcUaAdapter 连接 OPC UA 服务器，
  *              提供节点的读/写/浏览/订阅功能。
  *
- * 线程模型：open62541 client 在 UA_MULTITHREADING=0 下非线程安全。
- * readNodes/writeNodes 由 GUI 线程同步调用 adapter；订阅建立后，svc() 线程周期性调用
- * adapter->runIterate(100) 驱动 DataChange 回调。adapter 内部以 recursive_mutex 串行化
- * 一切对 UA_Client 的访问，保证 GUI 线程与 svc 线程不并发触碰同一客户端。
+ * 线程模型：open62541 以 UA_MULTITHREADING=100 编译（内部已加锁）。
+ * readNodes/writeNodes 由 GUI 线程同步调用 adapter；订阅建立后，subscribeNodes 通过
+ * QtConcurrent::run 在后台线程执行（防止同步阻塞冻住 GUI），svc() 线程周期性调用
+ * adapter->runIterate(100) 驱动 DataChange 回调。adapter 内部以 recursive_mutex 保护
+ * 适配器自身状态，防止 GUI 线程与 svc 线程并发修改。
  */
 
 #include "OpcUaClientBackend.h"
 #include <QUrl>
 #include <QDateTime>
+#include <QtConcurrent>
 #include <thread>
 #include <chrono>
 
@@ -57,7 +59,10 @@ int OpcUaClientBackend::svc()
         // runIterate(100) 单次最长阻塞 ~100ms，保持约 100ms 轮询节奏。
         // 未订阅时退化为保活休眠（readNodes/writeNodes 为同步调用，无需轮询）。
         if (m_subscribed.load() && m_adapter && m_adapter->isConnected()) {
+            // runIterate 内部在 m_clientMutex 持锁期间最多阻塞 100ms；
+            // 之后插入 50ms 休眠，为 GUI 线程的读/写操作留出互斥锁窗口。
             m_adapter->runIterate(100);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -187,28 +192,35 @@ void OpcUaClientBackend::subscribeNodes(const QStringList& nodeIds)
         return;
     }
 
-    // 通过适配器建立 DataChange 订阅；回调在 svc() 的 runIterate 线程触发，
-    // 经 m_dataCb 转发到 Widget（Widget 侧已用 QueuedConnection 编组到 GUI 线程）。
-    quint32 subId = m_adapter->subscribeDataChange(nodeIds,
-        [this](const QString& nodeId, const QVariant& value,
-               quint64 ts, const QString& quality) {
-            if (m_dataCb) m_dataCb(nodeId, value, ts, quality);
-        });
+    // 在后台线程执行同步阻塞的 UA_Client_Subscriptions_create，防止冻结 GUI。
+    // DataChange 回调在 svc() 的 runIterate 线程触发，经 m_dataCb 转发到 Widget
+    //（Widget 侧已用 QueuedConnection 编组到 GUI 线程）。
+    auto adapter = m_adapter;
+    auto logCb  = m_logCb;
+    QStringList ids = nodeIds;
 
-    if (subId != 0) {
-        m_subscribed = true;   // 置位后 svc() 开始驱动 runIterate
-        if (m_logCb) {
-            m_logCb(std::string("已订阅 ") + std::to_string(nodeIds.size())
-                    + " 个节点 (subscriptionId=" + std::to_string(subId) + ")");
+    QtConcurrent::run([adapter, ids, logCb, this]() {
+        quint32 subId = adapter->subscribeDataChange(ids,
+            [this](const QString& nodeId, const QVariant& value,
+                   quint64 ts, const QString& quality) {
+                if (m_dataCb) m_dataCb(nodeId, value, ts, quality);
+            });
+
+        m_subscribed = (subId != 0);   // 置位后 svc() 开始驱动 runIterate
+
+        if (subId != 0) {
+            if (logCb) {
+                logCb(std::string("已订阅 ") + std::to_string(ids.size())
+                      + " 个节点 (subscriptionId=" + std::to_string(subId) + ")");
+            }
+        } else {
+            std::string err = adapter->lastError();
+            if (logCb) {
+                logCb(err.empty() ? std::string("订阅失败")
+                                  : std::string("订阅失败: ") + err);
+            }
         }
-    } else {
-        m_subscribed = false;
-        std::string err = m_adapter->lastError();
-        if (m_logCb) {
-            m_logCb(err.empty() ? std::string("订阅失败")
-                                : std::string("订阅失败: ") + err);
-        }
-    }
+    });
 }
 
 void OpcUaClientBackend::unsubscribeAll()
