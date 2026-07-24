@@ -26,8 +26,6 @@
 #include <QTextEdit>
 #include <QLabel>
 #include <QSplitter>
-#include <QTimer>
-
 class OpcUaClientBackend;
 
 class OpcUaClientWidget : public ToolWidget {

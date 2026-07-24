@@ -42,6 +42,9 @@ OpcUaClientBackend::~OpcUaClientBackend()
     m_running = false;
     requestShutdown();  // 置基类 running_ = false，使 svc 循环退出
     wait();             // join svc 线程(lwserverbase wait 守卫 joinable，可重入)
+    // 等待正在进行的后台订阅任务完成，防止 QtConcurrent::run 回调写入已析构的 this
+    if (m_subscribeFuture.isRunning())
+        m_subscribeFuture.waitForFinished();
     if (m_adapter && m_adapter->isConnected()) {
         m_adapter->disconnect();
     }
@@ -199,7 +202,7 @@ void OpcUaClientBackend::subscribeNodes(const QStringList& nodeIds)
     auto logCb  = m_logCb;
     QStringList ids = nodeIds;
 
-    QtConcurrent::run([adapter, ids, logCb, this]() {
+    m_subscribeFuture = QtConcurrent::run([adapter, ids, logCb, this]() {
         quint32 subId = adapter->subscribeDataChange(ids,
             [this](const QString& nodeId, const QVariant& value,
                    quint64 ts, const QString& quality) {
