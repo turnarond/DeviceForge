@@ -12,7 +12,7 @@
 #include "FtpListParser.h"
 #include <sstream>
 #include <regex>
-#include <ctime>
+#include <chrono>
 #include <iomanip>
 #include <algorithm>
 
@@ -47,10 +47,12 @@ std::string FtpListParser::normalizeUnixDateTime(const std::string& monthAbbr,
     int hour = 0, min = 0, sec = 0;
 
     if (yearOrTime.find(':') != std::string::npos) {
-        // "14:30" 格式 → 当年
-        auto now = std::time(nullptr);
-        auto* tm = std::localtime(&now);
-        year = tm->tm_year + 1900;
+        // "14:30" 格式 → 当年（线程安全，使用 std::chrono 获取当前年份）
+        auto now = std::chrono::system_clock::now();
+        auto tt = std::chrono::system_clock::to_time_t(now);
+        struct tm result{};
+        localtime_s(&result, &tt);
+        year = result.tm_year + 1900;
         std::sscanf(yearOrTime.c_str(), "%d:%d", &hour, &min);
     } else {
         // "2025" 格式
@@ -82,6 +84,8 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
 
     // 权限字段 (tokens[0])
     out.permissions = tokens[0].substr(1); // 去掉首字符（类型标识）
+    // 注：符号链接 (类型 'l') 无法从 LIST 输出可靠判断目标是否为目录，
+    // 此处统一标记为非目录。对目录符号链接双击将尝试 CWD 进入，失败时回退为文件下载
     out.isDir = (tokens[0][0] == 'd');
 
     // 跳过 user(group) size 等，找到日期位置
