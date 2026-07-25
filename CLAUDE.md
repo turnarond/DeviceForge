@@ -40,7 +40,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.3.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.4.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
 
 ### 测试（CTest）
 
@@ -181,7 +181,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 组件（src/ui/）
 
-- **DeviceBusWidget**：顶部设备总线组件。水平胶囊形 QListWidget，支持多选、添加、删除设备。在线/离线状态指示灯，琥珀色选中光晕。工业仪表盘风格
+- **DeviceBusWidget**：顶部紧凑设备栏。胶囊形 QPushButton 水平流式布局，支持多选、添加、删除设备。石墨底 + 琴色选中态边框。工业仪表盘风格
 
 ### 已完成的 Tool（src/tools/）
 
@@ -201,7 +201,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 | 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter | FTP/FTPS (libcurl) | ✅ 已迁移 + FTPS 加密 |
 | 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
-| 日志查询 | 已删除 | 功能由 FtpDeployWidget 双栏远程面板替代（v2.4 远端预览面板已移除） |  | 🗑 已移除 |
+| 日志查询 | 已删除 | 所有 Tool 日志统一路由到全局日志面板（v2.4 日志统一） |  | 🗑 已移除 |
 | MODBUS 测试 | ModbusWidget (Tool) | ModbusBackend → QModbusTcpClient | Modbus TCP | ✅ 已迁移 |
 | 网络调试 | NetRelayWidget (Tool) | NetRelayBackend → QTcpServer/QUdpSocket | TCP/UDP/组播 透明代理 + 录制回放 | ✅ 新增 (2026-07-08) |
 | OPC UA 客户端 | OpcUaClientWidget (Tool) | OpcUaClientBackend → OpcUaAdapter | OPC UA (open62541) | ✅ 已实现（读/写/订阅/浏览，v2.3.0） |
