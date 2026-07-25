@@ -2,25 +2,37 @@
  * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
- * File: FtpDeployWidget.cpp
- *
- * Date: 2026-07-04
- *
+ * File: FtpDeployWidget.cpp (v2.4 双栏重构)
+ * Date: 2026-07-25
  * Author: turnarond
  *
- * Description: FTP 部署 Tool 前端实现 — 标准三段式布局
- *              [配置] → [操作] → [文件列表 + 进度 + 日志]
+ * Description: FTP 部署双栏文件管理器实现。
  */
 
 #include "FtpDeployWidget.h"
 #include "FtpDeployBackend.h"
+#include "RemoteFileModel.h"
+#include "MultiProgressWidget.h"
+#include "adapter/ProtocolRegistry.h"
+#include "adapter/FtpAdapter.h"
 #include "ui/DeviceBusWidget.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QGroupBox>
-#include <QLabel>
+#include <QHeaderView>
+#include <QMenu>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QFileDialog>
+#include <QDir>
+#include <QApplication>
+#include <QClipboard>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QDateTime>
+#include <QtConcurrent/QtConcurrent>
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
@@ -32,211 +44,272 @@ void FtpDeployWidget::setupUi()
 {
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(8);
+    mainLayout->setSpacing(6);
 
-    // === FTP 配置区（增大设置空间） ===
-    auto* configGroup = new QGroupBox("FTP 设置", this);
-    auto* configLayout = new QGridLayout(configGroup);
-    configLayout->setSpacing(6);
+    setupToolbar(mainLayout);
 
-    // 行 0: 远程路径
-    configLayout->addWidget(new QLabel("远程路径:", this), 0, 0);
+    // === 双栏区域 (QSplitter) ===
+    m_splitter = new QSplitter(Qt::Horizontal, this);
+    m_splitter->setHandleWidth(2);
+
+    setupLocalPanel();
+    setupRemotePanel();
+
+    // 获取容器引用（通过 setProperty 保存）
+    auto* localContainer = m_localTree->property("container").value<QWidget*>();
+    auto* remoteContainer = m_remoteTable->property("container").value<QWidget*>();
+    m_splitter->addWidget(localContainer);
+    m_splitter->addWidget(remoteContainer);
+    m_splitter->setStretchFactor(0, 3);
+    m_splitter->setStretchFactor(1, 4);
+    mainLayout->addWidget(m_splitter, 1);
+
+    setupBottomBar(mainLayout);
+    connectBackendSignals();
+}
+
+void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
+{
+    auto* toolbarWidget = new QWidget(this);
+    auto* toolbar = new QGridLayout(toolbarWidget);
+    toolbar->setSpacing(6);
+
+    // 行 0: 目标设备 | 远程路径 | 刷新
+    toolbar->addWidget(new QLabel("目标设备:", this), 0, 0);
+    m_deviceCombo = new QComboBox(this);
+    m_deviceCombo->setMinimumWidth(160);
+    m_deviceCombo->setToolTip("选择目标设备（多选支持——从设备总线同步）");
+    toolbar->addWidget(m_deviceCombo, 0, 1);
+
+    toolbar->addWidget(new QLabel("远程路径:", this), 0, 2);
     m_remotePathEdit = new QLineEdit("/", this);
     m_remotePathEdit->setPlaceholderText("/");
-    configLayout->addWidget(m_remotePathEdit, 0, 1, 1, 3);
+    connect(m_remotePathEdit, &QLineEdit::returnPressed, this, &FtpDeployWidget::onRefreshRemote);
+    toolbar->addWidget(m_remotePathEdit, 0, 3);
 
-    // 行 1: 端口 | FTPS 加密
-    configLayout->addWidget(new QLabel("端口:", this), 1, 0);
+    m_refreshBtn = new QPushButton("刷新", this);
+    m_refreshBtn->setToolTip("刷新远程目录列表 (F5)");
+    connect(m_refreshBtn, &QPushButton::clicked, this, &FtpDeployWidget::onRefreshRemote);
+    toolbar->addWidget(m_refreshBtn, 0, 4);
+
+    // 行 1: 端口 | FTPS | 清空 | 重启
+    toolbar->addWidget(new QLabel("端口:", this), 1, 0);
     m_portSpin = new QSpinBox(this);
     m_portSpin->setRange(1, 65535);
     m_portSpin->setValue(21);
-    m_portSpin->setToolTip("FTP 服务端口，默认 21");
-    configLayout->addWidget(m_portSpin, 1, 1);
+    toolbar->addWidget(m_portSpin, 1, 1);
 
-    m_ftpsCheck = new QCheckBox("FTPS 加密传输", this);
-    m_ftpsCheck->setToolTip("使用 FTP over TLS 加密，防止凭证和文件在网络中被窃听");
-    configLayout->addWidget(m_ftpsCheck, 1, 2, 1, 2);
+    m_ftpsCheck = new QCheckBox("FTPS 加密", this);
+    toolbar->addWidget(m_ftpsCheck, 1, 2);
 
-    // 行 2: 部署选项
-    m_clearCheck = new QCheckBox("部署前清空远程目录", this);
-    configLayout->addWidget(m_clearCheck, 2, 0, 1, 2);
+    m_clearCheck = new QCheckBox("部署前清空远程", this);
+    toolbar->addWidget(m_clearCheck, 1, 3);
 
-    m_rebootCheck = new QCheckBox("部署完成后重启设备", this);
-    configLayout->addWidget(m_rebootCheck, 2, 2, 1, 2);
+    m_rebootCheck = new QCheckBox("部署后重启", this);
+    toolbar->addWidget(m_rebootCheck, 1, 4);
 
-    mainLayout->addWidget(configGroup);
-
-    // === 操作区 ===
-    auto* actionGroup = new QGroupBox("操作", this);
-    auto* actionLayout = new QHBoxLayout(actionGroup);
-
-    auto* addFilesBtn = new QPushButton("+ 添加文件", this);
-    auto* addFolderBtn = new QPushButton("+ 添加文件夹", this);
-    auto* clearFilesBtn = new QPushButton("清空列表", this);
-
-    connect(addFilesBtn, &QPushButton::clicked, this, &FtpDeployWidget::onAddFilesClicked);
-    connect(addFolderBtn, &QPushButton::clicked, this, &FtpDeployWidget::onAddFolderClicked);
-    connect(clearFilesBtn, &QPushButton::clicked, this, &FtpDeployWidget::onClearFilesClicked);
-
-    actionLayout->addWidget(addFilesBtn);
-    actionLayout->addWidget(addFolderBtn);
-    actionLayout->addWidget(clearFilesBtn);
-    actionLayout->addStretch();
-
-    m_deployBtn = new QPushButton("开始部署", this);
-    m_deployBtn->setObjectName("btnPrimary");
-    m_cancelBtn = new QPushButton("取消", this);
-    m_cancelBtn->setEnabled(false);
-    connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
-    connect(m_cancelBtn, &QPushButton::clicked, [this]() {
-        if (m_backend) m_backend->cancelUpload();
-        m_cancelBtn->setEnabled(false);
-        appendLog("用户取消部署");
-    });
-
-    actionLayout->addWidget(m_deployBtn);
-    actionLayout->addWidget(m_cancelBtn);
-
-    mainLayout->addWidget(actionGroup);
-
-    // === 文件列表（缩小占比） ===
-    m_fileList = new QListWidget(this);
-    m_fileList->setMinimumHeight(60);
-    m_fileList->setMaximumHeight(140);
-    m_fileList->setAlternatingRowColors(true);
-    m_fileList->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    mainLayout->addWidget(m_fileList);
-
-    // === 进度 ===
-    m_progressBar = new QProgressBar(this);
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    m_progressBar->setTextVisible(true);
-    m_progressBar->setFormat("%p%");
-    m_progressBar->setMaximumHeight(22);
-    mainLayout->addWidget(m_progressBar);
-
-    // === 日志区 ===
-    m_logView = new QTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumHeight(100);
-    m_logView->setPlaceholderText("部署日志...");
-    mainLayout->addWidget(m_logView);
-
-    // 底部留弹性空间
-    mainLayout->addStretch(1);
+    mainLayout->addWidget(toolbarWidget);
 }
 
-void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
+void FtpDeployWidget::setupLocalPanel()
 {
-    m_backend = backend;
-    if (!m_backend) return;
+    auto* localContainer = new QWidget(this);
+    auto* localLayout = new QVBoxLayout(localContainer);
+    localLayout->setContentsMargins(0, 0, 0, 0);
+    localLayout->setSpacing(4);
 
-    // 绑定 Backend 回调（跨线程安全，通过 Qt::QueuedConnection 回主线程）
-    m_backend->setProgressCallback([this](int pct) {
-        QMetaObject::invokeMethod(this, [this, pct]() {
-            m_progressBar->setValue(pct);
-        }, Qt::QueuedConnection);
+    auto* header = new QHBoxLayout();
+    auto* iconLabel = new QLabel("📁 本地文件", this);
+    iconLabel->setStyleSheet("font-weight: bold; color: #C8CCD4;");
+    header->addWidget(iconLabel);
+
+    m_localPathEdit = new QLineEdit(this);
+    m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
+    connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
+        QDir dir(m_localPathEdit->text());
+        if (dir.exists()) {
+            m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
+        }
+    });
+    header->addWidget(m_localPathEdit, 1);
+
+    auto* openDirBtn = new QPushButton("打开目录", this);
+    connect(openDirBtn, &QPushButton::clicked, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
+        if (!dir.isEmpty()) {
+            m_localTree->setRootIndex(m_localFsModel->index(dir));
+            m_localPathEdit->setText(dir);
+        }
+    });
+    header->addWidget(openDirBtn);
+    localLayout->addLayout(header);
+
+    // QFileSystemModel
+    m_localFsModel = new QFileSystemModel(this);
+    m_localFsModel->setRootPath(QDir::currentPath());
+    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
+
+    m_localTree = new QTreeView(this);
+    m_localTree->setModel(m_localFsModel);
+    m_localTree->setRootIndex(m_localFsModel->index(QDir::currentPath()));
+    m_localTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_localTree->setDragEnabled(true);
+    m_localTree->setAcceptDrops(true);
+    m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
+    m_localTree->setColumnHidden(1, true); // 隐藏 size 列
+    m_localTree->setColumnHidden(2, true); // 隐藏 type 列
+    m_localTree->setColumnHidden(3, true); // 隐藏 date 列
+    m_localTree->header()->setStretchLastSection(true);
+
+    // 监听目录切换，更新路径栏
+    connect(m_localTree->selectionModel(), &QItemSelectionModel::currentChanged,
+        [this](const QModelIndex& current, const QModelIndex&) {
+        if (current.isValid()) {
+            QFileInfo fi = m_localFsModel->fileInfo(current);
+            if (fi.isDir()) {
+                m_localPathEdit->setText(fi.absoluteFilePath());
+            }
+        }
     });
 
+    localLayout->addWidget(m_localTree, 1);
+
+    // 保存 container 引用用于加入 splitter
+    m_localTree->setProperty("container", QVariant::fromValue<QWidget*>(localContainer));
+}
+
+void FtpDeployWidget::setupRemotePanel()
+{
+    auto* remoteContainer = new QWidget(this);
+    auto* remoteLayout = new QVBoxLayout(remoteContainer);
+    remoteLayout->setContentsMargins(0, 0, 0, 0);
+    remoteLayout->setSpacing(4);
+
+    auto* header = new QHBoxLayout();
+    auto* iconLabel = new QLabel("📁 远程文件", this);
+    iconLabel->setStyleSheet("font-weight: bold; color: #C8CCD4;");
+    header->addWidget(iconLabel);
+
+    // 面包屑
+    m_breadcrumbWidget = new QWidget(this);
+    m_breadcrumbLayout = new QHBoxLayout(m_breadcrumbWidget);
+    m_breadcrumbLayout->setContentsMargins(0, 0, 0, 0);
+    m_breadcrumbLayout->setSpacing(2);
+    header->addWidget(m_breadcrumbWidget, 1);
+
+    remoteLayout->addLayout(header);
+
+    // QTableView + RemoteFileModel
+    m_remoteModel = new RemoteFileModel(this);
+
+    m_remoteTable = new QTableView(this);
+    m_remoteTable->setModel(m_remoteModel);
+    m_remoteTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_remoteTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_remoteTable->setAlternatingRowColors(true);
+    m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_remoteTable->setAcceptDrops(true);
+    m_remoteTable->setDragDropMode(QAbstractItemView::DropOnly);
+    m_remoteTable->verticalHeader()->setVisible(false);
+
+    // 列宽
+    auto* hdr = m_remoteTable->horizontalHeader();
+    hdr->setSectionResizeMode(RemoteFileModel::ColIcon, QHeaderView::Fixed);
+    m_remoteTable->setColumnWidth(RemoteFileModel::ColIcon, 32);
+    hdr->setSectionResizeMode(RemoteFileModel::ColName, QHeaderView::Stretch);
+    hdr->setSectionResizeMode(RemoteFileModel::ColSize, QHeaderView::Fixed);
+    m_remoteTable->setColumnWidth(RemoteFileModel::ColSize, 80);
+    hdr->setSectionResizeMode(RemoteFileModel::ColDateTime, QHeaderView::Fixed);
+    m_remoteTable->setColumnWidth(RemoteFileModel::ColDateTime, 140);
+    hdr->setSectionResizeMode(RemoteFileModel::ColPermissions, QHeaderView::Fixed);
+    m_remoteTable->setColumnWidth(RemoteFileModel::ColPermissions, 80);
+
+    // 双击进入目录
+    connect(m_remoteTable, &QTableView::doubleClicked,
+        this, &FtpDeployWidget::onRemoteDirChanged);
+
+    // 右键菜单
+    connect(m_remoteTable, &QTableView::customContextMenuRequested,
+        this, &FtpDeployWidget::onRemoteContextMenu);
+
+    remoteLayout->addWidget(m_remoteTable, 1);
+
+    // 保存 container 引用用于加入 splitter
+    m_remoteTable->setProperty("container", QVariant::fromValue<QWidget*>(remoteContainer));
+}
+
+void FtpDeployWidget::setupBottomBar(QVBoxLayout* mainLayout)
+{
+    // 部署按钮栏
+    auto* deployRow = new QHBoxLayout();
+
+    m_deployBtn = new QPushButton("▶ 部署", this);
+    m_deployBtn->setObjectName("btnPrimary");
+    m_deployBtn->setMinimumHeight(32);
+    connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
+    deployRow->addWidget(m_deployBtn);
+
+    deployRow->addStretch();
+    mainLayout->addLayout(deployRow);
+
+    // 多设备进度
+    m_multiProgress = new MultiProgressWidget(this);
+    connect(m_multiProgress, &MultiProgressWidget::cancelRequested, [this]() {
+        if (m_backend) m_backend->cancelUpload();
+    });
+    mainLayout->addWidget(m_multiProgress);
+
+    // 日志
+    m_logView = new QTextEdit(this);
+    m_logView->setReadOnly(true);
+    m_logView->setMaximumHeight(120);
+    m_logView->setPlaceholderText("部署日志...");
+    mainLayout->addWidget(m_logView);
+}
+
+void FtpDeployWidget::connectBackendSignals()
+{
+    if (!m_backend) return;
+    m_backend->setProgressCallback([this](int pct) {
+        QMetaObject::invokeMethod(this, [this, pct]() {
+            m_multiProgress->setOverallProgress(pct);
+        }, Qt::QueuedConnection);
+    });
     m_backend->setLogCallback([this](const std::string& msg) {
         QMetaObject::invokeMethod(this, [this, msg]() {
             appendLog(QString::fromStdString(msg));
         }, Qt::QueuedConnection);
     });
-
     m_backend->setFinishedCallback(
         [this](bool ok, const std::vector<std::string>& successes,
                const std::vector<std::string>& failures) {
             QMetaObject::invokeMethod(this, [this, ok, successes, failures]() {
                 m_deployBtn->setEnabled(true);
-                m_cancelBtn->setEnabled(false);
-                m_progressBar->setValue(ok ? 100 : 0);
-                QString summary = ok
-                    ? QString("部署完成 - 成功: %1, 失败: %2")
-                          .arg(successes.size()).arg(failures.size())
-                    : "部署失败";
-                appendLog(summary);
-                emit toolStatusChanged(summary);
+                m_multiProgress->setOverallProgress(ok ? 100 : 0);
+                if (ok && !successes.empty()) {
+                    appendLog(QString("✅ 部署完成 — 成功: %1, 失败: %2")
+                        .arg(successes.size()).arg(failures.size()));
+                    // 自动刷新远程面板
+                    onRefreshRemote();
+                } else {
+                    appendLog("❌ 部署失败");
+                }
             }, Qt::QueuedConnection);
         });
 }
 
-void FtpDeployWidget::onToolStart()
-{
-    appendLog("文件部署工具已就绪");
-    emit toolStatusChanged("就绪");
-}
-
-void FtpDeployWidget::onToolStop()
-{
-    appendLog("文件部署工具已停止");
-    emit toolStatusChanged("已停止");
-}
-
-void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
-{
-    m_deviceBus = deviceBus;
-}
-
-void FtpDeployWidget::onAddFilesClicked()
-{
-    QStringList files = QFileDialog::getOpenFileNames(this, "选择要部署的文件");
-    for (const auto& f : files) {
-        m_fileList->addItem(f);
-    }
-    appendLog(QString("已添加 %1 个文件").arg(files.size()));
-}
-
-void FtpDeployWidget::onAddFolderClicked()
-{
-    QString dir = QFileDialog::getExistingDirectory(this, "选择要部署的文件夹");
-    if (!dir.isEmpty()) {
-        m_fileList->addItem(dir);
-        appendLog("已添加文件夹: " + dir);
-    }
-}
-
-void FtpDeployWidget::onClearFilesClicked()
-{
-    m_fileList->clear();
-    appendLog("文件列表已清空");
-}
-
 void FtpDeployWidget::onDeployClicked()
 {
-    if (!m_backend) {
-        appendLog("Backend 未就绪");
-        return;
-    }
-    if (m_fileList->count() == 0) {
-        appendLog("请先添加要部署的文件");
-        return;
-    }
+    if (!m_backend) { appendLog("Backend 未就绪"); return; }
+    if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
-    // 从文件列表提取路径
-    std::vector<std::string> files;
-    for (int i = 0; i < m_fileList->count(); ++i) {
-        files.push_back(m_fileList->item(i)->text().toStdString());
-    }
-
-    m_deployBtn->setEnabled(false);
-    m_cancelBtn->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_logView->clear();
-
-    // 从设备总线绑定目标和凭证
-    if (!m_deviceBus) {
-        appendLog("错误：设备总线未关联");
-        m_deployBtn->setEnabled(true);
-        return;
-    }
     auto devices = m_deviceBus->allDevices();
-    if (devices.empty()) {
-        appendLog("错误：设备总线中没有目标设备");
-        m_deployBtn->setEnabled(true);
-        return;
-    }
+    if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
+
+    // 收集本地面板中选中的文件路径
+    auto files = collectLocalFiles();
+    if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
 
     AuthInfo auth;
     auth.user = m_deviceBus->user().toStdString();
@@ -244,20 +317,302 @@ void FtpDeployWidget::onDeployClicked()
     m_backend->bindCredentials(auth);
     m_backend->bindDevices(devices);
 
-    appendLog("开始部署...");
-    appendLog(QString("目标设备: %1 台").arg(devices.size()));
-    appendLog(QString("目标路径: %1").arg(m_remotePathEdit->text()));
-    appendLog(QString("文件数量: %1").arg(files.size()));
-    emit toolStatusChanged("部署中...");
+    m_deployBtn->setEnabled(false);
+    m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
+    for (size_t i = 0; i < devices.size(); ++i) {
+        m_multiProgress->setDeviceStatus(static_cast<int>(i),
+            QString::fromStdString(devices[i].ip), false);
+    }
 
-    m_backend->startUpload(
-        files,
+    appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
+
+    m_backend->startUpload(files,
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );
+}
+
+std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
+{
+    std::vector<std::string> files;
+    QModelIndexList selection = m_localTree->selectionModel()->selectedRows();
+    for (const auto& idx : selection) {
+        QString path = m_localFsModel->filePath(idx);
+        files.push_back(path.toStdString());
+    }
+    return files;
+}
+
+void FtpDeployWidget::onRefreshRemote()
+{
+    if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
+        appendLog("错误：设备总线中没有目标设备");
+        return;
+    }
+
+    QString path = m_remotePathEdit->text();
+    if (path.isEmpty()) path = "/";
+
+    // 从设备下拉框获取当前选中设备
+    QString deviceIp = m_deviceCombo->currentText();
+    if (deviceIp.isEmpty()) {
+        deviceIp = QString::fromStdString(m_deviceBus->allDevices()[0].ip);
+    }
+
+    appendLog(QString("正在加载远程目录: %1:%2 ...").arg(deviceIp, path));
+
+    QtConcurrent::run([this, deviceIp, path]() {
+        auto adapter = ProtocolRegistry::instance()->create("ftp");
+        if (!adapter) {
+            QMetaObject::invokeMethod(this, [this]() {
+                appendLog("FTP 适配器不可用");
+            }, Qt::QueuedConnection);
+            return;
+        }
+
+        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+        DeviceInfo dev;
+        dev.ip = deviceIp.toStdString();
+        dev.port = m_portSpin->value();
+
+        AuthInfo auth;
+        auth.user = m_deviceBus->user().toStdString();
+        auth.password = m_deviceBus->password().toStdString();
+
+        if (m_ftpsCheck->isChecked()) {
+            ftp->setUseFtps(true);
+        }
+
+        if (!ftp->connect(dev, auth)) {
+            QString err = QString::fromStdString(ftp->lastError());
+            QMetaObject::invokeMethod(this, [this, err]() {
+                appendLog("连接失败: " + err);
+            }, Qt::QueuedConnection);
+            return;
+        }
+
+        auto files = ftp->listDirectoryParsed(path.toStdString());
+        ftp->disconnect();
+
+        QMetaObject::invokeMethod(this, [this, files]() {
+            m_remoteModel->setFileList(files);
+            appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
+{
+    if (!index.isValid()) return;
+    const auto& fi = m_remoteModel->fileAt(index.row());
+    if (!fi.isDir) return;
+
+    QString newPath = m_currentRemotePath;
+    if (!newPath.endsWith('/')) newPath += '/';
+    newPath += QString::fromStdString(fi.name);
+    navigateToRemoteDir(newPath);
+}
+
+void FtpDeployWidget::navigateToRemoteDir(const QString& path)
+{
+    m_currentRemotePath = path;
+    m_remotePathEdit->setText(path);
+    refreshBreadcrumb(path);
+    onRefreshRemote();
+}
+
+void FtpDeployWidget::refreshBreadcrumb(const QString& path)
+{
+    // 清除旧面包屑
+    QLayoutItem* item;
+    while ((item = m_breadcrumbLayout->takeAt(0)) != nullptr) {
+        if (item->widget()) item->widget()->deleteLater();
+        delete item;
+    }
+
+    QStringList parts = path.split('/', Qt::SkipEmptyParts);
+    QString accumulated;
+
+    // 根 "/"
+    auto* rootBtn = new QPushButton("/", this);
+    rootBtn->setFlat(true);
+    rootBtn->setCursor(Qt::PointingHandCursor);
+    rootBtn->setStyleSheet("color: #7B8494; padding: 0 4px; border: none;");
+    connect(rootBtn, &QPushButton::clicked, [this]() { navigateToRemoteDir("/"); });
+    m_breadcrumbLayout->addWidget(rootBtn);
+
+    for (int i = 0; i < parts.size(); ++i) {
+        auto* sep = new QLabel(">", this);
+        sep->setStyleSheet("color: #333B48; padding: 0 2px;");
+        m_breadcrumbLayout->addWidget(sep);
+
+        accumulated += "/" + parts[i];
+        QString fullPath = accumulated;
+
+        auto* btn = new QPushButton(parts[i], this);
+        btn->setFlat(true);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setStyleSheet(
+            i == parts.size() - 1
+                ? "color: #F0A030; font-weight: bold; padding: 0 4px; border: none;"
+                : "color: #7B8494; padding: 0 4px; border: none;"
+        );
+        connect(btn, &QPushButton::clicked, [this, fullPath]() { navigateToRemoteDir(fullPath); });
+        m_breadcrumbLayout->addWidget(btn);
+    }
+    m_breadcrumbLayout->addStretch();
+}
+
+void FtpDeployWidget::onRemoteContextMenu(const QPoint& pos)
+{
+    QModelIndex idx = m_remoteTable->indexAt(pos);
+    QMenu menu(this);
+
+    QAction* downloadAct = menu.addAction("下载到本地");
+    QAction* deleteAct = menu.addAction("删除");
+    menu.addSeparator();
+    QAction* renameAct = menu.addAction("重命名");
+    QAction* newDirAct = menu.addAction("新建目录");
+    menu.addSeparator();
+    QAction* copyPathAct = menu.addAction("复制路径");
+
+    QAction* chosen = menu.exec(m_remoteTable->viewport()->mapToGlobal(pos));
+    if (!chosen) return;
+
+    if (chosen == downloadAct) onDownloadRemote();
+    else if (chosen == deleteAct) onDeleteRemote();
+    else if (chosen == renameAct) onRenameRemote();
+    else if (chosen == newDirAct) onNewRemoteDir();
+    else if (chosen == copyPathAct) {
+        if (idx.isValid()) {
+            QString fullPath = m_currentRemotePath;
+            if (!fullPath.endsWith('/')) fullPath += '/';
+            fullPath += QString::fromStdString(m_remoteModel->fileAt(idx.row()).name);
+            QApplication::clipboard()->setText(fullPath);
+        }
+    }
+}
+
+void FtpDeployWidget::onDeleteRemote()
+{
+    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
+    if (sel.isEmpty()) return;
+    QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
+    auto ans = QMessageBox::question(this, "确认删除",
+        QString("确定要删除远程文件 \"%1\" 吗？").arg(name));
+    if (ans != QMessageBox::Yes) return;
+
+    // 通过 FtpAdapter 删除（异步）
+    QtConcurrent::run([this, name]() {
+        auto adapter = ProtocolRegistry::instance()->create("ftp");
+        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+        DeviceInfo dev;
+        dev.ip = m_deviceCombo->currentText().toStdString();
+        dev.port = m_portSpin->value();
+        AuthInfo auth;
+        auth.user = m_deviceBus->user().toStdString();
+        auth.password = m_deviceBus->password().toStdString();
+        if (ftp->connect(dev, auth)) {
+            std::string fullPath = m_currentRemotePath.toStdString();
+            if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
+            fullPath += name.toStdString();
+            bool ok = ftp->deleteFile(fullPath);
+            ftp->disconnect();
+            QMetaObject::invokeMethod(this, [this, name, ok]() {
+                appendLog(ok ? QString("已删除: %1").arg(name) : "删除失败: " + name);
+                onRefreshRemote();
+            }, Qt::QueuedConnection);
+        }
+    });
+}
+
+void FtpDeployWidget::onDownloadRemote()
+{
+    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
+    if (sel.isEmpty()) return;
+    QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
+
+    QString savePath = QFileDialog::getSaveFileName(this, "保存到", name);
+    if (savePath.isEmpty()) return;
+
+    QtConcurrent::run([this, name, savePath]() {
+        auto adapter = ProtocolRegistry::instance()->create("ftp");
+        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+        DeviceInfo dev;
+        dev.ip = m_deviceCombo->currentText().toStdString();
+        dev.port = m_portSpin->value();
+        AuthInfo auth;
+        auth.user = m_deviceBus->user().toStdString();
+        auth.password = m_deviceBus->password().toStdString();
+        if (ftp->connect(dev, auth)) {
+            std::string fullPath = m_currentRemotePath.toStdString();
+            if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
+            fullPath += name.toStdString();
+            bool ok = ftp->downloadFile(fullPath, savePath.toStdString());
+            ftp->disconnect();
+            QMetaObject::invokeMethod(this, [this, name, ok]() {
+                appendLog(ok ? QString("已下载: %1").arg(name) : "下载失败: " + name);
+            }, Qt::QueuedConnection);
+        }
+    });
+}
+
+void FtpDeployWidget::onRenameRemote()
+{
+    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
+    if (sel.isEmpty()) return;
+    QString oldName = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
+
+    bool ok = false;
+    QString newName = QInputDialog::getText(this, "重命名",
+        QString("将 \"%1\" 重命名为:").arg(oldName), QLineEdit::Normal, oldName, &ok);
+    if (!ok || newName.isEmpty() || newName == oldName) return;
+
+    appendLog(QString("重命名: %1 → %2 (FTP RNFR/RNTO 待实现)").arg(oldName, newName));
+}
+
+void FtpDeployWidget::onNewRemoteDir()
+{
+    bool ok = false;
+    QString dirName = QInputDialog::getText(this, "新建目录",
+        "目录名:", QLineEdit::Normal, "", &ok);
+    if (!ok || dirName.isEmpty()) return;
+
+    appendLog(QString("新建远程目录: %1 (FTP MKD 待实现)").arg(dirName));
+}
+
+void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
+{
+    m_backend = backend;
+    connectBackendSignals();
+}
+
+void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
+{
+    m_deviceBus = deviceBus;
+
+    // 同步设备下拉框
+    if (m_deviceBus) {
+        m_deviceCombo->clear();
+        for (const auto& d : m_deviceBus->allDevices()) {
+            m_deviceCombo->addItem(QString::fromStdString(d.ip));
+        }
+    }
+}
+
+void FtpDeployWidget::onToolStart()
+{
+    appendLog("文件部署工具已就绪 — 拖拽文件到远程面板即可上传");
+    emit toolStatusChanged("就绪");
+}
+
+void FtpDeployWidget::onToolStop()
+{
+    appendLog("文件部署工具已停止");
+    emit toolStatusChanged("已停止");
 }
 
 void FtpDeployWidget::appendLog(const QString& msg)
