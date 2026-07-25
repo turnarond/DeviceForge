@@ -11,8 +11,6 @@
 
 #include "RemoteFileModel.h"
 #include <QColor>
-#include <QFont>
-#include <cmath>
 
 RemoteFileModel::RemoteFileModel(QObject* parent)
     : QAbstractTableModel(parent) {}
@@ -23,11 +21,12 @@ void RemoteFileModel::setFileList(const std::vector<FtpFileInfo>& files)
     m_files = files;
 
     // 重建对比着色索引
+    // TODO: 实现精确对比（大小+时间戳）后将匹配项移入 m_syncedNames 显示绿色
     m_syncedNames.clear();
     m_diffNames.clear();
     for (const auto& f : m_files) {
         if (m_localFileNames.count(f.name)) {
-            m_diffNames.insert(f.name); // 简化处理：标记为差异（实际精确对比需要本地文件大小，后续增强）
+            m_diffNames.insert(f.name); // 简化：所有同名文件标记为差异（黄色）
         }
     }
     endResetModel();
@@ -47,7 +46,7 @@ void RemoteFileModel::setLocalFilesForCompare(const std::vector<std::string>& lo
     m_localFileNames.clear();
     for (const auto& n : localFileNames) m_localFileNames.insert(n);
 
-    // 重新计算差异集合
+    // 重新计算差异集合（同 setFileList，m_syncedNames 留给未来精确对比）
     m_syncedNames.clear();
     m_diffNames.clear();
     for (const auto& f : m_files) {
