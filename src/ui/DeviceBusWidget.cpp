@@ -204,7 +204,6 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
     pill->setText(label + QStringLiteral("  \xC3\x97"));
     pill->setFixedHeight(26);
     pill->setCursor(Qt::PointingHandCursor);
-    pill->setCheckable(true);
     pill->setProperty("deviceIp", ipStr);
     pill->setProperty("selected", false);
 
@@ -224,6 +223,8 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
         "  border-color: #F0A030;"
         "  background: #2A2518;"
         "}"
+        "QPushButton[online=\"true\"]  { border-left: 3px solid #40C8A0; }"
+        "QPushButton[online=\"false\"] { border-left: 3px solid #E85848; }"
     );
 
     // 点击切换选中
