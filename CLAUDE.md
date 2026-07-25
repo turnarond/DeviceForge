@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-DeviceForge（原名 DeployMaster）是基于 Qt 6.10.1 + C++17 的工业级设备批量运维平台。提供 FTP/FTPS 批量部署、Telnet 批量命令、Modbus 集群测试、OPC UA 客户端、WebSocket 通信等功能。2026-07-05 更名为 DeviceForge。
+DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的工业级设备批量运维平台。提供 FTP/FTPS 批量部署、Telnet 批量命令、Modbus 集群测试、OPC UA 客户端、WebSocket 通信等功能。2026-07-05 更名为 DeviceForge。
 
 与 PLCBasicConfigurator 配套，构成 SylixOS PLC 设备完整工具链（DeployMaster 负责部署/测试/运维，PLCBasicConfigurator 负责设备配置）。
 
@@ -40,7 +40,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.2.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.3.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
 
 ### 测试（CTest）
 
@@ -53,6 +53,10 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 现有 QtTest 目标（`tests/CMakeLists.txt`，`enable_testing()` + `add_subdirectory(tests)`）：
 - `tst_nrec`：NetRelayTool `.nrec` 录制往返 / 坏文件拒绝 / 回放上行（源在 `tests/NetRelayTool/tst_nrec.cpp`）
 - `tst_updatechecker`：OTA 更新检查逻辑（源在 `tests/tst_updatechecker.cpp`）
+- `tst_dpapi_crypto`：Windows DPAPI + base64 加解密；非 Windows 为 no-op stub（源在 `tests/config/tst_dpapi_crypto.cpp`）
+- `tst_config_store`：ConfigStore SQLite + JSON 导入导出（源在 `tests/config/tst_config_store.cpp`）
+- `tst_opcua_encode`：open62541 编码路径隔离测试，C 语言，不连服务器（源在 `tests/opcua_encode/tst_opcua_encode.c`）
+- `tst_opcua_loopback`：进程内 OPC UA 服务端-客户端环回测试（源在 `tests/opcua_encode/tst_opcua_loopback.cpp`）
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -74,7 +78,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 | 组件 | 用途 |
 |------|------|
-| Qt 6.11.1 (Core/Gui/Widgets/Network/SerialBus/WebSockets/Test) | 跨平台 UI + 网络 + Modbus + 单元测试 |
+| Qt 6.11.1 (Core/Gui/Widgets/Network/SerialBus/WebSockets/Sql/Concurrent/Test) | 跨平台 UI + 网络 + Modbus + 单元测试 + 配置持久化 |
 | libcurl (lib/curl-8.20.0) | FTP 文件传输 |
 | open62541 v1.5.5 (单文件分发) | OPC UA 客户端 |
 | lwserverbase | 服务框架（ServiceTask 生命周期、ServiceManager、ConfigManager） |
@@ -90,13 +94,13 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.2.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.3.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
-> **注意**：ToolHost::createTool() 只支持单活跃 Tool，目前 FtpDeploy/Telnet/WebSocket/Modbus 四个 Tool 均通过 `DeployMaster` 直接创建 Backend + Widget（`setupXxxTab()` / `initToolTabs()`），绕过 ToolHost。`main.cpp` 中的 `ToolHost::registerBuiltinFactory()` 目前仅为预留。待 ToolHost 支持多 Tool 并发后切换。
+> **注意**：ToolHost::createTool() 只支持单活跃 Tool，目前所有 Tool 均通过 `DeployMaster` 直接创建 Backend + Widget（`setupXxxTab()` / `initToolTabs()`），绕过 ToolHost。`main.cpp` 中的 `ToolHost::registerBuiltinFactory()` 目前仅为预留。待 ToolHost 支持多 Tool 并发后切换。
 
 **已完成（Phase 0-2）**：
 - Phase 0（基础设施对齐）：thirdparty 库编译集成、LogBridge 日志桥接、适配器层（IProtocolAdapter/FtpAdapter/TelnetAdapter/ProtocolRegistry）
@@ -111,6 +115,12 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - 内存密码安全擦除（AuthInfo::clear / FtpManager::clearCredentials）
 - 日志去敏感化（Telnet/WebSocket 消息内容改为记录字节数）
 - 安全审查报告见 `docs/superpowers/specs/2026-07-05-ftp-deploy-improvement-design.md`
+
+**配置持久化（2026-07-25，v2.3.0）**：
+- ConfigStore 单例（`src/config/ConfigStore.cpp/.h`）：基于 SQLite 的键值配置持久化（设备列表/凭证/端点历史/Tool 设置），支持 JSON 导入导出
+- DpapiCrypto（`src/config/DpapiCrypto.cpp/.h`）：Windows DPAPI 加密封装（CryptProtectData/CryptUnprotectData），用于加密存储敏感字段（凭证密码等）；非 Windows 平台为 no-op stub，明文存储
+- SettingsDialog（`src/config/SettingsDialog.cpp/.h`）：设置面板 UI（通用/网络/安全 三页），入口在 DeployMaster 菜单栏
+- 各 Tool 已接入 ConfigStore：DeviceBusWidget 设备记录持久化 + 启动加载、OpcUaClientWidget endpoint 历史下拉、FtpDeployWidget 凭证 DPAPI 加密持久化、SettingsDialog 设置面板
 
 **NetRelayTool 安全加固（2026-07-08）**：
 - 绑定地址 fail-closed 校验（非法输入直接拒绝，不再静默回退到 Null→0.0.0.0；仅接受 IP 字面量/localhost/any）
@@ -161,6 +171,8 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - **ProtocolCapability**：协议能力声明结构体（requestResponse/streaming/broadcast/publishSubscribe/maxConnections）
 - **FtpAdapter**：实现 IProtocolAdapter，内部复用 libcurl。额外暴露 FTP 特有操作（uploadFile/uploadFolder/downloadFile/listDirectory/deleteFile/deleteDirectory/clearRemoteDirectory）
 - **TelnetAdapter**：实现 IProtocolAdapter，基于 `lwcommunicate::LWTcpClient`。支持请求-响应 + 流模式
+- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2。提供 SSH 加密通道（TelnetTool 中作为 TelnetAdapter 的安全替代）
+- **OpcUaAdapter**：实现 IProtocolAdapter，封装 open62541 客户端。支持读/写/订阅/浏览，`UA_MULTITHREADING=100` 编译
 - **ProtocolRegistry**（单例）：协议适配器工厂注册表（registerFactory/create/isRegistered/registeredProtocols）
 
 ### 日志桥接（src/logging/）
@@ -173,13 +185,14 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 ### 已完成的 Tool（src/tools/）
 
-五个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
+六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
 - **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 获取 FtpAdapter）+ FtpDeployWidget（标准三段式布局：配置→操作→结果+日志），支持 FTPS 加密
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
 - **NetRelayTool**（`src/tools/NetRelayTool/`）：NetRelayBackend（QTcpServer + QUdpSocket）+ NetRelayWidget，TCP/UDP/组播(Multicast) 透明中继代理，双向流量双向原样转发，Hex+ASCII 实时视图 + 导出；支持流量录制（`.nrec` 自定义二进制格式）+ 按原始时序回放上行到消费者（RelayRecorder/RelayRecording/RelayPlayer，RelayMode 中继/回放互斥状态机）；组播录制零影响加入组抄收(.nrec protocol=2 存组地址)+ 回灌原组
+- **OpcUaClientTool**（`src/tools/OpcUaClientTool/`）：OpcUaClientBackend（OpcUaAdapter → open62541）+ OpcUaClientWidget，支持批量读/写节点、DataChange 订阅（`UA_MULTITHREADING=100` 线程安全）、地址空间 5 列浏览（DisplayName/NodeId/Type/Value/Actions + × 删除按钮），endpoint 历史下拉（ConfigStore 持久化）
 
 ### 模块对应关系
 
@@ -191,7 +204,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 | 日志查询 | 已删除 | 功能由远端预览面板的下载按钮替代 |  | 🗑 已移除 |
 | MODBUS 测试 | ModbusWidget (Tool) | ModbusBackend → QModbusTcpClient | Modbus TCP | ✅ 已迁移 |
 | 网络调试 | NetRelayWidget (Tool) | NetRelayBackend → QTcpServer/QUdpSocket | TCP/UDP/组播 透明代理 + 录制回放 | ✅ 新增 (2026-07-08) |
-| OPC UA 客户端 | OpcUaClientWidget (Tool) | OpcUaClientBackend → OpcUaAdapter | OPC UA (open62541) | ✅ 已实现（读/写/订阅/浏览） |
+| OPC UA 客户端 | OpcUaClientWidget (Tool) | OpcUaClientBackend → OpcUaAdapter | OPC UA (open62541) | ✅ 已实现（读/写/订阅/浏览，v2.3.0） |
 
 ### UI 资源
 
@@ -206,7 +219,8 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
-- `src/adapter/`：IProtocolAdapter.h / ProtocolCapability.h / FtpAdapter(.cpp/.h) / TelnetAdapter(.cpp/.h) / ProtocolRegistry(.cpp/.h)
+- `src/adapter/`：IProtocolAdapter.h / ProtocolCapability.h / FtpAdapter(.cpp/.h) / TelnetAdapter(.cpp/.h) / SshAdapter(.cpp/.h) / OpcUaAdapter(.cpp/.h) / ProtocolRegistry(.cpp/.h)
+- `src/config/`：ConfigStore(.cpp/.h) / DpapiCrypto(.cpp/.h) / SettingsDialog(.cpp/.h) — SQLite 配置持久化 + DPAPI 加密 + 设置面板
 - `src/logging/`：LogBridge(.cpp/.h)
 - `src/ui/`：DeviceBusWidget(.cpp/.h)
 - `src/tools/FtpDeployTool/`：FtpDeployBackend(.cpp/.h) / FtpDeployWidget(.cpp/.h)
@@ -214,6 +228,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - `src/tools/WebSocketTool/`：WebSocketBackend(.cpp/.h) / WebSocketWidget(.cpp/.h)
 - `src/tools/ModbusTool/`：ModbusBackend(.cpp/.h) / ModbusWidget(.cpp/.h)
 - `src/tools/NetRelayTool/`：NetRelayBackend(.cpp/.h) / NetRelayWidget(.cpp/.h) / NetRelayTypes.h / RelayRecorder(.cpp/.h) / RelayRecording(.cpp/.h) / RelayPlayer(.cpp/.h) — TCP/UDP/组播 透明代理，双向流量捕获 + .nrec 录制/回放(含组播录制零影响加入/回灌)
+- `src/tools/OpcUaClientTool/`：OpcUaClientBackend(.cpp/.h) / OpcUaClientWidget(.cpp/.h) — OPC UA 客户端 Tool（open62541）
 - `src/adapter/`（补充）：OpcUaAdapter(.cpp/.h)（实现 IProtocolAdapter，封装 open62541 客户端）
 - `src/updater/`：见下方「在线更新（OTA）子系统」
 - `src/model/`：FtpManager(.cpp/.h)（旧，待 FtpAdapter 替换后移除）
@@ -309,11 +324,11 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - **EventBus 已移除**：`DeployEvent` 元类型注册、EventBus 事件订阅等已从 `main.cpp` 和 `DeployMaster.cpp` 中移除。`src/utils/DeployEvent.h` 仍保留，待所有引用清理后删除
 
 
-- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend` + `OpcUaAdapter`。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩保留声明但不再实例化，待清理
+- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend`（`src/tools/OpcUaClientTool/`）+ `OpcUaAdapter`（`src/adapter/`）。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩保留声明但不再实例化，待清理
 
-- **密码不持久化**：程序不保存密码，每次启动需手动输入
+- **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：NetRelayTool 已建立 QtTest 目标 `tst_nrec`（`tests/`，CMake/CTest），覆盖 .nrec 录制往返/坏文件拒绝/回放上行；其余模块仍无测试。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 6 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
