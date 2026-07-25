@@ -104,8 +104,8 @@ DeployMaster::DeployMaster(QWidget* parent)
     m_navBar->setActiveItem(0);
     m_toolStack->setCurrentIndex(0);
 
-    // 7. 调整 splitter 比例
-    ui.splitter_log->setSizes(QList<int>() << 600 << 150);
+    // 7. 调整 splitter 比例（日志区默认 250px，约 10 行）
+    ui.splitter_log->setSizes(QList<int>() << 600 << 250);
 
     // 8. 底部日志折叠条（Task 4）
     m_logCollapseBar = new QWidget(this);
@@ -517,7 +517,7 @@ bool DeployMaster::eventFilter(QObject* watched, QEvent* event) {
         m_logExpanded = !m_logExpanded;
         ui.groupBox_log->setVisible(m_logExpanded);
         ui.splitter_log->setSizes(m_logExpanded
-            ? QList<int>() << 600 << 150
+            ? QList<int>() << 600 << 250
             : QList<int>() << 600 << 0);
         return true;
     }
