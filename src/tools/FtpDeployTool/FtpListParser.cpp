@@ -114,7 +114,6 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
 
     // 文件名从 dateIdx + 3 开始，在原始行中定位
     // 用原始 line 查找文件名起始位置（更可靠）
-    std::string permsTok = tokens[0];
     std::string dateStr = tokens[dateIdx] + " " + tokens[dateIdx + 1] + " " + tokens[dateIdx + 2];
     size_t namePos = line.find(dateStr);
     if (namePos == std::string::npos) return false;
