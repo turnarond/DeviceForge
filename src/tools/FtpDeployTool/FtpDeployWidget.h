@@ -26,6 +26,10 @@
 #include <QFileSystemModel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QEvent>
 
 class FtpDeployBackend;
 class DeviceBusWidget;
@@ -57,6 +61,13 @@ private slots:
     void onRenameRemote();
     void onDownloadRemote();
     void onNewRemoteDir();
+
+protected:
+    // 拖拽支持 — 从系统资源管理器拖入文件到远程面板直接上传
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void setupUi();
