@@ -1,14 +1,8 @@
 #pragma once
 
 #include <QtWidgets/QMainWindow>
-#include <QComboBox>
-#include <QPushButton>
-#include <QLineEdit>
-#include <QStandardItemModel>
-#include <QStandardItem>
 #include "ui_DeployMaster.h"
 #include "src/framework/AppState.h"
-#include "src/model/FtpManager.h"
 #include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
 
 class ToolHost;
@@ -43,16 +37,6 @@ public:
 private:
     QString lastUsedDirectory; // 记录上次使用的目录
     // 旧 deploy 列表已清理
-    
-    // 远端预览相关
-    QString currentRemoteIP; // 当前选中的远程设备IP
-    QString currentRemotePath; // 当前浏览的远程路径
-    QStandardItemModel* remoteFileModel; // 远程文件树模型
-
-private:
-    void addFileToList(const QString& filePath); // 添加文件到列表的函数
-    void addFolderToList(const QString& folderPath); // 添加文件夹到列表的函数    
-    QStringList getTargetIPs();
 
 public:
     ToolHost* toolHost() const { return m_toolHost; }
@@ -64,15 +48,7 @@ public slots:
     void appendGlobalLog(const QString& log);
 
 private slots:
-    void onAddFilesClicked();
-    void onAddFolderClicked();
-    void onFilesDropped(const QStringList& filePaths);
-    void onFileItemCleanClicked();
-    void onDeployClicked();
     void onClearLogClicked();
-
-private slots:
-    void buildRemoteFileTree(const QList<FtpManager::FtpFileInfo>& files);
 
 private:
     void setupFtpDeployTab();
@@ -81,7 +57,6 @@ private:
     void setupOpcUaClientTab(); // new
     void setupWebSocketClientTab(); // new
     void setupNetRelayTab(); // 网络调试中继 Tool
-    void setupRemotePreview(); // 初始化远端预览功能
 
     // 在线更新集成（Task 5）
     void setupUpdateChecker();
@@ -89,24 +64,10 @@ private:
     void onVersionLabelClicked();
     void onUpdateStateChanged(UpdateState state);
     
-    // 远端预览相关方法
-    void refreshRemoteFiles(); // 刷新远程文件列表
-    void refreshDeviceCombo();
-    void onIPSelectionChanged();
-    void onRemoteFileDoubleClicked(const QModelIndex& index);
-    void onDownloadRemoteFile();
-    void onViewRemoteFile();    // 查看文件（下载到临时目录 + 系统默认程序打开）
-    void onDeleteRemoteFile();  // 删除选中文件/文件夹
-    void onRenameRemoteFile();  // 重命名选中文件/文件夹
-    void onRemoteFileContextMenu(const QPoint& pos); // 右键上下文菜单
-
 private:
     Ui::DeployMaster ui;
     ToolHost* m_toolHost = nullptr;
     DeviceBusWidget* m_deviceBusWidget = nullptr;
-    QLineEdit* m_remotePathEdit = nullptr;  // 远端预览路径（替代旧 ui.txt_remotePath）
-    QComboBox* m_protocolCombo = nullptr;   // 协议选择（FTP / SCP）
-    QPushButton* m_refreshBtn = nullptr;    // 刷新按钮（替代旧 ui.btn_refreshRemote）
     std::shared_ptr<class FtpDeployBackend> m_ftpBackend;
     std::shared_ptr<class TelnetBackend> m_telnetBackend;
     std::shared_ptr<class WebSocketBackend> m_webSocketBackend;
