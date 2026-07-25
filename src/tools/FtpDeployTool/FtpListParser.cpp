@@ -123,7 +123,7 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
         out.name = line.substr(namePos);
         // 处理符号链接 "link -> target" — 只取 link 名
         auto arrowPos = out.name.find(" -> ");
-        if (arrowPos != std::string::npos && out.isDir) {
+        if (arrowPos != std::string::npos) {
             out.name = out.name.substr(0, arrowPos);
         }
     }
@@ -145,7 +145,7 @@ bool FtpListParser::tryParseWindowsLine(const std::string& line, FtpFileInfo& ou
     // 使用正则匹配: date time <DIR|size> name
     // 日期: \d{1,2}/\d{1,2}/\d{4}
     // 时间: \d{1,2}:\d{2}\s*(AM|PM)
-    std::regex winRe(
+    static const std::regex winRe(
         R"(^(\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2}\s*(?:AM|PM))\s+(<DIR>|[\d,]+)\s+(.+)$)",
         std::regex::icase
     );
@@ -164,7 +164,7 @@ bool FtpListParser::tryParseWindowsLine(const std::string& line, FtpFileInfo& ou
         // 去掉数字中的逗号
         std::string numStr = sizeOrDir;
         numStr.erase(std::remove(numStr.begin(), numStr.end(), ','), numStr.end());
-        try { out.size = std::stoull(numStr); } catch (...) { out.size = 0; }
+        try { out.size = std::stoull(numStr); } catch (...) { return false; }
     }
 
     // 日期转 ISO 8601
@@ -172,10 +172,10 @@ bool FtpListParser::tryParseWindowsLine(const std::string& line, FtpFileInfo& ou
     std::sscanf(dateStr.c_str(), "%d/%d/%d", &mo, &dy, &yr);
     int hr = 0, mn = 0;
     std::sscanf(timeStr.c_str(), "%d:%d", &hr, &mn);
-    // 转换 PM 时间
-    if (timeStr.find("PM") != std::string::npos || timeStr.find("pm") != std::string::npos) {
+    // 转换 PM 时间（regex 已 icase，只需检查 'P'）
+    if (timeStr.find('P') != std::string::npos) {
         if (hr != 12) hr += 12;
-    } else if ((timeStr.find("AM") != std::string::npos || timeStr.find("am") != std::string::npos) && hr == 12) {
+    } else if (hr == 12) {
         hr = 0;
     }
 
@@ -202,10 +202,14 @@ std::vector<FtpFileInfo> FtpListParser::parse(const std::string& rawList)
         if (!line.empty()) lines.push_back(line);
     }
 
+    // 扫描所有行检测格式，跳过头行（如 "total N"）
     bool isUnix = false;
+    bool detected = false;
     for (const auto& l : lines) {
-        if (!l.empty()) { isUnix = looksLikeUnix(l); break; }
+        if (looksLikeUnix(l)) { isUnix = true; detected = true; break; }
+        if (!l.empty() && std::isdigit(static_cast<unsigned char>(l[0]))) { isUnix = false; detected = true; break; }
     }
+    if (!detected) return result; // 无法检测格式
 
     for (const auto& l : lines) {
         FtpFileInfo info;
