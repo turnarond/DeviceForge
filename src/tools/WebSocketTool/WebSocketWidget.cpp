@@ -145,25 +145,6 @@ void WebSocketWidget::setupUi()
     pubLayout->addLayout(pubBtnLayout);
 
     mainLayout->addWidget(pubGroup);
-
-    // ========== 消息日志 ==========
-    auto* logGroup = new QGroupBox("消息日志", this);
-    auto* logLayout = new QVBoxLayout(logGroup);
-
-    m_logView = new QPlainTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setPlaceholderText("WebSocket 消息日志...");
-    m_logView->setMaximumBlockCount(5000); // 限制日志行数防止内存溢出
-    logLayout->addWidget(m_logView, 1);
-
-    auto* logBtnLayout = new QHBoxLayout();
-    m_btnClearLog = new QPushButton("清理日志", this);
-    connect(m_btnClearLog, &QPushButton::clicked, this, &WebSocketWidget::onClearLogClicked);
-    logBtnLayout->addStretch();
-    logBtnLayout->addWidget(m_btnClearLog);
-    logLayout->addLayout(logBtnLayout);
-
-    mainLayout->addWidget(logGroup, 1);
 }
 
 void WebSocketWidget::setBackend(WebSocketBackend* backend)
@@ -360,14 +341,10 @@ void WebSocketWidget::onPublishClicked()
 
 // ============ 日志 ============
 
-void WebSocketWidget::onClearLogClicked()
-{
-    m_logView->clear();
-    appendLog("日志已清理");
-}
-
 void WebSocketWidget::appendLog(const QString& msg)
 {
-    QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
-    m_logView->appendPlainText("[" + ts + "] " + msg);
+    if (m_globalLogCb) {
+        QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+        m_globalLogCb("[" + ts + "] " + msg);
+    }
 }

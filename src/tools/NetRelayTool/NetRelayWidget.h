@@ -104,9 +104,6 @@ private:
     // Hex 视图
     QPlainTextEdit*  m_hexView = nullptr;
 
-    // 日志区
-    QPlainTextEdit*  m_logView = nullptr;
-
     // 导出缓冲区（完整 hex dump 文本，不受 m_hexView maxBlockCount 限制）
     QString          m_exportBuffer;
     static constexpr int kMaxExportChars = 5 * 1024 * 1024; // 5 MB 上限

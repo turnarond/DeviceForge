@@ -72,12 +72,6 @@ void ModbusWidget::setupUi()
     m_resultTable->setAlternatingRowColors(true);
     mainLayout->addWidget(m_resultTable, 1);
 
-    // 日志
-    m_logView = new QTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumHeight(100);
-    mainLayout->addWidget(m_logView);
-
     // 定时器
     m_timer = new QTimer(this);
     connect(m_readBtn, &QPushButton::clicked, this, &ModbusWidget::onReadClicked);
@@ -168,6 +162,8 @@ void ModbusWidget::onWriteClicked()
 
 void ModbusWidget::appendLog(const QString& msg)
 {
-    QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
-    m_logView->append("[" + ts + "] " + msg);
+    if (m_globalLogCb) {
+        QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
+        m_globalLogCb("[" + ts + "] " + msg);
+    }
 }

@@ -271,12 +271,6 @@ void OpcUaClientWidget::setupUi()
     mainSplitter->setStretchFactor(1, 2);
     mainLayout->addWidget(mainSplitter, 2);
 
-    // ---------- 日志 ----------
-    m_logView = new QTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumHeight(80);
-    mainLayout->addWidget(m_logView);
-
     // ---------- 信号连接 ----------
     connect(m_connectBtn,    &QPushButton::clicked,       this, &OpcUaClientWidget::onConnectClicked);
     connect(m_browseBtn,     &QPushButton::clicked,       this, &OpcUaClientWidget::onBrowseClicked);
@@ -649,6 +643,8 @@ void OpcUaClientWidget::updateConnectionStatus(bool connected)
 
 void OpcUaClientWidget::appendLog(const QString& msg)
 {
-    QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
-    m_logView->append("[" + ts + "] " + msg);
+    if (m_globalLogCb) {
+        QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
+        m_globalLogCb("[" + ts + "] " + msg);
+    }
 }

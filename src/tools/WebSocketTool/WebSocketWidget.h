@@ -17,7 +17,6 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QLineEdit>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QGroupBox>
@@ -47,7 +46,6 @@ private slots:
     void onClientToggled(bool checked);
     void onSubscribeClicked();
     void onPublishClicked();
-    void onClearLogClicked();
 
 private:
     void setupUi();
@@ -69,6 +67,4 @@ private:
     QLineEdit*       m_editMessage    = nullptr;
     QPushButton*     m_btnSubscribe   = nullptr;
     QPushButton*     m_btnPublish     = nullptr;
-    QPlainTextEdit*  m_logView        = nullptr;
-    QPushButton*     m_btnClearLog    = nullptr;
 };

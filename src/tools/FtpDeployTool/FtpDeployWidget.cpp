@@ -261,13 +261,6 @@ void FtpDeployWidget::setupBottomBar(QVBoxLayout* mainLayout)
         if (m_backend) m_backend->cancelUpload();
     });
     mainLayout->addWidget(m_multiProgress);
-
-    // 日志
-    m_logView = new QTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumHeight(120);
-    m_logView->setPlaceholderText("部署日志...");
-    mainLayout->addWidget(m_logView);
 }
 
 void FtpDeployWidget::connectBackendSignals()
@@ -666,8 +659,10 @@ void FtpDeployWidget::onToolStop()
 
 void FtpDeployWidget::appendLog(const QString& msg)
 {
-    QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
-    m_logView->append("[" + ts + "] " + msg);
+    if (m_globalLogCb) {
+        QString ts = QDateTime::currentDateTime().toString("hh:mm:ss");
+        m_globalLogCb("[" + ts + "] " + msg);
+    }
 }
 
 // ────────────────────────────── 拖拽支持 ──────────────────────────────

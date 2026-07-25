@@ -16,7 +16,6 @@
 #include <QTreeView>
 #include <QTableView>
 #include <QLineEdit>
-#include <QTextEdit>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSpinBox>
@@ -113,7 +112,6 @@ private:
     // 部署
     QPushButton*          m_deployBtn = nullptr;
     MultiProgressWidget*  m_multiProgress = nullptr;
-    QTextEdit*            m_logView = nullptr;
 
     // 容器面板（替代 setProperty 传递指针）
     QWidget* m_localPanel  = nullptr;

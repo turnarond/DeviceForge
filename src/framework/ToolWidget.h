@@ -17,6 +17,7 @@
 #include <QWidget>
 #include <QString>
 #include <memory>
+#include <functional>
 
 // 前向声明：消息队列类型将在后续 Task 中引入 nanopb 后精确定义
 // 当前阶段使用 QVariant 作为过渡方案
@@ -34,9 +35,16 @@ public:
     virtual QString toolId() const = 0;
     virtual QString toolName() const = 0;
 
+    // --- 全局日志回调（所有 Tool 的内部日志统一路由到 DeployMaster 底部全局日志） ---
+    void setGlobalLogCallback(std::function<void(const QString&)> cb) { m_globalLogCb = std::move(cb); }
+
     // --- 生命周期回调（由 ToolHost 调用） ---
     virtual void onToolStart() = 0;   // Backend 启动后，可开始 UI 交互
     virtual void onToolStop() = 0;    // Backend 停止前，清理 UI 状态
+
+protected:
+    // 子类的 appendLog() 通过此回调将消息转发到全局日志
+    std::function<void(const QString&)> m_globalLogCb;
 
 signals:
     // 通知 ToolHost：当前 Tool 状态发生变化（用于状态栏显示）

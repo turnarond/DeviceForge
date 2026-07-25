@@ -167,6 +167,7 @@ void DeployMaster::setupFtpDeployTab()
 
     widget->setBackend(backend.get());
     widget->setDeviceBusWidget(m_deviceBusWidget);
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_ftpBackend = backend;
     m_ftpDeployTab = widget;
@@ -188,6 +189,7 @@ void DeployMaster::setupTelnetDeployTab()
 
     widget->setBackend(backend.get());
     widget->setDeviceBusWidget(m_deviceBusWidget);
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_telnetBackend = backend;
     m_telnetDeployTab = widget;
@@ -207,6 +209,7 @@ void DeployMaster::setupModbusClusterTab()
     }
 
     widget->setBackend(backend.get());
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_modbusBackend = backend;
     m_modbusWidget = widget;
@@ -227,6 +230,7 @@ void DeployMaster::setupNetRelayTab()
     }
 
     widget->setBackend(backend.get());
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_netRelayBackend = backend;
     m_netRelayWidget = widget;
@@ -247,6 +251,7 @@ void DeployMaster::setupOpcUaClientTab()
     }
 
     widget->setBackend(backend.get());
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_opcUaClientBackend = backend;
     m_opcUaClientWidget = widget;
@@ -267,6 +272,7 @@ void DeployMaster::setupWebSocketClientTab()
     }
 
     widget->setBackend(backend.get());
+    widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_webSocketBackend = backend;
     m_webSocketWidget = widget;

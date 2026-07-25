@@ -5,7 +5,6 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QPushButton>
-#include <QTextEdit>
 #include <QTimer>
 
 class ModbusBackend;
@@ -44,6 +43,5 @@ private:
     QPushButton*   m_readBtn        = nullptr;
     QPushButton*   m_writeBtn       = nullptr;
     QPushButton*   m_autoBtn        = nullptr;
-    QTextEdit*     m_logView        = nullptr;
     QTimer*        m_timer          = nullptr;
 };

@@ -227,17 +227,6 @@ void NetRelayWidget::setupUi()
     rr2->addWidget(m_replayProgress, 1);
     rl->addLayout(rr2);
     mainLayout->addWidget(replayGroup);
-
-    // ========== 日志区 ==========
-    auto* logGroup = new QGroupBox("日志", this);
-    auto* logLayout = new QVBoxLayout(logGroup);
-    m_logView = new QPlainTextEdit(this);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumBlockCount(2000);
-    m_logView->setFont(monoFont);
-    m_logView->setFixedHeight(80);
-    logLayout->addWidget(m_logView);
-    mainLayout->addWidget(logGroup);
 }
 
 void NetRelayWidget::setBackend(NetRelayBackend* backend)
@@ -538,8 +527,10 @@ void NetRelayWidget::setRelayControlsEnabled(bool enabled)
 
 void NetRelayWidget::appendLog(const QString& msg)
 {
-    QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
-    m_logView->appendPlainText("[" + ts + "] " + msg);
+    if (m_globalLogCb) {
+        QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+        m_globalLogCb("[" + ts + "] " + msg);
+    }
 }
 
 // ============ 十六进制视图 ============

@@ -23,7 +23,6 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QTableWidget>
-#include <QTextEdit>
 #include <QLabel>
 #include <QSplitter>
 class OpcUaClientBackend;
@@ -87,6 +86,4 @@ private:
     QTableWidget* m_subscriptionTable = nullptr;
     QPushButton*  m_subscribeBtn       = nullptr;
 
-    // 日志
-    QTextEdit* m_logView = nullptr;
 };
