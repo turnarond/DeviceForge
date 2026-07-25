@@ -17,7 +17,7 @@
 | **网络调试录制回放** | `.nrec` 自定义二进制格式录制 + 按原始时序回放，组播零影响加入抄收 | v2.1.0 |
 | **OPC UA 客户端** | open62541 v1.5.5，读/写/订阅/浏览，None 安全策略 + 匿名认证；地址空间浏览 5 列 UI + 类型友好名 + 节点类色块 + × 删除按钮；针对非规范服务端的 ActivateSession policyId 深拷贝补丁；订阅卡死修复（请求超时 + 后台线程 + 移除冗余轮询） | v2.2.0 / v2.3.0 |
 | **在线更新 (OTA)** | GitHub Releases API 查询 + zip 下载 + 校验 + 解压 + Updater.exe 独立替换进程 | v2.2.0 |
-| **远端预览面板** | FTP 远程文件树浏览 + 多选下载 + 右键操作（查看/重命名/删除）+ 目录递归 | v2.2.0 |
+| **远端预览面板** | 🗑 已移除（v2.4 FTP 双栏替代，原 v2.2.0 实现） | v2.2.0 |
 | **构建系统** | CMake 标准构建（qt_standard_project_setup），Debug/Release/RelWithDebInfo，/FS PDB 共享 | v2.2.0 |
 | **UI 主题** | 「琴色是动词」工业深色主题，QSS 体系，全控件统一 | v2.0 |
 | **本地配置持久化（ConfigStore）** | SQLite 单表 + Windows DPAPI 密码加密；设备/OPC UA endpoint/Modbus 从站/NetRelay/WebSocket/Telnet 偏好 + FTP 凭证全部自动恢复；统一设置面板（Ctrl+,）查看/导入/导出 | v2.3.0 |
@@ -29,7 +29,7 @@
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
 | **OPC UA 安全策略扩展** | 高 | 支持 Basic256/Basic256Sha256 + 证书认证 |
-| **远端预览 SCP 支持** | 中 | UI 已预留协议选择器，需要 scp 传输层实现 |
+| **SCP 支持** | 中 | 🗑 已取消（远端预览面板已移除，SCP 将通过 FtpAdapter 扩展支持） |
 | **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
 | **SettingsDialog 完整编辑** | 低 | 当前编辑为只读 JSON 弹窗；完整编辑写回留待后续 |
 
@@ -65,6 +65,7 @@
 | v2.1.0 | 2026-07-10 | NetRelayTool (中继+录制回放) + SSH 适配器 + 琴色主题 + OPC UA |
 | v2.2.0 | 2026-07-18 | 在线更新 OTA + 远端预览重构 + CMake 标准构建 + 7 模块全绿 |
 | v2.3.0 | 2026-07-24 | ConfigStore 本地持久化 (SQLite + DPAPI) + OPC UA 订阅卡死修复 + CI Debug SEGFAULT 修复 |
+| v2.4 | 2026-07-25 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）|
 
 ---
 
