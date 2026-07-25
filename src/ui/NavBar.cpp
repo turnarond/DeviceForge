@@ -10,7 +10,6 @@
  */
 
 #include "NavBar.h"
-#include <QLabel>
 #include <QStyle>
 
 NavBar::NavBar(QWidget* parent)

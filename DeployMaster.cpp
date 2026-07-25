@@ -53,8 +53,10 @@ DeployMaster::DeployMaster(QWidget* parent)
     // 3. 用 QHBoxLayout 组织：导航栏 + 内容区
     if (ui.centralwidget) {
         auto* centralLayout = qobject_cast<QVBoxLayout*>(ui.centralwidget->layout());
-        centralLayout->removeWidget(ui.splitter_log);
-        delete centralLayout;
+        if (centralLayout) {
+            centralLayout->removeWidget(ui.splitter_log);
+            delete centralLayout;
+        }
 
         auto* mainHBox = new QHBoxLayout(ui.centralwidget);
         mainHBox->setContentsMargins(0, 0, 0, 0);
