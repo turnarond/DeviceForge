@@ -7,16 +7,17 @@
 #include <functional>
 #include <curl/curl.h>
 
-struct FtpFileInfo {
-    QString remotePath;
-    QString name;
-    QDateTime lastModified;
-    qint64 size = -1;
-    bool isDirectory = false;
-    QString permissions; // FTP LIST 权限字符串（首字符 d=目录, -=文件）
-};
-
 class FtpManager {
+public:
+    struct FtpFileInfo {
+        QString remotePath;
+        QString name;
+        QDateTime lastModified;
+        qint64 size = -1;
+        bool isDirectory = false;
+        QString permissions; // FTP LIST 权限字符串（首字符 d=目录, -=文件）
+    };
+
 public:
     using ProgressCallback = std::function<void(qint64 bytesSent, qint64 total)>;
 

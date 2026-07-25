@@ -99,6 +99,10 @@ private:
     MultiProgressWidget*  m_multiProgress = nullptr;
     QTextEdit*            m_logView = nullptr;
 
+    // 容器面板（替代 setProperty 传递指针）
+    QWidget* m_localPanel  = nullptr;
+    QWidget* m_remotePanel = nullptr;
+
     // 分割器
     QSplitter* m_splitter = nullptr;
 };

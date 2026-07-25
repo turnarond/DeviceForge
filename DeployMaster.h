@@ -72,7 +72,7 @@ private slots:
     void onClearLogClicked();
 
 private slots:
-    void buildRemoteFileTree(const QList<FtpFileInfo>& files);
+    void buildRemoteFileTree(const QList<FtpManager::FtpFileInfo>& files);
 
 private:
     void setupFtpDeployTab();

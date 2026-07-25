@@ -55,11 +55,9 @@ void FtpDeployWidget::setupUi()
     setupLocalPanel();
     setupRemotePanel();
 
-    // 获取容器引用（通过 setProperty 保存）
-    auto* localContainer = m_localTree->property("container").value<QWidget*>();
-    auto* remoteContainer = m_remoteTable->property("container").value<QWidget*>();
-    m_splitter->addWidget(localContainer);
-    m_splitter->addWidget(remoteContainer);
+    // 使用成员变量（替代旧的 setProperty 传递指针）
+    m_splitter->addWidget(m_localPanel);
+    m_splitter->addWidget(m_remotePanel);
     m_splitter->setStretchFactor(0, 3);
     m_splitter->setStretchFactor(1, 4);
     mainLayout->addWidget(m_splitter, 1);
@@ -174,8 +172,7 @@ void FtpDeployWidget::setupLocalPanel()
 
     localLayout->addWidget(m_localTree, 1);
 
-    // 保存 container 引用用于加入 splitter
-    m_localTree->setProperty("container", QVariant::fromValue<QWidget*>(localContainer));
+    m_localPanel = localContainer;
 }
 
 void FtpDeployWidget::setupRemotePanel()
@@ -235,8 +232,7 @@ void FtpDeployWidget::setupRemotePanel()
 
     remoteLayout->addWidget(m_remoteTable, 1);
 
-    // 保存 container 引用用于加入 splitter
-    m_remoteTable->setProperty("container", QVariant::fromValue<QWidget*>(remoteContainer));
+    m_remotePanel = remoteContainer;
 }
 
 void FtpDeployWidget::setupBottomBar(QVBoxLayout* mainLayout)
@@ -364,7 +360,13 @@ void FtpDeployWidget::onRefreshRemote()
 
     appendLog(QString("正在加载远程目录: %1:%2 ...").arg(deviceIp, path));
 
-    QtConcurrent::run([this, deviceIp, path]() {
+    // 在传入后台线程前复制值，避免数据竞争
+    const int port = m_portSpin->value();
+    const bool useFtps = m_ftpsCheck->isChecked();
+    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
+    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+
+    QtConcurrent::run([this, deviceIp, path, port, useFtps, user, pass]() {
         auto adapter = ProtocolRegistry::instance()->create("ftp");
         if (!adapter) {
             QMetaObject::invokeMethod(this, [this]() {
@@ -376,13 +378,13 @@ void FtpDeployWidget::onRefreshRemote()
         auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
         DeviceInfo dev;
         dev.ip = deviceIp.toStdString();
-        dev.port = m_portSpin->value();
+        dev.port = port;
 
         AuthInfo auth;
-        auth.user = m_deviceBus->user().toStdString();
-        auth.password = m_deviceBus->password().toStdString();
+        auth.user = user;
+        auth.password = pass;
 
-        if (m_ftpsCheck->isChecked()) {
+        if (useFtps) {
             ftp->setUseFtps(true);
         }
 
@@ -505,24 +507,33 @@ void FtpDeployWidget::onDeleteRemote()
         QString("确定要删除远程文件 \"%1\" 吗？").arg(name));
     if (ans != QMessageBox::Yes) return;
 
+    // 在传入后台线程前复制值，避免数据竞争
+    const int port = m_portSpin->value();
+    const std::string deviceIp = m_deviceCombo->currentText().toStdString();
+    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
+    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+    const std::string remotePath = m_currentRemotePath.toStdString();
+    const std::string targetName = name.toStdString();
+
     // 通过 FtpAdapter 删除（异步）
-    QtConcurrent::run([this, name]() {
+    QtConcurrent::run([this, targetName, port, deviceIp, user, pass, remotePath]() {
         auto adapter = ProtocolRegistry::instance()->create("ftp");
         auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
         DeviceInfo dev;
-        dev.ip = m_deviceCombo->currentText().toStdString();
-        dev.port = m_portSpin->value();
+        dev.ip = deviceIp;
+        dev.port = port;
         AuthInfo auth;
-        auth.user = m_deviceBus->user().toStdString();
-        auth.password = m_deviceBus->password().toStdString();
+        auth.user = user;
+        auth.password = pass;
         if (ftp->connect(dev, auth)) {
-            std::string fullPath = m_currentRemotePath.toStdString();
+            std::string fullPath = remotePath;
             if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-            fullPath += name.toStdString();
+            fullPath += targetName;
             bool ok = ftp->deleteFile(fullPath);
             ftp->disconnect();
-            QMetaObject::invokeMethod(this, [this, name, ok]() {
-                appendLog(ok ? QString("已删除: %1").arg(name) : "删除失败: " + name);
+            QString displayName = QString::fromStdString(targetName);
+            QMetaObject::invokeMethod(this, [this, displayName, ok]() {
+                appendLog(ok ? QString("已删除: %1").arg(displayName) : "删除失败: " + displayName);
                 onRefreshRemote();
             }, Qt::QueuedConnection);
         }
@@ -538,23 +549,33 @@ void FtpDeployWidget::onDownloadRemote()
     QString savePath = QFileDialog::getSaveFileName(this, "保存到", name);
     if (savePath.isEmpty()) return;
 
-    QtConcurrent::run([this, name, savePath]() {
+    // 在传入后台线程前复制值，避免数据竞争
+    const int port = m_portSpin->value();
+    const std::string deviceIp = m_deviceCombo->currentText().toStdString();
+    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
+    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+    const std::string remotePath = m_currentRemotePath.toStdString();
+    const std::string targetName = name.toStdString();
+    const std::string localSavePath = savePath.toStdString();
+
+    QtConcurrent::run([this, targetName, localSavePath, port, deviceIp, user, pass, remotePath]() {
         auto adapter = ProtocolRegistry::instance()->create("ftp");
         auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
         DeviceInfo dev;
-        dev.ip = m_deviceCombo->currentText().toStdString();
-        dev.port = m_portSpin->value();
+        dev.ip = deviceIp;
+        dev.port = port;
         AuthInfo auth;
-        auth.user = m_deviceBus->user().toStdString();
-        auth.password = m_deviceBus->password().toStdString();
+        auth.user = user;
+        auth.password = pass;
         if (ftp->connect(dev, auth)) {
-            std::string fullPath = m_currentRemotePath.toStdString();
+            std::string fullPath = remotePath;
             if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-            fullPath += name.toStdString();
-            bool ok = ftp->downloadFile(fullPath, savePath.toStdString());
+            fullPath += targetName;
+            bool ok = ftp->downloadFile(fullPath, localSavePath);
             ftp->disconnect();
-            QMetaObject::invokeMethod(this, [this, name, ok]() {
-                appendLog(ok ? QString("已下载: %1").arg(name) : "下载失败: " + name);
+            QString displayName = QString::fromStdString(targetName);
+            QMetaObject::invokeMethod(this, [this, displayName, ok]() {
+                appendLog(ok ? QString("已下载: %1").arg(displayName) : "下载失败: " + displayName);
             }, Qt::QueuedConnection);
         }
     });
@@ -600,12 +621,20 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
         for (const auto& d : m_deviceBus->allDevices()) {
             m_deviceCombo->addItem(QString::fromStdString(d.ip));
         }
+
+        // 设备总线变更时同步下拉框
+        connect(m_deviceBus, &DeviceBusWidget::deviceSelectionChanged, this, [this]() {
+            m_deviceCombo->clear();
+            for (const auto& d : m_deviceBus->allDevices()) {
+                m_deviceCombo->addItem(QString::fromStdString(d.ip));
+            }
+        });
     }
 }
 
 void FtpDeployWidget::onToolStart()
 {
-    appendLog("文件部署工具已就绪 — 拖拽文件到远程面板即可上传");
+    appendLog("文件部署工具已就绪 — 拖拽即将在后续版本支持");
     emit toolStatusChanged("就绪");
 }
 

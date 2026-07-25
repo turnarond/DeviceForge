@@ -530,7 +530,7 @@ QStringList FtpManager::listFtpDirectory(const QString& remoteDir) {
     return names;
 }
 
-QList<FtpFileInfo> FtpManager::listFtpDirectoryDetailed(const QString& remoteDir) {
+QList<FtpManager::FtpFileInfo> FtpManager::listFtpDirectoryDetailed(const QString& remoteDir) {
     // 构建完整的 FTP URL
     QString cleanDir = remoteDir;
     if (!cleanDir.startsWith('/')) cleanDir.prepend('/');

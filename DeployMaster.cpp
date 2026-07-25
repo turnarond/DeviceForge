@@ -504,10 +504,10 @@ void DeployMaster::refreshRemoteFiles()
         try {
             FtpManager ftpm(ip, 21);
             ftpm.setCredentials(user, pass);
-            QList<FtpFileInfo> files = ftpm.listFtpDirectoryDetailed(path);
+            QList<FtpManager::FtpFileInfo> files = ftpm.listFtpDirectoryDetailed(path);
             
             // 在主线程更新UI
-            QMetaObject::invokeMethod(this, "buildRemoteFileTree", Qt::QueuedConnection, Q_ARG(QList<FtpFileInfo>, files));
+            QMetaObject::invokeMethod(this, "buildRemoteFileTree", Qt::QueuedConnection, Q_ARG(QList<FtpManager::FtpFileInfo>, files));
             QMetaObject::invokeMethod(this, "appendGlobalLog", Qt::QueuedConnection, Q_ARG(QString, "✅ 远程文件列表刷新成功"));
         } catch (const std::exception& ex) {
             QMetaObject::invokeMethod(this, "appendGlobalLog", Qt::QueuedConnection, Q_ARG(QString, QString("❌ 刷新失败: %1").arg(QString::fromStdString(ex.what()).left(100))));
@@ -515,7 +515,7 @@ void DeployMaster::refreshRemoteFiles()
     });
 }
 
-void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
+void DeployMaster::buildRemoteFileTree(const QList<FtpManager::FtpFileInfo>& files)
 {
     // 清空现有模型
     remoteFileModel->clear();
@@ -551,15 +551,15 @@ void DeployMaster::buildRemoteFileTree(const QList<FtpFileInfo>& files)
     }
     
     // 排序：目录在前，文件在后，各自按名称字母排序
-    QList<FtpFileInfo> sorted = files;
-    std::sort(sorted.begin(), sorted.end(), [](const FtpFileInfo& a, const FtpFileInfo& b) {
+    QList<FtpManager::FtpFileInfo> sorted = files;
+    std::sort(sorted.begin(), sorted.end(), [](const FtpManager::FtpFileInfo& a, const FtpManager::FtpFileInfo& b) {
         if (a.isDirectory != b.isDirectory)
             return a.isDirectory > b.isDirectory; // 目录排在文件前
         return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
     });
 
     // 添加文件和文件夹
-    for (const FtpFileInfo& file : sorted) {
+    for (const FtpManager::FtpFileInfo& file : sorted) {
         QStandardItem* item;
         if (file.isDirectory) {
             item = new QStandardItem(file.name);
@@ -686,7 +686,7 @@ void DeployMaster::onDownloadRemoteFile()
             try {
                 FtpManager ftm(ip, 21);
                 ftm.setCredentials(user, pass);
-                QList<FtpFileInfo> children = ftm.listFtpDirectoryDetailed(dirPath);
+                QList<FtpManager::FtpFileInfo> children = ftm.listFtpDirectoryDetailed(dirPath);
                 for (const auto& c : children) {
                     QString childRemote = dirPath;
                     if (!childRemote.endsWith('/')) childRemote += '/';
@@ -807,7 +807,7 @@ void DeployMaster::onViewRemoteFile()
             ftm.setCredentials(user, pass);
             QString parentDir = remotePath.left(remotePath.lastIndexOf('/'));
             if (parentDir.isEmpty()) parentDir = "/";
-            QList<FtpFileInfo> files = ftm.listFtpDirectoryDetailed(parentDir);
+            QList<FtpManager::FtpFileInfo> files = ftm.listFtpDirectoryDetailed(parentDir);
             qint64 actualSize = -1;
             for (const auto& f : files) {
                 if (f.name == fileName) { actualSize = f.size; break; }
