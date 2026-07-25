@@ -48,14 +48,22 @@ MultiProgressWidget::MultiProgressWidget(QWidget* parent)
 
 void MultiProgressWidget::rebuildUi()
 {
-    // 清除旧行
-    for (auto& row : m_rows) {
-        m_deviceLayout->removeWidget(row.ipLabel);
-        m_deviceLayout->removeWidget(row.bar);
-        m_deviceLayout->removeWidget(row.statusLabel);
-        delete row.ipLabel;
-        delete row.bar;
-        delete row.statusLabel;
+    // 清除旧行（包括小部件和布局对象，防止 QHBoxLayout 泄漏）
+    QLayoutItem* item;
+    while ((item = m_deviceLayout->takeAt(0)) != nullptr) {
+        if (auto* childLayout = item->layout()) {
+            // 递归清理子布局中的小部件
+            QLayoutItem* child;
+            while ((child = childLayout->takeAt(0)) != nullptr) {
+                if (child->widget()) {
+                    child->widget()->deleteLater();
+                }
+                delete child;
+            }
+        } else if (item->widget()) {
+            item->widget()->deleteLater();
+        }
+        delete item;
     }
     m_rows.clear();
 
