@@ -8,6 +8,9 @@
 
 // FTP 协议适配器 — 封装 libcurl FTP 操作,实现 IProtocolAdapter 统一接口
 // 使用 Pimpl 模式隐藏 libcurl 实现细节
+
+struct FtpFileInfo;  // 前向声明（定义在 src/tools/FtpDeployTool/FtpFileInfo.h）
+
 class FtpAdapter : public IProtocolAdapter {
 public:
     FtpAdapter();
@@ -30,8 +33,8 @@ public:
     bool downloadFile(const std::string& remotePath, const std::string& localPath);
     bool listDirectory(const std::string& remotePath, std::string& outJsonList);
     // 结构化列目录（解析 LIST 原始输出为 FtpFileInfo 列表，便于 UI 渲染）
-    // 依赖 FtpListParser（src/tools/FtpDeployTool/FtpFileInfo.h）
-    std::vector<struct FtpFileInfo> listDirectoryParsed(const std::string& remotePath);
+    // 依赖 FtpListParser (src/tools/FtpDeployTool/FtpListParser.h)
+    std::vector<FtpFileInfo> listDirectoryParsed(const std::string& remotePath);
     bool deleteFile(const std::string& remotePath);
     bool deleteDirectory(const std::string& remotePath);
     bool clearRemoteDirectory(const std::string& remotePath);
