@@ -181,6 +181,7 @@ set(SOURCES
     src/tools/ModbusTool/ModbusWidget.cpp
     src/tools/FtpDeployTool/FtpDeployBackend.cpp
     src/tools/FtpDeployTool/FtpDeployWidget.cpp
+    src/tools/FtpDeployTool/FtpListParser.cpp
     src/tools/TelnetTool/TelnetBackend.cpp
     src/tools/TelnetTool/TelnetWidget.cpp
     src/tools/WebSocketTool/WebSocketBackend.cpp

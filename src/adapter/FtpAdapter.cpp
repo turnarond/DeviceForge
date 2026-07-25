@@ -8,6 +8,8 @@
 #include <vector>
 #include <future>
 
+#include "tools/FtpDeployTool/FtpListParser.h"
+
 // libcurl 全局初始化 RAII 守卫 — 整个进程生命周期仅构造/析构一次
 namespace {
     struct CurlGlobalGuard {
@@ -471,6 +473,37 @@ bool FtpAdapter::listDirectory(const std::string& remotePath, std::string& outJs
     outJsonList = json.str();
     m_impl->m_lastError.clear();
     return true;
+}
+
+std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remotePath)
+{
+    std::vector<FtpFileInfo> result;
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return result;
+    }
+
+    std::string buffer;
+    std::string url = m_impl->buildUrl(remotePath);
+    m_impl->setupCommonOpts(curl, url);
+
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+    curl_easy_setopt(curl, CURLOPT_DIRLISTONLY, 0L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        m_impl->m_lastError = std::string("列目录失败: ") + curl_easy_strerror(res);
+        return result;
+    }
+
+    result = FtpListParser::parse(buffer);
+    m_impl->m_lastError.clear();
+    return result;
 }
 
 bool FtpAdapter::deleteFile(const std::string& remotePath) {
