@@ -107,6 +107,20 @@ DeployMaster::DeployMaster(QWidget* parent)
     // 7. 调整 splitter 比例
     ui.splitter_log->setSizes(QList<int>() << 600 << 150);
 
+    // 8. 底部日志折叠条（Task 4）
+    m_logCollapseBar = new QWidget(this);
+    m_logCollapseBar->setObjectName("logCollapseBar");
+    m_logCollapseBar->setFixedHeight(4);
+    m_logCollapseBar->setCursor(Qt::PointingHandCursor);
+    m_logCollapseBar->installEventFilter(this);
+    // 将折叠条放在日志组框顶部
+    auto* logLayout = qobject_cast<QVBoxLayout*>(ui.groupBox_log->layout());
+    if (logLayout) {
+        logLayout->insertWidget(0, m_logCollapseBar);
+    }
+
+    m_logExpanded = true;
+
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
     // 清除日志按钮
@@ -267,6 +281,18 @@ void DeployMaster::onClearLogClicked()
 void DeployMaster::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
+    // 折叠态时琴色闪烁提示（Task 4）
+    if (!m_logExpanded && m_logCollapseBar) {
+        m_logCollapseBar->setStyleSheet("#logCollapseBar { background: #F0A030; }");
+        QTimer::singleShot(600, this, [this]() {
+            if (m_logCollapseBar) {
+                m_logCollapseBar->setStyleSheet(
+                    "#logCollapseBar { background: #252A33; }"
+                    "#logCollapseBar:hover { background: #333B48; }"
+                );
+            }
+        });
+    }
 }
 
 QStringList DeployMaster::getTargetIPList() const
@@ -478,8 +504,17 @@ void DeployMaster::onVersionLabelClicked()
     }
 }
 
- //eventFilter — 处理版本标签鼠标点击（非 RichText 状态下 label 不 emit linkActivated）
+ //eventFilter — 处理版本标签鼠标点击 + 日志折叠条点击（Task 4）
 bool DeployMaster::eventFilter(QObject* watched, QEvent* event) {
+    // 日志折叠条点击（Task 4）
+    if (watched == m_logCollapseBar && event->type() == QEvent::MouseButtonPress) {
+        m_logExpanded = !m_logExpanded;
+        ui.groupBox_log->setVisible(m_logExpanded);
+        ui.splitter_log->setSizes(m_logExpanded
+            ? QList<int>() << 600 << 150
+            : QList<int>() << 600 << 0);
+        return true;
+    }
     if (watched == m_versionLabel && event->type() == QEvent::MouseButtonRelease) {
         // 仅在非 Ready 状态且当前为纯文本时（富文本的 a href 走 linkActivated）
         if (m_updateChecker && m_updateChecker->state() != UpdateState::Ready) {

@@ -631,3 +631,14 @@ QPushButton#btnDeviceAdd:pressed, QPushButton#btnDeviceRemove:pressed {
 #deviceBusContainer QLineEdit#deviceBusPass:focus {
     border-color: #F0A030;
 }
+
+/* ===== 日志折叠条（Task 4） ===== */
+#logCollapseBar {
+    background: #252A33;
+    min-height: 4px;
+    max-height: 4px;
+}
+
+#logCollapseBar:hover {
+    background: #333B48;
+}

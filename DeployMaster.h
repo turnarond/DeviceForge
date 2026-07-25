@@ -86,6 +86,10 @@ private:
     std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
     NetRelayWidget* m_netRelayWidget = nullptr;
 
+    // 底部日志折叠（Task 4）
+    QWidget* m_logCollapseBar = nullptr;  // 日志折叠指示条
+    bool     m_logExpanded    = true;     // 日志展开状态
+
     // 在线更新（Task 5）
     std::shared_ptr<UpdateChecker> m_updateChecker; // 在线更新 ServiceTask
     UpdateDialog*  m_updateDialog     = nullptr;    // 非模态更新对话框
