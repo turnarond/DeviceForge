@@ -105,7 +105,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 **已完成（Phase 0-2）**：
 - Phase 0（基础设施对齐）：thirdparty 库编译集成、LogBridge 日志桥接、适配器层（IProtocolAdapter/FtpAdapter/TelnetAdapter/ProtocolRegistry）
 - Phase 1（框架搭建）：ToolBackend/ToolWidget 基类、ManifestParser 插件清单解析、ToolRegistry 工具注册表、ToolHost 桥接层、DeviceBusWidget 设备总线、darkstyle.qss 工业仪表盘色板、FtpDeployTool 首个完整 Tool
-- Phase 2（工具迁移 + 新 Tool）：TelnetTool ✅、WebSocketTool ✅、FtpDeployTool ✅（UI 重设计、FTPS 加密）、ModbusTool ✅（`src/tools/ModbusTool/`，Backend + Widget，QModbusTcpClient）、NetRelayTool ✅（`src/tools/NetRelayTool/`，TCP/UDP/组播 透明中继代理，双向流量捕获 + Hex 实时视图）；旧 "批量部署" Tab 已隐藏；远端预览面板重建（协议选择 Ftp+SCP 预留、设备同步）
+- Phase 2（工具迁移 + 新 Tool）：TelnetTool ✅、WebSocketTool ✅、FtpDeployTool ✅（UI 重设计、FTPS 加密）、ModbusTool ✅（`src/tools/ModbusTool/`，Backend + Widget，QModbusTcpClient）、NetRelayTool ✅（`src/tools/NetRelayTool/`，TCP/UDP/组播 透明中继代理，双向流量捕获 + Hex 实时视图）；旧 "批量部署" Tab 已隐藏；远端预览面板（v2.2.0 引入，v2.4 移除——功能由 FtpDeployWidget 双栏远程面板替代）
 
 **安全加固（2026-07-05）**：
 - FTPS 加密传输（FtpAdapter::setUseFtps + CURLOPT_USE_SSL + UI 复选框）
@@ -133,7 +133,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **待完成**：
 - QPluginLoader DLL 加载
-- 远端预览 SCP 支持（UI 已预留）
+- SCP 支持（通过 FtpAdapter 扩展实现，集成到 FTP 双栏远程面板中）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeployMaster 直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
 
@@ -187,7 +187,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 获取 FtpAdapter）+ FtpDeployWidget（标准三段式布局：配置→操作→结果+日志），支持 FTPS 加密
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 获取 FtpAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量并行部署），支持 FTPS 加密
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
@@ -201,7 +201,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 | 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter | FTP/FTPS (libcurl) | ✅ 已迁移 + FTPS 加密 |
 | 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
-| 日志查询 | 已删除 | 功能由远端预览面板的下载按钮替代 |  | 🗑 已移除 |
+| 日志查询 | 已删除 | 功能由 FtpDeployWidget 双栏远程面板替代（v2.4 远端预览面板已移除） |  | 🗑 已移除 |
 | MODBUS 测试 | ModbusWidget (Tool) | ModbusBackend → QModbusTcpClient | Modbus TCP | ✅ 已迁移 |
 | 网络调试 | NetRelayWidget (Tool) | NetRelayBackend → QTcpServer/QUdpSocket | TCP/UDP/组播 透明代理 + 录制回放 | ✅ 新增 (2026-07-08) |
 | OPC UA 客户端 | OpcUaClientWidget (Tool) | OpcUaClientBackend → OpcUaAdapter | OPC UA (open62541) | ✅ 已实现（读/写/订阅/浏览，v2.3.0） |
@@ -265,9 +265,10 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 布局
 
-- 顶部全局配置栏（设备总线 DeviceBusWidget + FTP 凭证）
-- QSplitter 分隔的左右区域：左侧 QTabWidget（功能模块/Tool 工作区）、右侧远端预览面板
-- 底部日志区（共享 QTextEdit），通过 QSplitter 与工作区调整高度
+- 左侧 72px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
+- NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
+- 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
+- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板
 - 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板
 
 ## 设计文档
@@ -350,7 +351,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
   2. `LogBridge::install()` — Qt → lwlog 桥接
   3. `ProtocolRegistry` 工厂注册（FtpAdapter + TelnetAdapter）
   4. 加载 darkstyle.qss
-  5. `DeployMaster window` — 构造函数：DeviceBusWidget + ToolHost + 直接创建的 Tab（文件部署 / MODBUS / OPC UA 演示 + 远端预览面板）
+  5. `DeployMaster window` — 构造函数：NavBar（7项） + DeviceBusWidget（胶囊式） + QStackedWidget + 全部 Tool Widget + 底部可折叠日志
   6. `ToolRegistry` 注册内置 Tool 元数据（ftp.deploy / telnet.command / websocket.comm）
   7. `ToolHost` 工厂注册（预留，当前 Tool 通过 DeployMaster 直接创建）
   8. `window.initToolTabs()` — 延迟创建 Telnet/WebSocket Tool（需要工厂注册完成）
