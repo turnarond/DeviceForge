@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QtWidgets/QMainWindow>
+#include <QStackedWidget>
 #include "ui_DeployMaster.h"
 #include "src/framework/AppState.h"
+#include "src/ui/NavBar.h"
 #include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
 
 class ToolHost;
@@ -66,6 +68,8 @@ private:
     
 private:
     Ui::DeployMaster ui;
+    NavBar* m_navBar = nullptr;
+    QStackedWidget* m_toolStack = nullptr;
     ToolHost* m_toolHost = nullptr;
     DeviceBusWidget* m_deviceBusWidget = nullptr;
     std::shared_ptr<class FtpDeployBackend> m_ftpBackend;

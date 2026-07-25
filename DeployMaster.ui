@@ -40,10 +40,7 @@
       <property name="handleWidth">
        <number>5</number>
       </property>
-      <widget class="QTabWidget" name="tabWidget">
-       <property name="tabPosition">
-        <enum>QTabWidget::TabPosition::North</enum>
-       </property>
+      <widget class="QStackedWidget" name="toolStack">
        <property name="currentIndex">
         <number>0</number>
        </property>

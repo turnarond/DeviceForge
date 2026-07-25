@@ -37,26 +37,73 @@ DeployMaster::DeployMaster(QWidget* parent)
 {
     ui.setupUi(this);
 
-    // 创建设备总线组件（顶部水平胶囊形设备列表）
-    m_deviceBusWidget = new DeviceBusWidget(this);
-    // 将设备总线插入到主布局顶部（全局配置栏上方）
+    // 1. 创建导航栏
+    m_navBar = new NavBar(this);
+    m_navBar->addItem("📁", "文件\n部署", "ftp.deploy");
+    m_navBar->addItem("📝", "批量\n命令", "telnet.command");
+    m_navBar->addItem("🔌", "Web\nSocket", "websocket.comm");
+    m_navBar->addItem("📊", "MOD\nBUS", "modbus.test");
+    m_navBar->addItem("🌐", "网络\n调试", "netrelay.proxy");
+    m_navBar->addItem("🔧", "OPC\nUA", "opcua.client");
+    m_navBar->addItem("⚙", "设置", "settings");
+
+    // 2. 获取 m_toolStack 指针
+    m_toolStack = ui.toolStack;
+
+    // 3. 用 QHBoxLayout 组织：导航栏 + 内容区
     if (ui.centralwidget) {
-        QVBoxLayout* centralLayout = qobject_cast<QVBoxLayout*>(ui.centralwidget->layout());
-        if (centralLayout) {
-            centralLayout->insertWidget(0, m_deviceBusWidget);
-        }
+        auto* centralLayout = qobject_cast<QVBoxLayout*>(ui.centralwidget->layout());
+        centralLayout->removeWidget(ui.splitter_log);
+        delete centralLayout;
+
+        auto* mainHBox = new QHBoxLayout(ui.centralwidget);
+        mainHBox->setContentsMargins(0, 0, 0, 0);
+        mainHBox->setSpacing(0);
+        mainHBox->addWidget(m_navBar);
+
+        // 右侧：设备栏 + 工具区 + 日志（垂直布局）
+        auto* rightVBox = new QVBoxLayout();
+        rightVBox->setContentsMargins(8, 4, 8, 8);
+        rightVBox->setSpacing(4);
+        // 设备栏（Task 3 重写，这里先保留原 DeviceBusWidget 作为占位）
+        m_deviceBusWidget = new DeviceBusWidget(this);
+        rightVBox->addWidget(m_deviceBusWidget);
+        // 工具区 + 日志
+        rightVBox->addWidget(ui.splitter_log, 1);
+        mainHBox->addLayout(rightVBox, 1);
     }
+
+    // 4. 连接导航栏
+    connect(m_navBar, &NavBar::itemClicked, this, [this](int index) {
+        if (index < m_toolStack->count()) {
+            m_toolStack->setCurrentIndex(index);
+        }
+        // 特殊处理：最后一个导航项是设置
+        if (index == m_navBar->count() - 1) {
+            SettingsDialog dlg(this);
+            dlg.exec();
+            // 恢复上一活跃项
+            m_navBar->setActiveItem(m_toolStack->currentIndex());
+        }
+    });
 
     // 创建 ToolHost 桥接层（管理 Backend ↔ Widget 配对和生命周期）
     m_toolHost = new ToolHost(this);
 
-    setupFtpDeployTab();
-    setupModbusClusterTab();
-    setupNetRelayTab();
-    setupOpcUaClientTab();
+    // 5. 创建所有 Tool（按导航栏顺序）
+    setupFtpDeployTab();       // index 0
+    setupTelnetDeployTab();    // index 1
+    setupWebSocketClientTab(); // index 2
+    setupModbusClusterTab();   // index 3
+    setupNetRelayTab();        // index 4
+    setupOpcUaClientTab();     // index 5
 
-    // 设置 splitter 初始大小比例：工作区占75%，日志区占25%
-    ui.splitter_log->setSizes(QList<int>() << 250 << 350);
+    // 6. 设置初始活跃项
+    m_navBar->setActiveItem(0);
+    m_toolStack->setCurrentIndex(0);
+
+    // 7. 调整 splitter 比例
+    ui.splitter_log->setSizes(QList<int>() << 600 << 150);
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
@@ -86,8 +133,7 @@ DeployMaster::DeployMaster(QWidget* parent)
 
 void DeployMaster::initToolTabs()
 {
-    setupTelnetDeployTab();
-    setupWebSocketClientTab();
+    // 所有 Tool 已在构造函数中创建（按导航栏顺序），此处无需操作
 }
 
 // 在初始化函数中（如 setupUi 后）
@@ -108,7 +154,7 @@ void DeployMaster::setupFtpDeployTab()
     widget->onToolStart();
     m_ftpBackend = backend;
     m_ftpDeployTab = widget;
-    ui.tabWidget->addTab(m_ftpDeployTab, tr("文件部署"));
+    m_toolStack->addWidget(m_ftpDeployTab);
 }
 
 void DeployMaster::setupTelnetDeployTab()
@@ -129,7 +175,7 @@ void DeployMaster::setupTelnetDeployTab()
     widget->onToolStart();
     m_telnetBackend = backend;
     m_telnetDeployTab = widget;
-    ui.tabWidget->addTab(m_telnetDeployTab, tr("批量命令"));
+    m_toolStack->addWidget(m_telnetDeployTab);
 }
 
 void DeployMaster::setupModbusClusterTab()
@@ -148,7 +194,7 @@ void DeployMaster::setupModbusClusterTab()
     widget->onToolStart();
     m_modbusBackend = backend;
     m_modbusWidget = widget;
-    ui.tabWidget->addTab(m_modbusWidget, tr("MODBUS 测试"));
+    m_toolStack->addWidget(m_modbusWidget);
 }
 
 // 网络中继调试 Tool（TCP/UDP 透明代理 + 双向流量捕获）
@@ -168,7 +214,7 @@ void DeployMaster::setupNetRelayTab()
     widget->onToolStart();
     m_netRelayBackend = backend;
     m_netRelayWidget = widget;
-    ui.tabWidget->addTab(m_netRelayWidget, tr("网络调试"));
+    m_toolStack->addWidget(m_netRelayWidget);
 }
 
 // OPC UA 客户端 Tool（open62541 真实实现，替代旧演示 Tab）
@@ -188,7 +234,7 @@ void DeployMaster::setupOpcUaClientTab()
     widget->onToolStart();
     m_opcUaClientBackend = backend;
     m_opcUaClientWidget = widget;
-    ui.tabWidget->addTab(m_opcUaClientWidget, tr("OPC UA 客户端"));
+    m_toolStack->addWidget(m_opcUaClientWidget);
 }
 
 // WebSocket 通信 Tab（直接创建 Backend + Widget，不通过 ToolHost）
@@ -208,7 +254,7 @@ void DeployMaster::setupWebSocketClientTab()
     widget->onToolStart();
     m_webSocketBackend = backend;
     m_webSocketWidget = widget;
-    ui.tabWidget->addTab(m_webSocketWidget, tr("WebSocket"));
+    m_toolStack->addWidget(m_webSocketWidget);
 }
 
 void DeployMaster::onClearLogClicked()

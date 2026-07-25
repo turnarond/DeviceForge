@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
             return new WebSocketWidget(parent);
         });
 
-    window.initToolTabs();
+    // window.initToolTabs(); — 所有 Tool 已在构造函数中按导航栏顺序创建
 
     // 创建 FtpPresenter 实例（订阅 EventBus 事件，连接部署管道）
     // 临时禁用: FtpPresenter.cpp 存在 QPointer 类型兼容性问题，待 Task 13 重构

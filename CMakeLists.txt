@@ -174,6 +174,7 @@ set(SOURCES
     src/model/FtpManager.cpp
 
     # UI 组件
+    src/ui/NavBar.cpp
     src/ui/DeviceBusWidget.cpp
 
     # Tool 实现
