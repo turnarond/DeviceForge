@@ -4,23 +4,24 @@
  *
  * File: DeviceBusWidget.h
  *
- * Date: 2026-07-04
+ * Date: 2026-07-25
  *
  * Author: turnarond
  *
- * Description: 设备总线 UI 组件 — 水平胶囊形设备列表，支持添加/删除/选中，
- *              在线状态指示灯和凭证输入。工业仪表盘风格。
+ * Description: 设备总线 UI 组件 — 胶囊式紧凑设备栏，支持添加/删除/选中，
+ *              凭证输入。工业仪表盘风格。
  */
 
 #pragma once
 #include <QWidget>
-#include <QListWidget>
 #include <QPushButton>
 #include <QLineEdit>
 #include <QVariantMap>
 #include <QList>
 #include <vector>
 #include "framework/DeviceInfo.h"
+
+class QHBoxLayout;
 
 class DeviceBusWidget : public QWidget {
     Q_OBJECT
@@ -49,16 +50,18 @@ signals:
 
 private slots:
     void onAddClicked();
-    void onRemoveClicked();
 
 private:
     void setupUi();
-    void updateDeviceItem(QListWidgetItem* item, const DeviceInfo& device);
 
-    QListWidget* m_deviceList   = nullptr;   // 水平设备列表
+    // 胶囊式设备栏
+    QWidget*      m_pillContainer = nullptr;
+    QHBoxLayout*  m_pillLayout    = nullptr;
+    std::vector<QPushButton*> m_pills;
+
     QPushButton* m_addButton    = nullptr;
-    QPushButton* m_removeButton = nullptr;
     QLineEdit*   m_userEdit     = nullptr;
     QLineEdit*   m_passEdit     = nullptr;
     QList<QVariantMap> m_recentDevices;       // ConfigStore device.list 启动缓存
+    std::vector<DeviceInfo> m_devices;        // 设备列表
 };
