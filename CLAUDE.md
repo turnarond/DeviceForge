@@ -94,9 +94,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.3.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.4.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -269,7 +269,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
 - 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
 - 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板
-- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板
+- 所有 Tool 日志统一路由到底部全局日志（ToolWidget::setGlobalLogCallback）
 
 ## 设计文档
 
@@ -354,5 +354,5 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
   5. `DeployMaster window` — 构造函数：NavBar（7项） + DeviceBusWidget（胶囊式） + QStackedWidget + 全部 Tool Widget + 底部可折叠日志
   6. `ToolRegistry` 注册内置 Tool 元数据（ftp.deploy / telnet.command / websocket.comm）
   7. `ToolHost` 工厂注册（预留，当前 Tool 通过 DeployMaster 直接创建）
-  8. `window.initToolTabs()` — 延迟创建 Telnet/WebSocket Tool（需要工厂注册完成）
+  8. `window.initToolTabs()` — 无操作（所有 Tool 已在构造函数中按导航栏顺序创建）
   9. `window.show()`
