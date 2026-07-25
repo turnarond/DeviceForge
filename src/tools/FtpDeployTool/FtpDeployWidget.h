@@ -62,6 +62,11 @@ private slots:
     void onDownloadRemote();
     void onNewRemoteDir();
 
+private:
+    // 拖拽辅助方法 — 供 dropEvent 和 eventFilter 共用
+    void handleDropOnRemote(const QList<QUrl>& urls);
+    void handleDropOnLocal(const QList<QUrl>& urls);
+
 protected:
     // 拖拽支持 — 从系统资源管理器拖入文件到远程面板直接上传
     void dragEnterEvent(QDragEnterEvent* event) override;

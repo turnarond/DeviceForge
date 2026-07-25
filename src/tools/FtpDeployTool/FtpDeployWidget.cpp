@@ -158,7 +158,7 @@ void FtpDeployWidget::setupLocalPanel()
     m_localTree->setAcceptDrops(true);
     m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
     m_localTree->setColumnHidden(1, true);
-    m_localTree->viewport()->installEventFilter(this); // 隐藏 size 列
+    m_localTree->viewport()->installEventFilter(this); // 拦截拖拽事件到本地面板
     m_localTree->setColumnHidden(2, true); // 隐藏 type 列
     m_localTree->setColumnHidden(3, true); // 隐藏 date 列
     m_localTree->header()->setStretchLastSection(true);
@@ -658,6 +658,56 @@ void FtpDeployWidget::appendLog(const QString& msg)
 
 // ────────────────────────────── 拖拽支持 ──────────────────────────────
 
+void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
+{
+    std::vector<std::string> files;
+    for (const auto& url : urls) {
+        if (url.isLocalFile()) {
+            files.push_back(url.toLocalFile().toStdString());
+        }
+    }
+    if (files.empty()) return;
+
+    appendLog(QString("📤 拖拽上传 %1 个文件到远程目录...").arg(files.size()));
+
+    if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
+        appendLog("错误：设备总线中没有目标设备");
+        return;
+    }
+    if (!m_backend) {
+        appendLog("错误：Backend 未就绪");
+        return;
+    }
+
+    auto devices = m_deviceBus->allDevices();
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
+    m_backend->bindCredentials(auth);
+    m_backend->bindDevices(devices);
+
+    m_deployBtn->setEnabled(false);
+    m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
+
+    m_backend->startUpload(files,
+        m_remotePathEdit->text().toStdString(),
+        m_clearCheck->isChecked(),
+        m_rebootCheck->isChecked(),
+        m_ftpsCheck->isChecked(),
+        m_portSpin->value()
+    );
+}
+
+void FtpDeployWidget::handleDropOnLocal(const QList<QUrl>& urls)
+{
+    QString dir = urls.first().toLocalFile();
+    QFileInfo fi(dir);
+    if (fi.isDir()) {
+        m_localTree->setRootIndex(m_localFsModel->index(dir));
+        m_localPathEdit->setText(dir);
+    }
+}
+
 void FtpDeployWidget::dragEnterEvent(QDragEnterEvent* event)
 {
     if (event->mimeData()->hasUrls()) {
@@ -688,53 +738,10 @@ void FtpDeployWidget::dropEvent(QDropEvent* event)
     bool dropOnLocal = m_localTree->rect().contains(localPos);
 
     if (dropOnRemote) {
-        // 拖入远程面板 → 直接上传
-        std::vector<std::string> files;
-        for (const auto& url : urls) {
-            if (url.isLocalFile()) {
-                files.push_back(url.toLocalFile().toStdString());
-            }
-        }
-        if (files.empty()) return;
-
-        appendLog(QString("📤 拖拽上传 %1 个文件到远程目录...").arg(files.size()));
-
-        if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
-            appendLog("错误：设备总线中没有目标设备");
-            return;
-        }
-        if (!m_backend) {
-            appendLog("错误：Backend 未就绪");
-            return;
-        }
-
-        auto devices = m_deviceBus->allDevices();
-        AuthInfo auth;
-        auth.user = m_deviceBus->user().toStdString();
-        auth.password = m_deviceBus->password().toStdString();
-        m_backend->bindCredentials(auth);
-        m_backend->bindDevices(devices);
-
-        m_deployBtn->setEnabled(false);
-        m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
-
-        m_backend->startUpload(files,
-            m_remotePathEdit->text().toStdString(),
-            m_clearCheck->isChecked(),
-            m_rebootCheck->isChecked(),
-            m_ftpsCheck->isChecked(),
-            m_portSpin->value()
-        );
-
+        handleDropOnRemote(urls);
         event->acceptProposedAction();
     } else if (dropOnLocal) {
-        // 拖入本地面板 → 切换到该目录
-        QString dir = urls.first().toLocalFile();
-        QFileInfo fi(dir);
-        if (fi.isDir()) {
-            m_localTree->setRootIndex(m_localFsModel->index(dir));
-            m_localPathEdit->setText(dir);
-        }
+        handleDropOnLocal(urls);
         event->acceptProposedAction();
     }
 }
@@ -766,55 +773,12 @@ bool FtpDeployWidget::eventFilter(QObject* watched, QEvent* event)
             if (urls.isEmpty()) break;
 
             if (watched == m_remoteTable->viewport()) {
-                // 系统文件拖入远程面板 → 直接上传
-                std::vector<std::string> files;
-                for (const auto& url : urls) {
-                    if (url.isLocalFile()) {
-                        files.push_back(url.toLocalFile().toStdString());
-                    }
-                }
-                if (files.empty()) break;
-
-                appendLog(QString("📤 拖拽上传 %1 个文件到远程目录...").arg(files.size()));
-
-                if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
-                    appendLog("错误：设备总线中没有目标设备");
-                    break;
-                }
-                if (!m_backend) {
-                    appendLog("错误：Backend 未就绪");
-                    break;
-                }
-
-                auto devices = m_deviceBus->allDevices();
-                AuthInfo auth;
-                auth.user = m_deviceBus->user().toStdString();
-                auth.password = m_deviceBus->password().toStdString();
-                m_backend->bindCredentials(auth);
-                m_backend->bindDevices(devices);
-
-                m_deployBtn->setEnabled(false);
-                m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
-
-                m_backend->startUpload(files,
-                    m_remotePathEdit->text().toStdString(),
-                    m_clearCheck->isChecked(),
-                    m_rebootCheck->isChecked(),
-                    m_ftpsCheck->isChecked(),
-                    m_portSpin->value()
-                );
-
+                handleDropOnRemote(urls);
                 drop->acceptProposedAction();
                 return true;
 
             } else if (watched == m_localTree->viewport()) {
-                // 系统文件夹拖入本地面板 → 切换本地目录
-                QString dir = urls.first().toLocalFile();
-                QFileInfo fi(dir);
-                if (fi.isDir()) {
-                    m_localTree->setRootIndex(m_localFsModel->index(dir));
-                    m_localPathEdit->setText(dir);
-                }
+                handleDropOnLocal(urls);
                 drop->acceptProposedAction();
                 return true;
             }
