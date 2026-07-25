@@ -542,6 +542,11 @@ void FtpDeployWidget::onDeleteRemote()
                 appendLog(ok ? QString("已删除: %1").arg(displayName) : "删除失败: " + displayName);
                 onRefreshRemote();
             }, Qt::QueuedConnection);
+        } else {
+            QString err = QString::fromStdString(ftp->lastError());
+            QMetaObject::invokeMethod(this, [this, err]() {
+                appendLog("删除失败 — 连接错误: " + err);
+            }, Qt::QueuedConnection);
         }
     });
 }
@@ -583,6 +588,11 @@ void FtpDeployWidget::onDownloadRemote()
             QMetaObject::invokeMethod(this, [this, displayName, ok]() {
                 appendLog(ok ? QString("已下载: %1").arg(displayName) : "下载失败: " + displayName);
             }, Qt::QueuedConnection);
+        } else {
+            QString err = QString::fromStdString(ftp->lastError());
+            QMetaObject::invokeMethod(this, [this, err]() {
+                appendLog("下载失败 — 连接错误: " + err);
+            }, Qt::QueuedConnection);
         }
     });
 }
@@ -598,7 +608,9 @@ void FtpDeployWidget::onRenameRemote()
         QString("将 \"%1\" 重命名为:").arg(oldName), QLineEdit::Normal, oldName, &ok);
     if (!ok || newName.isEmpty() || newName == oldName) return;
 
-    appendLog(QString("重命名: %1 → %2 (FTP RNFR/RNTO 待实现)").arg(oldName, newName));
+    appendLog(QString("重命名: %1 → %2 (FTP 重命名命令将在后续版本支持)").arg(oldName, newName));
+    QMessageBox::information(this, "重命名",
+        QString("FTP 重命名功能将在后续版本中支持。\n\n请求的操作: %1 → %2").arg(oldName, newName));
 }
 
 void FtpDeployWidget::onNewRemoteDir()
@@ -608,7 +620,9 @@ void FtpDeployWidget::onNewRemoteDir()
         "目录名:", QLineEdit::Normal, "", &ok);
     if (!ok || dirName.isEmpty()) return;
 
-    appendLog(QString("新建远程目录: %1 (FTP MKD 待实现)").arg(dirName));
+    appendLog(QString("新建远程目录: %1 (FTP MKD 命令将在后续版本支持)").arg(dirName));
+    QMessageBox::information(this, "新建目录",
+        QString("FTP 新建目录功能将在后续版本中支持。\n\n请求的操作: 创建目录 %1").arg(dirName));
 }
 
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
