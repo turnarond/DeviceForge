@@ -87,7 +87,7 @@ bool SshAdapter::connect(const DeviceInfo& device, const AuthInfo& auth)
 
     // SFTP 子系统可选初始化 — 服务器可能未启用，不影响 exec channel 使用
     if (!sftpInit()) {
-        LWLOG_W("SFTP 子系统初始化失败（服务器可能未启用）：" << m_lastError);
+        LWLOG_W(std::string("SFTP 子系统初始化失败（服务器可能未启用）：") + m_lastError);
     }
     return true;
 }
