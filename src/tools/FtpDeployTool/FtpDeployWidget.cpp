@@ -386,7 +386,8 @@ void FtpDeployWidget::onRefreshRemote()
         return;
     }
 
-    QString path = m_remotePathEdit->text();
+    QString path = m_remotePathEdit->text().trimmed();
+    path.remove('\n'); path.remove('\r');  // 防止路径中混入换行符
     if (path.isEmpty()) path = "/";
     m_currentRemotePath = path;  // 同步：用户手动输入路径时也更新当前路径
 
@@ -534,8 +535,10 @@ void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
 
 void FtpDeployWidget::navigateToRemoteDir(const QString& path)
 {
-    m_currentRemotePath = path;
-    m_remotePathEdit->setText(path);
+    QString clean = path.trimmed();
+    clean.remove('\n'); clean.remove('\r');
+    m_currentRemotePath = clean;
+    m_remotePathEdit->setText(clean);
     refreshBreadcrumb(path);
     onRefreshRemote();
 }

@@ -490,6 +490,9 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     std::string buffer;
     // 确保目录 URL 指向正确路径（"/" 或空 → 根目录 URL 已自带 /）
     std::string pathForUrl = remotePath;
+    // 清理路径中可能混入的换行符等空白字符
+    while (!pathForUrl.empty() && (pathForUrl.back() == '\n' || pathForUrl.back() == '\r' || pathForUrl.back() == ' '))
+        pathForUrl.pop_back();
     if (pathForUrl.empty()) pathForUrl = "/";
     if (pathForUrl.back() != '/') pathForUrl += '/';
     std::string url = m_impl->buildUrl(pathForUrl);
