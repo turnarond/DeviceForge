@@ -436,8 +436,23 @@ void FtpDeployWidget::onRefreshRemote()
             ssh->disconnect();
 
             QMetaObject::invokeMethod(this, [this, files]() {
-                m_remoteModel->setFileList(files);
-                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
+                // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
+                auto full = files;
+                bool hasDot = false, hasDotDot = false;
+                for (const auto& f : full) {
+                    if (f.name == ".") hasDot = true;
+                    if (f.name == "..") hasDotDot = true;
+                }
+                if (!hasDotDot) {
+                    FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
+                    full.insert(full.begin(), dd);
+                }
+                if (!hasDot) {
+                    FtpFileInfo d; d.name = "."; d.isDir = true;
+                    full.insert(full.begin(), d);
+                }
+                m_remoteModel->setFileList(full);
+                appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
             }, Qt::QueuedConnection);
         } else {
             auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
@@ -465,8 +480,23 @@ void FtpDeployWidget::onRefreshRemote()
             ftp->disconnect();
 
             QMetaObject::invokeMethod(this, [this, files]() {
-                m_remoteModel->setFileList(files);
-                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
+                // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
+                auto full = files;
+                bool hasDot = false, hasDotDot = false;
+                for (const auto& f : full) {
+                    if (f.name == ".") hasDot = true;
+                    if (f.name == "..") hasDotDot = true;
+                }
+                if (!hasDotDot) {
+                    FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
+                    full.insert(full.begin(), dd);
+                }
+                if (!hasDot) {
+                    FtpFileInfo d; d.name = "."; d.isDir = true;
+                    full.insert(full.begin(), d);
+                }
+                m_remoteModel->setFileList(full);
+                appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
             }, Qt::QueuedConnection);
         }
     });

@@ -495,9 +495,13 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     std::string url = m_impl->buildUrl(pathForUrl);
     m_impl->setupCommonOpts(curl, url);
 
-    // 写入调试日志：实际请求的 URL
-    fprintf(stderr, "[FtpAdapter] listDirectoryParsed path=%s url=%s\n",
-            remotePath.c_str(), url.c_str());
+    // 写入调试日志到文件（WIN32 GUI 无 stderr）
+    FILE* dbg = fopen("ftp_debug.log", "a");
+    if (dbg) {
+        fprintf(dbg, "[FtpAdapter] listDirectoryParsed path=%s url=%s\n",
+                remotePath.c_str(), url.c_str());
+        fclose(dbg);
+    }
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
@@ -508,8 +512,14 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
 
     if (res != CURLE_OK) {
         m_impl->m_lastError = std::string("列目录失败: ") + curl_easy_strerror(res);
+        dbg = fopen("ftp_debug.log", "a");
+        if (dbg) { fprintf(dbg, "  CURLcode=%d err=%s\n", res, curl_easy_strerror(res)); fclose(dbg); }
         return result;
     }
+
+    // 调试：记录原始响应
+    dbg = fopen("ftp_debug.log", "a");
+    if (dbg) { fprintf(dbg, "  raw bytes=%zu\n%s---\n", buffer.size(), buffer.c_str()); fclose(dbg); }
 
     result = FtpListParser::parse(buffer);
     m_impl->m_lastError.clear();
