@@ -149,17 +149,34 @@ void FtpDeployWidget::setupLocalPanel()
     m_localPathEdit = new QLineEdit(this);
     m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
     connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
-        QDir dir(m_localPathEdit->text());
+        QString path = m_localPathEdit->text().trimmed();
+        QDir dir(path);
         if (dir.exists()) {
+            m_localFsModel->setRootPath(dir.absolutePath());
             m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
         }
     });
     header->addWidget(m_localPathEdit, 1);
 
+    auto* upBtn = new QPushButton("↑ 上级", this);
+    upBtn->setToolTip("返回上级目录");
+    upBtn->setFixedWidth(60);
+    connect(upBtn, &QPushButton::clicked, [this]() {
+        QModelIndex rootIdx = m_localTree->rootIndex();
+        QDir dir(m_localFsModel->filePath(rootIdx));
+        if (dir.cdUp()) {
+            m_localFsModel->setRootPath(dir.absolutePath());
+            m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
+            m_localPathEdit->setText(dir.absolutePath());
+        }
+    });
+    header->addWidget(upBtn);
+
     auto* openDirBtn = new QPushButton("打开目录", this);
     connect(openDirBtn, &QPushButton::clicked, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
         if (!dir.isEmpty()) {
+            m_localFsModel->setRootPath(dir);
             m_localTree->setRootIndex(m_localFsModel->index(dir));
             m_localPathEdit->setText(dir);
         }
@@ -489,20 +506,15 @@ void FtpDeployWidget::onRefreshRemote()
         }
 
         QMetaObject::invokeMethod(this, [this, files]() {
-            // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
+            // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回；. 不显示）
             auto full = files;
-            bool hasDot = false, hasDotDot = false;
+            bool hasDotDot = false;
             for (const auto& f : full) {
-                if (f.name == ".") hasDot = true;
                 if (f.name == "..") hasDotDot = true;
             }
             if (!hasDotDot) {
                 FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
                 full.insert(full.begin(), dd);
-            }
-            if (!hasDot) {
-                FtpFileInfo d; d.name = "."; d.isDir = true;
-                full.insert(full.begin(), d);
             }
             m_remoteModel->setFileList(full);
             appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
@@ -517,11 +529,6 @@ void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
     if (!fi.isDir) return;
 
     std::string name = fi.name;
-    if (name == ".") {
-        // 当前目录 → 刷新
-        onRefreshRemote();
-        return;
-    }
     if (name == "..") {
         // 上级目录
         QString parent = m_currentRemotePath;
