@@ -486,7 +486,10 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     }
 
     std::string buffer;
-    std::string url = m_impl->buildUrl(remotePath);
+    // 确保目录 URL 以 / 结尾，否则部分 FTP 服务器拒绝 LIST 子目录
+    std::string pathForUrl = remotePath;
+    if (!pathForUrl.empty() && pathForUrl.back() != '/') pathForUrl += '/';
+    std::string url = m_impl->buildUrl(pathForUrl);
     m_impl->setupCommonOpts(curl, url);
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);

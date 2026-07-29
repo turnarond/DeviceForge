@@ -170,7 +170,7 @@ void FtpDeployWidget::setupLocalPanel()
     // QFileSystemModel
     m_localFsModel = new QFileSystemModel(this);
     m_localFsModel->setRootPath(QDir::currentPath());
-    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
+    m_localFsModel->setFilter(QDir::AllEntries | QDir::Hidden);
 
     m_localTree = new QTreeView(this);
     m_localTree->setModel(m_localFsModel);
@@ -477,6 +477,23 @@ void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
     if (!index.isValid()) return;
     const auto& fi = m_remoteModel->fileAt(index.row());
     if (!fi.isDir) return;
+
+    std::string name = fi.name;
+    if (name == ".") {
+        // 当前目录 → 刷新
+        onRefreshRemote();
+        return;
+    }
+    if (name == "..") {
+        // 上级目录
+        QString parent = m_currentRemotePath;
+        if (parent == "/" || parent.isEmpty()) return; // 已在根目录
+        int lastSlash = parent.lastIndexOf('/');
+        parent = parent.left(lastSlash);
+        if (parent.isEmpty()) parent = "/";
+        navigateToRemoteDir(parent);
+        return;
+    }
 
     QString newPath = m_currentRemotePath;
     if (!newPath.endsWith('/')) newPath += '/';

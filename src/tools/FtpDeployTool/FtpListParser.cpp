@@ -132,7 +132,7 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
         }
     }
 
-    return !out.name.empty() && out.name != "." && out.name != "..";
+    return !out.name.empty();
 }
 
 // --- Windows 格式解析 ---
@@ -161,7 +161,7 @@ bool FtpListParser::tryParseWindowsLine(const std::string& line, FtpFileInfo& ou
     std::string sizeOrDir = m[3].str();
     out.name = m[4].str();
 
-    if (out.name == "." || out.name == "..") return false;
+    // . 和 .. 保留，由 RemoteFileModel 处理导航
 
     out.isDir = (sizeOrDir == "<DIR>");
     if (!out.isDir) {

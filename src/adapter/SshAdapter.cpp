@@ -302,7 +302,7 @@ std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remote
     LIBSSH2_SFTP_ATTRIBUTES attrs;
     while (libssh2_sftp_readdir(dir, filename, sizeof(filename), &attrs) > 0) {
         std::string name(filename);
-        if (name == "." || name == "..") continue;
+        // . 和 .. 保留，由 RemoteFileModel 处理导航
 
         FtpFileInfo fi;
         fi.name = name;
