@@ -199,7 +199,6 @@ void FtpDeployWidget::setupLocalPanel()
     m_localTree->setDragEnabled(true);
     m_localTree->setAcceptDrops(true);
     m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
-    m_localTree->setAlternatingRowColors(true);
     m_localTree->setAnimated(true);
     m_localTree->setColumnHidden(1, true); // 隐藏 size
     m_localTree->setColumnHidden(2, true); // 隐藏 type
