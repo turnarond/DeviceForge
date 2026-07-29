@@ -388,6 +388,7 @@ void FtpDeployWidget::onRefreshRemote()
 
     QString path = m_remotePathEdit->text();
     if (path.isEmpty()) path = "/";
+    m_currentRemotePath = path;  // 同步：用户手动输入路径时也更新当前路径
 
     // 从设备下拉框获取当前选中设备
     QString deviceIp = m_deviceCombo->currentText();
