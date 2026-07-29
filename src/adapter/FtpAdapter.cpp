@@ -112,6 +112,8 @@ struct FtpAdapter::Impl {
         curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+        // 使用单一 CWD 而非多次 CWD（兼容更多 FTP 服务器）
+        curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD);
         if (m_useFtps) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -486,11 +488,16 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     }
 
     std::string buffer;
-    // 确保目录 URL 以 / 结尾，否则部分 FTP 服务器拒绝 LIST 子目录
+    // 确保目录 URL 指向正确路径（"/" 或空 → 根目录 URL 已自带 /）
     std::string pathForUrl = remotePath;
-    if (!pathForUrl.empty() && pathForUrl.back() != '/') pathForUrl += '/';
+    if (pathForUrl.empty()) pathForUrl = "/";
+    if (pathForUrl.back() != '/') pathForUrl += '/';
     std::string url = m_impl->buildUrl(pathForUrl);
     m_impl->setupCommonOpts(curl, url);
+
+    // 写入调试日志：实际请求的 URL
+    fprintf(stderr, "[FtpAdapter] listDirectoryParsed path=%s url=%s\n",
+            remotePath.c_str(), url.c_str());
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
