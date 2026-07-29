@@ -247,6 +247,7 @@ void FtpDeployWidget::setupRemotePanel()
     m_remoteTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_remoteTable->setAlternatingRowColors(true);
+    m_remoteTable->setSortingEnabled(true);
     m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_remoteTable->setAcceptDrops(true);
     m_remoteTable->viewport()->setAcceptDrops(true);
@@ -406,9 +407,28 @@ void FtpDeployWidget::onRefreshRemote()
     const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
     const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    QtConcurrent::run([this, deviceIp, path, port, useFtps, user, pass, proto]() {
-        auto adapter = ProtocolRegistry::instance()->create(
+    // 连接缓存：设备/协议/端口不变时复用已有连接，避免每次导航都 TCP+FTP 登录
+    bool needNewConnection = !m_cachedAdapter
+        || !m_cachedAdapter->isConnected()
+        || m_cachedDeviceIp != deviceIp
+        || m_cachedProto != m_protocolCombo->currentText()
+        || m_cachedPort != port;
+
+    if (needNewConnection) {
+        // 断开旧连接
+        if (m_cachedAdapter && m_cachedAdapter->isConnected()) {
+            m_cachedAdapter->disconnect();
+        }
+        m_cachedAdapter = ProtocolRegistry::instance()->create(
             proto == "SFTP" ? "ssh" : "ftp");
+        m_cachedDeviceIp = deviceIp;
+        m_cachedProto = m_protocolCombo->currentText();
+        m_cachedPort = port;
+    }
+
+    auto adapter = m_cachedAdapter;  // shared_ptr 拷贝，lambda 持有引用
+
+    QtConcurrent::run([this, adapter, deviceIp, path, port, useFtps, user, pass, proto, needNewConnection]() {
         if (!adapter) {
             QMetaObject::invokeMethod(this, [this]() {
                 appendLog("适配器不可用");
@@ -416,91 +436,64 @@ void FtpDeployWidget::onRefreshRemote()
             return;
         }
 
-        if (proto == "SFTP") {
-            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+        // 仅在需要时建立连接
+        if (needNewConnection) {
             DeviceInfo dev;
             dev.ip = deviceIp.toStdString();
             dev.port = port;
-
             AuthInfo auth;
             auth.user = user;
             auth.password = pass;
 
-            if (!ssh->connect(dev, auth)) {
-                QString err = QString::fromStdString(ssh->lastError());
-                QMetaObject::invokeMethod(this, [this, err]() {
-                    appendLog("SFTP 连接失败: " + err);
-                }, Qt::QueuedConnection);
-                return;
+            if (proto == "SFTP") {
+                auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+                if (!ssh->connect(dev, auth)) {
+                    QString err = QString::fromStdString(ssh->lastError());
+                    QMetaObject::invokeMethod(this, [this, err]() {
+                        appendLog("SFTP 连接失败: " + err);
+                    }, Qt::QueuedConnection);
+                    return;
+                }
+            } else {
+                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+                if (useFtps) ftp->setUseFtps(true);
+                if (!ftp->connect(dev, auth)) {
+                    QString err = QString::fromStdString(ftp->lastError());
+                    QMetaObject::invokeMethod(this, [this, err]() {
+                        appendLog("连接失败: " + err);
+                    }, Qt::QueuedConnection);
+                    return;
+                }
             }
-
-            auto files = ssh->sftpListDirectory(path.toStdString());
-            ssh->disconnect();
-
-            QMetaObject::invokeMethod(this, [this, files]() {
-                // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
-                auto full = files;
-                bool hasDot = false, hasDotDot = false;
-                for (const auto& f : full) {
-                    if (f.name == ".") hasDot = true;
-                    if (f.name == "..") hasDotDot = true;
-                }
-                if (!hasDotDot) {
-                    FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
-                    full.insert(full.begin(), dd);
-                }
-                if (!hasDot) {
-                    FtpFileInfo d; d.name = "."; d.isDir = true;
-                    full.insert(full.begin(), d);
-                }
-                m_remoteModel->setFileList(full);
-                appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
-            }, Qt::QueuedConnection);
-        } else {
-            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-            DeviceInfo dev;
-            dev.ip = deviceIp.toStdString();
-            dev.port = port;
-
-            AuthInfo auth;
-            auth.user = user;
-            auth.password = pass;
-
-            if (useFtps) {
-                ftp->setUseFtps(true);
-            }
-
-            if (!ftp->connect(dev, auth)) {
-                QString err = QString::fromStdString(ftp->lastError());
-                QMetaObject::invokeMethod(this, [this, err]() {
-                    appendLog("连接失败: " + err);
-                }, Qt::QueuedConnection);
-                return;
-            }
-
-            auto files = ftp->listDirectoryParsed(path.toStdString());
-            ftp->disconnect();
-
-            QMetaObject::invokeMethod(this, [this, files]() {
-                // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
-                auto full = files;
-                bool hasDot = false, hasDotDot = false;
-                for (const auto& f : full) {
-                    if (f.name == ".") hasDot = true;
-                    if (f.name == "..") hasDotDot = true;
-                }
-                if (!hasDotDot) {
-                    FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
-                    full.insert(full.begin(), dd);
-                }
-                if (!hasDot) {
-                    FtpFileInfo d; d.name = "."; d.isDir = true;
-                    full.insert(full.begin(), d);
-                }
-                m_remoteModel->setFileList(full);
-                appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
-            }, Qt::QueuedConnection);
         }
+
+        // 列目录（复用已有连接）
+        std::vector<FtpFileInfo> files;
+        if (proto == "SFTP") {
+            files = dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
+        } else {
+            files = dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        }
+
+        QMetaObject::invokeMethod(this, [this, files]() {
+            // 补充 . 和 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
+            auto full = files;
+            bool hasDot = false, hasDotDot = false;
+            for (const auto& f : full) {
+                if (f.name == ".") hasDot = true;
+                if (f.name == "..") hasDotDot = true;
+            }
+            if (!hasDotDot) {
+                FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
+                full.insert(full.begin(), dd);
+            }
+            if (!hasDot) {
+                FtpFileInfo d; d.name = "."; d.isDir = true;
+                full.insert(full.begin(), d);
+            }
+            m_remoteModel->setFileList(full);
+            appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
+        }, Qt::QueuedConnection);
     });
 }
 

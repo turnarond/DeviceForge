@@ -196,8 +196,18 @@ QListWidget::item:hover, QTreeWidget::item:hover {
     background-color: #1A2030;
 }
 
-QTableWidget {
-    alternate-background-color: #1A1D24;
+QTableWidget, QTableView {
+    background-color: #0E1219;
+    alternate-background-color: #12161E;
+    color: #C8CCD4;
+    selection-background-color: #2A2518;
+    selection-color: #F0A030;
+    border: 1px solid #252A33;
+    gridline-color: #1A1F28;
+}
+
+QTableWidget::item:hover, QTableView::item:hover {
+    background-color: #1A2030;
 }
 
 /* ===== 表头 ===== */
@@ -213,6 +223,7 @@ QHeaderView::section {
 }
 
 QTableWidget QHeaderView::section,
+QTableView QHeaderView::section,
 QTreeView QHeaderView::section {
     background-color: #1A2030;
     color: #C8CCD4;
