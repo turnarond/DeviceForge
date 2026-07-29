@@ -589,8 +589,17 @@ bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& ne
     // 确保路径以 / 开头（FTP 命令要求绝对路径）
     std::string path = remotePath;
     if (!path.empty() && path[0] != '/') path = "/" + path;
+
+    // newName 可能只是文件名也可能是完整路径——若仅文件名则与 remotePath 同目录
     std::string newPath = newName;
-    if (!newPath.empty() && newPath[0] != '/') newPath = "/" + newPath;
+    if (!newPath.empty() && newPath[0] != '/') {
+        std::size_t pos = remotePath.rfind('/');
+        if (pos != std::string::npos) {
+            newPath = remotePath.substr(0, pos + 1) + newPath;
+        } else {
+            newPath = "/" + newPath;
+        }
+    }
 
     struct curl_slist* commands = nullptr;
     commands = curl_slist_append(commands, ("RNFR " + path).c_str());

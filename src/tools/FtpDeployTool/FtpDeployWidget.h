@@ -88,7 +88,10 @@ private:
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*    m_deviceBus = nullptr;
 
+    std::string currentProtocol() const;
+
     // 工具栏
+    QComboBox*   m_protocolCombo = nullptr;
     QComboBox*   m_deviceCombo = nullptr;
     QLineEdit*   m_remotePathEdit = nullptr;
     QSpinBox*    m_portSpin = nullptr;

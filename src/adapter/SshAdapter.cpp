@@ -87,7 +87,7 @@ bool SshAdapter::connect(const DeviceInfo& device, const AuthInfo& auth)
 
     // SFTP 子系统可选初始化 — 服务器可能未启用，不影响 exec channel 使用
     if (!sftpInit()) {
-        // 仅记录日志，不阻断连接
+        LWLOG_W("SFTP 子系统初始化失败（服务器可能未启用）：" << m_lastError);
     }
     return true;
 }
@@ -335,9 +335,9 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     // 打开本地文件读取
     FILE* localFile = fopen(localPath.c_str(), "rb");
     if (!localFile) { m_lastError = "无法打开本地文件: " + localPath; return false; }
-    fseek(localFile, 0, SEEK_END);
-    uint64_t fileSize = ftell(localFile);
-    fseek(localFile, 0, SEEK_SET);
+    _fseeki64(localFile, 0, SEEK_END);
+    uint64_t fileSize = static_cast<uint64_t>(_ftelli64(localFile));
+    _fseeki64(localFile, 0, SEEK_SET);
 
     // 创建远程文件
     LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
@@ -391,7 +391,11 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
         ssize_t n = libssh2_sftp_read(remoteFile, buf, sizeof(buf));
         if (n < 0) { ok = false; break; }
         if (n == 0) break;
-        fwrite(buf, 1, n, localFile);
+        if (fwrite(buf, 1, n, localFile) != static_cast<size_t>(n)) {
+            ok = false;
+            m_lastError = "SFTP 下载写入失败（磁盘空间不足？）";
+            break;
+        }
         received += n;
         if (m_sftpProgressCb && fileSize > 0) {
             int pct = static_cast<int>((received * 100) / fileSize);

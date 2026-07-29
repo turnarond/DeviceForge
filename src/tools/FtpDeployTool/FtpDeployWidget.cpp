@@ -15,6 +15,7 @@
 #include "MultiProgressWidget.h"
 #include "adapter/ProtocolRegistry.h"
 #include "adapter/FtpAdapter.h"
+#include "adapter/SshAdapter.h"
 #include "ui/DeviceBusWidget.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -75,23 +76,44 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     auto* toolbar = new QGridLayout(toolbarWidget);
     toolbar->setSpacing(6);
 
-    // 行 0: 目标设备 | 远程路径 | 刷新
-    toolbar->addWidget(new QLabel("目标设备:", this), 0, 0);
+    // 行 0: 协议 | 目标设备 | 远程路径 | 刷新
+    toolbar->addWidget(new QLabel("协议:", this), 0, 0);
+    m_protocolCombo = new QComboBox(this);
+    m_protocolCombo->addItem("FTP");
+    m_protocolCombo->addItem("SFTP");
+    m_protocolCombo->setFixedWidth(80);
+    connect(m_protocolCombo, &QComboBox::currentTextChanged, this, [this](const QString& proto) {
+        m_remoteModel->clear();
+        m_currentRemotePath = "/";
+        refreshBreadcrumb("/");
+        m_remotePathEdit->setText("/");
+        if (proto == "SFTP") {
+            m_portSpin->setValue(22);
+            m_ftpsCheck->setEnabled(false);
+        } else {
+            m_portSpin->setValue(21);
+            m_ftpsCheck->setEnabled(true);
+        }
+        onRefreshRemote();
+    });
+    toolbar->addWidget(m_protocolCombo, 0, 1);
+
+    toolbar->addWidget(new QLabel("目标设备:", this), 0, 2);
     m_deviceCombo = new QComboBox(this);
     m_deviceCombo->setMinimumWidth(160);
     m_deviceCombo->setToolTip("选择目标设备（多选支持——从设备总线同步）");
-    toolbar->addWidget(m_deviceCombo, 0, 1);
+    toolbar->addWidget(m_deviceCombo, 0, 3);
 
-    toolbar->addWidget(new QLabel("远程路径:", this), 0, 2);
+    toolbar->addWidget(new QLabel("远程路径:", this), 0, 4);
     m_remotePathEdit = new QLineEdit("/", this);
     m_remotePathEdit->setPlaceholderText("/");
     connect(m_remotePathEdit, &QLineEdit::returnPressed, this, &FtpDeployWidget::onRefreshRemote);
-    toolbar->addWidget(m_remotePathEdit, 0, 3);
+    toolbar->addWidget(m_remotePathEdit, 0, 5);
 
     m_refreshBtn = new QPushButton("刷新", this);
     m_refreshBtn->setToolTip("刷新远程目录列表 (F5)");
     connect(m_refreshBtn, &QPushButton::clicked, this, &FtpDeployWidget::onRefreshRemote);
-    toolbar->addWidget(m_refreshBtn, 0, 4);
+    toolbar->addWidget(m_refreshBtn, 0, 6);
 
     // 行 1: 端口 | FTPS | 清空 | 重启
     toolbar->addWidget(new QLabel("端口:", this), 1, 0);
@@ -380,44 +402,73 @@ void FtpDeployWidget::onRefreshRemote()
     const bool useFtps = m_ftpsCheck->isChecked();
     const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
     const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+    const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    QtConcurrent::run([this, deviceIp, path, port, useFtps, user, pass]() {
-        auto adapter = ProtocolRegistry::instance()->create("ftp");
+    QtConcurrent::run([this, deviceIp, path, port, useFtps, user, pass, proto]() {
+        auto adapter = ProtocolRegistry::instance()->create(
+            proto == "SFTP" ? "ssh" : "ftp");
         if (!adapter) {
             QMetaObject::invokeMethod(this, [this]() {
-                appendLog("FTP 适配器不可用");
+                appendLog("适配器不可用");
             }, Qt::QueuedConnection);
             return;
         }
 
-        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-        DeviceInfo dev;
-        dev.ip = deviceIp.toStdString();
-        dev.port = port;
+        if (proto == "SFTP") {
+            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+            DeviceInfo dev;
+            dev.ip = deviceIp.toStdString();
+            dev.port = port;
 
-        AuthInfo auth;
-        auth.user = user;
-        auth.password = pass;
+            AuthInfo auth;
+            auth.user = user;
+            auth.password = pass;
 
-        if (useFtps) {
-            ftp->setUseFtps(true);
-        }
+            if (!ssh->connect(dev, auth)) {
+                QString err = QString::fromStdString(ssh->lastError());
+                QMetaObject::invokeMethod(this, [this, err]() {
+                    appendLog("SFTP 连接失败: " + err);
+                }, Qt::QueuedConnection);
+                return;
+            }
 
-        if (!ftp->connect(dev, auth)) {
-            QString err = QString::fromStdString(ftp->lastError());
-            QMetaObject::invokeMethod(this, [this, err]() {
-                appendLog("连接失败: " + err);
+            auto files = ssh->sftpListDirectory(path.toStdString());
+            ssh->disconnect();
+
+            QMetaObject::invokeMethod(this, [this, files]() {
+                m_remoteModel->setFileList(files);
+                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
             }, Qt::QueuedConnection);
-            return;
+        } else {
+            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+            DeviceInfo dev;
+            dev.ip = deviceIp.toStdString();
+            dev.port = port;
+
+            AuthInfo auth;
+            auth.user = user;
+            auth.password = pass;
+
+            if (useFtps) {
+                ftp->setUseFtps(true);
+            }
+
+            if (!ftp->connect(dev, auth)) {
+                QString err = QString::fromStdString(ftp->lastError());
+                QMetaObject::invokeMethod(this, [this, err]() {
+                    appendLog("连接失败: " + err);
+                }, Qt::QueuedConnection);
+                return;
+            }
+
+            auto files = ftp->listDirectoryParsed(path.toStdString());
+            ftp->disconnect();
+
+            QMetaObject::invokeMethod(this, [this, files]() {
+                m_remoteModel->setFileList(files);
+                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
+            }, Qt::QueuedConnection);
         }
-
-        auto files = ftp->listDirectoryParsed(path.toStdString());
-        ftp->disconnect();
-
-        QMetaObject::invokeMethod(this, [this, files]() {
-            m_remoteModel->setFileList(files);
-            appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
-        }, Qt::QueuedConnection);
     });
 }
 
@@ -529,34 +580,45 @@ void FtpDeployWidget::onDeleteRemote()
     const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
     const std::string remotePath = m_currentRemotePath.toStdString();
     const std::string targetName = name.toStdString();
+    const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    // 通过 FtpAdapter 删除（异步）
-    QtConcurrent::run([this, targetName, port, deviceIp, user, pass, remotePath]() {
-        auto adapter = ProtocolRegistry::instance()->create("ftp");
-        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+    // 通过适配器删除（异步）
+    QtConcurrent::run([this, targetName, port, deviceIp, user, pass, remotePath, proto]() {
+        auto adapter = ProtocolRegistry::instance()->create(
+            proto == "SFTP" ? "ssh" : "ftp");
+
         DeviceInfo dev;
         dev.ip = deviceIp;
         dev.port = port;
         AuthInfo auth;
         auth.user = user;
         auth.password = pass;
-        if (ftp->connect(dev, auth)) {
-            std::string fullPath = remotePath;
-            if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-            fullPath += targetName;
-            bool ok = ftp->deleteFile(fullPath);
-            ftp->disconnect();
-            QString displayName = QString::fromStdString(targetName);
-            QMetaObject::invokeMethod(this, [this, displayName, ok]() {
-                appendLog(ok ? QString("已删除: %1").arg(displayName) : "删除失败: " + displayName);
-                onRefreshRemote();
-            }, Qt::QueuedConnection);
-        } else {
-            QString err = QString::fromStdString(ftp->lastError());
+
+        std::string fullPath = remotePath;
+        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
+        fullPath += targetName;
+        bool ok = false;
+
+        if (!adapter->connect(dev, auth)) {
+            QString err = QString::fromStdString(adapter->lastError());
             QMetaObject::invokeMethod(this, [this, err]() {
                 appendLog("删除失败 — 连接错误: " + err);
             }, Qt::QueuedConnection);
+            return;
         }
+
+        if (proto == "SFTP") {
+            ok = dynamic_cast<SshAdapter*>(adapter.get())->sftpDeleteFile(fullPath);
+        } else {
+            ok = dynamic_cast<FtpAdapter*>(adapter.get())->deleteFile(fullPath);
+        }
+        adapter->disconnect();
+
+        QString displayName = QString::fromStdString(targetName);
+        QMetaObject::invokeMethod(this, [this, displayName, ok]() {
+            appendLog(ok ? QString("已删除: %1").arg(displayName) : "删除失败: " + displayName);
+            onRefreshRemote();
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -577,32 +639,43 @@ void FtpDeployWidget::onDownloadRemote()
     const std::string remotePath = m_currentRemotePath.toStdString();
     const std::string targetName = name.toStdString();
     const std::string localSavePath = savePath.toStdString();
+    const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    QtConcurrent::run([this, targetName, localSavePath, port, deviceIp, user, pass, remotePath]() {
-        auto adapter = ProtocolRegistry::instance()->create("ftp");
-        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+    QtConcurrent::run([this, targetName, localSavePath, port, deviceIp, user, pass, remotePath, proto]() {
+        auto adapter = ProtocolRegistry::instance()->create(
+            proto == "SFTP" ? "ssh" : "ftp");
+
         DeviceInfo dev;
         dev.ip = deviceIp;
         dev.port = port;
         AuthInfo auth;
         auth.user = user;
         auth.password = pass;
-        if (ftp->connect(dev, auth)) {
-            std::string fullPath = remotePath;
-            if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-            fullPath += targetName;
-            bool ok = ftp->downloadFile(fullPath, localSavePath);
-            ftp->disconnect();
-            QString displayName = QString::fromStdString(targetName);
-            QMetaObject::invokeMethod(this, [this, displayName, ok]() {
-                appendLog(ok ? QString("已下载: %1").arg(displayName) : "下载失败: " + displayName);
-            }, Qt::QueuedConnection);
-        } else {
-            QString err = QString::fromStdString(ftp->lastError());
+
+        if (!adapter->connect(dev, auth)) {
+            QString err = QString::fromStdString(adapter->lastError());
             QMetaObject::invokeMethod(this, [this, err]() {
                 appendLog("下载失败 — 连接错误: " + err);
             }, Qt::QueuedConnection);
+            return;
         }
+
+        std::string fullPath = remotePath;
+        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
+        fullPath += targetName;
+        bool ok = false;
+
+        if (proto == "SFTP") {
+            ok = dynamic_cast<SshAdapter*>(adapter.get())->sftpDownloadFile(fullPath, localSavePath);
+        } else {
+            ok = dynamic_cast<FtpAdapter*>(adapter.get())->downloadFile(fullPath, localSavePath);
+        }
+        adapter->disconnect();
+
+        QString displayName = QString::fromStdString(targetName);
+        QMetaObject::invokeMethod(this, [this, displayName, ok]() {
+            appendLog(ok ? QString("已下载: %1").arg(displayName) : "下载失败: " + displayName);
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -617,9 +690,57 @@ void FtpDeployWidget::onRenameRemote()
         QString("将 \"%1\" 重命名为:").arg(oldName), QLineEdit::Normal, oldName, &ok);
     if (!ok || newName.isEmpty() || newName == oldName) return;
 
-    appendLog(QString("重命名: %1 → %2 (FTP 重命名命令将在后续版本支持)").arg(oldName, newName));
-    QMessageBox::information(this, "重命名",
-        QString("FTP 重命名功能将在后续版本中支持。\n\n请求的操作: %1 → %2").arg(oldName, newName));
+    // 异步执行重命名
+    const QString proto = m_protocolCombo->currentText();
+    const QString old = oldName, nu = newName;
+    const QString deviceIp = m_deviceCombo->currentText();
+    const int port = m_portSpin->value();
+    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
+    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+    const std::string remotePath = m_currentRemotePath.toStdString();
+
+    QtConcurrent::run([this, proto, old, nu, deviceIp, port, user, pass, remotePath]() {
+        auto adapter = ProtocolRegistry::instance()->create(
+            proto == "SFTP" ? "ssh" : "ftp");
+
+        DeviceInfo dev;
+        dev.ip = deviceIp.toStdString();
+        dev.port = port;
+        AuthInfo auth;
+        auth.user = user;
+        auth.password = pass;
+
+        if (!adapter->connect(dev, auth)) {
+            QString err = QString::fromStdString(adapter->lastError());
+            QMetaObject::invokeMethod(this, [this, err]() {
+                appendLog("重命名失败 — 连接错误: " + err);
+            }, Qt::QueuedConnection);
+            return;
+        }
+
+        std::string oldFull = remotePath;
+        if (!oldFull.empty() && oldFull.back() != '/') oldFull += '/';
+        oldFull += old.toStdString();
+
+        bool renameOk = false;
+        if (proto == "SFTP") {
+            // sftpRename 需要完整新路径
+            std::string newFull = remotePath;
+            if (!newFull.empty() && newFull.back() != '/') newFull += '/';
+            newFull += nu.toStdString();
+            renameOk = dynamic_cast<SshAdapter*>(adapter.get())->sftpRename(oldFull, newFull);
+        } else {
+            // FtpAdapter::renameFile 只需新文件名（不含路径前缀），内部处理路径拼接
+            renameOk = dynamic_cast<FtpAdapter*>(adapter.get())->renameFile(oldFull, nu.toStdString());
+        }
+        adapter->disconnect();
+
+        QMetaObject::invokeMethod(this, [this, old, nu, renameOk]() {
+            appendLog(renameOk ? QString("已重命名: %1 → %2").arg(old, nu)
+                               : QString("重命名失败: %1").arg(old));
+            if (renameOk) onRefreshRemote();
+        }, Qt::QueuedConnection);
+    });
 }
 
 void FtpDeployWidget::onNewRemoteDir()
@@ -629,9 +750,52 @@ void FtpDeployWidget::onNewRemoteDir()
         "目录名:", QLineEdit::Normal, "", &ok);
     if (!ok || dirName.isEmpty()) return;
 
-    appendLog(QString("新建远程目录: %1 (FTP MKD 命令将在后续版本支持)").arg(dirName));
-    QMessageBox::information(this, "新建目录",
-        QString("FTP 新建目录功能将在后续版本中支持。\n\n请求的操作: 创建目录 %1").arg(dirName));
+    // 异步执行新建目录
+    const QString proto = m_protocolCombo->currentText();
+    const QString dir = dirName;
+    const QString deviceIp = m_deviceCombo->currentText();
+    const int port = m_portSpin->value();
+    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
+    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
+    const std::string remotePath = m_currentRemotePath.toStdString();
+
+    QtConcurrent::run([this, proto, dir, deviceIp, port, user, pass, remotePath]() {
+        auto adapter = ProtocolRegistry::instance()->create(
+            proto == "SFTP" ? "ssh" : "ftp");
+
+        DeviceInfo dev;
+        dev.ip = deviceIp.toStdString();
+        dev.port = port;
+        AuthInfo auth;
+        auth.user = user;
+        auth.password = pass;
+
+        if (!adapter->connect(dev, auth)) {
+            QString err = QString::fromStdString(adapter->lastError());
+            QMetaObject::invokeMethod(this, [this, err]() {
+                appendLog("新建目录失败 — 连接错误: " + err);
+            }, Qt::QueuedConnection);
+            return;
+        }
+
+        std::string fullPath = remotePath;
+        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
+        fullPath += dir.toStdString();
+
+        bool mkdirOk = false;
+        if (proto == "SFTP") {
+            mkdirOk = dynamic_cast<SshAdapter*>(adapter.get())->sftpMakeDirectory(fullPath);
+        } else {
+            mkdirOk = dynamic_cast<FtpAdapter*>(adapter.get())->makeDirectory(fullPath);
+        }
+        adapter->disconnect();
+
+        QMetaObject::invokeMethod(this, [this, dir, mkdirOk]() {
+            appendLog(mkdirOk ? QString("已创建目录: %1").arg(dir)
+                              : QString("创建目录失败: %1").arg(dir));
+            if (mkdirOk) onRefreshRemote();
+        }, Qt::QueuedConnection);
+    });
 }
 
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
@@ -681,6 +845,11 @@ void FtpDeployWidget::appendLog(const QString& msg)
     }
 }
 
+std::string FtpDeployWidget::currentProtocol() const
+{
+    return m_protocolCombo->currentText() == "SFTP" ? "ssh" : "ftp";
+}
+
 // ────────────────────────────── 拖拽支持 ──────────────────────────────
 
 void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
@@ -693,7 +862,8 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
     }
     if (files.empty()) return;
 
-    appendLog(QString("📤 拖拽上传 %1 个文件到远程目录...").arg(files.size()));
+    QString protoLabel = m_protocolCombo->currentText() == "SFTP" ? "SFTP" : "FTP";
+    appendLog(QString("📤 [%1] 拖拽上传 %2 个文件到远程目录...").arg(protoLabel).arg(files.size()));
 
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
         appendLog("错误：设备总线中没有目标设备");
