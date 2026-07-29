@@ -139,15 +139,26 @@ void FtpDeployWidget::setupLocalPanel()
     auto* localContainer = new QWidget(this);
     auto* localLayout = new QVBoxLayout(localContainer);
     localLayout->setContentsMargins(0, 0, 0, 0);
-    localLayout->setSpacing(4);
+    localLayout->setSpacing(3);
 
+    // 标题行
     auto* header = new QHBoxLayout();
-    auto* iconLabel = new QLabel("📁 本地文件", this);
-    iconLabel->setStyleSheet("font-weight: bold; color: #C8CCD4;");
-    header->addWidget(iconLabel);
+    auto* title = new QLabel("📁 本地文件", this);
+    title->setStyleSheet("font-weight: bold; color: #C8CCD4; font-size: 12px;");
+    header->addWidget(title);
+    header->addStretch();
+    localLayout->addLayout(header);
+
+    // 路径导航行：路径栏 + 浏览按钮
+    auto* pathRow = new QHBoxLayout();
+    pathRow->setSpacing(4);
 
     m_localPathEdit = new QLineEdit(this);
     m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
+    m_localPathEdit->setStyleSheet(
+        "QLineEdit { background: #0E1219; border: 1px solid #333B48;"
+        "  border-radius: 3px; color: #C8CCD4; padding: 3px 8px; font-size: 11px; }"
+        "QLineEdit:focus { border-color: #F0A030; }");
     connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
         QString path = m_localPathEdit->text().trimmed();
         QDir dir(path);
@@ -156,24 +167,16 @@ void FtpDeployWidget::setupLocalPanel()
             m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
         }
     });
-    header->addWidget(m_localPathEdit, 1);
+    pathRow->addWidget(m_localPathEdit, 1);
 
-    auto* upBtn = new QPushButton("↑ 上级", this);
-    upBtn->setToolTip("返回上级目录");
-    upBtn->setFixedWidth(60);
-    connect(upBtn, &QPushButton::clicked, [this]() {
-        QModelIndex rootIdx = m_localTree->rootIndex();
-        QDir dir(m_localFsModel->filePath(rootIdx));
-        if (dir.cdUp()) {
-            m_localFsModel->setRootPath(dir.absolutePath());
-            m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
-            m_localPathEdit->setText(dir.absolutePath());
-        }
-    });
-    header->addWidget(upBtn);
-
-    auto* openDirBtn = new QPushButton("打开目录", this);
-    connect(openDirBtn, &QPushButton::clicked, [this]() {
+    auto* browseBtn = new QPushButton("📂", this);
+    browseBtn->setToolTip("浏览目录...");
+    browseBtn->setFixedSize(28, 26);
+    browseBtn->setStyleSheet(
+        "QPushButton { background: #232A36; border: 1px solid #333B48;"
+        "  border-radius: 3px; color: #C8CCD4; font-size: 14px; }"
+        "QPushButton:hover { border-color: #7B8494; }");
+    connect(browseBtn, &QPushButton::clicked, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
         if (!dir.isEmpty()) {
             m_localFsModel->setRootPath(dir);
@@ -181,13 +184,13 @@ void FtpDeployWidget::setupLocalPanel()
             m_localPathEdit->setText(dir);
         }
     });
-    header->addWidget(openDirBtn);
-    localLayout->addLayout(header);
+    pathRow->addWidget(browseBtn);
+    localLayout->addLayout(pathRow);
 
-    // QFileSystemModel
+    // QFileSystemModel（树结构自带目录层级，无需 . 和 ..）
     m_localFsModel = new QFileSystemModel(this);
     m_localFsModel->setRootPath(QDir::currentPath());
-    m_localFsModel->setFilter(QDir::AllEntries | QDir::Hidden);
+    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
 
     m_localTree = new QTreeView(this);
     m_localTree->setModel(m_localFsModel);
@@ -196,11 +199,14 @@ void FtpDeployWidget::setupLocalPanel()
     m_localTree->setDragEnabled(true);
     m_localTree->setAcceptDrops(true);
     m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
-    m_localTree->setColumnHidden(1, true);
-    m_localTree->viewport()->installEventFilter(this); // 拦截拖拽事件到本地面板
-    m_localTree->setColumnHidden(2, true); // 隐藏 type 列
-    m_localTree->setColumnHidden(3, true); // 隐藏 date 列
+    m_localTree->setAlternatingRowColors(true);
+    m_localTree->setAnimated(true);
+    m_localTree->setColumnHidden(1, true); // 隐藏 size
+    m_localTree->setColumnHidden(2, true); // 隐藏 type
+    m_localTree->setColumnHidden(3, true); // 隐藏 date
     m_localTree->header()->setStretchLastSection(true);
+    m_localTree->header()->setVisible(false); // 隐藏表头（树结构不需要）
+    m_localTree->viewport()->installEventFilter(this);
 
     // 监听目录切换，更新路径栏
     connect(m_localTree->selectionModel(), &QItemSelectionModel::currentChanged,
