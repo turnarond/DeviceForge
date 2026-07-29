@@ -40,7 +40,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.4.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.5.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
 
 ### 测试（CTest）
 
@@ -94,7 +94,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.4.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.5.0
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化。
 

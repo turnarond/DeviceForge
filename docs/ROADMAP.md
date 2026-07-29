@@ -29,7 +29,7 @@
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
 | **OPC UA 安全策略扩展** | 高 | 支持 Basic256/Basic256Sha256 + 证书认证 |
-| **SCP 支持** | 中 | 🗑 已取消（远端预览面板已移除，SCP 将通过 FtpAdapter 扩展支持） |
+| **SCP 支持** | 中 | ✅ 已完成（v2.5 SshAdapter SFTP 扩展，双栏 FTP/SFTP 切换） |
 | **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
 | **SettingsDialog 完整编辑** | 低 | 当前编辑为只读 JSON 弹窗；完整编辑写回留待后续 |
 
@@ -66,6 +66,7 @@
 | v2.2.0 | 2026-07-18 | 在线更新 OTA + 远端预览重构 + CMake 标准构建 + 7 模块全绿 |
 | v2.3.0 | 2026-07-24 | ConfigStore 本地持久化 (SQLite + DPAPI) + OPC UA 订阅卡死修复 + CI Debug SEGFAULT 修复 |
 | v2.4 | 2026-07-25 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）|
+| v2.5 | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 协议支持（双栏 FTP/SFTP 切换）|
 
 ---
 
