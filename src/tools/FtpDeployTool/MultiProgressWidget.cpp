@@ -93,8 +93,36 @@ void MultiProgressWidget::setDeviceCount(int count)
     rebuildUi();
     setVisible(count > 0);
     m_overallBar->setFormat(count > 0
-        ? QString("部署中 0/%1 设备").arg(count)
+        ? QString("准备部署 %1 台设备...").arg(count)
         : QStringLiteral("总进度 %p%"));
+}
+
+void MultiProgressWidget::setDeviceInfo(int deviceIndex, const QString& info)
+{
+    if (deviceIndex >= 0 && deviceIndex < static_cast<int>(m_rows.size())) {
+        m_rows[deviceIndex].statusLabel->setText("⏳ " + info);
+        m_rows[deviceIndex].deviceKey = info;
+    }
+}
+
+void MultiProgressWidget::setDeviceStatusByKey(const QString& key, bool ok)
+{
+    for (auto& row : m_rows) {
+        if (row.deviceKey == key) {
+            row.statusLabel->setText((ok ? "✓ " : "✗ ") + key);
+            row.statusLabel->setStyleSheet(ok
+                ? "QLabel { background: #14261E; border: 1px solid #40C8A0;"
+                  "  border-radius: 3px; color: #40C8A0; font-size: 11px; padding: 2px 8px; }"
+                : "QLabel { background: #261418; border: 1px solid #E85848;"
+                  "  border-radius: 3px; color: #E85848; font-size: 11px; padding: 2px 8px; }");
+            return;
+        }
+    }
+}
+
+void MultiProgressWidget::setFinishedSummary(int done, int total)
+{
+    m_overallBar->setFormat(QString("部署完成 %1/%2 设备").arg(done).arg(total));
 }
 
 void MultiProgressWidget::setDeviceProgress(int deviceIndex, int pct)

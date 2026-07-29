@@ -24,9 +24,12 @@ public:
     explicit MultiProgressWidget(QWidget* parent = nullptr);
 
     void setDeviceCount(int count);
+    void setDeviceInfo(int deviceIndex, const QString& info);
     void setDeviceProgress(int deviceIndex, int pct);
     void setDeviceStatus(int deviceIndex, const QString& status, bool ok);
+    void setDeviceStatusByKey(const QString& key, bool ok);
     void setOverallProgress(int pct);
+    void setFinishedSummary(int done, int total);
     void reset();
 
 signals:
@@ -43,6 +46,7 @@ private:
 
     struct DeviceRow {
         QLabel* statusLabel = nullptr;
+        QString deviceKey;
     };
     std::vector<DeviceRow> m_rows;
 };

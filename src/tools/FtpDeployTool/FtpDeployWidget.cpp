@@ -320,7 +320,17 @@ void FtpDeployWidget::connectBackendSignals()
                const std::vector<std::string>& failures) {
             QMetaObject::invokeMethod(this, [this, ok, successes, failures]() {
                 m_deployBtn->setEnabled(true);
+                // 更新每个设备的状态
+                for (const auto& key : successes)
+                    m_multiProgress->setDeviceStatusByKey(
+                        QString::fromStdString(key), true);
+                for (const auto& key : failures)
+                    m_multiProgress->setDeviceStatusByKey(
+                        QString::fromStdString(key), false);
+                int total = static_cast<int>(successes.size() + failures.size());
+                int done = static_cast<int>(successes.size());
                 m_multiProgress->setOverallProgress(ok ? 100 : 0);
+                m_multiProgress->setFinishedSummary(done, total);
                 if (ok && !successes.empty()) {
                     appendLog(QString("✅ 部署完成 — 成功: %1, 失败: %2")
                         .arg(successes.size()).arg(failures.size()));
@@ -353,9 +363,12 @@ void FtpDeployWidget::onDeployClicked()
 
     m_deployBtn->setEnabled(false);
     m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
+    // 设置设备标签为 IP:port
     for (size_t i = 0; i < devices.size(); ++i) {
-        m_multiProgress->setDeviceStatus(static_cast<int>(i),
-            QString::fromStdString(devices[i].ip), false);
+        QString devKey = QString::fromStdString(devices[i].ip);
+        if (devices[i].port > 0 && devices[i].port != 21)
+            devKey += ":" + QString::number(devices[i].port);
+        m_multiProgress->setDeviceInfo(static_cast<int>(i), devKey);
     }
 
     appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
