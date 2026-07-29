@@ -6,8 +6,8 @@
  * Date: 2026-07-25
  * Author: turnarond
  *
- * Description: 多设备并行部署进度组件 — 显示每台设备的独立进度条 + 状态，
- *              以及全局总进度条 + 取消按钮。
+ * Description: 多设备并行部署进度组件 — 顶部总进度条 + 紧凑设备状态标签行
+ *              （每个设备一个胶囊标签，水平排列，超出后滚动）
  */
 
 #pragma once
@@ -42,8 +42,6 @@ private:
     QWidget* m_deviceContainer = nullptr;
 
     struct DeviceRow {
-        QLabel* ipLabel = nullptr;
-        QProgressBar* bar = nullptr;
         QLabel* statusLabel = nullptr;
     };
     std::vector<DeviceRow> m_rows;
