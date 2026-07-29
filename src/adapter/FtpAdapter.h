@@ -37,6 +37,10 @@ public:
     std::vector<FtpFileInfo> listDirectoryParsed(const std::string& remotePath);
     bool deleteFile(const std::string& remotePath);
     bool deleteDirectory(const std::string& remotePath);
+    // 重命名远程文件/目录（FTP RNFR + RNTO 命令）
+    bool renameFile(const std::string& remotePath, const std::string& newName);
+    // 新建远程目录（FTP MKD 命令）
+    bool makeDirectory(const std::string& remotePath);
     bool clearRemoteDirectory(const std::string& remotePath);
     void setProgressCallback(std::function<void(int)> cb);
     void setUseFtps(bool useFtps);

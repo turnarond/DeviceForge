@@ -1,7 +1,13 @@
 #include "SshAdapter.h"
 #include <lwlog/lwlog.h>
+
+// MSVC 未定义 POSIX S_ISDIR 宏，libssh2 权限字段使用 POSIX 值
+#ifndef S_ISDIR
+#define S_ISDIR(m)  (((m) & 0170000) == 0040000)
+#endif
 #include <QHostAddress>
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <thread>
 
 // TOFU 已接受主机指纹集合 — 进程级静态存储，跨适配器实例共享
@@ -78,12 +84,22 @@ bool SshAdapter::connect(const DeviceInfo& device, const AuthInfo& auth)
     // C1: 连接成功。disconnect() 曾将 m_cancelled 置 true，此处复位，
     //     否则 request() 的 while(!m_cancelled) 读循环会立即退出导致 0 字节输出
     m_cancelled = false;
+
+    // SFTP 子系统可选初始化 — 服务器可能未启用，不影响 exec channel 使用
+    if (!sftpInit()) {
+        // 仅记录日志，不阻断连接
+    }
     return true;
 }
 
 void SshAdapter::disconnect()
 {
     m_cancelled = true;
+
+    if (m_sftpSession) {
+        libssh2_sftp_shutdown(m_sftpSession);
+        m_sftpSession = nullptr;
+    }
 
     if (m_subscribeActive) {
         unsubscribe();
@@ -254,6 +270,188 @@ bool SshAdapter::verifyHostKey()
     s_knownHosts.insert(qfp);
     LWLOG_I("SSH TOFU: accepted host key " + fp);
     return true;
+}
+
+// ============================================================
+// SFTP 文件操作
+// ============================================================
+
+bool SshAdapter::sftpInit()
+{
+    if (!m_session) return false;
+    m_sftpSession = libssh2_sftp_init(m_session);
+    if (!m_sftpSession) {
+        m_lastError = "SFTP 初始化失败";
+        return false;
+    }
+    return true;
+}
+
+std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remotePath)
+{
+    std::vector<FtpFileInfo> result;
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return result; }
+
+    LIBSSH2_SFTP_HANDLE* dir = libssh2_sftp_opendir(m_sftpSession, remotePath.c_str());
+    if (!dir) {
+        m_lastError = "SFTP 打开目录失败: " + remotePath;
+        return result;
+    }
+
+    char filename[512];
+    LIBSSH2_SFTP_ATTRIBUTES attrs;
+    while (libssh2_sftp_readdir(dir, filename, sizeof(filename), &attrs) > 0) {
+        std::string name(filename);
+        if (name == "." || name == "..") continue;
+
+        FtpFileInfo fi;
+        fi.name = name;
+        fi.isDir = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS)
+            ? S_ISDIR(attrs.permissions) : false;
+        fi.size = (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) ? attrs.filesize : 0;
+        fi.dateTime = (attrs.flags & LIBSSH2_SFTP_ATTR_ACMODTIME)
+            ? QDateTime::fromSecsSinceEpoch(attrs.mtime).toString("yyyy-MM-dd HH:mm:ss").toStdString()
+            : "";
+
+        // 权限：八进制 → rwx 字符串
+        if (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) {
+            unsigned int p = attrs.permissions & 0777;
+            fi.permissions = std::string()
+                + ((p & 0400) ? "r" : "-") + ((p & 0200) ? "w" : "-") + ((p & 0100) ? "x" : "-")
+                + ((p & 0040) ? "r" : "-") + ((p & 0020) ? "w" : "-") + ((p & 0010) ? "x" : "-")
+                + ((p & 0004) ? "r" : "-") + ((p & 0002) ? "w" : "-") + ((p & 0001) ? "x" : "-");
+        }
+
+        result.push_back(fi);
+    }
+    libssh2_sftp_closedir(dir);
+    return result;
+}
+
+bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string& remotePath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+
+    // 打开本地文件读取
+    FILE* localFile = fopen(localPath.c_str(), "rb");
+    if (!localFile) { m_lastError = "无法打开本地文件: " + localPath; return false; }
+    fseek(localFile, 0, SEEK_END);
+    uint64_t fileSize = ftell(localFile);
+    fseek(localFile, 0, SEEK_SET);
+
+    // 创建远程文件
+    LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
+        LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT | LIBSSH2_FXF_TRUNC,
+        LIBSSH2_SFTP_S_IRUSR | LIBSSH2_SFTP_S_IWUSR |
+        LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IROTH);
+    if (!remoteFile) { fclose(localFile); m_lastError = "SFTP 创建文件失败"; return false; }
+
+    // 分块上传（8KB 缓冲区）
+    char buf[8192];
+    uint64_t sent = 0;
+    bool ok = true;
+    while (sent < fileSize) {
+        size_t n = fread(buf, 1, sizeof(buf), localFile);
+        if (n == 0) break;
+        ssize_t rc = libssh2_sftp_write(remoteFile, buf, n);
+        if (rc < 0) { ok = false; break; }
+        sent += rc;
+        if (m_sftpProgressCb && fileSize > 0) {
+            int pct = static_cast<int>((sent * 100) / fileSize);
+            m_sftpProgressCb(pct);
+        }
+    }
+
+    fclose(localFile);
+    libssh2_sftp_close(remoteFile);
+    if (!ok) m_lastError = "SFTP 上传写入失败";
+    return ok;
+}
+
+bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::string& localPath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+
+    LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
+        LIBSSH2_FXF_READ, 0);
+    if (!remoteFile) { m_lastError = "SFTP 打开文件失败"; return false; }
+
+    // 获取文件大小
+    LIBSSH2_SFTP_ATTRIBUTES attrs;
+    libssh2_sftp_fstat(remoteFile, &attrs);
+    uint64_t fileSize = attrs.filesize;
+
+    FILE* localFile = fopen(localPath.c_str(), "wb");
+    if (!localFile) { libssh2_sftp_close(remoteFile); m_lastError = "无法创建本地文件"; return false; }
+
+    char buf[8192];
+    uint64_t received = 0;
+    bool ok = true;
+    while (true) {
+        ssize_t n = libssh2_sftp_read(remoteFile, buf, sizeof(buf));
+        if (n < 0) { ok = false; break; }
+        if (n == 0) break;
+        fwrite(buf, 1, n, localFile);
+        received += n;
+        if (m_sftpProgressCb && fileSize > 0) {
+            int pct = static_cast<int>((received * 100) / fileSize);
+            m_sftpProgressCb(pct);
+        }
+    }
+
+    fclose(localFile);
+    libssh2_sftp_close(remoteFile);
+    if (!ok) m_lastError = "SFTP 下载读取失败";
+    return ok;
+}
+
+bool SshAdapter::sftpDeleteFile(const std::string& remotePath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    int rc = libssh2_sftp_unlink(m_sftpSession, remotePath.c_str());
+    if (rc != 0) { m_lastError = "SFTP 删除文件失败"; return false; }
+    return true;
+}
+
+bool SshAdapter::sftpDeleteDirectory(const std::string& remotePath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+
+    // 先尝试直接删除（空目录），失败则递归删除
+    if (libssh2_sftp_rmdir(m_sftpSession, remotePath.c_str()) == 0) return true;
+
+    // 目录非空：列出内容，递归删除
+    auto entries = sftpListDirectory(remotePath);
+    for (const auto& e : entries) {
+        std::string fullPath = remotePath + "/" + e.name;
+        if (e.isDir) sftpDeleteDirectory(fullPath);
+        else sftpDeleteFile(fullPath);
+    }
+    int rc = libssh2_sftp_rmdir(m_sftpSession, remotePath.c_str());
+    if (rc != 0) { m_lastError = "SFTP 删除目录失败"; return false; }
+    return true;
+}
+
+bool SshAdapter::sftpRename(const std::string& oldPath, const std::string& newPath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    int rc = libssh2_sftp_rename(m_sftpSession, oldPath.c_str(), newPath.c_str());
+    if (rc != 0) { m_lastError = "SFTP 重命名失败"; return false; }
+    return true;
+}
+
+bool SshAdapter::sftpMakeDirectory(const std::string& remotePath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    int rc = libssh2_sftp_mkdir(m_sftpSession, remotePath.c_str(),
+        LIBSSH2_SFTP_S_IRWXU | LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IXGRP | LIBSSH2_SFTP_S_IROTH | LIBSSH2_SFTP_S_IXOTH);
+    if (rc != 0) { m_lastError = "SFTP 新建目录失败"; return false; }
+    return true;
+}
+
+void SshAdapter::sftpSetProgressCallback(std::function<void(int)> cb)
+{
+    m_sftpProgressCb = std::move(cb);
 }
 
 // ============================================================

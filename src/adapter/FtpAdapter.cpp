@@ -574,6 +574,71 @@ bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
     return false;
 }
 
+bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& newName)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    // 使用父目录 URL（RNFR/RNTO 操作基于连接当前目录或绝对路径）
+    std::string url = m_impl->buildUrl(remotePath);
+    m_impl->setupCommonOpts(curl, url);
+
+    // 确保路径以 / 开头（FTP 命令要求绝对路径）
+    std::string path = remotePath;
+    if (!path.empty() && path[0] != '/') path = "/" + path;
+    std::string newPath = newName;
+    if (!newPath.empty() && newPath[0] != '/') newPath = "/" + newPath;
+
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands, ("RNFR " + path).c_str());
+    commands = curl_slist_append(commands, ("RNTO " + newPath).c_str());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK) {
+        m_impl->m_lastError.clear();
+        return true;
+    }
+    m_impl->m_lastError = std::string("重命名失败: ") + curl_easy_strerror(res);
+    return false;
+}
+
+bool FtpAdapter::makeDirectory(const std::string& remotePath)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    std::string url = m_impl->buildUrl(remotePath);
+    m_impl->setupCommonOpts(curl, url);
+
+    std::string path = remotePath;
+    if (!path.empty() && path[0] != '/') path = "/" + path;
+
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands, ("MKD " + path).c_str());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK) {
+        m_impl->m_lastError.clear();
+        return true;
+    }
+    m_impl->m_lastError = std::string("新建目录失败: ") + curl_easy_strerror(res);
+    return false;
+}
+
 bool FtpAdapter::clearRemoteDirectory(const std::string& remotePath) {
     // 安全校验：不允许清空根目录
     std::string cleanPath = remotePath;

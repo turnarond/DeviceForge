@@ -174,6 +174,22 @@ void FtpDeployWidget::setupLocalPanel()
         }
     });
 
+    // 选中变更时触发远程面板精确对比着色
+    connect(m_localTree->selectionModel(), &QItemSelectionModel::selectionChanged,
+        this, [this]() {
+            std::vector<LocalFileInfo> locals;
+            QModelIndexList sel = m_localTree->selectionModel()->selectedRows();
+            for (const auto& idx : sel) {
+                QFileInfo fi = m_localFsModel->fileInfo(idx);
+                LocalFileInfo lfi;
+                lfi.name = fi.fileName().toStdString();
+                lfi.size = fi.size();
+                lfi.dateTime = fi.lastModified().toString(Qt::ISODate).toStdString();
+                locals.push_back(lfi);
+            }
+            m_remoteModel->setLocalFilesForCompare(locals);
+        });
+
     localLayout->addWidget(m_localTree, 1);
 
     m_localPanel = localContainer;

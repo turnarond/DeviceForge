@@ -15,6 +15,7 @@
 #include <QAbstractTableModel>
 #include <vector>
 #include <set>
+#include <map>
 #include "FtpFileInfo.h"
 
 class RemoteFileModel : public QAbstractTableModel {
@@ -30,8 +31,8 @@ public:
     const FtpFileInfo& fileAt(int row) const { return m_files.at(row); }
     int fileCount() const { return static_cast<int>(m_files.size()); }
 
-    // 设置本地文件名列表用于对比着色
-    void setLocalFilesForCompare(const std::vector<std::string>& localFileNames);
+    // 设置本地文件信息列表用于精确对比（name + size）
+    void setLocalFilesForCompare(const std::vector<LocalFileInfo>& localFiles);
 
     // QAbstractTableModel
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -43,7 +44,7 @@ private:
     static QString formatSize(uint64_t bytes);
 
     std::vector<FtpFileInfo> m_files;
-    std::set<std::string> m_localFileNames;
+    std::map<std::string, LocalFileInfo> m_localFiles; // name → info
     std::set<std::string> m_syncedNames;
     std::set<std::string> m_diffNames;
 };

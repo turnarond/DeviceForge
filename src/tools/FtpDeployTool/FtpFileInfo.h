@@ -20,3 +20,10 @@ struct FtpFileInfo {
     std::string permissions;  // Unix: "rw-r--r--", Windows: ""
     std::string dateTime;     // ISO 8601 "2026-07-20 14:30:00"
 };
+
+// 本地文件信息 — 用于与远程文件进行精确对比（size + 时间戳）
+struct LocalFileInfo {
+    std::string name;
+    uint64_t    size = 0;
+    std::string dateTime;  // ISO 8601
+};
