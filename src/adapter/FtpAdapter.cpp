@@ -114,8 +114,6 @@ struct FtpAdapter::Impl {
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
         // 使用单一 CWD 而非多次 CWD（兼容更多 FTP 服务器）
         curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD);
-        // SylixOS 等嵌入式 FTP 服务器不支持 EPSV，直接使用 PASV
-        curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
         if (m_useFtps) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -276,44 +274,53 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        fclose(file);
-        m_impl->m_lastError = "curl_easy_init() 失败";
-        return false;
-    }
-
     std::string url = m_impl->buildUrl(remotePath);
     std::string userPwd = m_impl->userPwd();
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
-    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-    curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
-    curl_easy_setopt(curl, CURLOPT_READDATA, file);
-    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
-    curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L); // SylixOS 不支持 EPSV
-    if (m_impl->m_useFtps) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
+    // 尝试上传：先 EPSV（标准），失败则 PASV 重试（兼容 SylixOS 等嵌入式服务器）
+    CURLcode res = CURLE_SEND_ERROR;
+    for (int attempt = 0; attempt < 2 && res != CURLE_OK; ++attempt) {
+        fseek(file, 0, SEEK_SET); // 重试时重置文件指针
 
-    // 进度回调
-    if (m_impl->m_progressCb) {
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
-    }
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            fclose(file);
+            m_impl->m_lastError = "curl_easy_init() 失败";
+            return false;
+        }
 
-    CURLcode res = curl_easy_perform(curl);
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+        curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+        curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
+        curl_easy_setopt(curl, CURLOPT_READDATA, file);
+        curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
+        curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+        curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+        if (attempt == 1) {
+            // 第二次尝试：禁用 EPSV，强制 PASV（SylixOS 等不支持 EPSV）
+            curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
+        }
+        if (m_impl->m_useFtps) {
+            curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        }
+
+        // 进度回调
+        if (m_impl->m_progressCb) {
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
+        }
+
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
     fclose(file);
-    curl_easy_cleanup(curl);
 
     if (res == CURLE_OK) {
         m_impl->m_lastError.clear();
