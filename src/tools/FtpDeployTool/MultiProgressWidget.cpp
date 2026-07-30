@@ -24,13 +24,12 @@ MultiProgressWidget::MultiProgressWidget(QWidget* parent)
     m_overallBar->setRange(0, 100);
     m_overallBar->setValue(0);
     m_overallBar->setTextVisible(true);
-    m_overallBar->setMaximumHeight(20);
+    m_overallBar->setMaximumHeight(24);
     mainLayout->addWidget(m_overallBar, 1);
 
     // 取消按钮
     m_cancelBtn = new QPushButton("取消", this);
-    m_cancelBtn->setMaximumWidth(50);
-    m_cancelBtn->setMaximumHeight(20);
+    m_cancelBtn->setFixedSize(56, 24);
     connect(m_cancelBtn, &QPushButton::clicked, this, &MultiProgressWidget::cancelRequested);
     mainLayout->addWidget(m_cancelBtn);
 

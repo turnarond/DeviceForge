@@ -114,6 +114,8 @@ struct FtpAdapter::Impl {
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
         // 使用单一 CWD 而非多次 CWD（兼容更多 FTP 服务器）
         curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD);
+        // SylixOS 等嵌入式 FTP 服务器不支持 EPSV，直接使用 PASV
+        curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
         if (m_useFtps) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -295,6 +297,7 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L); // SylixOS 不支持 EPSV
     if (m_impl->m_useFtps) {
         curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
