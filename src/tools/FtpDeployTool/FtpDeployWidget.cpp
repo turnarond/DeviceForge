@@ -696,7 +696,8 @@ void FtpDeployWidget::onDownloadRemote()
     if (sel.isEmpty()) return;
     QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
 
-    QString savePath = QFileDialog::getSaveFileName(this, "保存到", name);
+    QString savePath = QFileDialog::getSaveFileName(this, "保存到",
+        QDir::home().filePath(name));
     if (savePath.isEmpty()) return;
 
     // 在传入后台线程前复制值，避免数据竞争

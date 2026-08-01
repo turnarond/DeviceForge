@@ -542,7 +542,7 @@ bool FtpAdapter::deleteFile(const std::string& remotePath) {
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL，避免 curl 尝试 RETR
     m_impl->setupCommonOpts(curl, url);
 
     // 使用 QUOTE 命令发送 DELE
@@ -576,7 +576,7 @@ bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
     m_impl->setupCommonOpts(curl, url);
 
     // 使用 QUOTE 命令发送 RMD
@@ -611,8 +611,8 @@ bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& ne
         return false;
     }
 
-    // 使用父目录 URL（RNFR/RNTO 操作基于连接当前目录或绝对路径）
-    std::string url = m_impl->buildUrl(remotePath);
+    // 使用根 URL（RNFR/RNTO 用绝对路径，不需要 CWD）
+    std::string url = m_impl->buildUrl("/");
     m_impl->setupCommonOpts(curl, url);
 
     // 确保路径以 / 开头（FTP 命令要求绝对路径）
@@ -655,7 +655,7 @@ bool FtpAdapter::makeDirectory(const std::string& remotePath)
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
     m_impl->setupCommonOpts(curl, url);
 
     std::string path = remotePath;
