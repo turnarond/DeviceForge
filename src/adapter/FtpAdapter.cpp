@@ -1,5 +1,6 @@
 #include "FtpAdapter.h"
 #include <curl/curl.h>
+#include <atomic>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
@@ -30,6 +31,8 @@ struct FtpAdapter::Impl {
     std::string m_lastError;
     bool        m_connected = false;
     std::function<void(int)> m_progressCb;
+    std::atomic<bool> m_cancelled{false};
+    std::atomic<bool>* m_extCancelFlag = nullptr; // 外部取消标志（如 Backend 的 m_cancelled）
 
     bool m_useFtps = false;
 
@@ -74,6 +77,8 @@ struct FtpAdapter::Impl {
     static int progressCallback(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/,
                                  curl_off_t ultotal, curl_off_t ulnow) {
         auto* self = static_cast<Impl*>(clientp);
+        if (self->m_cancelled.load()) return 1; // 返回非零中止传输
+        if (self->m_extCancelFlag && self->m_extCancelFlag->load()) return 1;
         if (self->m_progressCb && ultotal > 0) {
             int pct = static_cast<int>((ulnow / ultotal) * 100.0);
             self->m_progressCb(pct);
@@ -277,49 +282,40 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     std::string url = m_impl->buildUrl(remotePath);
     std::string userPwd = m_impl->userPwd();
 
-    // 尝试上传：先 EPSV（标准），失败则 PASV 重试（兼容 SylixOS 等嵌入式服务器）
-    CURLcode res = CURLE_SEND_ERROR;
-    for (int attempt = 0; attempt < 2 && res != CURLE_OK; ++attempt) {
-        fseek(file, 0, SEEK_SET); // 重试时重置文件指针
-
-        CURL* curl = curl_easy_init();
-        if (!curl) {
-            fclose(file);
-            m_impl->m_lastError = "curl_easy_init() 失败";
-            return false;
-        }
-
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
-        curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-        curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
-        curl_easy_setopt(curl, CURLOPT_READDATA, file);
-        curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
-        curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-        curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-        curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-        if (attempt == 1) {
-            // 第二次尝试：禁用 EPSV，强制 PASV（SylixOS 等不支持 EPSV）
-            curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
-        }
-        if (m_impl->m_useFtps) {
-            curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-        }
-
-        // 进度回调
-        if (m_impl->m_progressCb) {
-            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
-            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
-        }
-
-        res = curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        fclose(file);
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
     }
+
+    m_impl->m_cancelled = false; // 重置取消标志
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
+    curl_easy_setopt(curl, CURLOPT_READDATA, file);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
+    curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L); // SylixOS 等嵌入式 FTP 不支持 EPSV
+    if (m_impl->m_useFtps) {
+        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    }
+
+    // 进度回调（同时用于取消检测）
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
     fclose(file);
 
     if (res == CURLE_OK) {
@@ -737,4 +733,12 @@ void FtpAdapter::setProgressCallback(std::function<void(int)> cb) {
 
 void FtpAdapter::setUseFtps(bool useFtps) {
     m_impl->m_useFtps = useFtps;
+}
+
+void FtpAdapter::cancelTransfer() {
+    m_impl->m_cancelled = true;
+}
+
+void FtpAdapter::setCancelFlag(std::atomic<bool>* flag) {
+    m_impl->m_extCancelFlag = flag;
 }
