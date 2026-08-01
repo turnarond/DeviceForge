@@ -117,8 +117,9 @@ struct FtpAdapter::Impl {
         curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-        // 使用单一 CWD 而非多次 CWD（兼容更多 FTP 服务器）
-        curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD);
+        // 逐级 CWD（MULTICWD）：SylixOS 的 cd() 只支持单级路径，
+        // SINGLECWD 发送 "CWD a/b" 多级相对路径会失败
+        curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_MULTICWD);
         if (m_useFtps) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
