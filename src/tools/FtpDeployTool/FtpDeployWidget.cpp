@@ -636,9 +636,13 @@ void FtpDeployWidget::onDeleteRemote()
 {
     QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
     if (sel.isEmpty()) return;
-    QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
+    const auto& fi = m_remoteModel->fileAt(sel.first().row());
+    QString name = QString::fromStdString(fi.name);
+    bool isDir = fi.isDir;
     auto ans = QMessageBox::question(this, "确认删除",
-        QString("确定要删除远程文件 \"%1\" 吗？").arg(name));
+        QString("确定要删除远程%1 \"%2\" 吗？%3")
+            .arg(isDir ? "目录" : "文件", name,
+                 isDir ? "\n（将递归删除所有内容）" : ""));
     if (ans != QMessageBox::Yes) return;
 
     // 在传入后台线程前复制值，避免数据竞争
@@ -651,7 +655,7 @@ void FtpDeployWidget::onDeleteRemote()
     const std::string proto = m_protocolCombo->currentText().toStdString();
 
     // 通过适配器删除（异步）
-    QtConcurrent::run([this, targetName, port, deviceIp, user, pass, remotePath, proto]() {
+    QtConcurrent::run([this, targetName, isDir, port, deviceIp, user, pass, remotePath, proto]() {
         auto adapter = ProtocolRegistry::instance()->create(
             proto == "SFTP" ? "ssh" : "ftp");
 
@@ -676,9 +680,13 @@ void FtpDeployWidget::onDeleteRemote()
         }
 
         if (proto == "SFTP") {
-            ok = dynamic_cast<SshAdapter*>(adapter.get())->sftpDeleteFile(fullPath);
+            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+            ok = isDir ? ssh->sftpDeleteDirectory(fullPath)
+                       : ssh->sftpDeleteFile(fullPath);
         } else {
-            ok = dynamic_cast<FtpAdapter*>(adapter.get())->deleteFile(fullPath);
+            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+            ok = isDir ? ftp->deleteDirectory(fullPath)
+                       : ftp->deleteFile(fullPath);
         }
         adapter->disconnect();
 

@@ -570,24 +570,36 @@ bool FtpAdapter::deleteFile(const std::string& remotePath) {
 }
 
 bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
+    // 递归删除：先列出目录内容，逐项删除，最后 RMD 空目录
+    auto entries = listDirectoryParsed(remotePath);
+    for (const auto& e : entries) {
+        if (e.name == "." || e.name == "..") continue;
+        std::string childPath = remotePath;
+        if (!childPath.empty() && childPath.back() != '/') childPath += '/';
+        childPath += e.name;
+
+        if (e.isDir) {
+            if (!deleteDirectory(childPath)) return false; // 递归
+        } else {
+            if (!deleteFile(childPath)) return false;
+        }
+    }
+
+    // 目录已空，执行 RMD
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_impl->m_lastError = "curl_easy_init() 失败";
         return false;
     }
 
-    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
+    std::string url = m_impl->buildUrl("/");
     m_impl->setupCommonOpts(curl, url);
 
-    // 使用 QUOTE 命令发送 RMD
-    std::string pathForDelete = "/" + remotePath;
-    if (!remotePath.empty() && remotePath[0] == '/') {
-        pathForDelete = remotePath;
-    }
-    std::string rmdCmd = "RMD " + pathForDelete;
+    std::string pathForDelete = remotePath;
+    if (!pathForDelete.empty() && pathForDelete[0] != '/') pathForDelete = "/" + pathForDelete;
 
     struct curl_slist* commands = nullptr;
-    commands = curl_slist_append(commands, rmdCmd.c_str());
+    commands = curl_slist_append(commands, ("RMD " + pathForDelete).c_str());
     curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
 
     CURLcode res = curl_easy_perform(curl);
