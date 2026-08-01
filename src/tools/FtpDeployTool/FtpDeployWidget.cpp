@@ -370,10 +370,9 @@ void FtpDeployWidget::onDeployClicked()
     if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
-    auto devices = m_deviceBus->allDevices();
+    auto devices = m_deviceBus->selectedDevices();
+    if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
-
-    // 收集本地面板中选中的文件路径
     auto files = collectLocalFiles();
     if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
 
@@ -943,7 +942,8 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
         return;
     }
 
-    auto devices = m_deviceBus->allDevices();
+    auto devices = m_deviceBus->selectedDevices();
+    if (devices.empty()) devices = m_deviceBus->allDevices();
     AuthInfo auth;
     auth.user = m_deviceBus->user().toStdString();
     auth.password = m_deviceBus->password().toStdString();
