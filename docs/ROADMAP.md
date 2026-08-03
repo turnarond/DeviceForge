@@ -5,11 +5,13 @@
 
 ---
 
-## 已完成 (v2.0 → v2.1.0 → v2.2.0 → v2.3.0)
+## 已完成 (v2.0 → v2.1.0 → v2.2.0 → v2.3.0 → v2.5)
 
 | 模块 | 说明 | 版本 |
 |------|------|------|
-| **文件部署** | FTP/FTPS 批量文件部署，libcurl 底层，支持目录递归、端口/FTPS 加密 | v2.0 |
+| **文件部署** | FTP/FTPS 批量文件部署，libcurl 底层，支持目录递归、端口/FTPS 加密、选择性部署、目录递归删除、重命名/新建目录 | v2.0 / v2.5 |
+| **SFTP 文件管理** | SshAdapter SFTP 子系统（列目录/上传/下载/删除/重命名/新建目录），双栏 FTP/SFTP 协议切换 | v2.5 |
+| **SylixOS FTP 适配** | EPSV 禁用（服务器不支持）、MULTICWD 逐级 CWD（cd() 单级路径限制）、QUOTE 根 URL、递归删除 DELE→RMD | v2.5 |
 | **批量命令** | Telnet + SSH 双协议批量命令执行，SSH 密码认证 + TOFU 主机密钥 | v2.0 |
 | **WebSocket 通信** | Server/Client 双模式，默认 127.0.0.1 绑定 + 可选 Token 认证 | v2.0 |
 | **Modbus 集群测试** | QModbusTcpClient 批量读写寄存器，QTimer 自动刷新 | v2.0 |
@@ -66,7 +68,7 @@
 | v2.2.0 | 2026-07-18 | 在线更新 OTA + 远端预览重构 + CMake 标准构建 + 7 模块全绿 |
 | v2.3.0 | 2026-07-24 | ConfigStore 本地持久化 (SQLite + DPAPI) + OPC UA 订阅卡死修复 + CI Debug SEGFAULT 修复 |
 | v2.4 | 2026-07-25 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）|
-| v2.5 | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 协议支持（双栏 FTP/SFTP 切换）|
+| v2.5 | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除）|
 
 ---
 

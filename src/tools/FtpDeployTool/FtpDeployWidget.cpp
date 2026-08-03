@@ -370,6 +370,15 @@ void FtpDeployWidget::onDeployClicked()
     if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
+    // SFTP 批量部署尚未接通（backend 仅支持 FTP 上传），阻止静默降级
+    if (m_protocolCombo->currentText() == "SFTP") {
+        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
+        QMessageBox::information(this, "协议不支持",
+            "SFTP 批量部署待支持，请切换为 FTP 协议。\n"
+            "SFTP 协议当前仅支持远程文件浏览/管理。");
+        return;
+    }
+
     auto devices = m_deviceBus->selectedDevices();
     if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
@@ -421,6 +430,13 @@ void FtpDeployWidget::onRefreshRemote()
         return;
     }
 
+    // 防止并发刷新（缓存适配器非线程安全，两个工作线程会同时操作同一连接）
+    if (m_refreshBusy.load()) {
+        appendLog("正在刷新中，请稍候...");
+        return;
+    }
+    m_refreshBusy = true;
+
     QString path = m_remotePathEdit->text().trimmed();
     path.remove('\n'); path.remove('\r');  // 防止路径中混入换行符
     if (path.isEmpty()) path = "/";
@@ -441,31 +457,38 @@ void FtpDeployWidget::onRefreshRemote()
     const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
     const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    // 连接缓存：设备/协议/端口不变时复用已有连接，避免每次导航都 TCP+FTP 登录
+    // 连接缓存：设备/协议/端口/FTPS 不变时复用已有连接
     bool needNewConnection = !m_cachedAdapter
         || !m_cachedAdapter->isConnected()
         || m_cachedDeviceIp != deviceIp
         || m_cachedProto != m_protocolCombo->currentText()
-        || m_cachedPort != port;
+        || m_cachedPort != port
+        || m_cachedUseFtps != useFtps;
 
+    // 旧连接在工作线程中断开（避免 UI 线程 disconnect 与工作线程并发使用同一适配器）
+    std::shared_ptr<IProtocolAdapter> oldAdapter;
     if (needNewConnection) {
-        // 断开旧连接
-        if (m_cachedAdapter && m_cachedAdapter->isConnected()) {
-            m_cachedAdapter->disconnect();
-        }
+        oldAdapter = m_cachedAdapter;
         m_cachedAdapter = ProtocolRegistry::instance()->create(
             proto == "SFTP" ? "ssh" : "ftp");
         m_cachedDeviceIp = deviceIp;
         m_cachedProto = m_protocolCombo->currentText();
         m_cachedPort = port;
+        m_cachedUseFtps = useFtps;
     }
 
     auto adapter = m_cachedAdapter;  // shared_ptr 拷贝，lambda 持有引用
 
-    QtConcurrent::run([this, adapter, deviceIp, path, port, useFtps, user, pass, proto, needNewConnection]() {
+    QtConcurrent::run([this, adapter, oldAdapter, deviceIp, path, port, useFtps, user, pass, proto, needNewConnection]() {
+        // 先在工作线程断开旧连接
+        if (oldAdapter && oldAdapter->isConnected()) {
+            oldAdapter->disconnect();
+        }
+
         if (!adapter) {
             QMetaObject::invokeMethod(this, [this]() {
                 appendLog("适配器不可用");
+                m_refreshBusy = false;
             }, Qt::QueuedConnection);
             return;
         }
@@ -485,16 +508,18 @@ void FtpDeployWidget::onRefreshRemote()
                     QString err = QString::fromStdString(ssh->lastError());
                     QMetaObject::invokeMethod(this, [this, err]() {
                         appendLog("SFTP 连接失败: " + err);
+                        m_refreshBusy = false;
                     }, Qt::QueuedConnection);
                     return;
                 }
             } else {
                 auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-                if (useFtps) ftp->setUseFtps(true);
+                ftp->setUseFtps(useFtps);  // 统一设置（含关闭 FTPS）
                 if (!ftp->connect(dev, auth)) {
                     QString err = QString::fromStdString(ftp->lastError());
                     QMetaObject::invokeMethod(this, [this, err]() {
                         appendLog("连接失败: " + err);
+                        m_refreshBusy = false;
                     }, Qt::QueuedConnection);
                     return;
                 }
@@ -510,8 +535,13 @@ void FtpDeployWidget::onRefreshRemote()
         }
 
         QMetaObject::invokeMethod(this, [this, files]() {
-            // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回；. 不显示）
+            m_refreshBusy = false;
+            // 过滤 . 条目（标准 FTP/SFTP 服务器会返回；无导航价值）
+            // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
             auto full = files;
+            full.erase(std::remove_if(full.begin(), full.end(),
+                [](const FtpFileInfo& f) { return f.name == "."; }),
+                full.end());
             bool hasDotDot = false;
             for (const auto& f : full) {
                 if (f.name == "..") hasDotDot = true;
@@ -767,6 +797,14 @@ void FtpDeployWidget::onRenameRemote()
         QString("将 \"%1\" 重命名为:").arg(oldName), QLineEdit::Normal, oldName, &ok);
     if (!ok || newName.isEmpty() || newName == oldName) return;
 
+    // 安全校验：禁止包含 / 或 ..（防止路径穿越到其他目录）
+    if (newName.contains('/') || newName.contains("..")) {
+        appendLog("重命名失败: 名称不能包含 / 或 ..");
+        QMessageBox::warning(this, "重命名",
+            "名称不能包含 '/' 或 '..'，请使用纯文件名。");
+        return;
+    }
+
     // 异步执行重命名
     const QString proto = m_protocolCombo->currentText();
     const QString old = oldName, nu = newName;
@@ -939,7 +977,13 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
     }
     if (files.empty()) return;
 
-    QString protoLabel = m_protocolCombo->currentText() == "SFTP" ? "SFTP" : "FTP";
+    // SFTP 批量部署尚未接通，阻止静默降级（backend 仅支持 FTP 上传）
+    if (m_protocolCombo->currentText() == "SFTP") {
+        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
+        return;
+    }
+
+    QString protoLabel = "FTP";
     appendLog(QString("📤 [%1] 拖拽上传 %2 个文件到远程目录...").arg(protoLabel).arg(files.size()));
 
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {

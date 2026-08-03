@@ -18,6 +18,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QInputDialog>
+#include <QMessageBox>
 #include <QDateTime>
 #include <QStyle>
 #include <QDebug>
@@ -238,7 +239,12 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
     });
     connect(pill, &QPushButton::customContextMenuRequested, this, [this, pill]() {
         QString ip = pill->property("deviceIp").toString();
-        removeDevice(ip);
+        // 确认后删除（removeDevice 会同步移除 ConfigStore 持久化记录）
+        auto ans = QMessageBox::question(this, "移除设备",
+            QString("确定要移除设备 \"%1\" 吗？").arg(ip));
+        if (ans == QMessageBox::Yes) {
+            removeDevice(ip);
+        }
     });
 
     // 插入到 stretch 之前

@@ -15,6 +15,7 @@
 #include "framework/ToolWidget.h"
 #include "adapter/IProtocolAdapter.h"
 #include <memory>
+#include <atomic>
 #include <QTreeView>
 #include <QTableView>
 #include <QLineEdit>
@@ -119,6 +120,8 @@ private:
     QString m_cachedDeviceIp;
     QString m_cachedProto;
     int     m_cachedPort = 0;
+    bool    m_cachedUseFtps = false;
+    std::atomic<bool> m_refreshBusy{false}; // 防止并发刷新（缓存适配器非线程安全）
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;

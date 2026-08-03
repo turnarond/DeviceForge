@@ -96,9 +96,23 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.5.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
+
+**v2.5 功能补完（2026-07-26）**：
+- FtpAdapter 新增 `renameFile()`（RNFR/RNTO）+ `makeDirectory()`（MKD）+ `cancelTransfer()` + `setCancelFlag()`；`deleteDirectory()` 递归删除（LIST→逐项 DELE→RMD）
+- SshAdapter 新增 SFTP 子系统（8 个方法：sftpListDirectory/sftpUploadFile/sftpDownloadFile/sftpDeleteFile/sftpDeleteDirectory/sftpRename/sftpMakeDirectory/sftpSetProgressCallback）
+- RemoteFileModel 精确对比（size 匹配替代文件名匹配）+ 列排序（sort()，目录优先、`.`/`..` 置顶）
+- FtpDeployWidget：协议切换（FTP/SFTP 下拉）、选择性部署（selectedDevices()，未选中回退全部）、连接缓存复用、路径换行符清理、重命名路径穿越校验
+- MultiProgressWidget 极简化：只保留总进度条 + 取消按钮（每设备状态通过日志展示）
+
+**SylixOS FTP 适配经验（重要，勿回退）**：
+- **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
+- **cd() 只支持单级路径**：必须用 `CURLFTPMETHOD_MULTICWD` 逐级 CWD（`CWD apps` → `CWD xxx`），SINGLECWD 发送 `CWD a/b` 多级相对路径会失败
+- **QUOTE 命令用根 URL + 绝对路径**：DELE/RMD/RNFR/RNTO/MKD 用 `buildUrl("/")` + 绝对路径命令，避免 curl 对目标 URL 的 RETR 预检误报
+- **DELE 失败多为文件不存在**（非权限问题）；挂载点（如 schneider_system_test）CWD/LIST 行为异常，需服务器端处理
+- LIST 返回 Unix 格式，FtpListParser 已兼容；`. ` 条目需客户端过滤，`..` 需补充（嵌入式服务器不返回）
 
 > **注意**：ToolHost::createTool() 只支持单活跃 Tool，目前所有 Tool 均通过 `DeployMaster` 直接创建 Backend + Widget（`setupXxxTab()` / `initToolTabs()`），绕过 ToolHost。`main.cpp` 中的 `ToolHost::registerBuiltinFactory()` 目前仅为预留。待 ToolHost 支持多 Tool 并发后切换。
 
@@ -133,7 +147,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **待完成**：
 - QPluginLoader DLL 加载
-- SCP 支持（通过 FtpAdapter 扩展实现，集成到 FTP 双栏远程面板中）
+- **SFTP 批量部署**（当前 SFTP 仅支持远程文件浏览/管理，部署/拖拽上传已阻止并提示切换 FTP）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeployMaster 直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
 
@@ -169,9 +183,9 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 - **IProtocolAdapter**：所有协议适配器的纯虚接口（protocolId/connect/disconnect/isConnected/lastError/request/subscribe）
 - **ProtocolCapability**：协议能力声明结构体（requestResponse/streaming/broadcast/publishSubscribe/maxConnections）
-- **FtpAdapter**：实现 IProtocolAdapter，内部复用 libcurl。额外暴露 FTP 特有操作（uploadFile/uploadFolder/downloadFile/listDirectory/deleteFile/deleteDirectory/clearRemoteDirectory）
+- **FtpAdapter**：实现 IProtocolAdapter，内部复用 libcurl。额外暴露 FTP 特有操作（uploadFile/uploadFolder/downloadFile/listDirectory/listDirectoryParsed/deleteFile/deleteDirectory/clearRemoteDirectory/renameFile/makeDirectory/cancelTransfer/setCancelFlag）；deleteDirectory 递归删除（LIST→逐项 DELE→RMD）；SylixOS 适配（EPSV 禁用、MULTICWD、QUOTE 根 URL）
 - **TelnetAdapter**：实现 IProtocolAdapter，基于 `lwcommunicate::LWTcpClient`。支持请求-响应 + 流模式
-- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2。提供 SSH 加密通道（TelnetTool 中作为 TelnetAdapter 的安全替代）
+- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2。提供 SSH 加密通道（TelnetTool 中作为 TelnetAdapter 的安全替代）+ SFTP 文件子系统（sftpListDirectory/sftpUploadFile/sftpDownloadFile/sftpDeleteFile/sftpDeleteDirectory/sftpRename/sftpMakeDirectory）
 - **OpcUaAdapter**：实现 IProtocolAdapter，封装 open62541 客户端。支持读/写/订阅/浏览，`UA_MULTITHREADING=100` 编译
 - **ProtocolRegistry**（单例）：协议适配器工厂注册表（registerFactory/create/isRegistered/registeredProtocols）
 

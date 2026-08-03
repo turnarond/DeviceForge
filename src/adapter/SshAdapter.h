@@ -56,4 +56,5 @@ private:
     LIBSSH2_SFTP* m_sftpSession = nullptr;
     std::function<void(int)> m_sftpProgressCb;
     bool sftpInit();
+    bool sftpDeleteDirectoryRecursive(const std::string& remotePath, int depth); // 递归删除（带深度上限）
 };

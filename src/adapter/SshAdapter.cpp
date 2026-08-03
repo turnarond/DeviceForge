@@ -352,10 +352,19 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     bool ok = true;
     while (sent < fileSize) {
         size_t n = fread(buf, 1, sizeof(buf), localFile);
-        if (n == 0) break;
-        ssize_t rc = libssh2_sftp_write(remoteFile, buf, n);
-        if (rc < 0) { ok = false; break; }
-        sent += rc;
+        if (n == 0) {
+            if (ferror(localFile)) { ok = false; m_lastError = "SFTP 上传读取本地文件失败"; }
+            break; // EOF 或错误
+        }
+        // libssh2_sftp_write 可能部分写入，循环直到本块全部写出
+        size_t written = 0;
+        while (written < n) {
+            ssize_t rc = libssh2_sftp_write(remoteFile, buf + written, n - written);
+            if (rc < 0) { ok = false; break; }
+            written += static_cast<size_t>(rc);
+        }
+        if (!ok) break;
+        sent += written;
         if (m_sftpProgressCb && fileSize > 0) {
             int pct = static_cast<int>((sent * 100) / fileSize);
             m_sftpProgressCb(pct);
@@ -364,7 +373,7 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
 
     fclose(localFile);
     libssh2_sftp_close(remoteFile);
-    if (!ok) m_lastError = "SFTP 上传写入失败";
+    if (!ok && m_lastError.empty()) m_lastError = "SFTP 上传写入失败";
     return ok;
 }
 
@@ -420,16 +429,26 @@ bool SshAdapter::sftpDeleteFile(const std::string& remotePath)
 bool SshAdapter::sftpDeleteDirectory(const std::string& remotePath)
 {
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    return sftpDeleteDirectoryRecursive(remotePath, 0);
+}
+
+bool SshAdapter::sftpDeleteDirectoryRecursive(const std::string& remotePath, int depth)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    if (depth > 64) { m_lastError = "SFTP 删除目录超过最大深度"; return false; }
 
     // 先尝试直接删除（空目录），失败则递归删除
     if (libssh2_sftp_rmdir(m_sftpSession, remotePath.c_str()) == 0) return true;
 
-    // 目录非空：列出内容，递归删除
+    // 目录非空：列出内容，递归删除（跳过 . 和 ..，防止无限递归）
     auto entries = sftpListDirectory(remotePath);
     for (const auto& e : entries) {
+        if (e.name == "." || e.name == "..") continue;
         std::string fullPath = remotePath + "/" + e.name;
-        if (e.isDir) sftpDeleteDirectory(fullPath);
-        else sftpDeleteFile(fullPath);
+        bool ok = e.isDir
+            ? sftpDeleteDirectoryRecursive(fullPath, depth + 1)
+            : sftpDeleteFile(fullPath);
+        if (!ok) return false; // 子项失败即中止
     }
     int rc = libssh2_sftp_rmdir(m_sftpSession, remotePath.c_str());
     if (rc != 0) { m_lastError = "SFTP 删除目录失败"; return false; }
