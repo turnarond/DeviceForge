@@ -139,38 +139,58 @@ void FtpDeployWidget::setupLocalPanel()
     auto* localContainer = new QWidget(this);
     auto* localLayout = new QVBoxLayout(localContainer);
     localLayout->setContentsMargins(0, 0, 0, 0);
-    localLayout->setSpacing(4);
+    localLayout->setSpacing(3);
 
+    // 标题行
     auto* header = new QHBoxLayout();
-    auto* iconLabel = new QLabel("📁 本地文件", this);
-    iconLabel->setStyleSheet("font-weight: bold; color: #C8CCD4;");
-    header->addWidget(iconLabel);
+    auto* title = new QLabel("📁 本地文件", this);
+    title->setStyleSheet("font-weight: bold; color: #C8CCD4; font-size: 12px;");
+    header->addWidget(title);
+    header->addStretch();
+    localLayout->addLayout(header);
+
+    // 路径导航行：路径栏 + 浏览按钮
+    auto* pathRow = new QHBoxLayout();
+    pathRow->setSpacing(4);
 
     m_localPathEdit = new QLineEdit(this);
     m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
+    m_localPathEdit->setStyleSheet(
+        "QLineEdit { background: #0E1219; border: 1px solid #333B48;"
+        "  border-radius: 3px; color: #C8CCD4; padding: 3px 8px; font-size: 11px; }"
+        "QLineEdit:focus { border-color: #F0A030; }");
     connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
-        QDir dir(m_localPathEdit->text());
+        QString path = m_localPathEdit->text().trimmed();
+        QDir dir(path);
         if (dir.exists()) {
+            m_localFsModel->setRootPath(dir.absolutePath());
             m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
         }
     });
-    header->addWidget(m_localPathEdit, 1);
+    pathRow->addWidget(m_localPathEdit, 1);
 
-    auto* openDirBtn = new QPushButton("打开目录", this);
-    connect(openDirBtn, &QPushButton::clicked, [this]() {
+    auto* browseBtn = new QPushButton("📂", this);
+    browseBtn->setToolTip("浏览目录...");
+    browseBtn->setFixedSize(28, 26);
+    browseBtn->setStyleSheet(
+        "QPushButton { background: #232A36; border: 1px solid #333B48;"
+        "  border-radius: 3px; color: #C8CCD4; font-size: 14px; }"
+        "QPushButton:hover { border-color: #7B8494; }");
+    connect(browseBtn, &QPushButton::clicked, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
         if (!dir.isEmpty()) {
+            m_localFsModel->setRootPath(dir);
             m_localTree->setRootIndex(m_localFsModel->index(dir));
             m_localPathEdit->setText(dir);
         }
     });
-    header->addWidget(openDirBtn);
-    localLayout->addLayout(header);
+    pathRow->addWidget(browseBtn);
+    localLayout->addLayout(pathRow);
 
-    // QFileSystemModel
+    // QFileSystemModel（树结构自带目录层级，无需 . 和 ..）
     m_localFsModel = new QFileSystemModel(this);
     m_localFsModel->setRootPath(QDir::currentPath());
-    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
+    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
 
     m_localTree = new QTreeView(this);
     m_localTree->setModel(m_localFsModel);
@@ -179,11 +199,13 @@ void FtpDeployWidget::setupLocalPanel()
     m_localTree->setDragEnabled(true);
     m_localTree->setAcceptDrops(true);
     m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
-    m_localTree->setColumnHidden(1, true);
-    m_localTree->viewport()->installEventFilter(this); // 拦截拖拽事件到本地面板
-    m_localTree->setColumnHidden(2, true); // 隐藏 type 列
-    m_localTree->setColumnHidden(3, true); // 隐藏 date 列
+    m_localTree->setAnimated(true);
+    m_localTree->setColumnHidden(1, true); // 隐藏 size
+    m_localTree->setColumnHidden(2, true); // 隐藏 type
+    m_localTree->setColumnHidden(3, true); // 隐藏 date
     m_localTree->header()->setStretchLastSection(true);
+    m_localTree->header()->setVisible(false); // 隐藏表头（树结构不需要）
+    m_localTree->viewport()->installEventFilter(this);
 
     // 监听目录切换，更新路径栏
     connect(m_localTree->selectionModel(), &QItemSelectionModel::currentChanged,
@@ -247,6 +269,7 @@ void FtpDeployWidget::setupRemotePanel()
     m_remoteTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_remoteTable->setAlternatingRowColors(true);
+    m_remoteTable->setSortingEnabled(true);
     m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_remoteTable->setAcceptDrops(true);
     m_remoteTable->viewport()->setAcceptDrops(true);
@@ -319,7 +342,17 @@ void FtpDeployWidget::connectBackendSignals()
                const std::vector<std::string>& failures) {
             QMetaObject::invokeMethod(this, [this, ok, successes, failures]() {
                 m_deployBtn->setEnabled(true);
+                // 更新每个设备的状态
+                for (const auto& key : successes)
+                    m_multiProgress->setDeviceStatusByKey(
+                        QString::fromStdString(key), true);
+                for (const auto& key : failures)
+                    m_multiProgress->setDeviceStatusByKey(
+                        QString::fromStdString(key), false);
+                int total = static_cast<int>(successes.size() + failures.size());
+                int done = static_cast<int>(successes.size());
                 m_multiProgress->setOverallProgress(ok ? 100 : 0);
+                m_multiProgress->setFinishedSummary(done, total);
                 if (ok && !successes.empty()) {
                     appendLog(QString("✅ 部署完成 — 成功: %1, 失败: %2")
                         .arg(successes.size()).arg(failures.size()));
@@ -337,10 +370,9 @@ void FtpDeployWidget::onDeployClicked()
     if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
-    auto devices = m_deviceBus->allDevices();
+    auto devices = m_deviceBus->selectedDevices();
+    if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
-
-    // 收集本地面板中选中的文件路径
     auto files = collectLocalFiles();
     if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
 
@@ -352,9 +384,12 @@ void FtpDeployWidget::onDeployClicked()
 
     m_deployBtn->setEnabled(false);
     m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
+    // 设置设备标签为 IP:port
     for (size_t i = 0; i < devices.size(); ++i) {
-        m_multiProgress->setDeviceStatus(static_cast<int>(i),
-            QString::fromStdString(devices[i].ip), false);
+        QString devKey = QString::fromStdString(devices[i].ip);
+        if (devices[i].port > 0 && devices[i].port != 21)
+            devKey += ":" + QString::number(devices[i].port);
+        m_multiProgress->setDeviceInfo(static_cast<int>(i), devKey);
     }
 
     appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
@@ -386,8 +421,10 @@ void FtpDeployWidget::onRefreshRemote()
         return;
     }
 
-    QString path = m_remotePathEdit->text();
+    QString path = m_remotePathEdit->text().trimmed();
+    path.remove('\n'); path.remove('\r');  // 防止路径中混入换行符
     if (path.isEmpty()) path = "/";
+    m_currentRemotePath = path;  // 同步：用户手动输入路径时也更新当前路径
 
     // 从设备下拉框获取当前选中设备
     QString deviceIp = m_deviceCombo->currentText();
@@ -404,9 +441,28 @@ void FtpDeployWidget::onRefreshRemote()
     const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
     const std::string proto = m_protocolCombo->currentText().toStdString();
 
-    QtConcurrent::run([this, deviceIp, path, port, useFtps, user, pass, proto]() {
-        auto adapter = ProtocolRegistry::instance()->create(
+    // 连接缓存：设备/协议/端口不变时复用已有连接，避免每次导航都 TCP+FTP 登录
+    bool needNewConnection = !m_cachedAdapter
+        || !m_cachedAdapter->isConnected()
+        || m_cachedDeviceIp != deviceIp
+        || m_cachedProto != m_protocolCombo->currentText()
+        || m_cachedPort != port;
+
+    if (needNewConnection) {
+        // 断开旧连接
+        if (m_cachedAdapter && m_cachedAdapter->isConnected()) {
+            m_cachedAdapter->disconnect();
+        }
+        m_cachedAdapter = ProtocolRegistry::instance()->create(
             proto == "SFTP" ? "ssh" : "ftp");
+        m_cachedDeviceIp = deviceIp;
+        m_cachedProto = m_protocolCombo->currentText();
+        m_cachedPort = port;
+    }
+
+    auto adapter = m_cachedAdapter;  // shared_ptr 拷贝，lambda 持有引用
+
+    QtConcurrent::run([this, adapter, deviceIp, path, port, useFtps, user, pass, proto, needNewConnection]() {
         if (!adapter) {
             QMetaObject::invokeMethod(this, [this]() {
                 appendLog("适配器不可用");
@@ -414,61 +470,59 @@ void FtpDeployWidget::onRefreshRemote()
             return;
         }
 
-        if (proto == "SFTP") {
-            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+        // 仅在需要时建立连接
+        if (needNewConnection) {
             DeviceInfo dev;
             dev.ip = deviceIp.toStdString();
             dev.port = port;
-
             AuthInfo auth;
             auth.user = user;
             auth.password = pass;
 
-            if (!ssh->connect(dev, auth)) {
-                QString err = QString::fromStdString(ssh->lastError());
-                QMetaObject::invokeMethod(this, [this, err]() {
-                    appendLog("SFTP 连接失败: " + err);
-                }, Qt::QueuedConnection);
-                return;
+            if (proto == "SFTP") {
+                auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+                if (!ssh->connect(dev, auth)) {
+                    QString err = QString::fromStdString(ssh->lastError());
+                    QMetaObject::invokeMethod(this, [this, err]() {
+                        appendLog("SFTP 连接失败: " + err);
+                    }, Qt::QueuedConnection);
+                    return;
+                }
+            } else {
+                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+                if (useFtps) ftp->setUseFtps(true);
+                if (!ftp->connect(dev, auth)) {
+                    QString err = QString::fromStdString(ftp->lastError());
+                    QMetaObject::invokeMethod(this, [this, err]() {
+                        appendLog("连接失败: " + err);
+                    }, Qt::QueuedConnection);
+                    return;
+                }
             }
-
-            auto files = ssh->sftpListDirectory(path.toStdString());
-            ssh->disconnect();
-
-            QMetaObject::invokeMethod(this, [this, files]() {
-                m_remoteModel->setFileList(files);
-                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
-            }, Qt::QueuedConnection);
-        } else {
-            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-            DeviceInfo dev;
-            dev.ip = deviceIp.toStdString();
-            dev.port = port;
-
-            AuthInfo auth;
-            auth.user = user;
-            auth.password = pass;
-
-            if (useFtps) {
-                ftp->setUseFtps(true);
-            }
-
-            if (!ftp->connect(dev, auth)) {
-                QString err = QString::fromStdString(ftp->lastError());
-                QMetaObject::invokeMethod(this, [this, err]() {
-                    appendLog("连接失败: " + err);
-                }, Qt::QueuedConnection);
-                return;
-            }
-
-            auto files = ftp->listDirectoryParsed(path.toStdString());
-            ftp->disconnect();
-
-            QMetaObject::invokeMethod(this, [this, files]() {
-                m_remoteModel->setFileList(files);
-                appendLog(QString("远程目录已加载: %1 项").arg(files.size()));
-            }, Qt::QueuedConnection);
         }
+
+        // 列目录（复用已有连接）
+        std::vector<FtpFileInfo> files;
+        if (proto == "SFTP") {
+            files = dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
+        } else {
+            files = dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        }
+
+        QMetaObject::invokeMethod(this, [this, files]() {
+            // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回；. 不显示）
+            auto full = files;
+            bool hasDotDot = false;
+            for (const auto& f : full) {
+                if (f.name == "..") hasDotDot = true;
+            }
+            if (!hasDotDot) {
+                FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
+                full.insert(full.begin(), dd);
+            }
+            m_remoteModel->setFileList(full);
+            appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -478,6 +532,18 @@ void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
     const auto& fi = m_remoteModel->fileAt(index.row());
     if (!fi.isDir) return;
 
+    std::string name = fi.name;
+    if (name == "..") {
+        // 上级目录
+        QString parent = m_currentRemotePath;
+        if (parent == "/" || parent.isEmpty()) return; // 已在根目录
+        int lastSlash = parent.lastIndexOf('/');
+        parent = parent.left(lastSlash);
+        if (parent.isEmpty()) parent = "/";
+        navigateToRemoteDir(parent);
+        return;
+    }
+
     QString newPath = m_currentRemotePath;
     if (!newPath.endsWith('/')) newPath += '/';
     newPath += QString::fromStdString(fi.name);
@@ -486,8 +552,10 @@ void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
 
 void FtpDeployWidget::navigateToRemoteDir(const QString& path)
 {
-    m_currentRemotePath = path;
-    m_remotePathEdit->setText(path);
+    QString clean = path.trimmed();
+    clean.remove('\n'); clean.remove('\r');
+    m_currentRemotePath = clean;
+    m_remotePathEdit->setText(clean);
     refreshBreadcrumb(path);
     onRefreshRemote();
 }
@@ -568,9 +636,13 @@ void FtpDeployWidget::onDeleteRemote()
 {
     QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
     if (sel.isEmpty()) return;
-    QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
+    const auto& fi = m_remoteModel->fileAt(sel.first().row());
+    QString name = QString::fromStdString(fi.name);
+    bool isDir = fi.isDir;
     auto ans = QMessageBox::question(this, "确认删除",
-        QString("确定要删除远程文件 \"%1\" 吗？").arg(name));
+        QString("确定要删除远程%1 \"%2\" 吗？%3")
+            .arg(isDir ? "目录" : "文件", name,
+                 isDir ? "\n（将递归删除所有内容）" : ""));
     if (ans != QMessageBox::Yes) return;
 
     // 在传入后台线程前复制值，避免数据竞争
@@ -583,7 +655,7 @@ void FtpDeployWidget::onDeleteRemote()
     const std::string proto = m_protocolCombo->currentText().toStdString();
 
     // 通过适配器删除（异步）
-    QtConcurrent::run([this, targetName, port, deviceIp, user, pass, remotePath, proto]() {
+    QtConcurrent::run([this, targetName, isDir, port, deviceIp, user, pass, remotePath, proto]() {
         auto adapter = ProtocolRegistry::instance()->create(
             proto == "SFTP" ? "ssh" : "ftp");
 
@@ -608,9 +680,13 @@ void FtpDeployWidget::onDeleteRemote()
         }
 
         if (proto == "SFTP") {
-            ok = dynamic_cast<SshAdapter*>(adapter.get())->sftpDeleteFile(fullPath);
+            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
+            ok = isDir ? ssh->sftpDeleteDirectory(fullPath)
+                       : ssh->sftpDeleteFile(fullPath);
         } else {
-            ok = dynamic_cast<FtpAdapter*>(adapter.get())->deleteFile(fullPath);
+            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+            ok = isDir ? ftp->deleteDirectory(fullPath)
+                       : ftp->deleteFile(fullPath);
         }
         adapter->disconnect();
 
@@ -628,7 +704,8 @@ void FtpDeployWidget::onDownloadRemote()
     if (sel.isEmpty()) return;
     QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
 
-    QString savePath = QFileDialog::getSaveFileName(this, "保存到", name);
+    QString savePath = QFileDialog::getSaveFileName(this, "保存到",
+        QDir::home().filePath(name));
     if (savePath.isEmpty()) return;
 
     // 在传入后台线程前复制值，避免数据竞争
@@ -874,7 +951,8 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
         return;
     }
 
-    auto devices = m_deviceBus->allDevices();
+    auto devices = m_deviceBus->selectedDevices();
+    if (devices.empty()) devices = m_deviceBus->allDevices();
     AuthInfo auth;
     auth.user = m_deviceBus->user().toStdString();
     auth.password = m_deviceBus->password().toStdString();

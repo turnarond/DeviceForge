@@ -1,6 +1,7 @@
 #pragma once
 #include "IProtocolAdapter.h"
 #include <string>
+#include <atomic>
 #include <future>
 #include <memory>
 #include <functional>
@@ -44,6 +45,8 @@ public:
     bool clearRemoteDirectory(const std::string& remotePath);
     void setProgressCallback(std::function<void(int)> cb);
     void setUseFtps(bool useFtps);
+    void cancelTransfer();
+    void setCancelFlag(std::atomic<bool>* flag);
 
 private:
     struct Impl;

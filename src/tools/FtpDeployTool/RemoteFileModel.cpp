@@ -11,6 +11,7 @@
 
 #include "RemoteFileModel.h"
 #include <QColor>
+#include <algorithm>
 
 RemoteFileModel::RemoteFileModel(QObject* parent)
     : QAbstractTableModel(parent) {}
@@ -134,6 +135,44 @@ QVariant RemoteFileModel::headerData(int section, Qt::Orientation orientation, i
     case ColPermissions: return QStringLiteral("权限");
     }
     return {};
+}
+
+void RemoteFileModel::sort(int column, Qt::SortOrder order)
+{
+    if (m_files.empty()) return;
+
+    // 分离 . 和 .. （始终置顶）
+    std::vector<FtpFileInfo> dots, rest;
+    for (auto& f : m_files) {
+        if (f.name == "." || f.name == "..") dots.push_back(f);
+        else rest.push_back(f);
+    }
+
+    // 目录优先，再按列排序
+    std::sort(rest.begin(), rest.end(),
+        [column, order](const FtpFileInfo& a, const FtpFileInfo& b) {
+            // 目录始终排在文件前面
+            if (a.isDir != b.isDir) return a.isDir;
+
+            bool less = false;
+            switch (column) {
+            case ColName:
+                less = QString::compare(QString::fromStdString(a.name),
+                    QString::fromStdString(b.name), Qt::CaseInsensitive) < 0;
+                break;
+            case ColSize:     less = a.size < b.size; break;
+            case ColDateTime: less = a.dateTime < b.dateTime; break;
+            case ColPermissions: less = a.permissions < b.permissions; break;
+            default:          less = a.name < b.name; break;
+            }
+            return order == Qt::AscendingOrder ? less : !less;
+        });
+
+    beginResetModel();
+    m_files.clear();
+    m_files.insert(m_files.end(), dots.begin(), dots.end());
+    m_files.insert(m_files.end(), rest.begin(), rest.end());
+    endResetModel();
 }
 
 QString RemoteFileModel::formatSize(uint64_t bytes)

@@ -227,13 +227,18 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
         "QPushButton[online=\"false\"] { border-left: 3px solid #E85848; }"
     );
 
-    // 点击切换选中
+    // 左键点击切换选中，右键点击删除设备
+    pill->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(pill, &QPushButton::clicked, this, [this, pill]() {
         bool sel = !pill->property("selected").toBool();
         pill->setProperty("selected", sel);
         pill->style()->unpolish(pill);
         pill->style()->polish(pill);
         emit deviceSelectionChanged();
+    });
+    connect(pill, &QPushButton::customContextMenuRequested, this, [this, pill]() {
+        QString ip = pill->property("deviceIp").toString();
+        removeDevice(ip);
     });
 
     // 插入到 stretch 之前

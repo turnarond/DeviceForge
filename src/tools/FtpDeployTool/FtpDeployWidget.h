@@ -13,6 +13,8 @@
 
 #pragma once
 #include "framework/ToolWidget.h"
+#include "adapter/IProtocolAdapter.h"
+#include <memory>
 #include <QTreeView>
 #include <QTableView>
 #include <QLineEdit>
@@ -111,6 +113,12 @@ private:
     QWidget*         m_breadcrumbWidget = nullptr;
     QHBoxLayout*     m_breadcrumbLayout = nullptr;
     QString          m_currentRemotePath;
+
+    // 缓存的远程连接（避免每次导航都重新 TCP + FTP 登录）
+    std::shared_ptr<IProtocolAdapter> m_cachedAdapter;
+    QString m_cachedDeviceIp;
+    QString m_cachedProto;
+    int     m_cachedPort = 0;
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;

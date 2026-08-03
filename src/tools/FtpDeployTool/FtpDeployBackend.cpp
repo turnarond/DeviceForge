@@ -140,10 +140,11 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                 }
             }
 
-            // 设置进度回调
+            // 设置进度回调 + 取消标志
             ftp->setProgressCallback([this](int pct) {
                 if (m_progressCb) m_progressCb(pct);
             });
+            ftp->setCancelFlag(&m_cancelled);
 
             // 上传所有文件/文件夹
             bool allOk = true;
