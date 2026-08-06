@@ -26,25 +26,25 @@
 
 ---
 
-## 短期规划 (v2.4)
+## 短期规划 (v2.6)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **OPC UA 安全策略扩展** | 高 | 支持 Basic256/Basic256Sha256 + 证书认证 |
-| **SCP 支持** | 中 | ✅ 已完成（v2.5 SshAdapter SFTP 扩展，双栏 FTP/SFTP 切换） |
-| **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
-| **SettingsDialog 完整编辑** | 低 | 当前编辑为只读 JSON 弹窗；完整编辑写回留待后续 |
+| **SFTP/SCP 批量部署** | 🔴 高 | SshAdapter SFTP 上传接通 backend，支持 SFTP/SCP 双协议部署 |
+| **轻量化** | 🔴 高 | 安装包（NSIS/MSI）、体积优化、启动速度 |
+| **用户体验打磨** | 🔴 高 | 交互细节（拖拽、快捷键、错误提示、界面反馈） |
+| **单元测试扩展** | 中 | 从 tst_nrec / tst_config_store / tst_dpapi_crypto / tst_opcua_* 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
 
 ---
 
-## 中期规划 (v2.5+)
+## 中期规划 (v2.7+)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **Linux/SylixOS 适配** | 🔴 高 | DpapiCrypto 在非 Windows 需替换为 libsecret；CMake 构建已就绪 |
+| **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
 | **ToolHost 多 Tool 并发** | 中 | 当前 DeployMaster 直接创建 Tool，待 ToolHost 支持多 Tool 并行管理 |
 | **插件化加载 (QPluginLoader)** | 中 | DLL 动态加载 .dll Tool 插件，manifest.xml 入口点 |
-| **单元测试扩展** | 中 | 从 tst_nrec / tst_config_store / tst_dpapi_crypto / tst_opcua_* 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
+| **跨平台 GUI** | 中 | Linux (X11/Wayland) 原生运行，DpapiCrypto 需替换为 libsecret |
 
 ---
 
@@ -53,9 +53,9 @@
 | 方向 | 说明 |
 |------|------|
 | **工业级系统部署调试平台** | 覆盖各类工业设备的部署 → 测试 → 运维全流程，成为工业工程师的通用工具箱 |
-| **跨平台 GUI** | Linux (X11/Wayland) 原生运行，SylixOS 嵌入式部署 |
-| **多语言国际化** | i18n 支持，优先英文 |
 | **社区生态** | 插件市场、模板分享、第三方 Tool 贡献机制 |
+
+> 注：OPC UA 安全策略（Basic256/证书）、多语言国际化暂不作为优先方向，视社区反馈再定。
 
 ---
 
