@@ -2,15 +2,17 @@
 
 > 一个用 Qt 写的工业设备批量运维工具，v2.4 版本做了两件事：把 FTP 部署从表单变成了双栏文件管理器，把整个主窗口从 Windows 95 风格拉到了 2026 年的水平。
 
+> **更新（v2.5）**：文末提到的「重命名/新建远程目录」「远程文件精确对比」等限制已在 v2.5 实现，见 [v2.5 发布说明](2026-08-06-deviceforge-v2.5-现代化工业运维平台.md)。
+
 ---
 
 ## 它是什么
 
 DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PLC 设备做批量运维：FTP/FTPS 部署固件、Telnet/SSH 批量执行命令、Modbus 寄存器读写、OPC UA 客户端、WebSocket 通信、TCP/UDP 网络调试中继。
 
-前身叫 DeployMaster，2026 年 7 月改名。和 PLCBasicConfigurator 配套，覆盖 SylixOS PLC 设备的「配置 → 部署 → 测试 → 运维」全流程。
+前身叫 DeployMaster，2026 年 7 月改名。面向 PLC、嵌入式终端、网络设备等工业硬件的「部署 → 测试 → 运维」场景。
 
-开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)（注意：仓库名仍为 DeployMaster，CMake 项目名已改为 DeviceForge）。
+开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
 ---
 

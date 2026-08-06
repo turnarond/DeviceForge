@@ -1,4 +1,4 @@
-# DeviceForge — 工业设备批量运维平台
+# DeviceForge — 工业级系统部署调试工具
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
@@ -46,7 +46,8 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 
 - [我写了一个透明 TCP/UDP 中继调试工具：在不打断生产链路的前提下抓包 + 录制回放](docs/articles/2026-07-09-透明中继调试工具设计.md) — NetRelayTool 设计与实现，透明中继、`.nrec` 录制、按原始时序回放
 - [open62541 与 Qt 集成的 5 个陷阱](docs/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
-- [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — FTP 双栏 + 布局现代化 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
+- [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 主窗口布局现代化 + 日志统一
+- [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — 远程文件管理补完 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
 
 ---
 
@@ -81,7 +82,7 @@ darkstyle.qss 深色主题      ToolWidget (基类)          ├─ SshAdapter (
   AppState                   ServiceTask               libcurl / libssh2 / QTcpSocket
 ```
 
-**设计文档**：[架构设计](docs/superpowers/specs/2026-07-04-tool-framework-design.md) | [实施计划](docs/superpowers/plans/2026-07-04-tool-framework-plan.md) | [FTP 双栏重构设计](docs/01-方案设计/2026-07-25-FTP双栏重构设计.md) | [v2.5 功能补完设计](docs/01-方案设计/2026-07-26-v2.5-ftp-scp-功能补完设计.md)
+**设计文档**：[架构设计](docs/01-方案设计/2026-07-04-工具框架设计.md) | [实施计划](docs/02-实施计划/2026-07-04-工具框架计划.md) | [FTP 双栏重构设计](docs/01-方案设计/2026-07-25-FTP双栏重构设计.md) | [v2.5 功能补完设计](docs/01-方案设计/2026-07-26-v2.5-ftp-scp-功能补完设计.md)
 
 ### 第三方库
 

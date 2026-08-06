@@ -8,7 +8,7 @@
 
 DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PLC 设备做批量运维：FTP/FTPS 部署固件、Telnet/SSH 批量执行命令、Modbus 寄存器读写、OPC UA 客户端、WebSocket 通信、TCP/UDP 网络调试中继。
 
-前身叫 DeployMaster，2026 年 7 月改名。和 PLCBasicConfigurator 配套，覆盖 SylixOS PLC 设备的「配置 → 部署 → 测试 → 运维」全流程。
+前身叫 DeployMaster，2026 年 7 月改名。面向 PLC、嵌入式终端、网络设备等工业硬件的「部署 → 测试 → 运维」场景。
 
 开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
@@ -132,7 +132,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 统一 IProtocolAdapter 接口 + ProtocolRegistry 工厂
 ```
 
-7 个 Tool（FTP 双栏 / SFTP 文件管理 / Telnet+SSH / WebSocket / Modbus / 网络中继 / OPC UA）都遵循 Backend + Widget 配对模式。
+6 个 Tool（FTP 双栏 + SFTP 文件管理 / Telnet+SSH / WebSocket / Modbus / 网络中继 / OPC UA）都遵循 Backend + Widget 配对模式。
 
 ---
 
