@@ -32,9 +32,13 @@ DeviceForge 是基于 Qt 6 + C++17 的工业级设备批量运维平台，面向
 |-------------|---------------|
 | ![MODBUS](docs/images/MODBUS测试.png) | ![WebSocket](docs/images/WebSocket.png) |
 
-| 网络调试（中继 + 录制回放） | OPC UA 客户端 |
-|------------------------------|---------------|
-| ![网络调试](docs/images/网络调试.png) | ![OPC UA](docs/images/OPCUA客户端.png) |
+| 网络调试（中继） | 网络调试（录制回放） |
+|------------------------------|------------------------------|
+| ![网络调试](docs/images/网络调试.png) | ![网络调试回放](docs/images/网络调试回放.png) |
+
+| OPC UA 客户端 | |
+|---------------|---------------|
+| ![OPC UA](docs/images/OPCUA客户端.png) | |
 
 ---
 
@@ -42,7 +46,7 @@ DeviceForge 是基于 Qt 6 + C++17 的工业级设备批量运维平台，面向
 
 - [我写了一个透明 TCP/UDP 中继调试工具：在不打断生产链路的前提下抓包 + 录制回放](docs/articles/2026-07-09-透明中继调试工具设计.md) — NetRelayTool 设计与实现，透明中继、`.nrec` 录制、按原始时序回放
 - [open62541 与 Qt 集成的 5 个陷阱](docs/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
-- [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 布局现代化，务实推广文
+- [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — FTP 双栏 + 布局现代化 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
 
 ---
 
