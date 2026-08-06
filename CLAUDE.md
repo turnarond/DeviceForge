@@ -9,9 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的工业级设备批量运维平台。提供 FTP/FTPS 批量部署、Telnet 批量命令、Modbus 集群测试、OPC UA 客户端、WebSocket 通信等功能。2026-07-05 更名为 DeviceForge。
-
-与 PLCBasicConfigurator 配套，构成 SylixOS PLC 设备完整工具链（DeployMaster 负责部署/测试/运维，PLCBasicConfigurator 负责设备配置）。
+DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的**工业级系统部署调试工具**。提供 FTP/FTPS 批量部署、Telnet 批量命令、Modbus 集群测试、OPC UA 客户端、WebSocket 通信等功能。2026-07-05 更名为 DeviceForge。
 
 ## 构建命令
 

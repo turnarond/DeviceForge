@@ -1,6 +1,6 @@
 # DeviceForge — 工业设备批量运维平台
 
-DeviceForge 是基于 Qt 6 + C++17 的工业级设备批量运维平台，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
+DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
 **版本**：2.5.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
