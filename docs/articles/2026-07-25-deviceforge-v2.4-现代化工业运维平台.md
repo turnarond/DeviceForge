@@ -141,7 +141,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 - **重命名和新建远程目录**：右键菜单有这两个选项，但因为 FtpAdapter 尚未实现 RNFR/RNTO/MKD 命令，目前点击会弹出提示"后续版本支持"。
 - **远程文件精确对比**：当前 RemoteFileModel 的黄色标记仅基于文件名匹配，还没有做文件大小和时间戳的精确对比（代码里留了 TODO）。
 - **SCP 协议**：虽然 UI 预留过，但远端预览面板已移除，SCP 计划改为通过 FtpAdapter 扩展实现。
-- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256 和证书认证在 v2.5 路线图上。
+- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256 和证书认证暂不作为优先方向。
 - **单元测试覆盖率低**：目前只有 6 个测试目标，覆盖了 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore、OPC UA 编解码。FtpAdapter、TelnetAdapter、ToolRegistry 还没写测试。
 - **仅 Windows**：虽然 CMake 已就绪，但未在 Linux 上完整验证（DPAPI 加密在非 Windows 上是 no-op stub）。
 
