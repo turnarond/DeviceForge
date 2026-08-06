@@ -149,17 +149,6 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 
 - 这是个 Qt Widgets 应用，不是 Electron 套壳。界面不会像网页那样花哨，交互也不是 Web 式的。
 - 没有安装包。目前是 CMake 构建出 exe，自己复制到目标目录。
-- 英文界面还没做（i18n 在长期愿景里）。
-
----
-
-## 路线图
-
-| 版本 | 内容 |
-|------|------|
-| v2.4（当前）| FTP 双栏 + 布局现代化 + 日志统一 |
-| v2.5 | OPC UA 安全策略（Basic256 + 证书）、SCP 支持、NetRelay 非阻塞增强 |
-| v2.6+ | Linux/SylixOS 适配、ToolHost 多 Tool 并发、QPluginLoader 插件化 |
 
 ---
 
