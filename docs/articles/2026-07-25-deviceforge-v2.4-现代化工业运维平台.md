@@ -2,13 +2,15 @@
 
 > 一个用 Qt 写的工业设备批量运维工具，v2.4 版本做了两件事：把 FTP 部署从表单变成了双栏文件管理器，把整个主窗口从 Windows 95 风格拉到了 2026 年的水平。
 
+> **更新（v2.5）**：文末提到的「重命名/新建远程目录」「远程文件精确对比」等限制已在 v2.5 实现，见 [v2.5 发布说明](2026-08-06-deviceforge-v2.5-现代化工业运维平台.md)。
+
 ---
 
 ## 它是什么
 
 DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PLC 设备做批量运维：FTP/FTPS 部署固件、Telnet/SSH 批量执行命令、Modbus 寄存器读写、OPC UA 客户端、WebSocket 通信、TCP/UDP 网络调试中继。
 
-前身叫 DeployMaster，2026 年 7 月改名。和 PLCBasicConfigurator 配套，覆盖 SylixOS PLC 设备的「配置 → 部署 → 测试 → 运维」全流程。
+前身叫 DeployMaster，2026 年 7 月改名。面向 PLC、嵌入式终端、网络设备等工业硬件的「部署 → 测试 → 运维」场景。
 
 开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)（仓库名与工程名均已改为 DeviceForge）。
 
@@ -141,7 +143,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 - **重命名和新建远程目录**：右键菜单有这两个选项，但因为 FtpAdapter 尚未实现 RNFR/RNTO/MKD 命令，目前点击会弹出提示"后续版本支持"。
 - **远程文件精确对比**：当前 RemoteFileModel 的黄色标记仅基于文件名匹配，还没有做文件大小和时间戳的精确对比（代码里留了 TODO）。
 - **SCP 协议**：虽然 UI 预留过，但远端预览面板已移除，SCP 计划改为通过 FtpAdapter 扩展实现。
-- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256Sha256 和证书认证在路线图上。
+- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256Sha256 和证书认证暂不作为优先方向。
 - **单元测试覆盖率低**：目前只有 6 个测试目标，覆盖了 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore、OPC UA 编解码。FtpAdapter、TelnetAdapter、ToolRegistry 还没写测试。
 - **仅 Windows**：虽然 CMake 已就绪，但未在 Linux 上完整验证（DPAPI 加密在非 Windows 上是 no-op stub）。
 
@@ -150,16 +152,6 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 - 这是个 Qt Widgets 应用，不是 Electron 套壳。界面不会像网页那样花哨，交互也不是 Web 式的。
 - 没有安装包。目前是 CMake 构建出 exe，自己复制到目标目录。
 - 英文界面还没做（i18n 在长期愿景里）。
-
----
-
-## 路线图
-
-| 版本 | 内容 |
-|------|------|
-| v2.4（当前）| FTP 双栏 + 布局现代化 + 日志统一 |
-| v2.5 | OPC UA 安全策略（Basic256Sha256 + 证书）、SCP 支持、NetRelay 非阻塞增强 |
-| v2.6+ | Linux/SylixOS 适配、ToolHost 多 Tool 并发、QPluginLoader 插件化 |
 
 ---
 

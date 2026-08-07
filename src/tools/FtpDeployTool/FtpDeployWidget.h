@@ -13,6 +13,9 @@
 
 #pragma once
 #include "framework/ToolWidget.h"
+#include "adapter/IProtocolAdapter.h"
+#include <memory>
+#include <atomic>
 #include <QTreeView>
 #include <QTableView>
 #include <QLineEdit>
@@ -88,7 +91,10 @@ private:
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*    m_deviceBus = nullptr;
 
+    std::string currentProtocol() const;
+
     // 工具栏
+    QComboBox*   m_protocolCombo = nullptr;
     QComboBox*   m_deviceCombo = nullptr;
     QLineEdit*   m_remotePathEdit = nullptr;
     QSpinBox*    m_portSpin = nullptr;
@@ -108,6 +114,14 @@ private:
     QWidget*         m_breadcrumbWidget = nullptr;
     QHBoxLayout*     m_breadcrumbLayout = nullptr;
     QString          m_currentRemotePath;
+
+    // 缓存的远程连接（避免每次导航都重新 TCP + FTP 登录）
+    std::shared_ptr<IProtocolAdapter> m_cachedAdapter;
+    QString m_cachedDeviceIp;
+    QString m_cachedProto;
+    int     m_cachedPort = 0;
+    bool    m_cachedUseFtps = false;
+    std::atomic<bool> m_refreshBusy{false}; // 防止并发刷新（缓存适配器非线程安全）
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;

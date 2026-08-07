@@ -1,5 +1,6 @@
 #include "FtpAdapter.h"
 #include <curl/curl.h>
+#include <atomic>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
@@ -30,6 +31,8 @@ struct FtpAdapter::Impl {
     std::string m_lastError;
     bool        m_connected = false;
     std::function<void(int)> m_progressCb;
+    std::atomic<bool> m_cancelled{false};
+    std::atomic<bool>* m_extCancelFlag = nullptr; // 外部取消标志（如 Backend 的 m_cancelled）
 
     bool m_useFtps = false;
 
@@ -74,6 +77,8 @@ struct FtpAdapter::Impl {
     static int progressCallback(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/,
                                  curl_off_t ultotal, curl_off_t ulnow) {
         auto* self = static_cast<Impl*>(clientp);
+        if (self->m_cancelled.load()) return 1; // 返回非零中止传输
+        if (self->m_extCancelFlag && self->m_extCancelFlag->load()) return 1;
         if (self->m_progressCb && ultotal > 0) {
             int pct = static_cast<int>((ulnow / ultotal) * 100.0);
             self->m_progressCb(pct);
@@ -112,6 +117,9 @@ struct FtpAdapter::Impl {
         curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+        // 逐级 CWD（MULTICWD）：SylixOS 的 cd() 只支持单级路径，
+        // SINGLECWD 发送 "CWD a/b" 多级相对路径会失败
+        curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_MULTICWD);
         if (m_useFtps) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -272,6 +280,9 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
+    std::string url = m_impl->buildUrl(remotePath);
+    std::string userPwd = m_impl->userPwd();
+
     CURL* curl = curl_easy_init();
     if (!curl) {
         fclose(file);
@@ -279,8 +290,7 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
-    std::string userPwd = m_impl->userPwd();
+    m_impl->m_cancelled = false; // 重置取消标志
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
@@ -293,22 +303,21 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L); // SylixOS 等嵌入式 FTP 不支持 EPSV
     if (m_impl->m_useFtps) {
         curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     }
 
-    // 进度回调
-    if (m_impl->m_progressCb) {
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
-    }
+    // 进度回调（同时用于取消检测）
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
 
     CURLcode res = curl_easy_perform(curl);
-    fclose(file);
     curl_easy_cleanup(curl);
+    fclose(file);
 
     if (res == CURLE_OK) {
         m_impl->m_lastError.clear();
@@ -486,7 +495,14 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     }
 
     std::string buffer;
-    std::string url = m_impl->buildUrl(remotePath);
+    // 确保目录 URL 指向正确路径（"/" 或空 → 根目录 URL 已自带 /）
+    std::string pathForUrl = remotePath;
+    // 清理路径中可能混入的换行符等空白字符
+    while (!pathForUrl.empty() && (pathForUrl.back() == '\n' || pathForUrl.back() == '\r' || pathForUrl.back() == ' '))
+        pathForUrl.pop_back();
+    if (pathForUrl.empty()) pathForUrl = "/";
+    if (pathForUrl.back() != '/') pathForUrl += '/';
+    std::string url = m_impl->buildUrl(pathForUrl);
     m_impl->setupCommonOpts(curl, url);
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
@@ -513,7 +529,7 @@ bool FtpAdapter::deleteFile(const std::string& remotePath) {
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL，避免 curl 尝试 RETR
     m_impl->setupCommonOpts(curl, url);
 
     // 使用 QUOTE 命令发送 DELE
@@ -541,24 +557,36 @@ bool FtpAdapter::deleteFile(const std::string& remotePath) {
 }
 
 bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
+    // 递归删除：先列出目录内容，逐项删除，最后 RMD 空目录
+    auto entries = listDirectoryParsed(remotePath);
+    for (const auto& e : entries) {
+        if (e.name == "." || e.name == "..") continue;
+        std::string childPath = remotePath;
+        if (!childPath.empty() && childPath.back() != '/') childPath += '/';
+        childPath += e.name;
+
+        if (e.isDir) {
+            if (!deleteDirectory(childPath)) return false; // 递归
+        } else {
+            if (!deleteFile(childPath)) return false;
+        }
+    }
+
+    // 目录已空，执行 RMD
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_impl->m_lastError = "curl_easy_init() 失败";
         return false;
     }
 
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl("/");
     m_impl->setupCommonOpts(curl, url);
 
-    // 使用 QUOTE 命令发送 RMD
-    std::string pathForDelete = "/" + remotePath;
-    if (!remotePath.empty() && remotePath[0] == '/') {
-        pathForDelete = remotePath;
-    }
-    std::string rmdCmd = "RMD " + pathForDelete;
+    std::string pathForDelete = remotePath;
+    if (!pathForDelete.empty() && pathForDelete[0] != '/') pathForDelete = "/" + pathForDelete;
 
     struct curl_slist* commands = nullptr;
-    commands = curl_slist_append(commands, rmdCmd.c_str());
+    commands = curl_slist_append(commands, ("RMD " + pathForDelete).c_str());
     curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
 
     CURLcode res = curl_easy_perform(curl);
@@ -571,6 +599,80 @@ bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
     }
 
     m_impl->m_lastError = std::string("删除目录失败: ") + curl_easy_strerror(res);
+    return false;
+}
+
+bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& newName)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    // 使用根 URL（RNFR/RNTO 用绝对路径，不需要 CWD）
+    std::string url = m_impl->buildUrl("/");
+    m_impl->setupCommonOpts(curl, url);
+
+    // 确保路径以 / 开头（FTP 命令要求绝对路径）
+    std::string path = remotePath;
+    if (!path.empty() && path[0] != '/') path = "/" + path;
+
+    // newName 可能只是文件名也可能是完整路径——若仅文件名则与 remotePath 同目录
+    std::string newPath = newName;
+    if (!newPath.empty() && newPath[0] != '/') {
+        std::size_t pos = remotePath.rfind('/');
+        if (pos != std::string::npos) {
+            newPath = remotePath.substr(0, pos + 1) + newPath;
+        } else {
+            newPath = "/" + newPath;
+        }
+    }
+
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands, ("RNFR " + path).c_str());
+    commands = curl_slist_append(commands, ("RNTO " + newPath).c_str());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK) {
+        m_impl->m_lastError.clear();
+        return true;
+    }
+    m_impl->m_lastError = std::string("重命名失败: ") + curl_easy_strerror(res);
+    return false;
+}
+
+bool FtpAdapter::makeDirectory(const std::string& remotePath)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
+    m_impl->setupCommonOpts(curl, url);
+
+    std::string path = remotePath;
+    if (!path.empty() && path[0] != '/') path = "/" + path;
+
+    struct curl_slist* commands = nullptr;
+    commands = curl_slist_append(commands, ("MKD " + path).c_str());
+    curl_easy_setopt(curl, CURLOPT_QUOTE, commands);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(commands);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK) {
+        m_impl->m_lastError.clear();
+        return true;
+    }
+    m_impl->m_lastError = std::string("新建目录失败: ") + curl_easy_strerror(res);
     return false;
 }
 
@@ -630,4 +732,12 @@ void FtpAdapter::setProgressCallback(std::function<void(int)> cb) {
 
 void FtpAdapter::setUseFtps(bool useFtps) {
     m_impl->m_useFtps = useFtps;
+}
+
+void FtpAdapter::cancelTransfer() {
+    m_impl->m_cancelled = true;
+}
+
+void FtpAdapter::setCancelFlag(std::atomic<bool>* flag) {
+    m_impl->m_extCancelFlag = flag;
 }

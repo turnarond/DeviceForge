@@ -2,6 +2,9 @@
 #include "IProtocolAdapter.h"
 #include <QTcpSocket>
 #include <libssh2/libssh2.h>
+#include <libssh2/libssh2_sftp.h>  // SFTP subsystem
+#include "tools/FtpDeployTool/FtpFileInfo.h"  // 复用 FtpFileInfo
+#include <functional>
 #include <QSet>
 #include <QFuture>
 #include <atomic>
@@ -25,6 +28,16 @@ public:
     void unsubscribe() override;
     ProtocolCapability capability() const override;
 
+    // --- SFTP 文件操作（SSH 文件传输子系统）---
+    std::vector<FtpFileInfo> sftpListDirectory(const std::string& remotePath);
+    bool sftpUploadFile(const std::string& localPath, const std::string& remotePath);
+    bool sftpDownloadFile(const std::string& remotePath, const std::string& localPath);
+    bool sftpDeleteFile(const std::string& remotePath);
+    bool sftpDeleteDirectory(const std::string& remotePath);
+    bool sftpRename(const std::string& oldPath, const std::string& newPath);
+    bool sftpMakeDirectory(const std::string& remotePath);
+    void sftpSetProgressCallback(std::function<void(int)> cb);
+
 private:
     QTcpSocket*         m_socket = nullptr;
     LIBSSH2_SESSION*    m_session = nullptr;
@@ -38,4 +51,10 @@ private:
     std::string collectHostFingerprint();     // 获取当前连接主机指纹（SHA256 Hex）
     bool verifyHostKey();                     // TOFU 校验（首次接受，变化告警）
     void closeChannel(LIBSSH2_CHANNEL*& ch);  // 安全关闭 channel
+
+    // --- SFTP 内部辅助 ---
+    LIBSSH2_SFTP* m_sftpSession = nullptr;
+    std::function<void(int)> m_sftpProgressCb;
+    bool sftpInit();
+    bool sftpDeleteDirectoryRecursive(const std::string& remotePath, int depth); // 递归删除（带深度上限）
 };

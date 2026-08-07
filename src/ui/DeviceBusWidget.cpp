@@ -18,6 +18,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QInputDialog>
+#include <QMessageBox>
 #include <QDateTime>
 #include <QStyle>
 #include <QDebug>
@@ -227,13 +228,23 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
         "QPushButton[online=\"false\"] { border-left: 3px solid #E85848; }"
     );
 
-    // 点击切换选中
+    // 左键点击切换选中，右键点击删除设备
+    pill->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(pill, &QPushButton::clicked, this, [this, pill]() {
         bool sel = !pill->property("selected").toBool();
         pill->setProperty("selected", sel);
         pill->style()->unpolish(pill);
         pill->style()->polish(pill);
         emit deviceSelectionChanged();
+    });
+    connect(pill, &QPushButton::customContextMenuRequested, this, [this, pill]() {
+        QString ip = pill->property("deviceIp").toString();
+        // 确认后删除（removeDevice 会同步移除 ConfigStore 持久化记录）
+        auto ans = QMessageBox::question(this, "移除设备",
+            QString("确定要移除设备 \"%1\" 吗？").arg(ip));
+        if (ans == QMessageBox::Yes) {
+            removeDevice(ip);
+        }
     });
 
     // 插入到 stretch 之前

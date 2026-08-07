@@ -11,6 +11,7 @@
 
 #include "RemoteFileModel.h"
 #include <QColor>
+#include <algorithm>
 
 RemoteFileModel::RemoteFileModel(QObject* parent)
     : QAbstractTableModel(parent) {}
@@ -21,12 +22,16 @@ void RemoteFileModel::setFileList(const std::vector<FtpFileInfo>& files)
     m_files = files;
 
     // 重建对比着色索引
-    // TODO: 实现精确对比（大小+时间戳）后将匹配项移入 m_syncedNames 显示绿色
     m_syncedNames.clear();
     m_diffNames.clear();
     for (const auto& f : m_files) {
-        if (m_localFileNames.count(f.name)) {
-            m_diffNames.insert(f.name); // 简化：所有同名文件标记为差异（黄色）
+        auto it = m_localFiles.find(f.name);
+        if (it != m_localFiles.end()) {
+            if (it->second.size == f.size) {
+                m_syncedNames.insert(f.name);  // 绿色：完全匹配
+            } else {
+                m_diffNames.insert(f.name);    // 黄色：大小不一致
+            }
         }
     }
     endResetModel();
@@ -41,21 +46,28 @@ void RemoteFileModel::clear()
     endResetModel();
 }
 
-void RemoteFileModel::setLocalFilesForCompare(const std::vector<std::string>& localFileNames)
+void RemoteFileModel::setLocalFilesForCompare(const std::vector<LocalFileInfo>& localFiles)
 {
-    m_localFileNames.clear();
-    for (const auto& n : localFileNames) m_localFileNames.insert(n);
+    m_localFiles.clear();
+    for (const auto& f : localFiles) m_localFiles[f.name] = f;
 
-    // 重新计算差异集合（同 setFileList，m_syncedNames 留给未来精确对比）
+    // 精确对比：同名 + 同 size → 绿色（已同步）
+    //           同名 + 异 size → 黄色（有差异）
     m_syncedNames.clear();
     m_diffNames.clear();
     for (const auto& f : m_files) {
-        if (m_localFileNames.count(f.name)) {
-            m_diffNames.insert(f.name);
+        auto it = m_localFiles.find(f.name);
+        if (it != m_localFiles.end()) {
+            if (it->second.size == f.size) {
+                m_syncedNames.insert(f.name);  // 绿色
+            } else {
+                m_diffNames.insert(f.name);    // 黄色
+            }
         }
     }
     if (!m_files.empty()) {
-        emit dataChanged(index(0, 0), index(static_cast<int>(m_files.size()) - 1, ColCount - 1));
+        emit dataChanged(index(0, 0),
+            index(static_cast<int>(m_files.size()) - 1, ColCount - 1));
     }
 }
 
@@ -123,6 +135,44 @@ QVariant RemoteFileModel::headerData(int section, Qt::Orientation orientation, i
     case ColPermissions: return QStringLiteral("权限");
     }
     return {};
+}
+
+void RemoteFileModel::sort(int column, Qt::SortOrder order)
+{
+    if (m_files.empty()) return;
+
+    // 分离 . 和 .. （始终置顶）
+    std::vector<FtpFileInfo> dots, rest;
+    for (auto& f : m_files) {
+        if (f.name == "." || f.name == "..") dots.push_back(f);
+        else rest.push_back(f);
+    }
+
+    // 目录优先，再按列排序
+    std::sort(rest.begin(), rest.end(),
+        [column, order](const FtpFileInfo& a, const FtpFileInfo& b) {
+            // 目录始终排在文件前面
+            if (a.isDir != b.isDir) return a.isDir;
+
+            bool less = false;
+            switch (column) {
+            case ColName:
+                less = QString::compare(QString::fromStdString(a.name),
+                    QString::fromStdString(b.name), Qt::CaseInsensitive) < 0;
+                break;
+            case ColSize:     less = a.size < b.size; break;
+            case ColDateTime: less = a.dateTime < b.dateTime; break;
+            case ColPermissions: less = a.permissions < b.permissions; break;
+            default:          less = a.name < b.name; break;
+            }
+            return order == Qt::AscendingOrder ? less : !less;
+        });
+
+    beginResetModel();
+    m_files.clear();
+    m_files.insert(m_files.end(), dots.begin(), dots.end());
+    m_files.insert(m_files.end(), rest.begin(), rest.end());
+    endResetModel();
 }
 
 QString RemoteFileModel::formatSize(uint64_t bytes)

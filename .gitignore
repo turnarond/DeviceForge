@@ -369,9 +369,9 @@ dist/
 *.zip
 build_opc/
 DeployMaster.vcxproj.bak
-# 内部运营文档/推广文章（不随代码发布）
+# 内部运营文档（不随代码发布）
 docs/运营流程.md
-docs/articles/
+# 注：docs/articles/ 为发布用推广文章，随代码发布（README 引用）
 
 # 本地/内部工具与 CI/设计草稿（不随代码发布）
 .codegraph/

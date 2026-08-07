@@ -1,5 +1,58 @@
 # Changelog
 
+## [2.5.0] — 2026-07-26
+
+### FTP 远程文件管理补完
+
+- **FtpAdapter 新增**：`renameFile()`（RNFR/RNTO）、`makeDirectory()`（MKD）、`cancelTransfer()`、`setCancelFlag()`；`deleteDirectory()` 改为递归删除（LIST → 逐项 DELE → RMD）
+- **远程文件精确对比**：RemoteFileModel 按 size 精确匹配着色（绿=一致，黄=有差异），替代原文件名匹配
+- **远程列表排序**：点击列头排序，目录优先、`.`/`..` 置顶
+- **重命名路径穿越校验**：拒绝包含 `/` 或 `..` 的名称
+
+### SFTP 文件管理
+
+- **SshAdapter SFTP 子系统**：sftpListDirectory / sftpUploadFile / sftpDownloadFile / sftpDeleteFile / sftpDeleteDirectory（递归+深度上限）/ sftpRename / sftpMakeDirectory
+- **FTP 双栏协议切换**：工具栏 FTP/SFTP 下拉，端口自动切换（21/22）
+- 注：SFTP 批量部署待支持（部署/拖拽上传会提示切换 FTP）
+
+### SylixOS FTP 适配
+
+- **EPSV 禁用**：SylixOS FTP 服务器不支持 EPSV，强制 PASV
+- **SINGLECWD → MULTICWD**：SylixOS `cd()` 只支持单级路径，改为逐级 CWD
+- **QUOTE 命令根 URL**：DELE/RMD/RNFR/RNTO/MKD 用根 URL + 绝对路径，避免 curl RETR 预检误报
+- **路径清理**：过滤路径中的换行符，修复双击导航 CURLcode=3
+
+### 其他
+
+- **选择性部署**：勾选设备胶囊即可只部署到部分设备（未选中回退全部）
+- **连接缓存**：同设备导航复用 FTP 连接，避免重复登录
+- **部署取消**：进度回调中断机制，取消按钮可中止传输
+- **设备胶囊右键删除**（带确认弹窗）
+- **MultiProgressWidget 极简化**：只保留总进度条 + 取消按钮
+- **本地面板重新设计**：树结构 + 紧凑路径栏
+- **目录递归删除**：区分文件/目录，FTP 递归 DELE→RMD
+
+## [2.4.0] — 2026-07-25
+
+### FTP 部署双栏重构
+
+- **QSplitter 双栏文件管理器**：左侧本地目录树（QFileSystemModel）+ 右侧远程 FTP 表格（自定义 RemoteFileModel）
+- **拖拽上传**：系统文件拖入远程面板直接上传
+- **面包屑导航**：远程目录任意层级跳转
+- **FtpListParser**：FTP LIST 响应 Unix/Windows 双格式解析
+- **多设备并行部署**：MultiProgressWidget 进度组件
+
+### 主窗口布局现代化
+
+- **左侧 72px 竖排导航栏**（NavBar）：图标 + 中文标签，琴色活跃态
+- **QTabWidget → QStackedWidget**：工具工作区全宽
+- **设备栏胶囊式重构**：石墨底 + 琴色选中态边框
+- **底部日志可折叠**：新日志到达时折叠条闪烁提示
+- **远端预览面板移除**：功能由 FTP 双栏远程面板替代
+
+### 日志统一
+
+- **6 个 Tool 独立日志区移除**：所有消息统一路由到底部全局日志（ToolWidget 回调机制）
 ## [2.4.0] — 2026-07-26
 
 ### FTP 双栏重构 + 主窗口布局现代化 + 日志统一

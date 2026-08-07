@@ -1,15 +1,17 @@
 # DeviceForge 路线图 (Roadmap)
 
-> 工业级设备批量运维平台 — 白皮书  
-> 最后更新: 2026-07-25
+> 工业级系统部署调试工具  
+> 最后更新: 2026-08-06
 
 ---
 
-## 已完成 (v2.0 → v2.1.0 → v2.2.0 → v2.3.0)
+## 已完成 (v2.0 → v2.1.0 → v2.2.0 → v2.3.0 → v2.5)
 
 | 模块 | 说明 | 版本 |
 |------|------|------|
-| **文件部署** | FTP/FTPS 批量文件部署，libcurl 底层，支持目录递归、端口/FTPS 加密 | v2.0 |
+| **文件部署** | FTP/FTPS 批量文件部署，libcurl 底层，支持目录递归、端口/FTPS 加密、选择性部署、目录递归删除、重命名/新建目录 | v2.0 / v2.5 |
+| **SFTP 文件管理** | SshAdapter SFTP 子系统（列目录/上传/下载/删除/重命名/新建目录），双栏 FTP/SFTP 协议切换 | v2.5 |
+| **SylixOS FTP 适配** | EPSV 禁用（服务器不支持）、MULTICWD 逐级 CWD（cd() 单级路径限制）、QUOTE 根 URL、递归删除 DELE→RMD | v2.5 |
 | **批量命令** | Telnet + SSH 双协议批量命令执行，SSH 密码认证 + TOFU 主机密钥 | v2.0 |
 | **WebSocket 通信** | Server/Client 双模式，默认 127.0.0.1 绑定 + 可选 Token 认证 | v2.0 |
 | **Modbus 集群测试** | QModbusTcpClient 批量读写寄存器，QTimer 自动刷新 | v2.0 |
@@ -24,25 +26,25 @@
 
 ---
 
-## 短期规划 (v2.4)
+## 短期规划 (v2.6)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **OPC UA 安全策略扩展** | 高 | 支持 Basic256/Basic256Sha256 + 证书认证 |
-| **SCP 支持** | 中 | 🗑 已取消（远端预览面板已移除，SCP 将通过 FtpAdapter 扩展支持） |
-| **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
-| **SettingsDialog 完整编辑** | 低 | 当前编辑为只读 JSON 弹窗；完整编辑写回留待后续 |
+| **SFTP/SCP 批量部署** | 🔴 高 | SshAdapter SFTP 上传接通 backend，支持 SFTP/SCP 双协议部署 |
+| **轻量化** | 🔴 高 | 安装包（NSIS/MSI）、体积优化、启动速度 |
+| **用户体验打磨** | 🔴 高 | 交互细节（拖拽、快捷键、错误提示、界面反馈） |
+| **单元测试扩展** | 中 | 从 tst_nrec / tst_config_store / tst_dpapi_crypto / tst_opcua_* 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
 
 ---
 
-## 中期规划 (v2.5+)
+## 中期规划 (v2.7+)
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **Linux/SylixOS 适配** | 🔴 高 | DpapiCrypto 在非 Windows 需替换为 libsecret；CMake 构建已就绪 |
+| **NetRelay 非阻塞增强** | 中 | 非回环绑定模态确认弹窗、背压节流（setReadBufferSize）、客户端来源 allowlist |
 | **ToolHost 多 Tool 并发** | 中 | 当前 DeployMaster 直接创建 Tool，待 ToolHost 支持多 Tool 并行管理 |
 | **插件化加载 (QPluginLoader)** | 中 | DLL 动态加载 .dll Tool 插件，manifest.xml 入口点 |
-| **单元测试扩展** | 中 | 从 tst_nrec / tst_config_store / tst_dpapi_crypto / tst_opcua_* 扩展到 FtpAdapter/TelnetAdapter/ToolRegistry 覆盖率 |
+| **跨平台 GUI** | 中 | Linux (X11/Wayland) 原生运行，DpapiCrypto 需替换为 libsecret |
 
 ---
 
@@ -50,10 +52,10 @@
 
 | 方向 | 说明 |
 |------|------|
-| **SylixOS PLC 完整工具链** | 与 PLCBasicConfigurator 配套，覆盖设备配置 → 部署 → 测试 → 运维全生命周期 |
-| **跨平台 GUI** | Linux (X11/Wayland) 原生运行，SylixOS 嵌入式部署 |
-| **多语言国际化** | i18n 支持，优先英文 |
+| **工业级系统部署调试平台** | 覆盖各类工业设备的部署 → 测试 → 运维全流程，成为工业工程师的通用工具箱 |
 | **社区生态** | 插件市场、模板分享、第三方 Tool 贡献机制 |
+
+> 注：OPC UA 安全策略（Basic256/证书）、多语言国际化暂不作为优先方向，视社区反馈再定。
 
 ---
 
@@ -66,6 +68,7 @@
 | v2.2.0 | 2026-07-18 | 在线更新 OTA + 远端预览重构 + CMake 标准构建 + 7 模块全绿 |
 | v2.3.0 | 2026-07-24 | ConfigStore 本地持久化 (SQLite + DPAPI) + OPC UA 订阅卡死修复 + CI Debug SEGFAULT 修复 |
 | v2.4 | 2026-07-25 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）|
+| v2.5 | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除）|
 
 ---
 
