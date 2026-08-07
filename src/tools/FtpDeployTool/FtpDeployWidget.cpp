@@ -407,6 +407,7 @@ void FtpDeployWidget::onDeployClicked()
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
+        currentProtocol(),
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );
@@ -1010,6 +1011,7 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
+        currentProtocol(),
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );

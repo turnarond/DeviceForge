@@ -41,12 +41,14 @@ public:
     void applyConfig(const lwserverbase::config::ConfigValue& config) override;
 
     // --- FTP 部署特有操作 ---
+    // protocol: "ftp" / "sftp"（按 ProtocolRegistry 注册的协议 id 取部署通道）
     void startUpload(const std::vector<std::string>& localFiles,
                      const std::string& remotePath,
                      bool clearBeforeDeploy,
                      bool rebootAfterDeploy,
+                     const std::string& protocol = "ftp",
                      bool useFtps = false,
-                     int port = 21);
+                     int port = 0);
     void cancelUpload();
 
     // 进度回调设置（由 Widget 调用，跨线程安全）

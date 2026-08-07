@@ -34,5 +34,6 @@ public:
     virtual ProtocolCapability capability() const = 0;
 };
 
-// 适配器工厂函数类型
-using AdapterFactory = std::shared_ptr<IProtocolAdapter>(*)();
+// 适配器工厂函数类型（std::function 允许捕获上下文，测试可注册按设备
+// 返回同一 mock 实例的工厂；普通无捕获 lambda 同样适用）
+using AdapterFactory = std::function<std::shared_ptr<IProtocolAdapter>()>;
