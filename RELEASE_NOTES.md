@@ -48,8 +48,8 @@
 
 ## 下载
 
-- **预编译包**：`DeviceForge-v2.1.0-win64.zip`（Windows x64，解压即用，需 VC++ Redistributable）
-- **源码**：`git clone https://github.com/turnarond/DeviceForge.git`（Qt 6.10.1 + CMake 3.16+）
+- **预编译包**：`DeviceForge-v2.4.0-win64.zip`（Windows x64，解压即用，需 VC++ Redistributable）
+- **源码**：`git clone https://github.com/turnarond/DeviceForge.git`（Qt 6.11.1 + CMake 3.22+）
 
 ## 系统要求
 

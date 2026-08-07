@@ -6,13 +6,13 @@
 |------|------|
 | Windows | 10/11 (x64) |
 | Visual Studio | 2022 (v143 工具集) |
-| Qt | 6.10.1 (MSVC 2022 64-bit) |
-| CMake | 3.16+ |
+| Qt | 6.11.1 (MSVC 2022 64-bit) |
+| CMake | 3.22+ |
 
 ## 安装 Qt
 
 1. 下载 [Qt Online Installer](https://www.qt.io/download-qt-installer)
-2. 选择组件：Qt 6.10.1 → MSVC 2022 64-bit
+2. 选择组件：Qt 6.11.1 → MSVC 2022 64-bit
 3. 安装 Qt Visual Studio Tools 扩展（VS 菜单 → 扩展 → 管理扩展 → 搜索 Qt）
 
 ## CMake 构建（推荐）
@@ -24,7 +24,7 @@ cd DeviceForge
 
 # 配置
 mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2022_64"
+cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
 
 # 编译 Release
 cmake --build . --config Release
@@ -35,13 +35,14 @@ cmake --build . --config Release
 
 ## Visual Studio 构建
 
-1. 用 VS2022 打开 `DeployMaster.vcxproj`
-2. 配置 Qt 版本：项目属性 → Qt Project Settings → Qt Installation
-3. 切换到 Release 配置
-4. 生成 → 生成解决方案
-5. 确保 `lib/libcurl-x64.dll` 在输出目录（已通过构建后脚本自动复制）
+旧 `DeployMaster.vcxproj` 已移除，CMake 是唯一构建系统：
 
-> 单元测试目标 `tst_nrec` 仅在 CMake 构建中提供，不包含在 VS/vcxproj 工程内。
+1. 运行 `build.bat`，生成 `build/DeviceForge.sln`
+2. 用 VS2022 打开 `build/DeviceForge.sln`
+3. 切换到 Release 配置
+4. 生成 → 生成解决方案（`lib/libcurl-x64.dll`/`libssh2.dll` 已由 CMake POST_BUILD 自动复制）
+
+> 单元测试目标（tst_*）仅在 CMake/CTest 构建中提供。
 
 ## 运行测试
 
@@ -79,14 +80,14 @@ copy lib\libcurl-x64.dll dist\DeviceForge\
 copy darkstyle.qss dist\DeviceForge\
 
 # 3. 运行 Qt 部署工具
-C:\Qt\6.10.1\msvc2022_64\bin\windeployqt.exe dist\DeviceForge\DeviceForge.exe --release --no-translations
+C:\Qt\6.11.1\msvc2022_64\bin\windeployqt.exe dist\DeviceForge\DeviceForge.exe --release --no-translations
 
 # 4. 打包
-powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.1.0-win64.zip
+powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.4.0-win64.zip
 ```
 
 ## CI/CD
 
 GitHub Actions (`.github/workflows/msbuild.yml`)：push/PR 到 `main` 时自动构建 Debug 配置。
 
-> CI 使用 Qt 6.9.2，本地开发使用 Qt 6.10.1。注意避免使用仅新版 API。
+> CI 使用 Qt 6.9.2，本地开发使用 Qt 6.11.1。注意避免使用仅新版 API。

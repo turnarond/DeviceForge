@@ -2,7 +2,7 @@
 
 ## 快速入门
 
-1. 从 [Releases](../../releases) 下载 `DeviceForge-v2.1.0-win64.zip`
+1. 从 [Releases](../../releases) 下载 `DeviceForge-v2.4.0-win64.zip`
 2. 解压到任意目录
 3. 运行 `DeviceForge.exe`
 

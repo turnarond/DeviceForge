@@ -6,7 +6,7 @@ DeviceForge 采用 **Tool + Protocol Adapter** 双层插件化架构。上层是
 
 ```
 ┌─ UI Layer (Qt Widgets) ─────────────────────────────────────┐
-│  DeployMaster (QMainWindow)                                  │
+│  DeviceForge (QMainWindow)                                   │
 │  ├─ DeviceBusWidget    设备总线（顶部胶囊形设备列表）         │
 │  ├─ NavBar             左侧导航栏（工具切换）                 │
 │  ├─ QStackedWidget     工具页面容器（NavBar 导航切换）        │
@@ -65,7 +65,7 @@ IProtocolAdapter (纯虚接口)
 
 ### 配置与凭证层（v2.3.0+）
 
-- **ConfigStore**（`src/config/ConfigStore.{h,cpp}`）：单例，SQLite 单表 `config_items(type, key, value, created_at, updated_at)`，提供 `save/load/exists/remove/list/exportTo/importFrom`。`main.cpp` 在 `DeployMaster` 前后分别调用 `open()` / `close()`。数据库位于 `%APPDATA%/DeviceForge/config.db`。
+- **ConfigStore**（`src/config/ConfigStore.{h,cpp}`）：单例，SQLite 单表 `config_items(type, key, value, created_at, updated_at)`，提供 `save/load/exists/remove/list/exportTo/importFrom`。`main.cpp` 在 `DeviceForge` 窗口创建前后分别调用 `open()` / `close()`。数据库位于 `%APPDATA%/DeviceForge/config.db`。
 - **DpapiCrypto**（`src/config/DpapiCrypto.{h,cpp}`）：Windows `CryptProtectData/CryptUnprotectData` + base64；非 Windows 平台 stub + `qCWarning`。密码字段经 `DpapiCrypto::protect` 加密后入库，绑定 Windows 当前用户账号。
 - **SettingsDialog**（`src/config/SettingsDialog.{h,cpp}`）：文件菜单 → 设置（Ctrl+,）。类型过滤、搜索、查看（编辑为只读 JSON 弹窗）、删除二次确认、清空全部、JSON 导入/导出；敏感字段遮罩。
 
@@ -110,8 +110,8 @@ NetRelayTool 是一个透明中继代理：数据生产者（TCP/UDP 客户端�
 
 | 库 | 用途 | 许可 |
 |----|------|------|
-| Qt 6.10.1 | UI + 网络 + Modbus + WebSocket | LGPL |
-| libcurl 8.20 | FTP/FTPS 传输 | MIT |
+| Qt 6.11.1 | UI + 网络 + Modbus + WebSocket | LGPL |
+| libcurl 8.16 | FTP/FTPS 传输 | MIT |
 | libssh2 | SSH 批量命令 | BSD-3-Clause |
 | open62541 1.5.5 | OPC UA 客户端（读/写/订阅） | MPL 2.0 |
 | lwserverbase | 服务框架（线程管理/ServiceTask） | ACOINFO 内部 |
@@ -134,4 +134,4 @@ NetRelayTool 是一个透明中继代理：数据生产者（TCP/UDP 客户端�
 
 ## 测试
 
-- **tst_nrec**（`tests/`，QtTest + CTest，仅 CMake 构建，不影响 VS/vcxproj 工程）：项目首个单元测试目标，覆盖 `.nrec` 录制往返、坏 magic / 坏版本 / 超长 length / 截断文件拒绝、回放上行端到端。运行：`ctest -C Release -R tst_nrec`。其余模块暂无单元测试。
+- **tst_nrec**（`tests/`，QtTest + CTest，仅 CMake 构建）：项目首个单元测试目标，覆盖 `.nrec` 录制往返、坏 magic / 坏版本 / 超长 length / 截断文件拒绝、回放上行端到端。运行：`ctest -C Release -R tst_nrec`。其余模块暂无单元测试。

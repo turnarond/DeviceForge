@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 行为准则
 
 1. **中文优先**：对话和文档尽量使用中文撰写，专业术语（如 MVP、EventBus、FTP、Modbus）和论文引述除外
-2. **文档同步**：修改代码时，若涉及需求、接口、设计、架构、手册等内容，必须同步更新 `doc/` 和 `docs/superpowers/` 中的对应文档。文档是交互接口与对齐标准，不是代码的附属品
+2. **文档是唯一的对外标准，必须保证正确性**：文档（`docs/`、`docs/superpowers/`、`README.md`、`CHANGELOG.md` 等）是交互接口与对齐标准，不是代码的附属品。修改代码若涉及需求、接口、设计、架构、手册等内容，必须同步更新对应文档，且文档中不得出现与代码不一致的事实性信息（版本号、Qt 路径、构建命令、功能状态等）。改版本号时必须全仓同步（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / CLAUDE.md 等），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准
+3. **新功能开发必须使用新分支**：新功能、重构、涉及多文件的大改动一律从 `main` 新建分支（如 `feature/xxx`、`fix/xxx`）开发，完成并验证后再合并回 `main`；不要直接在 `main` 上堆叠未提交的改动，不要在同一分支里混入多个无关功能
 
 ## 项目概述
 
@@ -40,7 +41,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.4.0 ...)` + `qt_add_executable(DeviceForge ...)`），因此 CMake 产物是 `DeviceForge.exe`。而 VS/vcxproj 工程仍名为 `DeployMaster`，产物是 `DeployMaster.exe`。两套构建系统输出的 exe 名不同，勿混淆。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.4.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
 
 ### 测试（CTest）
 
@@ -62,11 +63,7 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 
 ### Visual Studio
 
-项目根目录有 `DeployMaster.vcxproj` 与 `DeployMaster.sln`，可直接用 VS2022 打开。需安装 Qt 6.11.1、Qt Visual Studio Tools 扩展，并在 VS 中配置 Qt 版本路径。
-
-### Visual Studio 调试
-
-VS 中 F5 调试时，如果 libcurl-x64.dll 未在输出目录（如 `x64/Debug/`），需手动复制 `lib/libcurl-x64.dll` 过去。CMake 构建已通过 `POST_BUILD` 自动处理此步骤。
+旧 `DeployMaster.vcxproj`/`DeployMaster.sln` 已删除，统一用 CMake 构建。build.bat 会生成 `build/DeviceForge.sln`，用 VS2022 直接打开即可（CMake 的 POST_BUILD 已自动复制 `libcurl-x64.dll`/`libssh2.dll` 到输出目录，调试无需手动处理）。
 
 ## CI/CD
 
@@ -79,7 +76,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 | 组件 | 用途 |
 |------|------|
 | Qt 6.11.1 (Core/Gui/Widgets/Network/SerialBus/WebSockets/Sql/Concurrent/Test) | 跨平台 UI + 网络 + Modbus + 单元测试 + 配置持久化 |
-| libcurl (lib/curl-8.20.0) | FTP 文件传输 |
+| libcurl (8.16.0，lib/libcurl-x64.dll) | FTP 文件传输 |
 | open62541 v1.5.5 (单文件分发) | OPC UA 客户端 |
 | lwserverbase | 服务框架（ServiceTask 生命周期、ServiceManager、ConfigManager） |
 | lwcommunicate | 网络通信库（TCP/UDP/Serial 连接池、自动重连） |
@@ -100,7 +97,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
-> **注意**：ToolHost::createTool() 只支持单活跃 Tool，目前所有 Tool 均通过 `DeployMaster` 直接创建 Backend + Widget（`setupXxxTab()` / `initToolTabs()`），绕过 ToolHost。`main.cpp` 中的 `ToolHost::registerBuiltinFactory()` 目前仅为预留。待 ToolHost 支持多 Tool 并发后切换。
+> **注意**：ToolHost::createTool() 只支持单活跃 Tool，目前所有 Tool 均通过 `DeviceForge` 主窗口直接创建 Backend + Widget（`setupXxxTab()` / `initToolTabs()`），绕过 ToolHost。`main.cpp` 中的 `ToolHost::registerBuiltinFactory()` 目前仅为预留。待 ToolHost 支持多 Tool 并发后切换。
 
 **已完成（Phase 0-2）**：
 - Phase 0（基础设施对齐）：thirdparty 库编译集成、LogBridge 日志桥接、适配器层（IProtocolAdapter/FtpAdapter/TelnetAdapter/ProtocolRegistry）
@@ -112,14 +109,14 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - libcurl 协议白名单（所有 curl handle CURLOPT_PROTOCOLS_STR = "ftp,ftps"）
 - Telnet 认证失败阻断（凭证发送失败→立即断开）
 - WebSocket 默认绑定 127.0.0.1 + 可选 Token 认证（URL 参数 ?token=）
-- 内存密码安全擦除（AuthInfo::clear / FtpManager::clearCredentials）
+- 内存密码安全擦除（AuthInfo::clear）
 - 日志去敏感化（Telnet/WebSocket 消息内容改为记录字节数）
 - 安全审查报告见 `docs/superpowers/specs/2026-07-05-ftp-deploy-improvement-design.md`
 
 **配置持久化（2026-07-25，v2.3.0）**：
 - ConfigStore 单例（`src/config/ConfigStore.cpp/.h`）：基于 SQLite 的键值配置持久化（设备列表/凭证/端点历史/Tool 设置），支持 JSON 导入导出
 - DpapiCrypto（`src/config/DpapiCrypto.cpp/.h`）：Windows DPAPI 加密封装（CryptProtectData/CryptUnprotectData），用于加密存储敏感字段（凭证密码等）；非 Windows 平台为 no-op stub，明文存储
-- SettingsDialog（`src/config/SettingsDialog.cpp/.h`）：设置面板 UI（通用/网络/安全 三页），入口在 DeployMaster 菜单栏
+- SettingsDialog（`src/config/SettingsDialog.cpp/.h`）：设置面板 UI（通用/网络/安全 三页），入口在主窗口菜单栏
 - 各 Tool 已接入 ConfigStore：DeviceBusWidget 设备记录持久化 + 启动加载、OpcUaClientWidget endpoint 历史下拉、FtpDeployWidget 凭证 DPAPI 加密持久化、SettingsDialog 设置面板
 
 **NetRelayTool 安全加固（2026-07-08）**：
@@ -134,7 +131,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 **待完成**：
 - QPluginLoader DLL 加载
 - SCP 支持（通过 FtpAdapter 扩展实现，集成到 FTP 双栏远程面板中）
-- ToolHost 多 Tool 并发支持（当前 Tool 通过 DeployMaster 直接创建）
+- ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
 
 详细设计见 `docs/superpowers/specs/2026-07-04-tool-framework-design.md`。
@@ -145,7 +142,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 ```
 UI Layer (Qt Widget)         Framework Layer            Adapter Layer
 ──────────────────           ─────────────────          ──────────────
-DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
+DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   ├─ DeviceBusWidget          ToolRegistry (注册表)       ├─ FtpAdapter
   ├─ Tool Navigation          ToolBackend (基类)          ├─ TelnetAdapter
   └─ QSS 深色主题             ToolWidget (基类)           └─ ProtocolRegistry
@@ -208,14 +205,14 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 资源
 
-- **QRC**：`DeployMaster.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）
-- **QSS**：`darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
-- **UI 文件**：`DeployMaster.ui`（主窗口）+ `tab_modbus_cluster_test.ui`、`tab_opcua_client.ui`
+- **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `app.ico`（`:/icons/app.ico`）
+- **QSS**：`src/app/darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
+- **UI 文件**：`src/app/DeviceForge.ui`（主窗口）
 
 ### 源码文件清单
 
-**根目录（旧架构源码，逐步迁移中）**：
-`main.cpp` / `DeployMaster.cpp/.h` / `OpcUaClient.cpp/.h` / `ModbusCluster.cpp/.h`（旧架构文件，逐步迁移或替换）
+**应用壳（src/app/）**：
+`main.cpp` / `DeviceForge.cpp/.h`（主窗口类）/ `DeviceForge.ui` / `DeviceForge.qrc` / `DeviceForge.rc` / `resource.h` / `app.ico` / `darkstyle.qss` — 2026-08-02 由根目录迁入，统一应用壳入口
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
@@ -231,9 +228,7 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - `src/tools/OpcUaClientTool/`：OpcUaClientBackend(.cpp/.h) / OpcUaClientWidget(.cpp/.h) — OPC UA 客户端 Tool（open62541）
 - `src/adapter/`（补充）：OpcUaAdapter(.cpp/.h)（实现 IProtocolAdapter，封装 open62541 客户端）
 - `src/updater/`：见下方「在线更新（OTA）子系统」
-- `src/model/`：FtpManager(.cpp/.h)（旧，待 FtpAdapter 替换后移除）
-- `src/presenter/`：FtpPresenter(.cpp/.h) / ModbusPresenter(.cpp/.h)（旧，待 Tool 迁移完成后移除）
-- `src/utils/`：DeployEvent.h（旧，待完全移除 EventBus 后删除）
+- `src/utils/`：FormatUtils.h（工具函数）
 - `src/thirdparty/`：lwcomm / lwlog / lwmsgq / lwevent / lwcommunicate / lwserverbase / tinyxml2 / nanopb / open62541 / multimedia
 
 ### 在线更新（OTA）子系统（src/updater/）
@@ -247,12 +242,22 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 
 > CMake `POST_BUILD` 会把 `Updater.exe` 复制到 DeviceForge 输出目录，便于部署包一起打包。
 
-### 已删除的死代码（Phase 0-1 清理）
+### 已删除的死代码
 
+**Phase 0-1 清理**：
 - `src/framework/EventBus.h/.cpp` — 由 lwmsgq 消息队列替代
 - `src/framework/ConnectionPool.h/.cpp` — 由 lwcommunicate::LWConnPool 替代
 - `TelnetManager.cpp` — 1 字节空文件
 - `FileDeploy.h/.cpp` — 空壳类（仅 1 行构造函数）
+
+**2026-08-02 清理（工程更名 + 目录整理）**：
+- `ModbusCluster.cpp/.h` — 旧架构，无任何构建引用（CMake 不编译）
+- `OpcUaClient.cpp/.h` — 旧演示 Tab（`OpcUaClientTab`），仅被废弃的前向声明引用，已移除
+- `tab_modbus_cluster_test.ui` / `tab_opcua_client.ui` — 旧 Tab 布局（随上两个类删除）
+- `ui_tab_opcua_client.h` — uic 生成物被误跟踪
+- `src/model/FtpManager.cpp/.h` — 旧 FTP 管理器，无外部引用（由 FtpAdapter 替代）
+- `src/presenter/FtpPresenter.cpp/.h` / `ModbusPresenter.cpp/.h` — 旧 Presenter，仅被注释引用
+- `src/utils/DeployEvent.h` — 事件残留（EventBus 已移除）
 
 ### 并发模型
 
@@ -320,12 +325,10 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
   ```
   所有 thirdparty 库编译为 STATIC 库并链接进最终可执行文件（CMake: `DeviceForge.exe`）。修改 CMakeLists.txt 时需注意依赖顺序。
 
-- **FtpManager 迁移中**：旧版 `FtpManager.cpp/h` 仍存在于 `src/model/`，但新代码应使用 `FtpAdapter`（实现 IProtocolAdapter）。旧 FtpManager 将在 Phase 2 FTP 模块全量迁移后删除
-
-- **EventBus 已移除**：`DeployEvent` 元类型注册、EventBus 事件订阅等已从 `main.cpp` 和 `DeployMaster.cpp` 中移除。`src/utils/DeployEvent.h` 仍保留，待所有引用清理后删除
+- **旧架构文件已清理（2026-08-02）**：`src/model/FtpManager`、`src/presenter/FtpPresenter/ModbusPresenter`、`src/utils/DeployEvent.h`、根目录 `ModbusCluster`/`OpcUaClient`/`tab_*.ui` 均已删除。所有协议走 `FtpAdapter`（IProtocolAdapter），事件走 lwmsgq
 
 
-- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend`（`src/tools/OpcUaClientTool/`）+ `OpcUaAdapter`（`src/adapter/`）。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩保留声明但不再实例化，待清理
+- **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend`（`src/tools/OpcUaClientTool/`）+ `OpcUaAdapter`（`src/adapter/`）。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩已随 2026-08-02 清理删除
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
@@ -349,10 +352,10 @@ DeployMaster.cpp             ToolHost (桥接层)          IProtocolAdapter
 - **main.cpp 初始化顺序**（关键）：
   1. `QApplication` 创建
   2. `LogBridge::install()` — Qt → lwlog 桥接
-  3. `ProtocolRegistry` 工厂注册（FtpAdapter + TelnetAdapter）
+  3. `ProtocolRegistry` 工厂注册（FtpAdapter + TelnetAdapter + SshAdapter + OpcUaAdapter）
   4. 加载 darkstyle.qss
-  5. `DeployMaster window` — 构造函数：NavBar（7项） + DeviceBusWidget（胶囊式） + QStackedWidget + 全部 Tool Widget + 底部可折叠日志
+  5. `DeviceForge window` — 构造函数：NavBar（7项） + DeviceBusWidget（胶囊式） + QStackedWidget + 全部 Tool Widget + 底部可折叠日志
   6. `ToolRegistry` 注册内置 Tool 元数据（ftp.deploy / telnet.command / websocket.comm）
-  7. `ToolHost` 工厂注册（预留，当前 Tool 通过 DeployMaster 直接创建）
+  7. `ToolHost` 工厂注册（预留，当前 Tool 通过 DeviceForge 主窗口直接创建）
   8. `window.initToolTabs()` — 无操作（所有 Tool 已在构造函数中按导航栏顺序创建）
   9. `window.show()`

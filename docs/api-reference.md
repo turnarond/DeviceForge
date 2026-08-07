@@ -53,7 +53,7 @@ public:
 
 1. 创建 `YourBackend` 继承 `ToolBackend`，实现 `svc()` 循环
 2. 创建 `YourWidget` 继承 `ToolWidget`，实现 UI 和回调绑定
-3. 在 `DeployMaster` 构造函数中创建 Backend+Widget 并添加 Tab
+3. 在 `DeviceForge` 主窗口构造函数中创建 Backend+Widget 并添加 Tab
 
 ---
 

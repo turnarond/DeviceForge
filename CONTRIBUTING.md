@@ -6,14 +6,14 @@
 
 1. Fork 本仓库
 2. 克隆到本地：`git clone https://github.com/YOUR_USER/DeviceForge.git`
-3. 用 VS2022 打开 `DeployMaster.vcxproj` 或使用 CMake 构建
+3. 运行 `build.bat`（CMake 构建）或用 VS2022 打开生成的 `build/DeviceForge.sln`
 4. 创建你的功能分支：`git checkout -b feature/my-feature`
 
 ## 开发环境
 
-- Qt 6.10.1 (MSVC 2022 64-bit)
+- Qt 6.11.1 (MSVC 2022 64-bit)
 - Visual Studio 2022
-- CMake 3.16+
+- CMake 3.22+
 
 详见 [CLAUDE.md](CLAUDE.md) 了解完整架构说明。
 
@@ -35,7 +35,7 @@
 
 ## 提交流程
 
-1. 确保代码在 Windows + Qt 6.10.1 上编译通过
+1. 确保代码在 Windows + Qt 6.11.1 上编译通过
 2. 提交 PR 并填写 PR 模板
 3. 维护者会在一周内 review
 

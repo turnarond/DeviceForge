@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.4.0] — 2026-07-26
+
+### FTP 双栏重构 + 主窗口布局现代化 + 日志统一
+
+### 新增
+
+#### FTP 双栏文件管理器（`src/tools/FtpDeployTool/`）
+- **FtpListParser**：FTP LIST 响应 Unix/Windows 双格式解析（total 头/符号链接/正则复用）
+- **FtpAdapter::listDirectoryParsed**：结构化远程目录列表（FtpFileInfo）
+- **RemoteFileModel**：远程 FTP 目录 `QAbstractTableModel`
+- **MultiProgressWidget**：多设备并行部署进度条
+- **FtpDeployWidget 双栏重构**：QSplitter 本地（QFileSystemModel）+ 远程（RemoteFileModel）双栏文件管理器
+- **拖拽上传**：系统文件拖入远程面板直接上传；异步删除/下载连接失败错误处理、重命名/新建目录用户提示
+- **移除远端预览面板**（旧 tab_deploy 页面，功能由远程面板替代）
+
+#### 主窗口布局现代化
+- 左侧导航栏（NavBar）+ `QStackedWidget` 替代 `QTabWidget`
+- DeviceBusWidget 胶囊式紧凑重设计（online 视觉指示器）
+- 底部日志可折叠 — 折叠条 + 新日志到达琴色闪烁提示
+
+### 日志统一
+- 所有 Tool 日志统一路由到底部全局日志，移除各 Tool `m_logView`，删除日志查询 Tab
+
+### 修复
+- OTA 更新全链路问题（closes #15）：findAsset 无法匹配 zip 资产等
+- OPC UA 订阅卡死：请求超时 + 后台线程 + 移除冗余轮询
+- CI Debug 模式下 tst_config_store SEGFAULT
+
+---
+
 ## [2.3.0] — 2026-07-21
 
 ### 本地配置持久化（ConfigStore）

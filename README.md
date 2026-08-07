@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的工业级设备批量运维平台。2.0 版本引入插件化 Tool 架构和 Protocol Adapter 抽象层，从 SylixOS PLC 专用工具升级为面向通用工业设备（PLC、嵌入式终端、网络设备等）的可扩展运维平台。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.1.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.4.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -94,7 +94,7 @@ darkstyle.qss 深色主题      ToolWidget (基类)          └─ ProtocolRegi
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.1.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.4.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 
@@ -102,13 +102,13 @@ darkstyle.qss 深色主题      ToolWidget (基类)          └─ ProtocolRegi
 
 ```bash
 mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.10.1\msvc2022_64"
+cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
 cmake --build . --config Release
 ```
 
 ### Visual Studio
 
-直接打开 `DeployMaster.vcxproj`，需提前安装 Qt 6.10.1 + Qt Visual Studio Tools。
+运行 `build.bat` 后打开生成的 `build/DeviceForge.sln` 即可（旧 `DeployMaster.vcxproj` 已移除，CMake 是唯一构建系统）。
 
 ### CI
 
@@ -120,9 +120,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`）：push/PR 到 `main` 时触�
 
 | 依赖 | 版本 |
 |------|------|
-| Qt | 6.10.1（Core/Gui/Widgets/Network/SerialBus/WebSockets） |
+| Qt | 6.11.1（Core/Gui/Widgets/Network/SerialBus/WebSockets） |
 | MSVC | Visual Studio 2022 (v143) |
-| CMake | 3.16+ |
+| CMake | 3.22+ |
 | libcurl | 8.x（已内置 `lib/libcurl-x64.dll`） |
 | 操作系统 | Windows 10/11 x64 |
 
@@ -133,14 +133,14 @@ GitHub Actions（`.github/workflows/msbuild.yml`）：push/PR 到 `main` 时触�
 ```
 DeviceForge/
 ├── src/
-│   ├── adapter/         # 协议适配器（FtpAdapter / TelnetAdapter / ProtocolRegistry）
+│   ├── app/             # 应用壳（main.cpp + DeviceForge 主窗口 + .ui/.qrc/.rc + 主题/图标）
+│   ├── adapter/         # 协议适配器（FtpAdapter / TelnetAdapter / SshAdapter / OpcUaAdapter / ProtocolRegistry）
 │   ├── framework/       # 框架层（ToolBackend / ToolWidget / ToolHost / ToolRegistry）
 │   ├── logging/         # LogBridge（Qt → lwlog）
-│   ├── model/           # 旧业务模型（FtpManager，待迁移后移除）
-│   ├── presenter/       # 旧 Presenter（FtpPresenter / ModbusPresenter，待移除）
-│   ├── tools/           # Tool 实现（FtpDeployTool / ...）
-│   ├── ui/              # UI 组件（DeviceBusWidget）
-│   ├── utils/           # 工具类（DeployEvent，待移除）
+│   ├── config/          # ConfigStore（SQLite）+ DPAPI 加密 + SettingsDialog
+│   ├── tools/           # Tool 实现（FtpDeployTool / TelnetTool / ...）
+│   ├── ui/              # UI 组件（NavBar / DeviceBusWidget）
+│   ├── utils/           # 工具类（FormatUtils）
 │   └── thirdparty/      # 第三方库
 ├── docs/                # 文档目录
 │   ├── *.md             # 对外交付文档（architecture / api-reference / user-guide / build-guide / security）
@@ -148,8 +148,6 @@ DeviceForge/
 │   └── superpowers/     # 设计规格（specs/）+ 实施计划（plans/）
 ├── include/curl/        # libcurl 头文件
 ├── lib/                 # libcurl 二进制文件
-├── darkstyle.qss        # 工业仪表盘深色主题
-├── DeployMaster.ui      # 主窗口布局
 ├── CMakeLists.txt       # CMake 构建
 └── CLAUDE.md            # AI 助手指引
 ```
@@ -160,7 +158,10 @@ DeviceForge/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
-| **2.1.0** | 2026-07-09 | Modbus Tool 迁移 + NetRelayTool 网络调试中继（录制回放 .nrec）+ 首个单元测试目标 tst_nrec |
+| **2.4.0** | 2026-07-26 | FTP 双栏重构（本地/远程双栏文件管理器、拖拽上传、多设备并行部署）+ 主窗口布局现代化（NavBar + 可折叠日志）+ 日志统一 |
+| 2.3.0 | 2026-07-21 | ConfigStore SQLite 配置持久化 + DPAPI 密码加密 + SettingsDialog 设置面板 |
+| 2.2.0 | 2026-07-21 | OPC UA 客户端完整化（地址空间浏览 5 列重构 + 订阅）+ open62541 连接鲁棒性 patch |
+| 2.1.0 | 2026-07-09 | Modbus Tool 迁移 + NetRelayTool 网络调试中继（录制回放 .nrec）+ 首个单元测试目标 tst_nrec |
 | 2.0.0 | 2026-07-04 | 插件化 Tool 架构 + Protocol Adapter 层 + 工业仪表盘主题 |
 | 1.0.0 | 2026-06 | 7 模块功能完整，MVP+EventBus 架构（已废弃） |
 

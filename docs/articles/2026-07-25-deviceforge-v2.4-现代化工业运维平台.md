@@ -10,7 +10,7 @@ DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PL
 
 前身叫 DeployMaster，2026 年 7 月改名。和 PLCBasicConfigurator 配套，覆盖 SylixOS PLC 设备的「配置 → 部署 → 测试 → 运维」全流程。
 
-开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)（注意：仓库名仍为 DeployMaster，CMake 项目名已改为 DeviceForge）。
+开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)（仓库名与工程名均已改为 DeviceForge）。
 
 ---
 
@@ -105,7 +105,7 @@ DeviceForge 的设计出发点就是：**一次操作，并行部署到多台设
 |----|------|
 | UI | Qt 6.11.1 Widgets（不是 QML），QSS 深色主题 |
 | 构建 | CMake 3.22+，Visual Studio 2022 |
-| FTP | libcurl 8.20.0，FTPS 加密 |
+| FTP | libcurl 8.16.0，FTPS 加密 |
 | OPC UA | open62541 v1.5.5（单文件分发，UA_MULTITHREADING=100） |
 | SSH | libssh2 |
 | 配置持久化 | SQLite + Windows DPAPI 加密（ConfigStore） |
@@ -119,7 +119,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 统一 IProtocolAdapter 接口 + ProtocolRegistry 工厂
 ```
 
-6 个 Tool（FTP / Telnet+SSH / WebSocket / Modbus / 网络中继 / OPC UA）都遵循 Backend + Widget 配对模式。ToolHost 是桥接层，但当前 Tool 直接由 DeployMaster 创建（ToolHost 的多 Tool 并发管理还在 TODO 里）。
+6 个 Tool（FTP / Telnet+SSH / WebSocket / Modbus / 网络中继 / OPC UA）都遵循 Backend + Widget 配对模式。ToolHost 是桥接层，但当前 Tool 直接由 DeviceForge 主窗口创建（ToolHost 的多 Tool 并发管理还在 TODO 里）。
 
 ### 关于深色主题
 
@@ -141,7 +141,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 - **重命名和新建远程目录**：右键菜单有这两个选项，但因为 FtpAdapter 尚未实现 RNFR/RNTO/MKD 命令，目前点击会弹出提示"后续版本支持"。
 - **远程文件精确对比**：当前 RemoteFileModel 的黄色标记仅基于文件名匹配，还没有做文件大小和时间戳的精确对比（代码里留了 TODO）。
 - **SCP 协议**：虽然 UI 预留过，但远端预览面板已移除，SCP 计划改为通过 FtpAdapter 扩展实现。
-- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256 和证书认证在 v2.5 路线图上。
+- **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256Sha256 和证书认证在路线图上。
 - **单元测试覆盖率低**：目前只有 6 个测试目标，覆盖了 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore、OPC UA 编解码。FtpAdapter、TelnetAdapter、ToolRegistry 还没写测试。
 - **仅 Windows**：虽然 CMake 已就绪，但未在 Linux 上完整验证（DPAPI 加密在非 Windows 上是 no-op stub）。
 
@@ -158,7 +158,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 | 版本 | 内容 |
 |------|------|
 | v2.4（当前）| FTP 双栏 + 布局现代化 + 日志统一 |
-| v2.5 | OPC UA 安全策略（Basic256 + 证书）、SCP 支持、NetRelay 非阻塞增强 |
+| v2.5 | OPC UA 安全策略（Basic256Sha256 + 证书）、SCP 支持、NetRelay 非阻塞增强 |
 | v2.6+ | Linux/SylixOS 适配、ToolHost 多 Tool 并发、QPluginLoader 插件化 |
 
 ---
@@ -177,4 +177,4 @@ GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
 ---
 
-*作者：turnarond | 2026-07-25*
+*作者：turnarond | 2026-07-26*
