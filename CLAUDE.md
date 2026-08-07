@@ -154,6 +154,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - SCP 支持（实现 IDeployable + 复用 ssh 协议键，集成到 FTP 双栏远程面板中，v2.7 候选）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
+- SshAdapter `sftpListDirectory` readdir 中途错误不设 lastError（自动重连盲区，v2.6 终审裁定优先跟进，约 2 行）
+- `RemoteFileModel::sort` 降序分支严格弱序违规（相等键双向 true，UB；v2.6 终审裁定随上条一并修，约 2 行）
+- FtpDeployWidget 远程表头排序指示器刷新后失配（cosmetic，低优先）
 
 详细设计见 `docs/superpowers/specs/2026-07-04-tool-framework-design.md`。
 实施计划见 `docs/superpowers/plans/2026-07-04-tool-framework-plan.md`。
