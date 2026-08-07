@@ -48,6 +48,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 - [open62541 与 Qt 集成的 5 个陷阱](docs/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
 - [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 主窗口布局现代化 + 日志统一
 - [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — 远程文件管理补完 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
+- [DeviceForge v2.6：SFTP 批量部署，从「能浏览」到「能部署」](docs/articles/2026-08-07-deviceforge-v2.6-sftp-deploy.md) — 传输能力补完：SFTP 部署与 FTP 完全对等，IDeployable 接口抽象
 
 ---
 
