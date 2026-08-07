@@ -56,6 +56,8 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_config_store`：ConfigStore SQLite + JSON 导入导出（源在 `tests/config/tst_config_store.cpp`）
 - `tst_opcua_encode`：open62541 编码路径隔离测试，C 语言，不连服务器（源在 `tests/opcua_encode/tst_opcua_encode.c`）
 - `tst_opcua_loopback`：进程内 OPC UA 服务端-客户端环回测试（源在 `tests/opcua_encode/tst_opcua_loopback.cpp`）
+- `tst_sftp_plan`：SFTP 上传规划纯逻辑测试（源在 `tests/sftp/tst_sftp_plan.cpp`）
+- `tst_deploy_loop`：部署循环 mock 测试（源在 `tests/deploy/tst_deploy_loop.cpp`）
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -203,7 +205,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量并行部署），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量部署（逐台执行，失败设备跳过）），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新

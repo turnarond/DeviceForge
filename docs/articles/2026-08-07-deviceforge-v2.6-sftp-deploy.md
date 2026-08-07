@@ -72,7 +72,7 @@ SshAdapter 的三个 SFTP 部署方法：
 
 ### 4. 协议复用「ssh」注册键
 
-SFTP 部署复用浏览用的**同一个** `SshAdapter`（ProtocolRegistry 注册键 `"ssh"`），不新建 sftp 工厂。`FtpDeployWidget::currentProtocol()` 对 SFTP 返回 `"ssh"`，部署循环直接按该键取适配器——浏览路径和部署路径天然是同一连接通道。
+SFTP 部署复用 **ssh 协议通道**（ProtocolRegistry 注册键 `"ssh"` 的同一 `SshAdapter` 实现），不新建 sftp 工厂。`FtpDeployWidget::currentProtocol()` 对 SFTP 返回 `"ssh"`，部署循环直接按该键取适配器——浏览与部署共用 SFTP 能力；部署时每设备独立连接（部署循环逐台 `create("ssh")` 新建适配器实例）。
 
 ### 5. 测试
 

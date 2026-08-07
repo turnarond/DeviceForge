@@ -22,6 +22,7 @@ public:
     // 进度回调：0-100 整数百分比
     virtual void setProgressCallback(std::function<void(int)> cb) = 0;
 
-    // 取消标志：部署循环设置后，传输应在每文件/每块前检查并中止
+    // 取消标志：部署循环设置后，传输应在每文件/每块前检查并中止。
+    // 生命周期契约：flag 必须存活至传输结束（部署期间不得释放/修改指针）。
     virtual void setCancelFlag(std::atomic<bool>* flag) = 0;
 };
