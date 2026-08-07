@@ -16,7 +16,7 @@ NavBar::NavBar(QWidget* parent)
     : QWidget(parent)
 {
     setObjectName("navBar");
-    setFixedWidth(72);
+    setFixedWidth(56);
     setStyleSheet(
         "NavBar { background: #0E1219; border-right: 1px solid #252A33; }"
     );
@@ -64,7 +64,7 @@ void NavBar::rebuildUi()
         auto* btn = new QPushButton(this);
         // 图标在上，文字在下
         btn->setText(m_items[i].icon + "\n" + m_items[i].label);
-        btn->setFixedSize(72, 56);
+        btn->setFixedSize(56, 48);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setProperty("navIndex", static_cast<int>(i));
         btn->setProperty("active", false);

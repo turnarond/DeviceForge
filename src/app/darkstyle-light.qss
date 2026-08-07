@@ -51,7 +51,7 @@ QPushButton {
     background-color: #E4E8EE;
     border: 1px solid #C4CAD4;
     border-radius: 5px;
-    padding: 7px 16px;
+    padding: 4px 10px;
     color: #2A2F38;
     min-width: 85px;
     font-weight: 600;
@@ -182,7 +182,7 @@ QListWidget, QTreeWidget, QTableWidget {
 }
 
 QListWidget::item, QTreeWidget::item, QTableWidget::item {
-    padding: 5px;
+    padding: 2px;
     border-bottom: 1px solid #C4CAD4;
 }
 
@@ -398,7 +398,7 @@ QSlider::handle:horizontal:hover {
 /* ===== 工具提示 ===== */
 QToolTip {
     background-color: #C4CAD4;
-    border: 1px solid #C4CAD4;
+    border: 1px solid #B8C0CC;
     padding: 6px 10px;
     color: #2A2F38;
     border-radius: 4px;
