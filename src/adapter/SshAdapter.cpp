@@ -1,5 +1,6 @@
 #include "SshAdapter.h"
 #include <lwlog/lwlog.h>
+#include <filesystem>  // planFolderUpload 递归遍历（std::filesystem）
 
 // MSVC 未定义 POSIX S_ISDIR 宏，libssh2 权限字段使用 POSIX 值
 #ifndef S_ISDIR
@@ -351,6 +352,7 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     uint64_t sent = 0;
     bool ok = true;
     while (sent < fileSize) {
+        if (m_sftpCancelFlag && *m_sftpCancelFlag) { ok = false; m_lastError = "上传已取消"; break; }
         size_t n = fread(buf, 1, sizeof(buf), localFile);
         if (n == 0) {
             if (ferror(localFile)) { ok = false; m_lastError = "SFTP 上传读取本地文件失败"; }
@@ -476,6 +478,84 @@ void SshAdapter::sftpSetProgressCallback(std::function<void(int)> cb)
 {
     m_sftpProgressCb = std::move(cb);
 }
+
+// ============================================================
+// SFTP 部署能力（IDeployable）
+// ============================================================
+
+// 本地递归展开 → 远程路径映射（纯逻辑，可单测）
+std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localRoot,
+                                                       const std::string& remoteRoot)
+{
+    std::vector<SftpPlanItem> items;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // 目录项在前（保证上传前 mkdir 顺序），文件项在后
+    std::vector<SftpPlanItem> dirs, files;
+    for (const auto& entry : fs::recursive_directory_iterator(localRoot, ec)) {
+        if (ec) break;
+        std::string rel = entry.path().lexically_relative(localRoot).generic_string();
+        std::string remote = remoteRoot;
+        if (!remote.empty() && remote.back() != '/') remote += '/';
+        remote += rel;
+        if (entry.is_directory(ec)) {
+            dirs.push_back({entry.path().string(), remote, true});
+        } else if (!ec) {
+            files.push_back({entry.path().string(), remote, false});
+        }
+    }
+    items.insert(items.end(), dirs.begin(), dirs.end());
+    items.insert(items.end(), files.begin(), files.end());
+    return items;
+}
+
+// 逐项执行：目录 → mkdir（已存在忽略），文件 → sftpUploadFile（取消检查）
+bool SshAdapter::sftpUploadFolder(const std::string& localPath, const std::string& remotePath)
+{
+    auto items = planFolderUpload(localPath, remotePath);
+    for (const auto& item : items) {
+        if (m_sftpCancelFlag && *m_sftpCancelFlag) return false;
+        if (item.isDirectory) {
+            // mkdir 失败不中止：目录已存在（EEXIST）属正常，真失败由后续文件上传暴露
+            if (!sftpMakeDirectory(item.remotePath)) {
+                LWLOG_W(std::string("SFTP 目录已存在或创建失败（继续）: ") + item.remotePath);
+            }
+        } else {
+            if (!sftpUploadFile(item.localPath, item.remotePath)) return false;
+        }
+    }
+    return true;
+}
+
+// 清空目录内容但保留目录本身：LIST → 逐项删除（文件删、子目录递归删）
+bool SshAdapter::sftpClearDirectory(const std::string& remotePath)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    auto entries = sftpListDirectory(remotePath);
+    for (const auto& e : entries) {
+        if (e.name == "." || e.name == "..") continue;   // sftpListDirectory 保留 . / ..
+        if (m_sftpCancelFlag && *m_sftpCancelFlag) return false;
+        std::string full = remotePath;
+        if (!full.empty() && full.back() != '/') full += '/';
+        full += e.name;
+        if (e.isDir) {                                   // FtpFileInfo::isDir（见 FtpFileInfo.h）
+            if (!sftpDeleteDirectory(full)) return false;  // 递归删除（已有实现）
+        } else {
+            if (!sftpDeleteFile(full)) return false;
+        }
+    }
+    return true;
+}
+
+void SshAdapter::sftpSetCancelFlag(std::atomic<bool>* flag) { m_sftpCancelFlag = flag; }
+
+// --- IDeployable 映射 ---
+bool SshAdapter::uploadFile(const std::string& p, const std::string& r) { return sftpUploadFile(p, r); }
+bool SshAdapter::uploadFolder(const std::string& p, const std::string& r) { return sftpUploadFolder(p, r); }
+bool SshAdapter::clearRemoteDirectory(const std::string& p) { return sftpClearDirectory(p); }
+void SshAdapter::setProgressCallback(std::function<void(int)> cb) { sftpSetProgressCallback(std::move(cb)); }
+void SshAdapter::setCancelFlag(std::atomic<bool>* flag) { sftpSetCancelFlag(flag); }
 
 // ============================================================
 // 辅助方法

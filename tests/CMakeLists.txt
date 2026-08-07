@@ -83,3 +83,26 @@ if(_qt_bin_dir)
     set_tests_properties(tst_updatechecker PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- SFTP 上传规划纯逻辑测试（不连服务器）---
+# 注：planFolderUpload 定义于 SshAdapter.cpp，故测试目标需编译该 TU 并链接
+#     libssh2/lwlog/Qt6::Network（SshAdapter.h 引用 QTcpSocket 头），
+#     运行时需 libssh2.dll（PATH 前插 ${CMAKE_SOURCE_DIR}/lib）
+add_executable(tst_sftp_plan
+    sftp/tst_sftp_plan.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+)
+target_include_directories(tst_sftp_plan PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_sftp_plan PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_sftp_plan COMMAND tst_sftp_plan)
+if(_qt_bin_dir)
+    set_tests_properties(tst_sftp_plan PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
