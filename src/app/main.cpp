@@ -1,5 +1,6 @@
 #include "DeviceForge.h"
 #include <QtWidgets/QApplication>
+#include <QNetworkProxy>
 #include <QFile>
 #include <QTextStream>
 #include <QIcon>
@@ -24,6 +25,9 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    // 工业局域网工具：所有 Qt socket（SFTP/WebSocket）直连，忽略系统代理
+    // （Windows 系统代理如 Clash 会劫持局域网连接，QTcpSocket 报 ProxyTypeError）
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     app.setWindowIcon(QIcon(":/icons/app.ico"));  // 应用级窗口/任务栏图标
     LogBridge::install();  // Qt -> lwlog 日志桥接
 
