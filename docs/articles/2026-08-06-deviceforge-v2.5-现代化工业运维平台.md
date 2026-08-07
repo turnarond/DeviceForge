@@ -10,6 +10,8 @@ DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PL
 
 前身叫 DeployMaster，2026 年 7 月改名。面向 PLC、嵌入式终端、网络设备等工业硬件的「部署 → 测试 → 运维」场景。
 
+**更多功能请去 github 网站查看。**
+
 开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
 ---
@@ -20,7 +22,7 @@ DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PL
 
 实际场景是这样的：一套固件需要同时部署到 5 台、10 台甚至更多的 PLC 设备上。用传统工具的做法是——连上第一台，传文件，断开；连第二台，传文件，断开……反复操作。每台设备传完后还要手动检查文件列表确认上传成功。
 
-DeviceForge 的设计出发点就是：**一次操作，并行部署到多台设备，传完自动刷新远程目录，一眼就能确认结果**。
+DeviceForge 的设计出发点就是：**一次操作，批量部署到多台设备，传完自动刷新远程目录，一眼就能确认结果**。
 
 这是传统 FTP 工具做不到的事。
 
@@ -38,7 +40,7 @@ DeviceForge 的设计出发点就是：**一次操作，并行部署到多台设
 
 - **拖拽上传**：从 Windows 资源管理器拖文件到右侧远程面板，直接上传
 - **部署后自动刷新**：传完自动刷远程面板，不需要手动点刷新
-- **并行部署**：多台设备同时上传
+- **批量部署**：一次操作部署多台设备（逐台执行）
 - **面包屑导航**：任意层级跳转
 
 ### 2. 布局从传统 Qt 变成左侧导航栏
@@ -119,7 +121,7 @@ FTP 双栏新增协议切换下拉框（FTP / SFTP）。SFTP 模式通过 libssh
 |----|------|
 | UI | Qt 6.11.1 Widgets，QSS 深色主题 |
 | 构建 | CMake 3.22+，Visual Studio 2022 |
-| FTP | libcurl 8.20.0，FTPS 加密 |
+| FTP | libcurl 8.16.0，FTPS 加密 |
 | SFTP/SSH | libssh2 |
 | OPC UA | open62541 v1.5.5（UA_MULTITHREADING=100） |
 | 配置持久化 | SQLite + Windows DPAPI 加密（ConfigStore） |
@@ -156,7 +158,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 
 DeviceForge 不是一个"全面碾压现有工具"的产品，而是在特定场景（工业 PLC 批量部署）下做对了关键差异化的工具：
 
-1. **多设备并行部署**——传统 FTP 工具做不到
+1. **多设备批量部署**——传统 FTP 工具做不到
 2. **双栏文件管理器**——不再需要在系统和应用之间反复切窗
 3. **SylixOS 深度适配**——针对实际目标设备的行为差异逐个解决
 
