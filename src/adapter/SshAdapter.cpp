@@ -493,16 +493,19 @@ std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localR
 
     // 目录项在前（保证上传前 mkdir 顺序），文件项在后
     std::vector<SftpPlanItem> dirs, files;
-    for (const auto& entry : fs::recursive_directory_iterator(localRoot, ec)) {
-        if (ec) break;
-        std::string rel = entry.path().lexically_relative(localRoot).generic_string();
+    // 非抛异常迭代：遍历中途出错（权限/悬空链接等）时 MSVC 将迭代器置为 end 且
+    // increment(ec) 仅置 ec 不抛异常 → 已展开条目保留，不会整体失败/跳过该条
+    fs::recursive_directory_iterator it(localRoot, ec);
+    const fs::recursive_directory_iterator end;
+    for (; it != end; it.increment(ec)) {
+        std::string rel = it->path().lexically_relative(localRoot).generic_string();
         std::string remote = remoteRoot;
         if (!remote.empty() && remote.back() != '/') remote += '/';
         remote += rel;
-        if (entry.is_directory(ec)) {
-            dirs.push_back({entry.path().string(), remote, true});
+        if (it->is_directory(ec)) {
+            dirs.push_back({it->path().string(), remote, true});
         } else if (!ec) {
-            files.push_back({entry.path().string(), remote, false});
+            files.push_back({it->path().string(), remote, false});
         }
     }
     items.insert(items.end(), dirs.begin(), dirs.end());
@@ -514,12 +517,19 @@ std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localR
 bool SshAdapter::sftpUploadFolder(const std::string& localPath, const std::string& remotePath)
 {
     auto items = planFolderUpload(localPath, remotePath);
+    // localRoot 不存在/不可读：planFolderUpload 返回空 → 显式报错而非静默成功
+    if (items.empty() && !std::filesystem::exists(localPath)) {
+        m_lastError = "本地目录不存在或不可读: " + localPath;
+        return false;
+    }
     for (const auto& item : items) {
-        if (m_sftpCancelFlag && *m_sftpCancelFlag) return false;
+        if (m_sftpCancelFlag && *m_sftpCancelFlag) { m_lastError = "操作已取消"; return false; }
         if (item.isDirectory) {
-            // mkdir 失败不中止：目录已存在（EEXIST）属正常，真失败由后续文件上传暴露
+            // mkdir 失败不中止：目录已存在（EEXIST）属正常，真失败由后续文件上传暴露；
+            // 清除 sftpMakeDirectory 设置的误导性错误（成功路径下调用方不应读到失败信息）
             if (!sftpMakeDirectory(item.remotePath)) {
                 LWLOG_W(std::string("SFTP 目录已存在或创建失败（继续）: ") + item.remotePath);
+                m_lastError.clear();
             }
         } else {
             if (!sftpUploadFile(item.localPath, item.remotePath)) return false;
@@ -533,9 +543,10 @@ bool SshAdapter::sftpClearDirectory(const std::string& remotePath)
 {
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
     auto entries = sftpListDirectory(remotePath);
+    if (!m_lastError.empty()) return false;   // LIST 失败：报错而非静默假成功
     for (const auto& e : entries) {
         if (e.name == "." || e.name == "..") continue;   // sftpListDirectory 保留 . / ..
-        if (m_sftpCancelFlag && *m_sftpCancelFlag) return false;
+        if (m_sftpCancelFlag && *m_sftpCancelFlag) { m_lastError = "操作已取消"; return false; }
         std::string full = remotePath;
         if (!full.empty() && full.back() != '/') full += '/';
         full += e.name;
@@ -548,6 +559,7 @@ bool SshAdapter::sftpClearDirectory(const std::string& remotePath)
     return true;
 }
 
+// 部署前设置、部署期间不得修改（指针写入非原子）
 void SshAdapter::sftpSetCancelFlag(std::atomic<bool>* flag) { m_sftpCancelFlag = flag; }
 
 // --- IDeployable 映射 ---
