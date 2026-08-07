@@ -43,7 +43,7 @@ public:
     ~FtpDeployWidget() override = default;
 
     // --- ToolWidget 实现 ---
-    QString toolId() const override { return "com.deploymaster.ftp.deploy"; }
+    QString toolId() const override { return "com.deviceforge.ftp.deploy"; }
     QString toolName() const override { return "文件部署"; }
     void onToolStart() override;
     void onToolStop() override;

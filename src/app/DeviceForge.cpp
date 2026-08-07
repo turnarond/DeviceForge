@@ -1,4 +1,4 @@
-#include "DeployMaster.h"
+#include "DeviceForge.h"
 #include <QMessageBox>
 #include <QString>
 #include <QStyleFactory>
@@ -32,7 +32,7 @@
 #include "src/updater/UpdateDialog.h"   // Task 5: 在线更新对话框
 #include "config/SettingsDialog.h"      // 配置管理面板
 
-DeployMaster::DeployMaster(QWidget* parent)
+DeviceForge::DeviceForge(QWidget* parent)
     : QMainWindow(parent)
 {
     ui.setupUi(this);
@@ -127,7 +127,7 @@ DeployMaster::DeployMaster(QWidget* parent)
     auto* clearLogBtn = new QPushButton(tr("清除日志"), this);
     clearLogBtn->setMinimumSize(100, 30);
     ui.groupBox_log->layout()->addWidget(clearLogBtn);
-    connect(clearLogBtn, &QPushButton::clicked, this, &DeployMaster::onClearLogClicked);
+    connect(clearLogBtn, &QPushButton::clicked, this, &DeviceForge::onClearLogClicked);
 
     // 配置管理：文件菜单「设置...」Ctrl+,
     {
@@ -147,13 +147,13 @@ DeployMaster::DeployMaster(QWidget* parent)
     setupUpdateChecker();
 }
 
-void DeployMaster::initToolTabs()
+void DeviceForge::initToolTabs()
 {
     // 所有 Tool 已在构造函数中创建（按导航栏顺序），此处无需操作
 }
 
 // 在初始化函数中（如 setupUi 后）
-void DeployMaster::setupFtpDeployTab()
+void DeviceForge::setupFtpDeployTab()
 {
     auto backend = std::make_shared<FtpDeployBackend>();
     auto* widget = new FtpDeployWidget(this);
@@ -174,7 +174,7 @@ void DeployMaster::setupFtpDeployTab()
     m_toolStack->addWidget(m_ftpDeployTab);
 }
 
-void DeployMaster::setupTelnetDeployTab()
+void DeviceForge::setupTelnetDeployTab()
 {
     // 直接创建 TelnetBackend + TelnetWidget，不通过 ToolHost（ToolHost 只支持单个活跃 Tool）
     auto backend = std::make_shared<TelnetBackend>();
@@ -196,7 +196,7 @@ void DeployMaster::setupTelnetDeployTab()
     m_toolStack->addWidget(m_telnetDeployTab);
 }
 
-void DeployMaster::setupModbusClusterTab()
+void DeviceForge::setupModbusClusterTab()
 {
     auto backend = std::make_shared<ModbusBackend>();
     auto* widget = new ModbusWidget(this);
@@ -217,7 +217,7 @@ void DeployMaster::setupModbusClusterTab()
 }
 
 // 网络中继调试 Tool（TCP/UDP 透明代理 + 双向流量捕获）
-void DeployMaster::setupNetRelayTab()
+void DeviceForge::setupNetRelayTab()
 {
     auto backend = std::make_shared<NetRelayBackend>();
     auto* widget = new NetRelayWidget(this);
@@ -238,7 +238,7 @@ void DeployMaster::setupNetRelayTab()
 }
 
 // OPC UA 客户端 Tool（open62541 真实实现，替代旧演示 Tab）
-void DeployMaster::setupOpcUaClientTab()
+void DeviceForge::setupOpcUaClientTab()
 {
     auto backend = std::make_shared<OpcUaClientBackend>();
     auto* widget = new OpcUaClientWidget(this);
@@ -259,7 +259,7 @@ void DeployMaster::setupOpcUaClientTab()
 }
 
 // WebSocket 通信 Tab（直接创建 Backend + Widget，不通过 ToolHost）
-void DeployMaster::setupWebSocketClientTab()
+void DeviceForge::setupWebSocketClientTab()
 {
     auto backend = std::make_shared<WebSocketBackend>();
     auto* widget = new WebSocketWidget(this);
@@ -279,12 +279,12 @@ void DeployMaster::setupWebSocketClientTab()
     m_toolStack->addWidget(m_webSocketWidget);
 }
 
-void DeployMaster::onClearLogClicked()
+void DeviceForge::onClearLogClicked()
 {
     ui.txt_globalLog->clear();
 }
 
-void DeployMaster::appendGlobalLog(const QString& log)
+void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
     // 折叠态时琴色闪烁提示（Task 4）
@@ -301,7 +301,7 @@ void DeployMaster::appendGlobalLog(const QString& log)
     }
 }
 
-QStringList DeployMaster::getTargetIPList() const
+QStringList DeviceForge::getTargetIPList() const
 {
     QStringList ips;
     if (m_deviceBusWidget) {
@@ -312,17 +312,17 @@ QStringList DeployMaster::getTargetIPList() const
     return ips;
 }
 
-QString DeployMaster::getFtpUser() const
+QString DeviceForge::getFtpUser() const
 {
     return m_deviceBusWidget ? m_deviceBusWidget->user() : QString();
 }
 
-QString DeployMaster::getFtpPass() const
+QString DeviceForge::getFtpPass() const
 {
     return m_deviceBusWidget ? m_deviceBusWidget->password() : QString();
 }
 
-DeployMaster::~DeployMaster()
+DeviceForge::~DeviceForge()
 {
 }
 
@@ -342,7 +342,7 @@ static QString currentVersionString() {
 
 // 初始化 UpdateChecker、状态栏版本标签、菜单栏"帮助-检查更新"
 // 并在 5 秒后自动触发一次检查
-void DeployMaster::setupUpdateChecker()
+void DeviceForge::setupUpdateChecker()
 {
     m_updateChecker = std::make_shared<UpdateChecker>();
     // 使用 CMake 编译宏设置当前版本,避免硬编码漂移
@@ -358,14 +358,14 @@ void DeployMaster::setupUpdateChecker()
     m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
     // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
-    connect(m_versionLabel, &QLabel::linkActivated, this, &DeployMaster::onVersionLabelClicked);
+    connect(m_versionLabel, &QLabel::linkActivated, this, &DeviceForge::onVersionLabelClicked);
     m_versionLabel->installEventFilter(this);
     statusBar()->addPermanentWidget(m_versionLabel);
 
     // 复用 .ui 已有的"帮助"菜单,添加"检查更新"项
     m_checkUpdateAction = ui.menu_help->addAction("检查更新...");
     connect(m_checkUpdateAction, &QAction::triggered,
-            this, &DeployMaster::onCheckUpdateTriggered);
+            this, &DeviceForge::onCheckUpdateTriggered);
 
     // 连接 .ui 中已有的"关于"动作
     connect(ui.action_about, &QAction::triggered, this, [this]() {
@@ -412,7 +412,7 @@ void DeployMaster::setupUpdateChecker()
 }
 
 // 用户点击菜单"检查更新"或 5 秒自动触发（isAuto: 自动检查静默失败）
-void DeployMaster::onCheckUpdateTriggered(bool isAuto)
+void DeviceForge::onCheckUpdateTriggered(bool isAuto)
 {
     if (!m_updateChecker) return;
     m_autoCheck = isAuto;
@@ -421,7 +421,7 @@ void DeployMaster::onCheckUpdateTriggered(bool isAuto)
 }
 
 // 状态机回调（主线程）— 切换状态栏标签 + 自动弹出 UpdateDialog
-void DeployMaster::onUpdateStateChanged(UpdateState state)
+void DeviceForge::onUpdateStateChanged(UpdateState state)
 {
     if (!m_checkUpdateAction) return;
 
@@ -491,7 +491,7 @@ void DeployMaster::onUpdateStateChanged(UpdateState state)
 }
 
 // 点击状态栏版本标签 — 在已有可下载/已下载状态下重新唤起对话框
-void DeployMaster::onVersionLabelClicked()
+void DeviceForge::onVersionLabelClicked()
 {
     if (!m_updateChecker) return;
     auto state = m_updateChecker->state();
@@ -511,7 +511,7 @@ void DeployMaster::onVersionLabelClicked()
 }
 
  //eventFilter — 处理版本标签鼠标点击 + 日志折叠条点击（Task 4）
-bool DeployMaster::eventFilter(QObject* watched, QEvent* event) {
+bool DeviceForge::eventFilter(QObject* watched, QEvent* event) {
     // 日志折叠条点击（Task 4）
     if (watched == m_logCollapseBar && event->type() == QEvent::MouseButtonPress) {
         m_logExpanded = !m_logExpanded;

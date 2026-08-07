@@ -10,6 +10,7 @@
 #pragma once
 #include <cstdint>
 #include <cstdlib>
+#include <cctype>
 #include <string>
 
 // 更新检查状态机
@@ -52,6 +53,9 @@ inline Version parseVersion(const std::string& tag) {
     const char* s = tag.c_str();
     if (*s == 'v') ++s;
     v.major = std::atoi(s);
+    // 首字符非数字（如大写 "V2.1.0" 或非法标签）时 atoi 为 0，
+    // 直接返回全 0，避免后续 minor/patch 从错误位置解析出非零值
+    if (v.major == 0 && !std::isdigit(static_cast<unsigned char>(*s))) return v;
     while (*s && *s != '.') ++s; if (*s == '.') ++s;
     v.minor = std::atoi(s);
     while (*s && *s != '.') ++s; if (*s == '.') ++s;

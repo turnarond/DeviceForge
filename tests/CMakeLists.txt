@@ -71,3 +71,15 @@ add_test(NAME tst_opcua_encode COMMAND tst_opcua_encode)
 add_executable(tst_opcua_loopback opcua_encode/tst_opcua_loopback.cpp)
 target_link_libraries(tst_opcua_loopback PRIVATE open62541)
 add_test(NAME tst_opcua_loopback COMMAND tst_opcua_loopback)
+
+# --- 在线更新检查单元测试（版本解析 + 比较 + ReleaseInfo 默认值）---
+add_executable(tst_updatechecker tst_updatechecker.cpp)
+target_include_directories(tst_updatechecker PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_updatechecker PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_updatechecker COMMAND tst_updatechecker)
+if(_qt_bin_dir)
+    set_tests_properties(tst_updatechecker PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

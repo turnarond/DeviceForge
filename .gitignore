@@ -377,3 +377,6 @@ docs/articles/
 .codegraph/
 .github/
 docs/superpowers/
+
+# CTest 输出（build 内已忽略；根目录残留的 Testing/ 一并忽略）
+Testing/

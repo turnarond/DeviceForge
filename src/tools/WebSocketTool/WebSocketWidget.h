@@ -31,7 +31,7 @@ public:
     ~WebSocketWidget() override = default;
 
     // --- ToolWidget 实现 ---
-    QString toolId() const override { return "com.deploymaster.websocket.comm"; }
+    QString toolId() const override { return "com.deviceforge.websocket.comm"; }
     QString toolName() const override { return "WebSocket 通信"; }
     void onToolStart() override;
     void onToolStop() override;

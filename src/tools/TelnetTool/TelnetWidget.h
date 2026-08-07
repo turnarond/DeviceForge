@@ -33,7 +33,7 @@ public:
     ~TelnetWidget() override = default;
 
     // --- ToolWidget 实现 ---
-    QString toolId() const override { return "com.deploymaster.telnet.command"; }
+    QString toolId() const override { return "com.deviceforge.telnet.command"; }
     QString toolName() const override { return "批量命令"; }
     void onToolStart() override;
     void onToolStop() override;

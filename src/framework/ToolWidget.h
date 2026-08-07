@@ -35,7 +35,7 @@ public:
     virtual QString toolId() const = 0;
     virtual QString toolName() const = 0;
 
-    // --- 全局日志回调（所有 Tool 的内部日志统一路由到 DeployMaster 底部全局日志） ---
+    // --- 全局日志回调（所有 Tool 的内部日志统一路由到主窗口底部全局日志） ---
     void setGlobalLogCallback(std::function<void(const QString&)> cb) { m_globalLogCb = std::move(cb); }
 
     // --- 生命周期回调（由 ToolHost 调用） ---

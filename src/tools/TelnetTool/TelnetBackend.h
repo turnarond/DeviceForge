@@ -31,7 +31,7 @@ public:
     int svc() override;
 
     // --- ToolBackend 纯虚实现 ---
-    std::string toolId() const override { return "com.deploymaster.telnet.command"; }
+    std::string toolId() const override { return "com.deviceforge.telnet.command"; }
     std::string toolName() const override { return "批量命令"; }
     std::string toolVersion() const override { return "2.0.0"; }
     std::string toolCategory() const override { return "command"; }

@@ -34,7 +34,7 @@ public:
     int svc() override;
 
     // --- ToolBackend 纯虚实现 ---
-    std::string toolId() const override { return "com.deploymaster.websocket.comm"; }
+    std::string toolId() const override { return "com.deviceforge.websocket.comm"; }
     std::string toolName() const override { return "WebSocket 通信"; }
     std::string toolVersion() const override { return "2.0.0"; }
     std::string toolCategory() const override { return "communication"; }

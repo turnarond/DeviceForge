@@ -30,7 +30,7 @@ public:
     virtual ~ToolBackend() = default;
 
     // --- 身份 ---
-    virtual std::string toolId() const = 0;       // "com.deploymaster.ftp.deploy"
+    virtual std::string toolId() const = 0;       // "com.deviceforge.ftp.deploy"
     virtual std::string toolName() const = 0;     // "文件部署"
     virtual std::string toolVersion() const = 0;  // "2.0.0"
     virtual std::string toolCategory() const = 0; // "deploy" | "command" | "test" | "diagnostic"

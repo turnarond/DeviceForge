@@ -30,7 +30,7 @@ public:
     int svc() override;
 
     // --- ToolBackend 纯虚实现 ---
-    std::string toolId() const override { return "com.deploymaster.ftp.deploy"; }
+    std::string toolId() const override { return "com.deviceforge.ftp.deploy"; }
     std::string toolName() const override { return "文件部署"; }
     std::string toolVersion() const override { return "2.0.0"; }
     std::string toolCategory() const override { return "deploy"; }

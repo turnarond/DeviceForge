@@ -20,6 +20,19 @@ add_link_options(/DEBUG)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")  # /MD (Release runtime)
 
 # ============================================================
+# 迭代器调试级别一致性（关键，勿回退）
+# 预编译 thirdparty 库（lwlog/lwcomm/lwserverbase 等）均为 Release
+# 配置编译（_ITERATOR_DEBUG_LEVEL=0），std::string 布局按 IDL=0。
+# Debug 配置默认 IDL=2（std::string 带 _Container_proxy 校验字段），
+# 跨库传递 std::string 会按错误布局读写 → 堆损坏（LogBridge 曾因
+# 此在 Debug 构建点击"添加设备"时崩溃）。故全局强制 IDL=0 与预编译
+# 库对齐（Debug 下牺牲迭代器检查，换取 ABI 一致）。
+# ============================================================
+if(MSVC)
+    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
+endif()
+
+# ============================================================
 # Qt 6 配置（使用 qt_standard_project_setup 实现完整 Qt 集成）
 # Qt 6.8+ 推荐此方式
 # ============================================================
@@ -138,6 +151,7 @@ target_link_libraries(lwserverbase INTERFACE lwcomm lwlog lwmsgq lwevent)
 # 系统头文件目录（全局可见）
 # ============================================================
 include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}          # 根目录（src/app/*.cpp 中 "src/xxx" 相对 include 依赖）
     ${CMAKE_CURRENT_SOURCE_DIR}/include  # libcurl (curl/curl.h)
     ${CMAKE_CURRENT_SOURCE_DIR}/src      # 框架头文件 (framework/DeviceInfo.h, adapter/ProtocolRegistry.h 等)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/thirdparty
@@ -147,11 +161,10 @@ include_directories(
 # 源文件列表
 # ============================================================
 set(SOURCES
-    # 旧架构源文件（根目录）
-    main.cpp
-    DeployMaster.cpp
-    OpcUaClient.cpp
-    DeployMaster.qrc  # Qt 资源（RCC 自动编译）
+    # 应用壳（src/app/）
+    src/app/main.cpp
+    src/app/DeviceForge.cpp
+    src/app/DeviceForge.qrc  # Qt 资源（RCC 自动编译）
 
     # 日志桥接
     src/logging/LogBridge.cpp
@@ -169,9 +182,6 @@ set(SOURCES
     src/framework/ToolRegistry.cpp
     src/framework/ToolHost.cpp
     src/framework/ToolWidget.cpp
-
-    # 新模型文件
-    src/model/FtpManager.cpp
 
     # UI 组件
     src/ui/NavBar.cpp
@@ -221,7 +231,7 @@ set(SOURCES
 qt_add_executable(DeviceForge
     WIN32
     ${SOURCES}
-    DeployMaster.rc  # Windows 资源（图标+版本信息）
+    src/app/DeviceForge.rc  # Windows 资源（图标+版本信息）
 )
 
 # 设置所有配置类型的调试信息生成（包括 RelWithDebInfo）
@@ -238,7 +248,7 @@ add_subdirectory(src/thirdparty/open62541)
 # Qt 资源文件（Qt6 官方推荐 qt_add_resources）
 # ============================================================
 qt_add_resources(DeviceForge
-    DeployMaster.qrc
+    src/app/DeviceForge.qrc
 )
 
 # 链接 Qt 模块 + thirdparty 库

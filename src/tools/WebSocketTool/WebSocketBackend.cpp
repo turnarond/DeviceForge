@@ -74,7 +74,7 @@ void WebSocketBackend::startServer(int port, bool sslMode)
         ? QWebSocketServer::SecureMode
         : QWebSocketServer::NonSecureMode;
 
-    m_server = new QWebSocketServer("DeployMaster WebSocket Server", qSslMode);
+    m_server = new QWebSocketServer("DeviceForge WebSocket Server", qSslMode);
 
     if (sslMode) {
         QSslConfiguration sslConfig;

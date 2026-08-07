@@ -2,7 +2,7 @@
 
 #include <QtWidgets/QMainWindow>
 #include <QStackedWidget>
-#include "ui_DeployMaster.h"
+#include "ui_DeviceForge.h"
 #include "src/framework/AppState.h"
 #include "src/ui/NavBar.h"
 #include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
@@ -10,19 +10,18 @@
 class ToolHost;
 class DeviceBusWidget;
 class TelnetWidget;
-class OpcUaClientTab; // forward declaration
 class WebSocketWidget; // forward declaration (migrated to Tool architecture)
 class NetRelayWidget; // forward declaration (网络调试中继 Tool)
 class UpdateChecker;  // 在线更新检查服务（Task 3）
 class UpdateDialog;   // 在线更新对话框（Task 4）
 
-class DeployMaster : public QMainWindow
+class DeviceForge : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    DeployMaster(QWidget* parent = nullptr);
-    ~DeployMaster();
+    DeviceForge(QWidget* parent = nullptr);
+    ~DeviceForge();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -67,7 +66,7 @@ private:
     void onUpdateStateChanged(UpdateState state);
     
 private:
-    Ui::DeployMaster ui;
+    Ui::DeviceForge ui;
     NavBar* m_navBar = nullptr;
     QStackedWidget* m_toolStack = nullptr;
     ToolHost* m_toolHost = nullptr;
@@ -79,7 +78,6 @@ private:
     TelnetWidget* m_telnetDeployTab = nullptr;
     std::shared_ptr<class ModbusBackend> m_modbusBackend;
     class ModbusWidget* m_modbusWidget = nullptr;
-    OpcUaClientTab* m_opcUaTab = nullptr; // 旧演示 Tab（已废弃，保留声明避免破坏其它引用）
     std::shared_ptr<class OpcUaClientBackend> m_opcUaClientBackend;
     class OpcUaClientWidget* m_opcUaClientWidget = nullptr;
     WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
