@@ -543,6 +543,7 @@ void FtpDeployWidget::onRefreshRemote()
                 full.insert(full.begin(), dd);
             }
             m_remoteModel->setFileList(full);
+            m_remoteModel->sort(RemoteFileModel::ColName, Qt::AscendingOrder);
             appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
         }, Qt::QueuedConnection);
     });
