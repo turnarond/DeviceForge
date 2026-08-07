@@ -370,15 +370,6 @@ void FtpDeployWidget::onDeployClicked()
     if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
-    // SFTP 批量部署尚未接通（backend 仅支持 FTP 上传），阻止静默降级
-    if (m_protocolCombo->currentText() == "SFTP") {
-        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
-        QMessageBox::information(this, "协议不支持",
-            "SFTP 批量部署待支持，请切换为 FTP 协议。\n"
-            "SFTP 协议当前仅支持远程文件浏览/管理。");
-        return;
-    }
-
     auto devices = m_deviceBus->selectedDevices();
     if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
@@ -978,13 +969,7 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
     }
     if (files.empty()) return;
 
-    // SFTP 批量部署尚未接通，阻止静默降级（backend 仅支持 FTP 上传）
-    if (m_protocolCombo->currentText() == "SFTP") {
-        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
-        return;
-    }
-
-    QString protoLabel = "FTP";
+    const QString protoLabel = m_protocolCombo->currentText();
     appendLog(QString("📤 [%1] 拖拽上传 %2 个文件到远程目录...").arg(protoLabel).arg(files.size()));
 
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
