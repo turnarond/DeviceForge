@@ -41,7 +41,8 @@ public:
     void applyConfig(const lwserverbase::config::ConfigValue& config) override;
 
     // --- FTP 部署特有操作 ---
-    // protocol: "ftp" / "sftp"（按 ProtocolRegistry 注册的协议 id 取部署通道）
+    // protocol: "ftp" / "ssh"（按 ProtocolRegistry 注册的协议 id 取部署通道；
+    // SFTP 复用 "ssh" 注册键，widget 的 currentProtocol() 对 SFTP 即返回 "ssh"）
     void startUpload(const std::vector<std::string>& localFiles,
                      const std::string& remotePath,
                      bool clearBeforeDeploy,

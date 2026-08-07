@@ -120,8 +120,10 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 
             if (useFtps && protocol == "ftp") {
                 auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-                if (ftp) ftp->setUseFtps(true);
-                if (m_logCb) m_logCb("FTPS 模式已启用: " + deviceKey);
+                if (ftp) {
+                    ftp->setUseFtps(true);
+                    if (m_logCb) m_logCb("FTPS 模式已启用: " + deviceKey);
+                }
             }
 
             // 连接设备（connect/lastError/disconnect 属 IProtocolAdapter，
