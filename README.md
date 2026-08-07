@@ -147,7 +147,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 DeviceForge/
 ├── src/
 │   ├── app/             # 应用壳（main.cpp + DeviceForge 主窗口 + .ui/.qrc/.rc + 主题/图标）
-│   ├── adapter/         # 协议适配器（FtpAdapter / SshAdapter / TelnetAdapter / OpcUaAdapter / ProtocolRegistry）
+│   ├── adapter/         # 协议适配器（FtpAdapter / SshAdapter / TelnetAdapter / OpcUaAdapter / ProtocolRegistry / IDeployable）
 │   ├── framework/       # 框架层（ToolBackend / ToolWidget / ToolHost / ToolRegistry / AppState）
 │   ├── config/          # 配置持久化（ConfigStore / DpapiCrypto / SettingsDialog）
 │   ├── logging/         # LogBridge（Qt → lwlog）

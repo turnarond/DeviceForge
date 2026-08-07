@@ -10,8 +10,6 @@ DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PL
 
 前身叫 DeployMaster，2026 年 7 月改名。面向 PLC、嵌入式终端、网络设备等工业硬件的「部署 → 测试 → 运维」场景。
 
-**更多功能请去 github 网站查看。**
-
 开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
 ---
@@ -88,7 +86,7 @@ v2.4 的双栏只支持浏览和上传，右键菜单里的「重命名」「新
 
 FTP 双栏新增协议切换下拉框（FTP / SFTP）。SFTP 模式通过 libssh2 的 SFTP 子系统提供完整的文件管理能力：列目录、上传、下载、删除、重命名、新建目录。
 
-一个诚实的说明：**SFTP 的批量部署尚未接通**——当前 SFTP 只支持远程文件浏览和管理，点部署会提示切换 FTP。选择这个边界是因为 SylixOS 设备走 FTP 是主流路径，SFTP 部署的优先级排在后面。
+一个诚实的说明：v2.5 时 SFTP 批量部署尚未接通——当前只支持远程文件浏览和管理（v2.6 已支持，见《DeviceForge v2.6：SFTP 批量部署》）。
 
 ### 3. SylixOS 深度适配
 
@@ -142,7 +140,7 @@ Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)
 
 ### 还没有的东西
 
-- **SFTP 批量部署**：SFTP 仅支持文件浏览/管理，部署会提示切换 FTP
+- **SCP 部署上传**：未做（v2.7 候选）
 - **OPC UA 安全策略**：目前只支持 None 安全策略 + 匿名认证。Basic256 和证书认证暂不作为优先方向
 - **单元测试覆盖率低**：目前 6 个测试目标，FtpAdapter/TelnetAdapter 还没写测试
 - **仅 Windows**：CMake 已就绪，但未在 Linux 上完整验证

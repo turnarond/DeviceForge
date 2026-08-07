@@ -12,8 +12,6 @@ DeviceForge 是一个基于 Qt 6 + C++17 的 Windows 桌面应用，用来对 PL
 
 v2.4 把 FTP 部署从表单变成了双栏文件管理器；v2.5 补完了远程文件管理并做了 SylixOS 深度适配；v2.6 把 SFTP 从「单文件传输」变成「完整部署通道」。
 
-**更多功能请去 github 网站查看。**
-
 开源，GitHub：[turnarond/DeviceForge](https://github.com/turnarond/DeviceForge)
 
 ---
