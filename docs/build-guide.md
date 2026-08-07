@@ -70,20 +70,28 @@ ctest -C Release -R tst_nrec --output-on-failure
 ## 打包发布
 
 ```bash
-# 1. 编译 Release
+# 1. 编译 Release（POST_BUILD 已自动复制 libcurl.dll/libssh2.dll/Updater.exe 到 build\Release\）
 cmake --build . --config Release
 
-# 2. 创建发布目录
+# 2. 创建发布目录（DLL 从 build\Release\ 取；darkstyle.qss 内嵌 QRC，无需外部复制）
 mkdir dist\DeviceForge
 copy build\Release\DeviceForge.exe dist\DeviceForge\
-copy lib\libcurl-x64.dll dist\DeviceForge\
-copy darkstyle.qss dist\DeviceForge\
+copy build\Release\libcurl.dll dist\DeviceForge\
+copy build\Release\libssh2.dll dist\DeviceForge\
+copy build\Release\Updater.exe dist\DeviceForge\
+xcopy /E /I build\Release\plugins dist\DeviceForge\plugins   # SQLite 驱动等
 
 # 3. 运行 Qt 部署工具
 C:\Qt\6.11.1\msvc2022_64\bin\windeployqt.exe dist\DeviceForge\DeviceForge.exe --release --no-translations
 
-# 4. 打包
-powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.4.0-win64.zip
+# 4. 验证启动（部署目录直接运行，确认进程存活后再打包）
+dist\DeviceForge\DeviceForge.exe
+
+# 5. 打包
+powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.5.0-win64.zip
+
+# 6. 上传 GitHub Release
+gh release upload v2.5.0 dist\DeviceForge-v2.5.0-win64.zip --clobber
 ```
 
 ## CI/CD
