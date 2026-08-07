@@ -519,15 +519,43 @@ void FtpDeployWidget::onRefreshRemote()
         }
 
         // 列目录（复用已有连接）
-        std::vector<FtpFileInfo> files;
-        if (proto == "SFTP") {
-            files = dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
-        } else {
-            files = dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        auto listRemoteDir = [&]() -> std::vector<FtpFileInfo> {
+            if (proto == "SFTP") {
+                return dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
+            }
+            return dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        };
+
+        std::vector<FtpFileInfo> files = listRemoteDir();
+
+        // 连接失效自动重连重试一次（服务器空闲断开场景：LIST 失败 + lastError 非空）
+        if (files.empty() && !adapter->lastError().empty()) {
+            adapter->disconnect();
+            DeviceInfo dev;
+            dev.ip = deviceIp.toStdString();
+            dev.port = port;
+            AuthInfo auth;
+            auth.user = user;
+            auth.password = pass;
+            bool reconnected = false;
+            if (proto == "SFTP") {
+                reconnected = dynamic_cast<SshAdapter*>(adapter.get())->connect(dev, auth);
+            } else {
+                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+                ftp->setUseFtps(useFtps);
+                reconnected = ftp->connect(dev, auth);
+            }
+            if (reconnected) {
+                files = listRemoteDir();
+            }
         }
 
-        QMetaObject::invokeMethod(this, [this, files]() {
+        QString listError = QString::fromStdString(adapter->lastError());
+        QMetaObject::invokeMethod(this, [this, files, listError]() {
             m_refreshBusy = false;
+            if (files.empty() && !listError.isEmpty()) {
+                appendLog("远程目录加载失败: " + listError);
+            }
             // 过滤 . 条目（标准 FTP/SFTP 服务器会返回；无导航价值）
             // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
             auto full = files;
