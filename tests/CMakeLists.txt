@@ -133,3 +133,17 @@ if(_qt_bin_dir)
     set_tests_properties(tst_deploy_loop PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- RemoteFileModel 排序语义测试（纯 model，无网络）---
+add_executable(tst_remote_model remote_model/tst_remote_model.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+)
+target_include_directories(tst_remote_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_remote_model PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME tst_remote_model COMMAND tst_remote_model)
+if(_qt_bin_dir)
+    set_tests_properties(tst_remote_model PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
