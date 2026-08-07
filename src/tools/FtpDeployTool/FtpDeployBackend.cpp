@@ -103,7 +103,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 
             std::string deviceKey = device.ip + ":" + std::to_string(device.port);
 
-            // 从 ProtocolRegistry 按协议创建适配器（"ftp"/"sftp"）
+            // 从 ProtocolRegistry 按协议创建适配器（"ftp"/"ssh"，SFTP 复用 "ssh" 键）
             auto adapter = ProtocolRegistry::instance()->create(protocol);
             if (!adapter) {
                 if (m_logCb) m_logCb("适配器不可用 (" + protocol + "): " + deviceKey);

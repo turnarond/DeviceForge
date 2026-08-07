@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.6.0] — 2026-08-07
+
+### SFTP 批量部署（传输能力补完）
+
+- **IDeployable 部署能力接口**（`src/adapter/IDeployable.h`）：uploadFile/uploadFolder/clearRemoteDirectory/setProgressCallback/setCancelFlag；FtpAdapter/SshAdapter 声明实现
+- **SshAdapter 部署链路**：`sftpUploadFolder()`（递归 mkdir + 逐文件上传）、`sftpClearDirectory()`（清空保留目录）、`sftpSetCancelFlag()` 取消支持
+- **部署循环协议化**：`FtpDeployBackend::startUpload` 按协议参数从 ProtocolRegistry 取通道，FTP/SFTP 同一部署逻辑
+- **UI 解锁**：FTP 双栏协议下拉选 SFTP 后可直接部署/拖拽上传（不再提示切换 FTP）
+- **测试**：tst_sftp_plan（上传规划纯逻辑 3 用例）+ tst_deploy_loop（部署循环 mock 3 用例）
+
+### 说明
+- SCP 支持留待 v2.7（SCP 无目录列表，仅部署上传场景；技术路径：libcurl scp://）
+
 ## [2.5.0] — 2026-07-26
 
 ### FTP 远程文件管理补完

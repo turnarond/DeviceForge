@@ -39,7 +39,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.5.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.6.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
 
 ### 测试（CTest）
 
@@ -89,9 +89,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.5.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.6.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -101,6 +101,13 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - RemoteFileModel 精确对比（size 匹配替代文件名匹配）+ 列排序（sort()，目录优先、`.`/`..` 置顶）
 - FtpDeployWidget：协议切换（FTP/SFTP 下拉）、选择性部署（selectedDevices()，未选中回退全部）、连接缓存复用、路径换行符清理、重命名路径穿越校验
 - MultiProgressWidget 极简化：只保留总进度条 + 取消按钮（每设备状态通过日志展示）
+
+**v2.6 SFTP 批量部署（2026-08-07）**：
+- IDeployable 部署能力接口（`src/adapter/IDeployable.h`）：uploadFile/uploadFolder/clearRemoteDirectory/setProgressCallback/setCancelFlag，FtpAdapter/SshAdapter 声明实现
+- SshAdapter 部署链路：`sftpUploadFolder()`（递归 mkdir + 逐文件上传）、`sftpClearDirectory()`（清空保留目录）、`sftpSetCancelFlag()` 取消支持
+- FtpDeployBackend::startUpload 部署循环协议化：按协议参数从 ProtocolRegistry 取通道，FTP/SFTP 同一部署逻辑
+- FtpDeployWidget 协议下拉选 SFTP 后可直接部署/拖拽上传（不再提示切换 FTP）
+- 测试：tst_sftp_plan（上传规划纯逻辑 3 用例）+ tst_deploy_loop（部署循环 mock 3 用例）
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
@@ -142,8 +149,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **待完成**：
 - QPluginLoader DLL 加载
-- SCP 支持（通过 FtpAdapter 扩展实现，集成到 FTP 双栏远程面板中）
-- **SFTP 批量部署**（当前 SFTP 仅支持远程文件浏览/管理，部署/拖拽上传已阻止并提示切换 FTP）
+- SCP 支持（通过 FtpAdapter 扩展实现，集成到 FTP 双栏远程面板中，v2.7 候选）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
 
@@ -181,7 +187,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - **ProtocolCapability**：协议能力声明结构体（requestResponse/streaming/broadcast/publishSubscribe/maxConnections）
 - **FtpAdapter**：实现 IProtocolAdapter，内部复用 libcurl。额外暴露 FTP 特有操作（uploadFile/uploadFolder/downloadFile/listDirectory/listDirectoryParsed/deleteFile/deleteDirectory/clearRemoteDirectory/renameFile/makeDirectory/cancelTransfer/setCancelFlag）；deleteDirectory 递归删除（LIST→逐项 DELE→RMD）；SylixOS 适配（EPSV 禁用、MULTICWD、QUOTE 根 URL）
 - **TelnetAdapter**：实现 IProtocolAdapter，基于 `lwcommunicate::LWTcpClient`。支持请求-响应 + 流模式
-- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2。提供 SSH 加密通道（TelnetTool 中作为 TelnetAdapter 的安全替代）+ SFTP 文件子系统（sftpListDirectory/sftpUploadFile/sftpDownloadFile/sftpDeleteFile/sftpDeleteDirectory/sftpRename/sftpMakeDirectory）
+- **SshAdapter**：实现 IProtocolAdapter，基于 libssh2。提供 SSH 加密通道（TelnetTool 中作为 TelnetAdapter 的安全替代）+ SFTP 文件子系统（sftpListDirectory/sftpUploadFile/sftpDownloadFile/sftpDeleteFile/sftpDeleteDirectory/sftpRename/sftpMakeDirectory）+ 部署链路（sftpUploadFolder 递归 mkdir 上传 / sftpClearDirectory 清空保留目录 / sftpSetCancelFlag 取消支持，IDeployable）
 - **OpcUaAdapter**：实现 IProtocolAdapter，封装 open62541 客户端。支持读/写/订阅/浏览，`UA_MULTITHREADING=100` 编译
 - **ProtocolRegistry**（单例）：协议适配器工厂注册表（registerFactory/create/isRegistered/registeredProtocols）
 
@@ -197,7 +203,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 获取 FtpAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量并行部署），支持 FTPS 加密
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量并行部署），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
@@ -208,7 +214,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 | 功能 Tab | UI 类 | 业务逻辑 | 协议 | 架构状态 |
 |----------|-------|----------|------|----------|
-| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter | FTP/FTPS (libcurl) | ✅ 已迁移 + FTPS 加密 |
+| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter/SshAdapter | FTP/FTPS (libcurl) / SFTP (libssh2) | ✅ 已迁移 + FTPS 加密 + SFTP 批量部署 |
 | 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
 | 日志查询 | 已删除 | 所有 Tool 日志统一路由到全局日志面板（v2.4 日志统一） |  | 🗑 已移除 |
@@ -345,7 +351,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 6 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 8 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
