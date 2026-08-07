@@ -555,6 +555,7 @@ void FtpDeployWidget::onRefreshRemote()
             m_refreshBusy = false;
             if (files.empty() && !listError.isEmpty()) {
                 appendLog("远程目录加载失败: " + listError);
+                return;   // 失败时不渲染空列表、不打"已加载"日志
             }
             // 过滤 . 条目（标准 FTP/SFTP 服务器会返回；无导航价值）
             // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
