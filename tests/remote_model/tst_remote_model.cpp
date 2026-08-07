@@ -17,7 +17,7 @@ private slots:
         files.push_back(mk("b.txt", false));
         files.push_back(mk("A_DIR", true));
         files.push_back(mk("..", true));
-        files.push_back(mk("a.txt", false));
+        files.push_back(mk("Z.txt", false));
         files.push_back(mk(".", true));
         files.push_back(mk("Cdir", true));
         model.setFileList(files);
@@ -30,9 +30,9 @@ private slots:
         // 目录优先（A_DIR / Cdir），名称不区分大小写
         QCOMPARE(QString::fromStdString(model.fileAt(2).name), QStringLiteral("A_DIR"));
         QCOMPARE(QString::fromStdString(model.fileAt(3).name), QStringLiteral("Cdir"));
-        // 文件在后（a.txt / b.txt）
-        QCOMPARE(QString::fromStdString(model.fileAt(4).name), QStringLiteral("a.txt"));
-        QCOMPARE(QString::fromStdString(model.fileAt(5).name), QStringLiteral("b.txt"));
+        // 文件在后（b.txt / Z.txt——不区分大小写：'b' < 'z'）
+        QCOMPARE(QString::fromStdString(model.fileAt(4).name), QStringLiteral("b.txt"));
+        QCOMPARE(QString::fromStdString(model.fileAt(5).name), QStringLiteral("Z.txt"));
     }
 };
 QTEST_MAIN(TstRemoteModel)
