@@ -58,8 +58,9 @@ bool SshAdapter::connect(const DeviceInfo& device, const AuthInfo& auth)
 
     // 3. 握手（阻塞模式 — 由调用方放入后台线程）
     libssh2_session_set_blocking(m_session, 1);
-    // I5: 设置阻塞操作超时，防止握手/读写永久阻塞不可中断（默认 10s）
-    libssh2_session_set_timeout(m_session, 10000);
+    // 设置阻塞操作超时：死连接上 opendir/readdir 的等待减半（5s），
+    // 配合 FtpDeployWidget 的自动重连重试，用户感知从"卡 10 秒"变为"快速失败 + 自动恢复"
+    libssh2_session_set_timeout(m_session, 5000);
     if (libssh2_session_handshake(m_session, static_cast<libssh2_socket_t>(
             m_socket->socketDescriptor())) != 0) {
         m_lastError = "SSH 握手失败";
