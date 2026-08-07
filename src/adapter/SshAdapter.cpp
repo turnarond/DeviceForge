@@ -290,6 +290,7 @@ bool SshAdapter::sftpInit()
 
 std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remotePath)
 {
+    m_lastError.clear();  // 成功路径清残留错误（对齐 FtpAdapter 惯例；防 sftpClearDirectory 误判）
     std::vector<FtpFileInfo> result;
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return result; }
 
@@ -507,6 +508,10 @@ std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localR
         } else if (!ec) {
             files.push_back({it->path().string(), remote, false});
         }
+    }
+    // 遍历异常终止（MSVC 出错即置 end）：已展开条目保留，但计划可能不完整 → 告警
+    if (ec) {
+        LWLOG_W(std::string("本地目录遍历中断，计划可能不完整: ") + localRoot);
     }
     items.insert(items.end(), dirs.begin(), dirs.end());
     items.insert(items.end(), files.begin(), files.end());
