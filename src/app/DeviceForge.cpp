@@ -110,6 +110,7 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 8. 底部日志折叠条（Task 4）
     m_logCollapseBar = new QWidget(this);
     m_logCollapseBar->setObjectName("logCollapseBar");
+    m_logCollapseBar->setAttribute(Qt::WA_StyledBackground, true); // 自定义 QWidget 子类，QSS 背景需显式声明
     m_logCollapseBar->setFixedHeight(4);
     m_logCollapseBar->setCursor(Qt::PointingHandCursor);
     m_logCollapseBar->installEventFilter(this);

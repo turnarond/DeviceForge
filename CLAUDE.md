@@ -294,7 +294,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 布局
 
-- 左侧 72px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
+- 左侧 56px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
 - 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
 - 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板

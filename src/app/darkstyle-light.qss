@@ -581,3 +581,84 @@ QMessageBox QLabel {
 #logCollapseBar:hover {
     background: #C4CAD4;
 }
+
+/* ===== 左侧导航栏（内联样式提取，双主题） ===== */
+#navBar {
+    background: #ECEFF3;
+    border-right: 1px solid #D0D5DD;
+}
+
+#navBar QPushButton {
+    background: transparent;
+    border: none;
+    border-left: 2px solid transparent;
+    color: #6B7480;
+    font-size: 10px;
+    font-family: 'Microsoft YaHei';
+    font-weight: normal;
+    min-width: 0;
+    padding: 4px 2px;
+    text-align: center;
+}
+
+#navBar QPushButton:hover {
+    background: #D0D5DD;
+    color: #2A2F38;
+}
+
+#navBar QPushButton[navActive="true"] {
+    color: #D48820;
+    background: #F5E3C8;
+    border-left: 2px solid #D48820;
+}
+
+/* ===== 设备总线胶囊栏（内联样式提取，双主题） ===== */
+#btnAddDevice {
+    background: transparent;
+    border: 1px dashed #C4CAD4;
+    border-radius: 4px;
+    color: #6B7480;
+    font-size: 11px;
+    font-weight: normal;
+    min-width: 0;
+    padding: 2px 8px;
+}
+
+#btnAddDevice:hover {
+    border-color: #6B7480;
+    color: #2A2F38;
+}
+
+QPushButton#devicePill {
+    background: #E4E8EE;
+    border: 1px solid #C4CAD4;
+    border-radius: 4px;
+    color: #2A2F38;
+    font-size: 12px;
+    font-weight: normal;
+    min-width: 0;
+    padding: 2px 8px;
+}
+
+QPushButton#devicePill:hover {
+    border-color: #B8C0CC;
+}
+
+QPushButton#devicePill[selected="true"] {
+    border-color: #D48820;
+    background: #F5E3C8;
+}
+
+QPushButton#devicePill[online="true"]  { border-left: 3px solid #40C8A0; }
+QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
+
+#deviceAuthUser, #deviceAuthPass {
+    background: #ECEFF3;
+    border: 1px solid #C4CAD4;
+    border-radius: 3px;
+    color: #2A2F38;
+    padding: 2px 6px;
+    font-size: 12px;
+}
+
+#deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #D48820; }
