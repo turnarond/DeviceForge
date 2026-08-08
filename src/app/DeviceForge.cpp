@@ -111,6 +111,7 @@ DeviceForge::DeviceForge(QWidget* parent)
     m_logCollapseBar = new QWidget(this);
     m_logCollapseBar->setObjectName("logCollapseBar");
     m_logCollapseBar->setAttribute(Qt::WA_StyledBackground, true); // 自定义 QWidget 子类，QSS 背景需显式声明
+    m_logCollapseBar->setProperty("flash", false); // 闪烁态由 QSS [flash="true"] 驱动，替代组件级 setStyleSheet
     m_logCollapseBar->setFixedHeight(4);
     m_logCollapseBar->setCursor(Qt::PointingHandCursor);
     m_logCollapseBar->installEventFilter(this);
@@ -288,15 +289,16 @@ void DeviceForge::onClearLogClicked()
 void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
-    // 折叠态时琴色闪烁提示（Task 4）
+    // 折叠态时琴色闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
     if (!m_logExpanded && m_logCollapseBar) {
-        m_logCollapseBar->setStyleSheet("#logCollapseBar { background: #F0A030; }");
+        m_logCollapseBar->setProperty("flash", true);
+        m_logCollapseBar->style()->unpolish(m_logCollapseBar);
+        m_logCollapseBar->style()->polish(m_logCollapseBar);
         QTimer::singleShot(600, this, [this]() {
             if (m_logCollapseBar) {
-                m_logCollapseBar->setStyleSheet(
-                    "#logCollapseBar { background: #252A33; }"
-                    "#logCollapseBar:hover { background: #333B48; }"
-                );
+                m_logCollapseBar->setProperty("flash", false);
+                m_logCollapseBar->style()->unpolish(m_logCollapseBar);
+                m_logCollapseBar->style()->polish(m_logCollapseBar);
             }
         });
     }

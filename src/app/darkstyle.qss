@@ -582,6 +582,11 @@ QMessageBox QLabel {
     background: #333B48;
 }
 
+/* 闪烁态（新日志到达）琴色提示，置于 hover 之后保证同优先级时生效 */
+#logCollapseBar[flash="true"] {
+    background: #F0A030;
+}
+
 /* ===== 左侧导航栏（内联样式提取，双主题） ===== */
 #navBar {
     background: #0E1219;
