@@ -171,7 +171,7 @@ UI Layer (Qt Widget)         Framework Layer            Adapter Layer
 DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   ├─ DeviceBusWidget          ToolRegistry (注册表)       ├─ FtpAdapter
   ├─ Tool Navigation          ToolBackend (基类)          ├─ TelnetAdapter
-  └─ QSS 深色主题             ToolWidget (基类)           └─ ProtocolRegistry
+  └─ QSS 双主题（暗/亮）     ToolWidget (基类)           └─ ProtocolRegistry
         ↕                         ↕                         ↕
     lwmsgq (消息队列)        ServiceManager             lwcommunicate::LWTcpClient
         ↕                         ↕                         ↕
@@ -231,14 +231,14 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 资源
 
-- **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `app.ico`（`:/icons/app.ico`）
+- **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `darkstyle-light.qss`（`:/styles/darkstyle-light.qss`）+ `app.ico`（`:/icons/app.ico`）
 - **QSS**：`src/app/darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
 - **UI 文件**：`src/app/DeviceForge.ui`（主窗口）
 
 ### 源码文件清单
 
 **应用壳（src/app/）**：
-`main.cpp` / `DeviceForge.cpp/.h`（主窗口类）/ `DeviceForge.ui` / `DeviceForge.qrc` / `DeviceForge.rc` / `resource.h` / `app.ico` / `darkstyle.qss` — 2026-08-02 由根目录迁入，统一应用壳入口
+`main.cpp` / `ThemeUtils.h`（主题路径映射）/ `DeviceForge.cpp/.h`（主窗口类）/ `DeviceForge.ui` / `DeviceForge.qrc` / `DeviceForge.rc` / `resource.h` / `app.ico` / `darkstyle.qss` / `darkstyle-light.qss` — 2026-08-02 由根目录迁入，统一应用壳入口
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
@@ -367,8 +367,8 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   - 强调色（琴色）: #F0A030 | 强调色 hover: #F0B840 | 强调色 pressed: #D48820
   - 进行中/成功（青绿）: #40C8A0 | 错误色: #E85848
 
-- **双主题（v2.7）**：`appearance.theme`（ConfigStore，默认 dark）。亮色板 darkstyle-light.qss 色值对应：背景 #F5F6F8 / 面板 #FFFFFF / 凹槽 #ECEFF3 / 边框 #D0D5DD/#C4CAD4 / 主文字 #2A2F38 / 次文字 #6B7480 / 琴色 #D48820（亮底加深，语义不变）/ 青绿 #2FA88A / 错误 #D6453A。「琴色是动词」语义跨主题一致：琴色仅信号态
-- **紧凑密度（v2.7）**：NavBar 56px、列表行高 ~22px、双主题同密度
+- **双主题（v2.6）**：`appearance.theme`（ConfigStore，默认 dark）。亮色板 darkstyle-light.qss 色值对应：背景 #F5F6F8 / 面板 #FFFFFF / 凹槽 #ECEFF3 / 边框 #D0D5DD/#C4CAD4 / 主文字 #2A2F38 / 次文字 #6B7480 / 琴色 #D48820（亮底加深，语义不变）/ 青绿 #2FA88A / 错误 #D6453A。「琴色是动词」语义跨主题一致：琴色仅信号态
+- **紧凑密度（v2.6）**：NavBar 56px、列表行高 ~22px、双主题同密度
 
 - **主题设计原则「琴色是动词」（关键，勿回退）**：琴色 #F0A030 **仅**用于标记"此刻可动作/此刻活跃"的信号态，绝不用作静止结构边框或大面积填充：
   - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性石墨色（#252A33 / #333B48）

@@ -76,7 +76,7 @@ Qt Shell (Widget)          Framework Layer           Adapter Layer
 NavBar 导航栏               ToolHost (桥接)          IProtocolAdapter
 DeviceBusWidget             ToolRegistry (注册表)      ├─ FtpAdapter
 QStackedWidget 工作区        ToolBackend (基类)         ├─ TelnetAdapter
-darkstyle.qss 深色主题      ToolWidget (基类)          ├─ SshAdapter (SFTP)
+darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)          ├─ SshAdapter (SFTP)
       ↕                          ↕                    ├─ OpcUaAdapter
   lwmsgq 消息队列            ServiceManager            └─ ProtocolRegistry
       ↕                          ↕                         ↕
