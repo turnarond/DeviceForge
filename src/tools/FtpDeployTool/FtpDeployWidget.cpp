@@ -404,6 +404,17 @@ void FtpDeployWidget::onDeployClicked()
     );
 }
 
+void FtpDeployWidget::startDeployFromMenu()
+{
+    onDeployClicked();
+}
+
+void FtpDeployWidget::cancelDeployFromMenu()
+{
+    if (m_backend) m_backend->cancelUpload();
+    appendLog("已从菜单取消部署");
+}
+
 std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
 {
     std::vector<std::string> files;

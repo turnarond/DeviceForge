@@ -54,6 +54,10 @@ public:
     void setBackend(FtpDeployBackend* backend);
     void setDeviceBusWidget(DeviceBusWidget* deviceBus);
 
+    // 菜单联动入口（主窗口「部署」菜单调用）
+    void startDeployFromMenu();
+    void cancelDeployFromMenu();
+
 private slots:
     void onDeployClicked();
     void onRefreshRemote();

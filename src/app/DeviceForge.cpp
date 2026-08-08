@@ -145,6 +145,19 @@ DeviceForge::DeviceForge(QWidget* parent)
             menuBar()->addAction(settingsAct);
     }
 
+    // 文件 → 退出
+    connect(ui.action_exit, &QAction::triggered, this, &QWidget::close);
+
+    // 部署 → 开始/取消（FtpDeployTool 存在时可用）
+    ui.action_deploy_start->setEnabled(m_ftpDeployTab != nullptr);
+    ui.action_deploy_cancel->setEnabled(m_ftpDeployTab != nullptr);
+    connect(ui.action_deploy_start, &QAction::triggered, this, [this]() {
+        if (m_ftpDeployTab) m_ftpDeployTab->startDeployFromMenu();
+    });
+    connect(ui.action_deploy_cancel, &QAction::triggered, this, [this]() {
+        if (m_ftpDeployTab) m_ftpDeployTab->cancelDeployFromMenu();
+    });
+
     // 在线更新集成（Task 5）：菜单"帮助-检查更新" + 状态栏版本标签 + 5 秒后自动检查
     setupUpdateChecker();
 }
