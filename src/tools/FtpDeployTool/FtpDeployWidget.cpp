@@ -406,6 +406,10 @@ void FtpDeployWidget::onDeployClicked()
 
 void FtpDeployWidget::startDeployFromMenu()
 {
+    if (!m_deployBtn->isEnabled()) {          // 部署进行中（按钮已禁用）
+        appendLog("部署正在进行中，请先取消或等待完成");
+        return;
+    }
     onDeployClicked();
 }
 

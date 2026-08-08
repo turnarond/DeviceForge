@@ -100,7 +100,6 @@
     <property name="title">
      <string>文件</string>
     </property>
-    <addaction name="separator"/>
     <addaction name="action_exit"/>
    </widget>
    <widget class="QMenu" name="menu_deploy">
@@ -144,11 +143,6 @@
   <action name="action_about">
    <property name="text">
     <string>关于</string>
-   </property>
-  </action>
-  <action name="action_clear_log">
-   <property name="text">
-    <string>清除日志</string>
    </property>
   </action>
  </widget>
