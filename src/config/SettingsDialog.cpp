@@ -141,8 +141,10 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     const QString curTheme = ConfigStore::instance()
         .load(QStringLiteral("appearance"), QStringLiteral("theme"))
         .value(QStringLiteral("theme")).toString();
-    themeCombo->setCurrentIndex(
-        themeCombo->findData(curTheme.isEmpty() ? QStringLiteral("dark") : curTheme));
+    int themeIdx = themeCombo->findData(
+        curTheme.isEmpty() ? QStringLiteral("dark") : curTheme);
+    if (themeIdx < 0) themeIdx = 0; // 手改库非法值时兜底，避免下拉空白
+    themeCombo->setCurrentIndex(themeIdx);
     connect(themeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
         [themeCombo](int) {
             // 延迟到 lambda 内取当前项（QComboBox 信号参数为 index）

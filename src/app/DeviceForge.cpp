@@ -370,8 +370,8 @@ void DeviceForge::setupUpdateChecker()
 
     // 状态栏版本标签（右侧永久挂件）
     m_versionLabel = new QLabel(this);
+    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #7B8494 / 亮 #6B7480），动态状态（琴色链接/检查失败）保持代码逻辑
     m_versionLabel->setText(currentVersionString() + " (检查中...)");
-    m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
     // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
     connect(m_versionLabel, &QLabel::linkActivated, this, &DeviceForge::onVersionLabelClicked);
@@ -450,7 +450,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
     switch (state) {
     case UpdateState::Checking:
         m_versionLabel->setText(ver + " (检查中...)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         m_checkUpdateAction->setText("检查更新...");
         break;
 
@@ -478,7 +477,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
 
     case UpdateState::Idle:
         m_versionLabel->setText(ver + " (已是最新)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         m_checkUpdateAction->setText("检查更新...");
         break;
 
@@ -486,7 +484,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
         // 自动检查失败静默,手动检查失败显示 "检查失败"
         if (!m_autoCheck) {
             m_versionLabel->setText(ver + " (检查失败)");
-            m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         }
         m_checkUpdateAction->setText("检查更新...");
         if (m_updateDialog) m_updateDialog->setState(state);
@@ -494,13 +491,11 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
 
     case UpdateState::Downloading:
         m_versionLabel->setText(ver + " (下载中...)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         if (m_updateDialog) m_updateDialog->setState(state);
         break;
 
     case UpdateState::Installed:
         m_versionLabel->setText(ver + " (已下载,待安装)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         if (m_updateDialog) m_updateDialog->setState(state);
         break;
     }

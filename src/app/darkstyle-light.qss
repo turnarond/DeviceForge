@@ -654,8 +654,8 @@ QPushButton#devicePill[selected="true"] {
     background: #F5E3C8;
 }
 
-QPushButton#devicePill[online="true"]  { border-left: 3px solid #40C8A0; }
-QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
+QPushButton#devicePill[online="true"]  { border-left: 3px solid #2FA88A; }
+QPushButton#devicePill[online="false"] { border-left: 3px solid #D6453A; }
 
 #deviceAuthUser, #deviceAuthPass {
     background: #ECEFF3;
@@ -667,3 +667,59 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
 }
 
 #deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #D48820; }
+
+/* ===== 组件级硬编码样式提取（双主题，终审修复波） ===== */
+/* 面板标题（FTP 双栏） */
+#panelTitle {
+    font-weight: bold;
+    color: #2A2F38;
+    font-size: 12px;
+}
+
+/* 面包屑当前目录段（FTP 远程面板，flat 按钮无背景） */
+#crumbCurrent {
+    color: #D48820;
+    font-weight: bold;
+    padding: 0 4px;
+    border: none;
+}
+
+/* 本地路径框（FTP 本地面板，凹槽） */
+#localPathEdit {
+    background: #ECEFF3;
+    border: 1px solid #C4CAD4;
+    border-radius: 3px;
+    color: #2A2F38;
+    padding: 3px 8px;
+    font-size: 11px;
+}
+
+#localPathEdit:focus { border-color: #D48820; }
+
+/* 浏览按钮（FTP 本地面板，次按钮凸面） */
+#browseBtn {
+    background: #E4E8EE;
+    border: 1px solid #C4CAD4;
+    border-radius: 3px;
+    color: #2A2F38;
+    font-size: 14px;
+}
+
+#browseBtn:hover { border-color: #B8C0CC; }
+
+/* 中继方向箭头（NetRelayTool） */
+#directionArrow {
+    font-size: 16px;
+    font-weight: bold;
+    color: #D48820;
+}
+
+/* 状态栏版本标签（主窗口）— 动态状态（琴色链接/检查失败）由代码逻辑覆盖 */
+#versionLabel {
+    color: #6B7480;
+    padding: 0 8px;
+}
+
+/* OPC UA 连接状态标签（动态属性驱动，随主题切换自动生效） */
+QLabel#opcStatusLabel[connState="online"]  { color: #2FA88A; }
+QLabel#opcStatusLabel[connState="offline"] { color: #2A2F38; }

@@ -667,3 +667,59 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
 }
 
 #deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #F0A030; }
+
+/* ===== 组件级硬编码样式提取（双主题，终审修复波） ===== */
+/* 面板标题（FTP 双栏） */
+#panelTitle {
+    font-weight: bold;
+    color: #C8CCD4;
+    font-size: 12px;
+}
+
+/* 面包屑当前目录段（FTP 远程面板，flat 按钮无背景） */
+#crumbCurrent {
+    color: #F0A030;
+    font-weight: bold;
+    padding: 0 4px;
+    border: none;
+}
+
+/* 本地路径框（FTP 本地面板，凹槽） */
+#localPathEdit {
+    background: #0E1219;
+    border: 1px solid #333B48;
+    border-radius: 3px;
+    color: #C8CCD4;
+    padding: 3px 8px;
+    font-size: 11px;
+}
+
+#localPathEdit:focus { border-color: #F0A030; }
+
+/* 浏览按钮（FTP 本地面板，次按钮凸面） */
+#browseBtn {
+    background: #232A36;
+    border: 1px solid #333B48;
+    border-radius: 3px;
+    color: #C8CCD4;
+    font-size: 14px;
+}
+
+#browseBtn:hover { border-color: #7B8494; }
+
+/* 中继方向箭头（NetRelayTool） */
+#directionArrow {
+    font-size: 16px;
+    font-weight: bold;
+    color: #F0A030;
+}
+
+/* 状态栏版本标签（主窗口）— 动态状态（琴色链接/检查失败）由代码逻辑覆盖 */
+#versionLabel {
+    color: #7B8494;
+    padding: 0 8px;
+}
+
+/* OPC UA 连接状态标签（动态属性驱动，随主题切换自动生效） */
+QLabel#opcStatusLabel[connState="online"]  { color: #40C8A0; }
+QLabel#opcStatusLabel[connState="offline"] { color: #C8CCD4; }
