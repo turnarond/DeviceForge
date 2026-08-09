@@ -25,6 +25,7 @@
 - 双主题：亮色主题（SettingsDialog 外观下拉即时切换，ConfigStore 持久化）
 - 全局紧凑：NavBar 56px、列表行高 22px、间距收窄（TC 密度）
 - 菜单接功能：文件→退出、部署→开始/取消部署（跨 Tab）、移除空壳 action
+- 组件级样式双主题化（终审修复波）：FTP 面板标题/路径框/浏览按钮/面包屑当前段、NetRelay 方向箭头、状态栏版本标签、OPC UA 连接状态标签由内联暗色样式迁移至双 QSS（亮色下可读），devicePill online/offline 色值对齐 spec 色板（#2FA88A/#D6453A）；SettingsDialog 主题下拉非法值兜底
 
 ## [2.5.0] — 2026-07-26
 
