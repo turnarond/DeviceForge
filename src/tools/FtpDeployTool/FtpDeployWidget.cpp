@@ -213,9 +213,13 @@ void FtpDeployWidget::onDeployClicked()
 
     appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
 
-    // 部署目标目录 = 右侧远程面板当前目录（远程路径栏已在面板内置）
+    // 部署目标目录 = 右侧远程面板当前目录（远程路径栏已在面板内置）；
+    // 空路径回退根目录（远程源延迟注入时 currentPath() 为空——SFTP 空路径会
+    // 上传到登录 cwd 而非根目录，必须显式回退 "/"）
+    QString remotePath = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
+    if (remotePath.isEmpty()) remotePath = QStringLiteral("/");
     m_backend->startUpload(files,
-        m_rightPanel ? m_rightPanel->currentPath().toStdString() : "/",
+        remotePath.toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
         currentProtocol(),
