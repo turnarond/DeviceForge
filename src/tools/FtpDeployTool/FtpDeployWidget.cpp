@@ -58,6 +58,18 @@ void FtpDeployWidget::setupUi()
     m_leftPanel->setPeerPanel(m_rightPanel);
     m_rightPanel->setPeerPanel(m_leftPanel);
 
+    // 方向指示（Task 5）：任一面板路径/选中变化 → 组合左右路径发射（状态栏中央指示）
+    // FileBrowserPanel 的 currentPathChanged/selectionChanged 已由面板自身落实（setModel 后连接）
+    auto emitDirection = [this]() {
+        emit directionChanged(m_leftPanel->currentPath()
+                              + QStringLiteral(" → ")
+                              + m_rightPanel->currentPath());
+    };
+    connect(m_leftPanel, &FileBrowserPanel::currentPathChanged, this, emitDirection);
+    connect(m_rightPanel, &FileBrowserPanel::currentPathChanged, this, emitDirection);
+    connect(m_leftPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
+    connect(m_rightPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
+
     m_splitter->addWidget(m_leftPanel);
     m_splitter->addWidget(m_rightPanel);
     m_splitter->setStretchFactor(0, 1);

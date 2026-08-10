@@ -54,6 +54,10 @@ public:
     void startDeployFromMenu();
     void cancelDeployFromMenu();
 
+signals:
+    // 状态栏方向指示（Task 5）：左右面板路径/选中变化时组合发射「左路径 → 右路径」
+    void directionChanged(const QString& text);
+
 private slots:
     void onDeployClicked();
     void onRefreshRemote();
