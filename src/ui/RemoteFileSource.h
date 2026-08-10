@@ -10,7 +10,7 @@ class IProtocolAdapter;
 class RemoteFileSource : public IFileSource {
 public:
     explicit RemoteFileSource(const QString& protocol, const QString& displayName);
-    QString sourceId() const override;                 // "ftp"/"sftp"
+    QString sourceId() const override;                 // "ftp"/"ssh"（ProtocolRegistry 注册表键）
     QString displayName() const override;              // "192.168.1.100 (FTP)"
     std::vector<FtpFileInfo> list(const QString& path) override;
     bool mkdir(const QString& path) override;
@@ -28,7 +28,7 @@ public:
     void setUseFtps(bool useFtps);   // FTP 源启用 FTPS 加密（connect 时生效）
 private:
     std::shared_ptr<IProtocolAdapter> m_adapter;
-    QString m_protocol;     // "ftp"/"sftp"
+    QString m_protocol;     // "ftp"/"ssh"（ProtocolRegistry 注册表键；SFTP 能力由 SshAdapter 提供）
     QString m_displayName;
     QString m_lastError;
     bool m_useFtps = false;

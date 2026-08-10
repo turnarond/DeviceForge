@@ -37,7 +37,8 @@ QString RemoteFileSource::displayName() const { return m_displayName; }
 
 bool RemoteFileSource::connect(const DeviceInfo& device, const AuthInfo& auth)
 {
-    // 通过注册表创建适配器（协议未注册时返回空指针）
+    // 切换设备/协议时先断开旧适配器，再通过注册表重建（避免资源泄漏）
+    if (m_adapter) m_adapter->disconnect();
     m_adapter = ProtocolRegistry::instance()->create(m_protocol.toStdString());
     if (!m_adapter) {
         m_lastError = QStringLiteral("协议 %1 未注册").arg(m_protocol);

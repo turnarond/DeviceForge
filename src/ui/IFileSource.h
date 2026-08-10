@@ -26,7 +26,7 @@ public:
     virtual ~IFileSource() = default;
 
     // --- 身份 ---
-    virtual QString sourceId() const = 0;      // "local" / "ftp" / "sftp"
+    virtual QString sourceId() const = 0;      // "local" / "ftp" / "ssh"（注册表键；SFTP 走 SshAdapter）
     virtual QString displayName() const = 0;   // "本地" / "192.168.1.100 (FTP)"
 
     // --- 文件操作 ---

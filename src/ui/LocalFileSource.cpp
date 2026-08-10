@@ -80,6 +80,20 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
     return result;
 }
 
+bool LocalFileSource::mkdir(const QString& path)
+{
+    // error_code 重载不抛异常（跨 bool 接口安全）；目录已存在时返回 false 但
+    // ec 为空——视为幂等成功（与远程 MKD 已存在语义对齐），故仅按 ec 判断
+    std::error_code ec;
+    std::filesystem::create_directories(path.toStdWString(), ec);
+    if (ec) {
+        m_lastError = QString::fromLocal8Bit(ec.message().c_str());
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
 bool LocalFileSource::rename(const QString& oldPath, const QString& newPath)
 {
     std::error_code ec;

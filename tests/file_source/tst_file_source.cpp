@@ -27,6 +27,8 @@ private slots:
         LocalFileSource src;
         QVERIFY(src.mkdir(dir.filePath("newdir")));
         QVERIFY(QDir(dir.filePath("newdir")).exists());
+        QVERIFY(src.mkdir(dir.filePath("newdir")));   // 已存在 → 幂等成功（契约语义）
+        QVERIFY(src.lastError().isEmpty());
         QFile f(dir.filePath("x.txt"));
         f.open(QIODevice::WriteOnly); f.write("x"); f.close();
         QVERIFY(src.rename(dir.filePath("x.txt"), dir.filePath("y.txt")));

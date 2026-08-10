@@ -9,7 +9,7 @@ public:
     QString sourceId() const override { return QStringLiteral("local"); }
     QString displayName() const override { return QStringLiteral("本地"); }
     std::vector<FtpFileInfo> list(const QString& path) override;
-    bool mkdir(const QString& path) override { return std::filesystem::create_directories(path.toStdWString()); }
+    bool mkdir(const QString& path) override;
     bool rename(const QString& oldPath, const QString& newPath) override;
     bool remove(const QString& path, bool isDir) override;
     bool clearDirectory(const QString& path) override;
