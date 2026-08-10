@@ -547,6 +547,16 @@ bool SshAdapter::sftpUploadFolder(const std::string& localPath, const std::strin
 // 清空目录内容但保留目录本身：LIST → 逐项删除（文件删、子目录递归删）
 bool SshAdapter::sftpClearDirectory(const std::string& remotePath)
 {
+    // 根目录守卫：禁止清空根（与 FtpAdapter::clearRemoteDirectory 对齐）。
+    // 空路径/SFTP 登录 cwd/根目录均拒绝——否则会递归删除根目录全部内容
+    // （DeviceForge 目标设备为 SylixOS 嵌入式设备，SFTP 常为 root 账号）
+    std::string cleanPath = remotePath;
+    while (!cleanPath.empty() && cleanPath.front() == '/') cleanPath.erase(0, 1);
+    while (!cleanPath.empty() && cleanPath.back() == '/') cleanPath.pop_back();
+    if (cleanPath.empty()) {
+        m_lastError = "不能清空根目录 '/'";
+        return false;
+    }
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
     auto entries = sftpListDirectory(remotePath);
     if (!m_lastError.empty()) return false;   // LIST 失败：报错而非静默假成功
