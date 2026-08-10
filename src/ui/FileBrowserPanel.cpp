@@ -55,6 +55,7 @@ void FileBrowserPanel::setupUi()
     m_table->setAcceptDrops(true);
     m_table->viewport()->setAcceptDrops(true);
     m_table->viewport()->installEventFilter(this);
+    setAcceptDrops(true);   // 面板级兜底：非表格区域（路径栏/面包屑）也能接收拖入
 
     // 面板快捷键（TC 风格，面板焦点内生效）：
     //   F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板
@@ -224,14 +225,16 @@ void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
     const QString dstPath = target->currentPath();
+    int failed = 0;
     if (srcKind == "local" && dstKind == "local") {
         // 本地→本地：复制
         for (const auto& f : files) {
             if (f.name == "..") continue;
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (f.isDir) QDir(srcFull).mkpath(dstFull);   // 简化：目录复制仅建空目录
-            else QFile::copy(srcFull, dstFull);
+            const bool ok = f.isDir ? QDir(srcFull).mkpath(dstFull)   // 简化：目录复制仅建空目录
+                                    : QFile::copy(srcFull, dstFull);
+            if (!ok) ++failed;
         }
         refresh(); target->refresh();
     } else if (srcKind == "local" && dstKind != "local") {
@@ -240,7 +243,7 @@ void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
             if (f.name == "..") continue;
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            target->source()->upload(srcFull, dstFull);
+            if (!target->source()->upload(srcFull, dstFull)) ++failed;
         }
         target->refresh();
     } else if (srcKind != "local" && dstKind == "local") {
@@ -249,13 +252,16 @@ void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
             if (f.name == "..") continue;
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            m_source->download(srcFull, dstFull);
+            if (!m_source->download(srcFull, dstFull)) ++failed;
         }
         refresh();
     } else {
         // 远程→远程：禁用提示
         m_breadcrumb->setText(tr("远程间复制暂不支持"));
+        return;
     }
+    if (failed > 0)
+        m_breadcrumb->setText(tr("复制完成，%1 项失败").arg(failed));
 }
 
 void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
@@ -486,6 +492,8 @@ void FileBrowserPanel::dropEvent(QDropEvent* event)
         srcPanel->copySelectedTo(this);
         event->acceptProposedAction();
     } else {
+        // 非面板间拖拽（外部文件等）不落盘，明确提示
+        m_breadcrumb->setText(tr("仅支持面板间拖拽"));
         event->ignore();
     }
 }
