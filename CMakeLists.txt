@@ -186,6 +186,9 @@ set(SOURCES
     # UI 组件
     src/ui/NavBar.cpp
     src/ui/DeviceBusWidget.cpp
+    src/ui/FileBrowserPanel.cpp
+    src/ui/LocalFileSource.cpp
+    src/ui/RemoteFileSource.cpp
 
     # Tool 实现
     src/tools/ModbusTool/ModbusBackend.cpp
