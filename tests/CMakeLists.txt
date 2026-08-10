@@ -161,3 +161,18 @@ if(_qt_bin_dir)
     set_tests_properties(tst_theme PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- 文件源抽象测试（LocalFileSource 纯本地操作） ---
+# 注：RemoteFileSource 依赖适配器/协议注册，测试仅在 Task 4 集成后手动验证
+add_executable(tst_file_source file_source/tst_file_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/LocalFileSource.cpp
+)
+target_include_directories(tst_file_source PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_file_source PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_file_source COMMAND tst_file_source)
+if(_qt_bin_dir)
+    set_tests_properties(tst_file_source PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
