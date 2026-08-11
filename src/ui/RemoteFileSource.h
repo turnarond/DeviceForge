@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/IFileSource.h"
+#include "framework/DeviceInfo.h"
 #include <memory>
 
 class IProtocolAdapter;
@@ -20,6 +21,7 @@ public:
     bool upload(const QString& localPath, const QString& remotePath) override;
     bool download(const QString& remotePath, const QString& localPath) override;
     bool connect(const DeviceInfo& device, const AuthInfo& auth) override;
+    bool reconnect() override;              // disconnect + connect(上次缓存凭证)
     bool isConnected() const override;
     QString lastError() const override;
     void setProgressCallback(std::function<void(int)> cb) override;
@@ -32,6 +34,8 @@ private:
     QString m_displayName;
     QString m_lastError;
     bool m_useFtps = false;
+    DeviceInfo m_device;    // 上次 connect 缓存（reconnect 用）
+    AuthInfo m_auth;        // 上次 connect 缓存（reconnect 用）
     std::function<void(int)> m_progressCb;   // 暂存：setter 可能先于 connect 调用
     std::atomic<bool>* m_cancelFlag = nullptr;
 };

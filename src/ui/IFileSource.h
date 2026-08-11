@@ -45,6 +45,11 @@ public:
     virtual bool isConnected() const = 0;
     virtual QString lastError() const = 0;
 
+    // 重连：断开后使用上次 connect 的凭证原位重连（空闲断线自动恢复）。
+    // 默认实现为 no-op 成功（本地源等无连接语义的源直接继承）；
+    // RemoteFileSource 缓存上次 DeviceInfo/AuthInfo 实现真正重连。
+    virtual bool reconnect() { return true; }
+
     // --- 传输控制 ---
     virtual void setProgressCallback(std::function<void(int)> cb) = 0;
     virtual void setCancelFlag(std::atomic<bool>* flag) = 0;

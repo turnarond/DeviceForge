@@ -114,10 +114,10 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - 测试：tst_sftp_plan（上传规划纯逻辑 3 用例）+ tst_deploy_loop（部署循环 mock 3 用例）
 
 **双栏面板模块化（2026-08，file-browser）**：
-- `IFileSource` 文件源统一接口 + `LocalFileSource`/`RemoteFileSource` 两实现（`src/ui/`）；FtpDeployWidget 瘦身为双面板宿主（1135→377 行），文件浏览/导航/右键/拖拽全部下沉 `FileBrowserPanel`（统一表格视图 + 路径栏 + 面包屑，双击导航/F2/F5/F6/Tab/方向语义）
+- `IFileSource` 文件源统一接口 + `LocalFileSource`/`RemoteFileSource` 两实现（`src/ui/`）；FtpDeployWidget 瘦身约 3 倍为双面板宿主（1134→396 行），文件浏览/导航/右键/拖拽全部下沉 `FileBrowserPanel`（统一表格视图 + 路径栏 + 面包屑，双击导航/F2/F5/F6/Tab/方向语义）
 - 批量部署链路保留（FtpDeployBackend 零改动）；部署目标目录 = 右侧远程面板当前路径（先右侧导航再部署；空路径回退根目录）
 - 状态栏 TC 化（快捷键提示条 + 部署方向指示）；QSS 清理 FTP 面板死规则（#panelTitle/#crumbCurrent/#localPathEdit/#browseBtn）
-- 测试：tst_file_source（IFileSource 本地源 4 用例）+ tst_remote_model（排序语义锁定）
+- 测试：新增 tst_file_source（IFileSource 本地源 4 用例）；回归 11 目标全过（含 tst_remote_model 等既有目标）
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）

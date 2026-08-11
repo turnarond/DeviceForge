@@ -6,11 +6,11 @@
 
 - **IFileSource 文件源统一接口**（`src/ui/IFileSource.h`）：list / mkdir / rename / remove(path, isDir) / clearDirectory / upload / download / connect / 进度回调 / 取消标志，与协议无关地操作文件系统；实现 LocalFileSource（本地 std::filesystem）与 RemoteFileSource（FTP/FTPS/SFTP）
 - **FileBrowserPanel 通用双栏面板**（`src/ui/FileBrowserPanel.{h,cpp}`）：统一表格视图（FtpFileInfo 结构，本地远程同一渲染路径）+ 面板顶部路径栏（回车跳转）+ 底部面包屑；双击进入目录 / `..` 返回上级；TC 快捷键 **F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 切栏**；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：本地→远程=上传、远程→本地=下载、远程↔远程提示暂不支持）
-- **FtpDeployTool 双面板宿主重构**：FtpDeployWidget 由 1135 行瘦身为 377 行双栏宿主（QSplitter 组装两个 FileBrowserPanel），仅保留工具级批量部署配置（协议/设备/端口/FTPS/清空/重启）+ 部署入口；文件浏览/导航/操作全部下沉面板层；FtpDeployBackend 零改动，批量部署链路保留
+- **FtpDeployTool 双面板宿主重构**：FtpDeployWidget 瘦身约 3 倍（1134→396 行）为双栏宿主（QSplitter 组装两个 FileBrowserPanel），仅保留工具级批量部署配置（协议/设备/端口/FTPS/清空/重启）+ 部署入口；文件浏览/导航/操作全部下沉面板层；FtpDeployBackend 零改动，批量部署链路保留
 - **部署目标目录语义**：部署目标 = 右侧远程面板当前路径（先右侧导航再部署；空路径回退根目录 + SFTP 根目录清空守卫）
 - **状态栏 TC 化**：左侧常驻快捷键提示条（F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏）+ 中央部署方向指示（左面板路径 → 右面板路径，仅部署页激活时显示）
 - **QSS 死代码清理**：移除 FTP 旧面板失效规则（#panelTitle / #crumbCurrent / #localPathEdit / #browseBtn，双主题同步）
-- **测试**：tst_file_source（IFileSource 本地源 4 用例）+ tst_remote_model（排序语义锁定，. / .. 置顶 + 目录优先 + 大小写不敏感）
+- **测试**：新增 tst_file_source（IFileSource 本地源 4 用例）；回归 11 目标全过（含 tst_remote_model 等既有目标）
 
 ## [2.6.0] — 2026-08-07
 

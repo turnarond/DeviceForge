@@ -37,6 +37,10 @@ QString RemoteFileSource::displayName() const { return m_displayName; }
 
 bool RemoteFileSource::connect(const DeviceInfo& device, const AuthInfo& auth)
 {
+    // 缓存本次连接凭证，供 reconnect() 空闲断线重连复用
+    m_device = device;
+    m_auth = auth;
+
     // 切换设备/协议时先断开旧适配器，再通过注册表重建（避免资源泄漏）
     if (m_adapter) m_adapter->disconnect();
     m_adapter = ProtocolRegistry::instance()->create(m_protocol.toStdString());
@@ -64,6 +68,12 @@ bool RemoteFileSource::connect(const DeviceInfo& device, const AuthInfo& auth)
     }
     m_lastError.clear();
     return true;
+}
+
+bool RemoteFileSource::reconnect()
+{
+    // 用上次 connect 缓存的凭证原位重连（等价于 v2.6 的"断开→重连"语义）
+    return connect(m_device, m_auth);
 }
 
 bool RemoteFileSource::isConnected() const

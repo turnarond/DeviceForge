@@ -24,6 +24,10 @@ QLabel[text*="提示"], QLabel[text*="拖拽"] {
     font-style: italic;
 }
 
+#panelBreadcrumb {
+    color: #7B8494;
+}
+
 /* ===== 分组框 ===== */
 QGroupBox {
     background-color: #141820;

@@ -116,9 +116,15 @@ void FileBrowserPanel::loadDirectory(const QString& path)
     auto files = m_source->list(path);
     m_refreshing = false;
     if (files.empty() && !m_source->lastError().isEmpty()) {
-        m_breadcrumb->setText(tr("加载失败: %1").arg(m_source->lastError()));
-        m_pathEdit->setText(m_currentPath);   // 失败回写：路径栏与当前有效路径保持一致
-        return;
+        // 空闲断线自动重连：断开→重连→重试一次（对齐 v2.6 行为；
+        // 本地源等无连接语义的源 reconnect() 为 no-op 成功，仅多一次重试）
+        if (m_source->reconnect())
+            files = m_source->list(path);
+        if (files.empty() && !m_source->lastError().isEmpty()) {
+            m_breadcrumb->setText(tr("加载失败: %1").arg(m_source->lastError()));
+            m_pathEdit->setText(m_currentPath);   // 失败回写：路径栏与当前有效路径保持一致
+            return;
+        }
     }
     m_currentPath = path;
     m_files = files;
@@ -272,40 +278,47 @@ void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
     const QString dstPath = target->currentPath();
+    // 目录项统一跳过删源（浅拷贝限制：mkpath 仅建空目录/单文件上传下载不递归，
+    // 删源将造成内容丢失）——跳过并提示，文件项仍按移动语义执行
+    int dirSkipped = 0;
     if (srcKind == "local" && dstKind == "local") {
         // 本地→本地：复制后删源（移动语义）
         for (const auto& f : files) {
             if (f.name == "..") continue;
+            if (f.isDir) { ++dirSkipped; continue; }
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            bool copied = f.isDir ? QDir(srcFull).mkpath(dstFull) : QFile::copy(srcFull, dstFull);
-            if (copied) m_source->remove(srcFull, f.isDir);
+            if (QFile::copy(srcFull, dstFull)) m_source->remove(srcFull, false);
         }
         refresh(); target->refresh();
     } else if (srcKind == "local" && dstKind != "local") {
         // 本地→远程：上传后删源
         for (const auto& f : files) {
             if (f.name == "..") continue;
+            if (f.isDir) { ++dirSkipped; continue; }
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
             if (target->source()->upload(srcFull, dstFull))
-                m_source->remove(srcFull, f.isDir);
+                m_source->remove(srcFull, false);
         }
         target->refresh(); refresh();
     } else if (srcKind != "local" && dstKind == "local") {
         // 远程→本地：下载后删源
         for (const auto& f : files) {
             if (f.name == "..") continue;
+            if (f.isDir) { ++dirSkipped; continue; }
             const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
             const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
             if (m_source->download(srcFull, dstFull))
-                m_source->remove(srcFull, f.isDir);
+                m_source->remove(srcFull, false);
         }
         refresh(); target->refresh();
     } else {
         // 远程→远程：禁用提示
         m_breadcrumb->setText(tr("远程间移动暂不支持"));
     }
+    if (dirSkipped > 0)
+        m_breadcrumb->setText(tr("目录移动暂不支持（浅拷贝限制），已跳过 %1 个目录").arg(dirSkipped));
 }
 
 void FileBrowserPanel::showContextMenu(const QPoint& pos)
