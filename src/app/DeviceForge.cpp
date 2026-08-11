@@ -89,6 +89,11 @@ DeviceForge::DeviceForge(QWidget* parent)
             dlg.exec();
             // 恢复上一活跃项
             m_navBar->setActiveItem(m_toolStack->currentIndex());
+            // 对话框经导航关闭后按恢复页重算方向标签可见性（Task 5 Minor 1：
+            // 设置页 index 非 0，打开对话框时方向标签被隐藏，关闭后需恢复）
+            if (m_directionLabel)
+                m_directionLabel->setVisible(
+                    m_toolStack->currentIndex() == 0 && m_ftpDeployTab != nullptr);
         }
     });
 

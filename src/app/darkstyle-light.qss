@@ -669,44 +669,6 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #D6453A; }
 #deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #D48820; }
 
 /* ===== 组件级硬编码样式提取（双主题，终审修复波） ===== */
-/* 面板标题（FTP 双栏） */
-#panelTitle {
-    font-weight: bold;
-    color: #2A2F38;
-    font-size: 12px;
-}
-
-/* 面包屑当前目录段（FTP 远程面板，flat 按钮无背景） */
-#crumbCurrent {
-    color: #D48820;
-    font-weight: bold;
-    padding: 0 4px;
-    border: none;
-}
-
-/* 本地路径框（FTP 本地面板，凹槽） */
-#localPathEdit {
-    background: #ECEFF3;
-    border: 1px solid #C4CAD4;
-    border-radius: 3px;
-    color: #2A2F38;
-    padding: 3px 8px;
-    font-size: 11px;
-}
-
-#localPathEdit:focus { border-color: #D48820; }
-
-/* 浏览按钮（FTP 本地面板，次按钮凸面） */
-#browseBtn {
-    background: #E4E8EE;
-    border: 1px solid #C4CAD4;
-    border-radius: 3px;
-    color: #2A2F38;
-    font-size: 14px;
-}
-
-#browseBtn:hover { border-color: #B8C0CC; }
-
 /* 中继方向箭头（NetRelayTool） */
 #directionArrow {
     font-size: 16px;

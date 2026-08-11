@@ -95,7 +95,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.6.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -112,6 +112,12 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - FtpDeployBackend::startUpload 部署循环协议化：按协议参数从 ProtocolRegistry 取通道，FTP/SFTP 同一部署逻辑
 - FtpDeployWidget 协议下拉选 SFTP 后可直接部署/拖拽上传（不再提示切换 FTP）
 - 测试：tst_sftp_plan（上传规划纯逻辑 3 用例）+ tst_deploy_loop（部署循环 mock 3 用例）
+
+**双栏面板模块化（2026-08，file-browser）**：
+- `IFileSource` 文件源统一接口 + `LocalFileSource`/`RemoteFileSource` 两实现（`src/ui/`）；FtpDeployWidget 瘦身为双面板宿主（1135→377 行），文件浏览/导航/右键/拖拽全部下沉 `FileBrowserPanel`（统一表格视图 + 路径栏 + 面包屑，双击导航/F2/F5/F6/Tab/方向语义）
+- 批量部署链路保留（FtpDeployBackend 零改动）；部署目标目录 = 右侧远程面板当前路径（先右侧导航再部署；空路径回退根目录）
+- 状态栏 TC 化（快捷键提示条 + 部署方向指示）；QSS 清理 FTP 面板死规则（#panelTitle/#crumbCurrent/#localPathEdit/#browseBtn）
+- 测试：tst_file_source（IFileSource 本地源 4 用例）+ tst_remote_model（排序语义锁定）
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
@@ -205,12 +211,14 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 ### UI 组件（src/ui/）
 
 - **DeviceBusWidget**：顶部紧凑设备栏。胶囊形 QPushButton 水平流式布局，支持多选、添加、删除设备。石墨底 + 琴色选中态边框。工业仪表盘风格
+- **FileBrowserPanel**：通用双栏文件面板（FTP 双栏宿主组装；源可配置）。统一表格视图（RemoteFileModel/FtpFileInfo 渲染）+ 面板顶部路径栏（Enter 跳转）+ 底部面包屑（当前路径文本）；双击进入目录/`..` 退出；TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：拖入对面=复制，本地↔远程=上传/下载，远程↔远程提示暂不支持）
+- **IFileSource**：文件源统一接口（list/mkdir/rename/remove(path,isDir)/clearDirectory/upload/download/connect/isConnected/lastError/进度回调/取消标志），与协议无关地操作文件系统。实现：**LocalFileSource**（本地 std::filesystem，纯逻辑可单测）与 **RemoteFileSource**（包装 FtpAdapter FTP/FTPS / SshAdapter SFTP）
 
 ### 已完成的 Tool（src/tools/）
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（v2.4 双栏重构：QSplitter 本地+远程双栏文件管理器，QFileSystemModel + RemoteFileModel，拖拽上传 + 远程文件管理，多设备批量部署（逐台执行，失败设备跳过）），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
@@ -221,7 +229,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 | 功能 Tab | UI 类 | 业务逻辑 | 协议 | 架构状态 |
 |----------|-------|----------|------|----------|
-| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter/SshAdapter | FTP/FTPS (libcurl) / SFTP (libssh2) | ✅ 已迁移 + FTPS 加密 + SFTP 批量部署 |
+| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter/SshAdapter | FTP/FTPS (libcurl) / SFTP (libssh2) | ✅ 已迁移 + FTPS 加密 + SFTP 批量部署 + 双栏面板化（FileBrowserPanel/IFileSource，TC 交互） |
 | 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
 | 日志查询 | 已删除 | 所有 Tool 日志统一路由到全局日志面板（v2.4 日志统一） |  | 🗑 已移除 |
@@ -245,7 +253,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - `src/adapter/`：IProtocolAdapter.h / ProtocolCapability.h / FtpAdapter(.cpp/.h) / TelnetAdapter(.cpp/.h) / SshAdapter(.cpp/.h) / OpcUaAdapter(.cpp/.h) / ProtocolRegistry(.cpp/.h)
 - `src/config/`：ConfigStore(.cpp/.h) / DpapiCrypto(.cpp/.h) / SettingsDialog(.cpp/.h) — SQLite 配置持久化 + DPAPI 加密 + 设置面板
 - `src/logging/`：LogBridge(.cpp/.h)
-- `src/ui/`：DeviceBusWidget(.cpp/.h)
+- `src/ui/`：DeviceBusWidget(.cpp/.h) / FileBrowserPanel(.cpp/.h) / IFileSource.h / LocalFileSource(.cpp/.h) / RemoteFileSource(.cpp/.h) — 双栏文件面板 + 文件源统一接口（FTP 双栏面板化核心）
 - `src/tools/FtpDeployTool/`：FtpDeployBackend(.cpp/.h) / FtpDeployWidget(.cpp/.h)
 - `src/tools/TelnetTool/`：TelnetBackend(.cpp/.h) / TelnetWidget(.cpp/.h)
 - `src/tools/WebSocketTool/`：WebSocketBackend(.cpp/.h) / WebSocketWidget(.cpp/.h)
@@ -299,6 +307,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - 左侧 56px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
 - 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
+- 状态栏 TC 化（2026-08-10）：左侧常驻快捷键提示条（`#shortcutHint`，双 QSS 基色）「F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏」+ 中央部署方向指示（`#directionLabel`，左面板路径 → 右面板路径，仅部署工具存在且部署页激活时显示，其余 Tool 页隐藏）
 - 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），工业仪表盘色板，双主题可切换
 - 所有 Tool 日志统一路由到底部全局日志（ToolWidget::setGlobalLogCallback）
 
