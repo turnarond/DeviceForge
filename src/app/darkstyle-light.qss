@@ -24,6 +24,10 @@ QLabel[text*="提示"], QLabel[text*="拖拽"] {
     font-style: italic;
 }
 
+#panelBreadcrumb {
+    color: #6B7480;
+}
+
 /* ===== 分组框 ===== */
 QGroupBox {
     background-color: #FFFFFF;
@@ -669,44 +673,6 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #D6453A; }
 #deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #D48820; }
 
 /* ===== 组件级硬编码样式提取（双主题，终审修复波） ===== */
-/* 面板标题（FTP 双栏） */
-#panelTitle {
-    font-weight: bold;
-    color: #2A2F38;
-    font-size: 12px;
-}
-
-/* 面包屑当前目录段（FTP 远程面板，flat 按钮无背景） */
-#crumbCurrent {
-    color: #D48820;
-    font-weight: bold;
-    padding: 0 4px;
-    border: none;
-}
-
-/* 本地路径框（FTP 本地面板，凹槽） */
-#localPathEdit {
-    background: #ECEFF3;
-    border: 1px solid #C4CAD4;
-    border-radius: 3px;
-    color: #2A2F38;
-    padding: 3px 8px;
-    font-size: 11px;
-}
-
-#localPathEdit:focus { border-color: #D48820; }
-
-/* 浏览按钮（FTP 本地面板，次按钮凸面） */
-#browseBtn {
-    background: #E4E8EE;
-    border: 1px solid #C4CAD4;
-    border-radius: 3px;
-    color: #2A2F38;
-    font-size: 14px;
-}
-
-#browseBtn:hover { border-color: #B8C0CC; }
-
 /* 中继方向箭头（NetRelayTool） */
 #directionArrow {
     font-size: 16px;
@@ -720,6 +686,32 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #D6453A; }
     padding: 0 8px;
 }
 
+/* 状态栏快捷键提示（Task 5，TC 风格常驻）— 基色/内边距与版本标签一致，双主题适配 */
+#shortcutHint {
+    color: #6B7480;
+    padding: 0 8px;
+}
+
+/* 状态栏中央部署方向指示（Task 5）— 左面板路径 → 右面板路径 */
+#directionLabel {
+    color: #6B7480;
+    padding: 0 8px;
+}
+
 /* OPC UA 连接状态标签（动态属性驱动，随主题切换自动生效） */
 QLabel#opcStatusLabel[connState="online"]  { color: #2FA88A; }
 QLabel#opcStatusLabel[connState="offline"] { color: #2A2F38; }
+
+/* FtpDeployTool 工具栏连接状态点（10x10 圆点）— 底色由代码 setStyleSheet 动态设置
+   （固定暗色版 #7B8494 灰 / #40C8A0 青绿 / #E85848 红，指示点非文字，亮色下对比度足够），
+   此处仅定圆角 */
+#connStatusDot {
+    border-radius: 5px;
+}
+
+/* FtpDeployTool 工具栏组间分隔条（QFrame VLine，石墨窄条） */
+QFrame#toolbarSeparator {
+    background-color: #C4CAD4;
+    min-width: 1px;
+    max-width: 1px;
+}

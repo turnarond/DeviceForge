@@ -93,6 +93,7 @@ private:
     UpdateDialog*  m_updateDialog     = nullptr;    // 非模态更新对话框
     QAction*       m_checkUpdateAction = nullptr;   // 帮助菜单:检查更新
     QLabel*        m_versionLabel     = nullptr;    // 状态栏:当前版本标签(可点击)
+    QLabel*        m_directionLabel   = nullptr;    // 状态栏中央:部署方向指示(仅部署工具存在时显示)
     bool           m_autoCheck        = false;      // 自动检查标志(静默失败)
 };
 

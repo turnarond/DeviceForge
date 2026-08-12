@@ -24,6 +24,10 @@ QLabel[text*="提示"], QLabel[text*="拖拽"] {
     font-style: italic;
 }
 
+#panelBreadcrumb {
+    color: #7B8494;
+}
+
 /* ===== 分组框 ===== */
 QGroupBox {
     background-color: #141820;
@@ -669,44 +673,6 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
 #deviceAuthUser:focus, #deviceAuthPass:focus { border-color: #F0A030; }
 
 /* ===== 组件级硬编码样式提取（双主题，终审修复波） ===== */
-/* 面板标题（FTP 双栏） */
-#panelTitle {
-    font-weight: bold;
-    color: #C8CCD4;
-    font-size: 12px;
-}
-
-/* 面包屑当前目录段（FTP 远程面板，flat 按钮无背景） */
-#crumbCurrent {
-    color: #F0A030;
-    font-weight: bold;
-    padding: 0 4px;
-    border: none;
-}
-
-/* 本地路径框（FTP 本地面板，凹槽） */
-#localPathEdit {
-    background: #0E1219;
-    border: 1px solid #333B48;
-    border-radius: 3px;
-    color: #C8CCD4;
-    padding: 3px 8px;
-    font-size: 11px;
-}
-
-#localPathEdit:focus { border-color: #F0A030; }
-
-/* 浏览按钮（FTP 本地面板，次按钮凸面） */
-#browseBtn {
-    background: #232A36;
-    border: 1px solid #333B48;
-    border-radius: 3px;
-    color: #C8CCD4;
-    font-size: 14px;
-}
-
-#browseBtn:hover { border-color: #7B8494; }
-
 /* 中继方向箭头（NetRelayTool） */
 #directionArrow {
     font-size: 16px;
@@ -720,6 +686,31 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
     padding: 0 8px;
 }
 
+/* 状态栏快捷键提示（Task 5，TC 风格常驻）— 基色/内边距与版本标签一致，双主题适配 */
+#shortcutHint {
+    color: #7B8494;
+    padding: 0 8px;
+}
+
+/* 状态栏中央部署方向指示（Task 5）— 左面板路径 → 右面板路径 */
+#directionLabel {
+    color: #7B8494;
+    padding: 0 8px;
+}
+
 /* OPC UA 连接状态标签（动态属性驱动，随主题切换自动生效） */
 QLabel#opcStatusLabel[connState="online"]  { color: #40C8A0; }
 QLabel#opcStatusLabel[connState="offline"] { color: #C8CCD4; }
+
+/* FtpDeployTool 工具栏连接状态点（10x10 圆点）— 底色由代码 setStyleSheet 动态设置
+   （固定暗色版 #7B8494 灰 / #40C8A0 青绿 / #E85848 红），此处仅定圆角 */
+#connStatusDot {
+    border-radius: 5px;
+}
+
+/* FtpDeployTool 工具栏组间分隔条（QFrame VLine，石墨窄条） */
+QFrame#toolbarSeparator {
+    background-color: #252A33;
+    min-width: 1px;
+    max-width: 1px;
+}

@@ -80,12 +80,20 @@ DeviceForge::DeviceForge(QWidget* parent)
         if (index < m_toolStack->count()) {
             m_toolStack->setCurrentIndex(index);
         }
+        // 部署页（index 0）激活时显示方向指示，其他 Tool 页隐藏（Task 5）
+        if (m_directionLabel)
+            m_directionLabel->setVisible(index == 0 && m_ftpDeployTab != nullptr);
         // 特殊处理：最后一个导航项是设置
         if (index == m_navBar->count() - 1) {
             SettingsDialog dlg(this);
             dlg.exec();
             // 恢复上一活跃项
             m_navBar->setActiveItem(m_toolStack->currentIndex());
+            // 对话框经导航关闭后按恢复页重算方向标签可见性（Task 5 Minor 1：
+            // 设置页 index 非 0，打开对话框时方向标签被隐藏，关闭后需恢复）
+            if (m_directionLabel)
+                m_directionLabel->setVisible(
+                    m_toolStack->currentIndex() == 0 && m_ftpDeployTab != nullptr);
         }
     });
 
@@ -157,6 +165,25 @@ DeviceForge::DeviceForge(QWidget* parent)
     connect(ui.action_deploy_cancel, &QAction::triggered, this, [this]() {
         if (m_ftpDeployTab) m_ftpDeployTab->cancelDeployFromMenu();
     });
+
+    // 状态栏 TC 化（Task 5）：左侧常驻快捷键提示 + 中央部署方向指示
+    // 左侧：快捷键提示条（TC 风格常驻；基色/内边距走双主题 QSS #shortcutHint，不用内联暗色）
+    auto* shortcutHint = new QLabel(
+        QStringLiteral("F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏"), this);
+    shortcutHint->setObjectName("shortcutHint");
+    statusBar()->addWidget(shortcutHint);
+
+    // 中央：部署方向指示（左面板路径 → 右面板路径，FtpDeployWidget::directionChanged 驱动）
+    // 仅部署工具存在时显示；其余 Tool 页由导航切换隐藏（见 NavBar::itemClicked 连接）
+    m_directionLabel = new QLabel(QStringLiteral("本地 → 远程"), this);
+    m_directionLabel->setObjectName("directionLabel");
+    m_directionLabel->setAlignment(Qt::AlignCenter);
+    m_directionLabel->setVisible(m_ftpDeployTab != nullptr);
+    statusBar()->addWidget(m_directionLabel, 1); // stretch=1 占据中央弹性区
+    if (m_ftpDeployTab) {
+        connect(m_ftpDeployTab, &FtpDeployWidget::directionChanged, this,
+                [this](const QString& text) { m_directionLabel->setText(text); });
+    }
 
     // 在线更新集成（Task 5）：菜单"帮助-检查更新" + 状态栏版本标签 + 5 秒后自动检查
     setupUpdateChecker();

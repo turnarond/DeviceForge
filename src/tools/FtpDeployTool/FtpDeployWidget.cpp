@@ -2,39 +2,31 @@
  * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
- * File: FtpDeployWidget.cpp (v2.4 双栏重构)
+ * File: FtpDeployWidget.cpp（双面板宿主重构 — Task 4）
  * Date: 2026-07-25
  * Author: turnarond
  *
- * Description: FTP 部署双栏文件管理器实现。
+ * Description: FTP 部署双面板宿主实现。批量部署链路零改动（FtpDeployBackend 不变）；
+ *              文件浏览/导航/右键操作/拖拽全部下沉 FileBrowserPanel（Task 2/3），
+ *              本类仅保留：工具级批量部署配置（协议/设备/FTPS/端口/清空/重启）+
+ *              部署入口（校验 → collectLocalFiles → startUpload）+ 远程源按
+ *              协议/设备变化重建（RemoteFileSource 注入右侧面板）。
  */
 
 #include "FtpDeployWidget.h"
 #include "FtpDeployBackend.h"
-#include "RemoteFileModel.h"
 #include "MultiProgressWidget.h"
-#include "adapter/ProtocolRegistry.h"
-#include "adapter/FtpAdapter.h"
-#include "adapter/SshAdapter.h"
+#include "framework/DeviceInfo.h"
 #include "ui/DeviceBusWidget.h"
+#include "ui/FileBrowserPanel.h"
+#include "ui/IFileSource.h"
+#include "ui/LocalFileSource.h"
+#include "ui/RemoteFileSource.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QHeaderView>
-#include <QMenu>
-#include <QInputDialog>
-#include <QMessageBox>
-#include <QFileDialog>
-#include <QDir>
-#include <QFileInfo>
-#include <QApplication>
-#include <QClipboard>
-#include <QDragEnterEvent>
-#include <QDropEvent>
-#include <QMimeData>
+#include <QFrame>
+#include <QLabel>
 #include <QDateTime>
-#include <QtConcurrent/QtConcurrent>
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
@@ -50,21 +42,39 @@ void FtpDeployWidget::setupUi()
 
     setupToolbar(mainLayout);
 
-    // === 双栏区域 (QSplitter) ===
+    // === 双栏区域 (QSplitter)：FileBrowserPanel 组装 ===
     m_splitter = new QSplitter(Qt::Horizontal, this);
     m_splitter->setHandleWidth(2);
 
-    setupLocalPanel();
-    setupRemotePanel();
+    m_leftPanel = new FileBrowserPanel(this);
+    m_leftPanel->setObjectName("localPanel");
+    m_leftPanel->setSource(std::make_shared<LocalFileSource>());
 
-    // 使用成员变量（替代旧的 setProperty 传递指针）
-    m_splitter->addWidget(m_localPanel);
-    m_splitter->addWidget(m_remotePanel);
-    m_splitter->setStretchFactor(0, 3);
-    m_splitter->setStretchFactor(1, 4);
+    m_rightPanel = new FileBrowserPanel(this);
+    m_rightPanel->setObjectName("remotePanel");
+    // 远程源延迟到协议/设备确定后 setSource（onRefreshRemote 首次调用时注入）
+
+    // 面板互指（F5 复制/F6 移动/Tab 切换/拖拽方向语义依赖 peer）
+    m_leftPanel->setPeerPanel(m_rightPanel);
+    m_rightPanel->setPeerPanel(m_leftPanel);
+
+    // 方向指示（Task 5）：任一面板路径/选中变化 → 组合左右路径发射（状态栏中央指示）
+    // FileBrowserPanel 的 currentPathChanged/selectionChanged 已由面板自身落实（setModel 后连接）
+    auto emitDirection = [this]() {
+        emit directionChanged(m_leftPanel->currentPath()
+                              + QStringLiteral(" → ")
+                              + m_rightPanel->currentPath());
+    };
+    connect(m_leftPanel, &FileBrowserPanel::currentPathChanged, this, emitDirection);
+    connect(m_rightPanel, &FileBrowserPanel::currentPathChanged, this, emitDirection);
+    connect(m_leftPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
+    connect(m_rightPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
+
+    m_splitter->addWidget(m_leftPanel);
+    m_splitter->addWidget(m_rightPanel);
+    m_splitter->setStretchFactor(0, 1);
+    m_splitter->setStretchFactor(1, 1);
     mainLayout->addWidget(m_splitter, 1);
-
-    setAcceptDrops(true);
 
     setupBottomBar(mainLayout);
     connectBackendSignals();
@@ -73,20 +83,20 @@ void FtpDeployWidget::setupUi()
 void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
 {
     auto* toolbarWidget = new QWidget(this);
-    auto* toolbar = new QGridLayout(toolbarWidget);
-    toolbar->setSpacing(6);
+    auto* toolbar = new QHBoxLayout(toolbarWidget);
+    toolbar->setContentsMargins(0, 0, 0, 0);
+    toolbar->setSpacing(6);   // 组间间距
 
-    // 行 0: 协议 | 目标设备 | 远程路径 | 刷新
-    toolbar->addWidget(new QLabel("协议:", this), 0, 0);
+    // === 连接组：协议 | 设备 | 端口 | FTPS 加密 | 连接状态点 ===
+    auto* connGroup = new QHBoxLayout();
+    connGroup->setSpacing(4);   // 标签紧贴控件（QLabel 后紧跟控件，2-4px）
+
+    connGroup->addWidget(new QLabel("协议:", this));
     m_protocolCombo = new QComboBox(this);
     m_protocolCombo->addItem("FTP");
     m_protocolCombo->addItem("SFTP");
     m_protocolCombo->setFixedWidth(80);
     connect(m_protocolCombo, &QComboBox::currentTextChanged, this, [this](const QString& proto) {
-        m_remoteModel->clear();
-        m_currentRemotePath = "/";
-        refreshBreadcrumb("/");
-        m_remotePathEdit->setText("/");
         if (proto == "SFTP") {
             m_portSpin->setValue(22);
             m_ftpsCheck->setEnabled(false);
@@ -94,223 +104,82 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
             m_portSpin->setValue(21);
             m_ftpsCheck->setEnabled(true);
         }
+        // 协议变化 → 远程源重建 + 刷新（setSource 导航到根目录）
         onRefreshRemote();
     });
-    toolbar->addWidget(m_protocolCombo, 0, 1);
+    connGroup->addWidget(m_protocolCombo);
 
-    toolbar->addWidget(new QLabel("目标设备:", this), 0, 2);
+    connGroup->addWidget(new QLabel("设备:", this));
     m_deviceCombo = new QComboBox(this);
     m_deviceCombo->setMinimumWidth(160);
     m_deviceCombo->setToolTip("选择目标设备（多选支持——从设备总线同步）");
-    toolbar->addWidget(m_deviceCombo, 0, 3);
+    // 设备切换 → 远程源重建 + 刷新（程序化填充期间 blockSignals，见 setDeviceBusWidget）
+    connect(m_deviceCombo, &QComboBox::currentTextChanged, this,
+            [this](const QString&) { onRefreshRemote(); });
+    connGroup->addWidget(m_deviceCombo);
 
-    toolbar->addWidget(new QLabel("远程路径:", this), 0, 4);
-    m_remotePathEdit = new QLineEdit("/", this);
-    m_remotePathEdit->setPlaceholderText("/");
-    connect(m_remotePathEdit, &QLineEdit::returnPressed, this, &FtpDeployWidget::onRefreshRemote);
-    toolbar->addWidget(m_remotePathEdit, 0, 5);
-
-    m_refreshBtn = new QPushButton("刷新", this);
-    m_refreshBtn->setToolTip("刷新远程目录列表 (F5)");
-    connect(m_refreshBtn, &QPushButton::clicked, this, &FtpDeployWidget::onRefreshRemote);
-    toolbar->addWidget(m_refreshBtn, 0, 6);
-
-    // 行 1: 端口 | FTPS | 清空 | 重启
-    toolbar->addWidget(new QLabel("端口:", this), 1, 0);
+    connGroup->addWidget(new QLabel("端口:", this));
     m_portSpin = new QSpinBox(this);
     m_portSpin->setRange(1, 65535);
     m_portSpin->setValue(21);
-    toolbar->addWidget(m_portSpin, 1, 1);
+    connGroup->addWidget(m_portSpin);
 
     m_ftpsCheck = new QCheckBox("FTPS 加密", this);
-    toolbar->addWidget(m_ftpsCheck, 1, 2);
+    connGroup->addWidget(m_ftpsCheck);
+
+    // 连接状态点（圆形指示灯）：灰=未连接/未配置，青绿=连接成功，红=连接失败
+    // 底色由代码动态设置（固定暗色版，双主题下对比度足够——指示点非文字），圆角见双 QSS
+    m_connStatusDot = new QLabel(this);
+    m_connStatusDot->setObjectName("connStatusDot");
+    m_connStatusDot->setFixedSize(10, 10);
+    m_connStatusDot->setToolTip("远程连接状态：灰=未连接，青绿=已连接，红=连接失败");
+    setConnState(RemoteConnState::Unknown);
+    connGroup->addWidget(m_connStatusDot);
+
+    // === 组间分隔条（QFrame VLine，石墨窄条） ===
+    auto* separator = new QFrame(this);
+    separator->setObjectName("toolbarSeparator");
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFrameShadow(QFrame::Plain);
+    separator->setFixedWidth(1);
+
+    // === 部署组：清空 | 重启 | 刷新 | 部署 ===
+    auto* deployGroup = new QHBoxLayout();
+    deployGroup->setSpacing(4);
 
     m_clearCheck = new QCheckBox("部署前清空远程", this);
-    toolbar->addWidget(m_clearCheck, 1, 3);
+    deployGroup->addWidget(m_clearCheck);
 
     m_rebootCheck = new QCheckBox("部署后重启", this);
-    toolbar->addWidget(m_rebootCheck, 1, 4);
+    deployGroup->addWidget(m_rebootCheck);
+
+    // 「⟳ 刷新」按钮（2026-08-12 修复波回归：onRefreshRemote 的 UI 入口）
+    m_refreshBtn = new QPushButton("⟳ 刷新", this);
+    m_refreshBtn->setObjectName("refreshBtn");
+    m_refreshBtn->setToolTip("重新连接远程并刷新文件列表");
+    connect(m_refreshBtn, &QPushButton::clicked, this, &FtpDeployWidget::onRefreshRemote);
+    deployGroup->addWidget(m_refreshBtn);
+
+    m_deployBtn = new QPushButton(this);
+    m_deployBtn->setObjectName("btnPrimary");
+    m_deployBtn->setMinimumHeight(30);
+    connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
+    // 初始文本「▶ 部署」：设备总线同步前不显示「0 台设备」；
+    // 同步后由 setDeviceBusWidget → updateDeployBtnText() 更新为「▶ 部署到 N 台设备」
+    m_deployBtn->setText(QStringLiteral("▶ 部署"));
+    deployGroup->addWidget(m_deployBtn);
+
+    toolbar->addLayout(connGroup);
+    toolbar->addWidget(separator);
+    toolbar->addLayout(deployGroup);
+    toolbar->addStretch();
 
     mainLayout->addWidget(toolbarWidget);
 }
 
-void FtpDeployWidget::setupLocalPanel()
-{
-    auto* localContainer = new QWidget(this);
-    auto* localLayout = new QVBoxLayout(localContainer);
-    localLayout->setContentsMargins(0, 0, 0, 0);
-    localLayout->setSpacing(3);
-
-    // 标题行
-    auto* header = new QHBoxLayout();
-    auto* title = new QLabel("📁 本地文件", this);
-    title->setObjectName("panelTitle"); // 双主题 QSS（暗 #C8CCD4 / 亮 #2A2F38）
-    header->addWidget(title);
-    header->addStretch();
-    localLayout->addLayout(header);
-
-    // 路径导航行：路径栏 + 浏览按钮
-    auto* pathRow = new QHBoxLayout();
-    pathRow->setSpacing(4);
-
-    m_localPathEdit = new QLineEdit(this);
-    m_localPathEdit->setObjectName("localPathEdit"); // 双主题 QSS（暗 #0E1219 / 亮 #ECEFF3）
-    m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
-    connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
-        QString path = m_localPathEdit->text().trimmed();
-        QDir dir(path);
-        if (dir.exists()) {
-            m_localFsModel->setRootPath(dir.absolutePath());
-            m_localTree->setRootIndex(m_localFsModel->index(dir.absolutePath()));
-        }
-    });
-    pathRow->addWidget(m_localPathEdit, 1);
-
-    auto* browseBtn = new QPushButton("📂", this);
-    browseBtn->setToolTip("浏览目录...");
-    browseBtn->setFixedSize(28, 26);
-    browseBtn->setObjectName("browseBtn"); // 双主题 QSS（暗 #232A36 / 亮 #E4E8EE）
-    connect(browseBtn, &QPushButton::clicked, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
-        if (!dir.isEmpty()) {
-            m_localFsModel->setRootPath(dir);
-            m_localTree->setRootIndex(m_localFsModel->index(dir));
-            m_localPathEdit->setText(dir);
-        }
-    });
-    pathRow->addWidget(browseBtn);
-    localLayout->addLayout(pathRow);
-
-    // QFileSystemModel（树结构自带目录层级，无需 . 和 ..）
-    m_localFsModel = new QFileSystemModel(this);
-    m_localFsModel->setRootPath(QDir::currentPath());
-    m_localFsModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
-
-    m_localTree = new QTreeView(this);
-    m_localTree->setModel(m_localFsModel);
-    m_localTree->setRootIndex(m_localFsModel->index(QDir::currentPath()));
-    m_localTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_localTree->setDragEnabled(true);
-    m_localTree->setAcceptDrops(true);
-    m_localTree->setDragDropMode(QAbstractItemView::DragDrop);
-    m_localTree->setAnimated(true);
-    m_localTree->setColumnHidden(1, true); // 隐藏 size
-    m_localTree->setColumnHidden(2, true); // 隐藏 type
-    m_localTree->setColumnHidden(3, true); // 隐藏 date
-    m_localTree->header()->setStretchLastSection(true);
-    m_localTree->header()->setVisible(false); // 隐藏表头（树结构不需要）
-    m_localTree->viewport()->installEventFilter(this);
-
-    // 监听目录切换，更新路径栏
-    connect(m_localTree->selectionModel(), &QItemSelectionModel::currentChanged,
-        [this](const QModelIndex& current, const QModelIndex&) {
-        if (current.isValid()) {
-            QFileInfo fi = m_localFsModel->fileInfo(current);
-            if (fi.isDir()) {
-                m_localPathEdit->setText(fi.absoluteFilePath());
-            }
-        }
-    });
-
-    // 选中变更时触发远程面板精确对比着色
-    connect(m_localTree->selectionModel(), &QItemSelectionModel::selectionChanged,
-        this, [this]() {
-            std::vector<LocalFileInfo> locals;
-            QModelIndexList sel = m_localTree->selectionModel()->selectedRows();
-            for (const auto& idx : sel) {
-                QFileInfo fi = m_localFsModel->fileInfo(idx);
-                LocalFileInfo lfi;
-                lfi.name = fi.fileName().toStdString();
-                lfi.size = fi.size();
-                lfi.dateTime = fi.lastModified().toString(Qt::ISODate).toStdString();
-                locals.push_back(lfi);
-            }
-            m_remoteModel->setLocalFilesForCompare(locals);
-        });
-
-    localLayout->addWidget(m_localTree, 1);
-
-    m_localPanel = localContainer;
-}
-
-void FtpDeployWidget::setupRemotePanel()
-{
-    auto* remoteContainer = new QWidget(this);
-    auto* remoteLayout = new QVBoxLayout(remoteContainer);
-    remoteLayout->setContentsMargins(0, 0, 0, 0);
-    remoteLayout->setSpacing(4);
-
-    auto* header = new QHBoxLayout();
-    auto* iconLabel = new QLabel("📁 远程文件", this);
-    iconLabel->setObjectName("panelTitle"); // 双主题 QSS（暗 #C8CCD4 / 亮 #2A2F38）
-    header->addWidget(iconLabel);
-
-    // 面包屑
-    m_breadcrumbWidget = new QWidget(this);
-    m_breadcrumbLayout = new QHBoxLayout(m_breadcrumbWidget);
-    m_breadcrumbLayout->setContentsMargins(0, 0, 0, 0);
-    m_breadcrumbLayout->setSpacing(2);
-    header->addWidget(m_breadcrumbWidget, 1);
-
-    remoteLayout->addLayout(header);
-
-    // QTableView + RemoteFileModel
-    m_remoteModel = new RemoteFileModel(this);
-
-    m_remoteTable = new QTableView(this);
-    m_remoteTable->setModel(m_remoteModel);
-    m_remoteTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_remoteTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_remoteTable->setAlternatingRowColors(true);
-    m_remoteTable->setSortingEnabled(true);
-    m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_remoteTable->setAcceptDrops(true);
-    m_remoteTable->viewport()->setAcceptDrops(true);
-    m_remoteTable->setDragDropMode(QAbstractItemView::DropOnly);
-    m_remoteTable->verticalHeader()->setVisible(false);
-    m_remoteTable->viewport()->installEventFilter(this);
-
-    // 列宽
-    auto* hdr = m_remoteTable->horizontalHeader();
-    hdr->setSectionResizeMode(RemoteFileModel::ColIcon, QHeaderView::Fixed);
-    m_remoteTable->setColumnWidth(RemoteFileModel::ColIcon, 32);
-    hdr->setSectionResizeMode(RemoteFileModel::ColName, QHeaderView::Stretch);
-    hdr->setSectionResizeMode(RemoteFileModel::ColSize, QHeaderView::Fixed);
-    m_remoteTable->setColumnWidth(RemoteFileModel::ColSize, 80);
-    hdr->setSectionResizeMode(RemoteFileModel::ColDateTime, QHeaderView::Fixed);
-    m_remoteTable->setColumnWidth(RemoteFileModel::ColDateTime, 140);
-    hdr->setSectionResizeMode(RemoteFileModel::ColPermissions, QHeaderView::Fixed);
-    m_remoteTable->setColumnWidth(RemoteFileModel::ColPermissions, 80);
-
-    // 双击进入目录
-    connect(m_remoteTable, &QTableView::doubleClicked,
-        this, &FtpDeployWidget::onRemoteDirChanged);
-
-    // 右键菜单
-    connect(m_remoteTable, &QTableView::customContextMenuRequested,
-        this, &FtpDeployWidget::onRemoteContextMenu);
-
-    remoteLayout->addWidget(m_remoteTable, 1);
-
-    m_remotePanel = remoteContainer;
-}
-
 void FtpDeployWidget::setupBottomBar(QVBoxLayout* mainLayout)
 {
-    // 部署按钮栏
-    auto* deployRow = new QHBoxLayout();
-
-    m_deployBtn = new QPushButton("▶ 部署", this);
-    m_deployBtn->setObjectName("btnPrimary");
-    m_deployBtn->setMinimumHeight(32);
-    connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
-    deployRow->addWidget(m_deployBtn);
-
-    deployRow->addStretch();
-    mainLayout->addLayout(deployRow);
-
-    // 多设备进度
+    // 多设备进度（部署按钮已移至工具栏部署组，2026-08-12 布局修复波）
     m_multiProgress = new MultiProgressWidget(this);
     connect(m_multiProgress, &MultiProgressWidget::cancelRequested, [this]() {
         if (m_backend) m_backend->cancelUpload();
@@ -388,8 +257,13 @@ void FtpDeployWidget::onDeployClicked()
 
     appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
 
+    // 部署目标目录 = 右侧远程面板当前目录（远程路径栏已在面板内置）；
+    // 空路径回退根目录（远程源延迟注入时 currentPath() 为空——SFTP 空路径会
+    // 上传到登录 cwd 而非根目录，必须显式回退 "/"）
+    QString remotePath = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
+    if (remotePath.isEmpty()) remotePath = QStringLiteral("/");
     m_backend->startUpload(files,
-        m_remotePathEdit->text().toStdString(),
+        remotePath.toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
         currentProtocol(),
@@ -416,10 +290,16 @@ void FtpDeployWidget::cancelDeployFromMenu()
 std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
 {
     std::vector<std::string> files;
-    QModelIndexList selection = m_localTree->selectionModel()->selectedRows();
-    for (const auto& idx : selection) {
-        QString path = m_localFsModel->filePath(idx);
-        files.push_back(path.toStdString());
+    if (!m_leftPanel) return files;
+    // 面板 selectedFiles 返回 FtpFileInfo（name 需拼面板当前路径）；
+    // 跳过 ".." 导航条目；文件与文件夹均纳入部署（backend 的 uploadFolder 递归处理文件夹）
+    const QString base = m_leftPanel->currentPath();
+    for (const auto& f : m_leftPanel->selectedFiles()) {
+        if (f.name == ".." || f.name.empty()) continue;
+        QString full = base;
+        if (!full.endsWith('/')) full += '/';
+        full += QString::fromStdString(f.name);
+        files.push_back(full.toStdString());
     }
     return files;
 }
@@ -428,20 +308,19 @@ void FtpDeployWidget::onRefreshRemote()
 {
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
         appendLog("错误：设备总线中没有目标设备");
+        setConnState(RemoteConnState::Unknown);   // 无目标设备 = 未配置 → 灰
+        // 删除全部设备后不残留旧设备目录（与连接失败 detach 同方案）
+        detachRemotePanel();
         return;
     }
+    if (!m_rightPanel) return;
 
-    // 防止并发刷新（缓存适配器非线程安全，两个工作线程会同时操作同一连接）
-    if (m_refreshBusy.load()) {
+    // 防止并发刷新（远程源适配器非线程安全，多次触发会同时操作同一连接）
+    if (m_remoteBusy.load()) {
         appendLog("正在刷新中，请稍候...");
         return;
     }
-    m_refreshBusy = true;
-
-    QString path = m_remotePathEdit->text().trimmed();
-    path.remove('\n'); path.remove('\r');  // 防止路径中混入换行符
-    if (path.isEmpty()) path = "/";
-    m_currentRemotePath = path;  // 同步：用户手动输入路径时也更新当前路径
+    m_remoteBusy = true;
 
     // 从设备下拉框获取当前选中设备
     QString deviceIp = m_deviceCombo->currentText();
@@ -449,499 +328,107 @@ void FtpDeployWidget::onRefreshRemote()
         deviceIp = QString::fromStdString(m_deviceBus->allDevices()[0].ip);
     }
 
-    appendLog(QString("正在加载远程目录: %1:%2 ...").arg(deviceIp, path));
-
-    // 在传入后台线程前复制值，避免数据竞争
     const int port = m_portSpin->value();
     const bool useFtps = m_ftpsCheck->isChecked();
-    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
-    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
-    const std::string proto = m_protocolCombo->currentText().toStdString();
+    const QString proto = QString::fromStdString(currentProtocol());
 
-    // 连接缓存：设备/协议/端口/FTPS 不变时复用已有连接
-    bool needNewConnection = !m_cachedAdapter
-        || !m_cachedAdapter->isConnected()
-        || m_cachedDeviceIp != deviceIp
-        || m_cachedProto != m_protocolCombo->currentText()
-        || m_cachedPort != port
-        || m_cachedUseFtps != useFtps;
+    // 协议/设备/端口/FTPS 变化时重建远程源（重建后 setSource 导航到根目录）
+    const bool configChanged = !m_remoteSource
+        || proto != m_remoteSrcProto
+        || deviceIp != m_remoteSrcDevice
+        || port != m_remoteSrcPort
+        || useFtps != m_remoteSrcUseFtps;
 
-    // 旧连接在工作线程中断开（避免 UI 线程 disconnect 与工作线程并发使用同一适配器）
-    std::shared_ptr<IProtocolAdapter> oldAdapter;
-    if (needNewConnection) {
-        oldAdapter = m_cachedAdapter;
-        m_cachedAdapter = ProtocolRegistry::instance()->create(
-            proto == "SFTP" ? "ssh" : "ftp");
-        m_cachedDeviceIp = deviceIp;
-        m_cachedProto = m_protocolCombo->currentText();
-        m_cachedPort = port;
-        m_cachedUseFtps = useFtps;
-    }
+    DeviceInfo dev;
+    dev.ip = deviceIp.toStdString();
+    dev.port = port;
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
 
-    auto adapter = m_cachedAdapter;  // shared_ptr 拷贝，lambda 持有引用
-
-    QtConcurrent::run([this, adapter, oldAdapter, deviceIp, path, port, useFtps, user, pass, proto, needNewConnection]() {
-        // 先在工作线程断开旧连接
-        if (oldAdapter && oldAdapter->isConnected()) {
-            oldAdapter->disconnect();
-        }
-
-        if (!adapter) {
-            QMetaObject::invokeMethod(this, [this]() {
-                appendLog("适配器不可用");
-                m_refreshBusy = false;
-            }, Qt::QueuedConnection);
+    if (configChanged) {
+        auto source = std::make_shared<RemoteFileSource>(
+            proto, deviceIp + " (" + m_protocolCombo->currentText() + ")");
+        source->setUseFtps(useFtps);
+        if (!source->connect(dev, auth)) {
+            appendLog("远程连接失败: " + source->lastError());
+            setConnState(RemoteConnState::Failed);   // 连接失败 → 红
+            m_remoteBusy = false;
+            // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
+            // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
+            // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
+            // 「缓存匹配但面板无源」的死锁状态（I-1）
+            detachRemotePanel();
             return;
         }
-
-        // 仅在需要时建立连接
-        if (needNewConnection) {
-            DeviceInfo dev;
-            dev.ip = deviceIp.toStdString();
-            dev.port = port;
-            AuthInfo auth;
-            auth.user = user;
-            auth.password = pass;
-
-            if (proto == "SFTP") {
-                auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
-                if (!ssh->connect(dev, auth)) {
-                    QString err = QString::fromStdString(ssh->lastError());
-                    QMetaObject::invokeMethod(this, [this, err]() {
-                        appendLog("SFTP 连接失败: " + err);
-                        m_refreshBusy = false;
-                    }, Qt::QueuedConnection);
-                    return;
-                }
-            } else {
-                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-                ftp->setUseFtps(useFtps);  // 统一设置（含关闭 FTPS）
-                if (!ftp->connect(dev, auth)) {
-                    QString err = QString::fromStdString(ftp->lastError());
-                    QMetaObject::invokeMethod(this, [this, err]() {
-                        appendLog("连接失败: " + err);
-                        m_refreshBusy = false;
-                    }, Qt::QueuedConnection);
-                    return;
-                }
-            }
-        }
-
-        // 列目录（复用已有连接）
-        auto listRemoteDir = [&]() -> std::vector<FtpFileInfo> {
-            if (proto == "SFTP") {
-                return dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
-            }
-            return dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
-        };
-
-        std::vector<FtpFileInfo> files = listRemoteDir();
-
-        // 连接失效自动重连重试一次（服务器空闲断开场景：LIST 失败 + lastError 非空）
-        if (files.empty() && !adapter->lastError().empty()) {
-            adapter->disconnect();
-            DeviceInfo dev;
-            dev.ip = deviceIp.toStdString();
-            dev.port = port;
-            AuthInfo auth;
-            auth.user = user;
-            auth.password = pass;
-            bool reconnected = false;
-            if (proto == "SFTP") {
-                reconnected = dynamic_cast<SshAdapter*>(adapter.get())->connect(dev, auth);
-            } else {
-                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-                ftp->setUseFtps(useFtps);
-                reconnected = ftp->connect(dev, auth);
-            }
-            if (reconnected) {
-                files = listRemoteDir();
-            }
-        }
-
-        QString listError = QString::fromStdString(adapter->lastError());
-        QMetaObject::invokeMethod(this, [this, files, listError]() {
-            m_refreshBusy = false;
-            if (files.empty() && !listError.isEmpty()) {
-                appendLog("远程目录加载失败: " + listError);
-                return;   // 失败时不渲染空列表、不打"已加载"日志
-            }
-            // 过滤 . 条目（标准 FTP/SFTP 服务器会返回；无导航价值）
-            // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
-            auto full = files;
-            full.erase(std::remove_if(full.begin(), full.end(),
-                [](const FtpFileInfo& f) { return f.name == "."; }),
-                full.end());
-            bool hasDotDot = false;
-            for (const auto& f : full) {
-                if (f.name == "..") hasDotDot = true;
-            }
-            if (!hasDotDot) {
-                FtpFileInfo dd; dd.name = ".."; dd.isDir = true;
-                full.insert(full.begin(), dd);
-            }
-            m_remoteModel->setFileList(full);
-            m_remoteModel->sort(RemoteFileModel::ColName, Qt::AscendingOrder);
-            appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
-        }, Qt::QueuedConnection);
-    });
-}
-
-void FtpDeployWidget::onRemoteDirChanged(const QModelIndex& index)
-{
-    if (!index.isValid()) return;
-    const auto& fi = m_remoteModel->fileAt(index.row());
-    if (!fi.isDir) return;
-
-    std::string name = fi.name;
-    if (name == "..") {
-        // 上级目录
-        QString parent = m_currentRemotePath;
-        if (parent == "/" || parent.isEmpty()) return; // 已在根目录
-        int lastSlash = parent.lastIndexOf('/');
-        parent = parent.left(lastSlash);
-        if (parent.isEmpty()) parent = "/";
-        navigateToRemoteDir(parent);
-        return;
-    }
-
-    QString newPath = m_currentRemotePath;
-    if (!newPath.endsWith('/')) newPath += '/';
-    newPath += QString::fromStdString(fi.name);
-    navigateToRemoteDir(newPath);
-}
-
-void FtpDeployWidget::navigateToRemoteDir(const QString& path)
-{
-    QString clean = path.trimmed();
-    clean.remove('\n'); clean.remove('\r');
-    m_currentRemotePath = clean;
-    m_remotePathEdit->setText(clean);
-    refreshBreadcrumb(path);
-    onRefreshRemote();
-}
-
-void FtpDeployWidget::refreshBreadcrumb(const QString& path)
-{
-    // 清除旧面包屑
-    QLayoutItem* item;
-    while ((item = m_breadcrumbLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
-        delete item;
-    }
-
-    QStringList parts = path.split('/', Qt::SkipEmptyParts);
-    QString accumulated;
-
-    // 根 "/"
-    auto* rootBtn = new QPushButton("/", this);
-    rootBtn->setFlat(true);
-    rootBtn->setCursor(Qt::PointingHandCursor);
-    rootBtn->setStyleSheet("color: #7B8494; padding: 0 4px; border: none;");
-    connect(rootBtn, &QPushButton::clicked, [this]() { navigateToRemoteDir("/"); });
-    m_breadcrumbLayout->addWidget(rootBtn);
-
-    for (int i = 0; i < parts.size(); ++i) {
-        auto* sep = new QLabel(">", this);
-        sep->setStyleSheet("color: #333B48; padding: 0 2px;");
-        m_breadcrumbLayout->addWidget(sep);
-
-        accumulated += "/" + parts[i];
-        QString fullPath = accumulated;
-
-        auto* btn = new QPushButton(parts[i], this);
-        btn->setFlat(true);
-        btn->setCursor(Qt::PointingHandCursor);
-        if (i == parts.size() - 1) {
-            btn->setObjectName("crumbCurrent"); // 当前目录段，双主题 QSS（暗 #F0A030 / 亮 #D48820）
-        } else {
-            btn->setStyleSheet("color: #7B8494; padding: 0 4px; border: none;");
-        }
-        connect(btn, &QPushButton::clicked, [this, fullPath]() { navigateToRemoteDir(fullPath); });
-        m_breadcrumbLayout->addWidget(btn);
-    }
-    m_breadcrumbLayout->addStretch();
-}
-
-void FtpDeployWidget::onRemoteContextMenu(const QPoint& pos)
-{
-    QModelIndex idx = m_remoteTable->indexAt(pos);
-    QMenu menu(this);
-
-    QAction* downloadAct = menu.addAction("下载到本地");
-    QAction* deleteAct = menu.addAction("删除");
-    menu.addSeparator();
-    QAction* renameAct = menu.addAction("重命名");
-    QAction* newDirAct = menu.addAction("新建目录");
-    menu.addSeparator();
-    QAction* copyPathAct = menu.addAction("复制路径");
-
-    QAction* chosen = menu.exec(m_remoteTable->viewport()->mapToGlobal(pos));
-    if (!chosen) return;
-
-    if (chosen == downloadAct) onDownloadRemote();
-    else if (chosen == deleteAct) onDeleteRemote();
-    else if (chosen == renameAct) onRenameRemote();
-    else if (chosen == newDirAct) onNewRemoteDir();
-    else if (chosen == copyPathAct) {
-        if (idx.isValid()) {
-            QString fullPath = m_currentRemotePath;
-            if (!fullPath.endsWith('/')) fullPath += '/';
-            fullPath += QString::fromStdString(m_remoteModel->fileAt(idx.row()).name);
-            QApplication::clipboard()->setText(fullPath);
-        }
-    }
-}
-
-void FtpDeployWidget::onDeleteRemote()
-{
-    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
-    if (sel.isEmpty()) return;
-    const auto& fi = m_remoteModel->fileAt(sel.first().row());
-    QString name = QString::fromStdString(fi.name);
-    bool isDir = fi.isDir;
-    auto ans = QMessageBox::question(this, "确认删除",
-        QString("确定要删除远程%1 \"%2\" 吗？%3")
-            .arg(isDir ? "目录" : "文件", name,
-                 isDir ? "\n（将递归删除所有内容）" : ""));
-    if (ans != QMessageBox::Yes) return;
-
-    // 在传入后台线程前复制值，避免数据竞争
-    const int port = m_portSpin->value();
-    const std::string deviceIp = m_deviceCombo->currentText().toStdString();
-    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
-    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
-    const std::string remotePath = m_currentRemotePath.toStdString();
-    const std::string targetName = name.toStdString();
-    const std::string proto = m_protocolCombo->currentText().toStdString();
-
-    // 通过适配器删除（异步）
-    QtConcurrent::run([this, targetName, isDir, port, deviceIp, user, pass, remotePath, proto]() {
-        auto adapter = ProtocolRegistry::instance()->create(
-            proto == "SFTP" ? "ssh" : "ftp");
-
-        DeviceInfo dev;
-        dev.ip = deviceIp;
-        dev.port = port;
-        AuthInfo auth;
-        auth.user = user;
-        auth.password = pass;
-
-        std::string fullPath = remotePath;
-        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-        fullPath += targetName;
-        bool ok = false;
-
-        if (!adapter->connect(dev, auth)) {
-            QString err = QString::fromStdString(adapter->lastError());
-            QMetaObject::invokeMethod(this, [this, err]() {
-                appendLog("删除失败 — 连接错误: " + err);
-            }, Qt::QueuedConnection);
+        setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
+        m_remoteSource = source;
+        m_remoteSrcDevice = deviceIp;
+        m_remoteSrcProto = proto;
+        m_remoteSrcPort = port;
+        m_remoteSrcUseFtps = useFtps;
+        m_rightPanel->setSource(source);
+    } else if (!m_remoteSource->isConnected()) {
+        // 连接失效原位重连（保留当前面板路径，复用旧连接缓存语义）
+        if (!m_remoteSource->connect(dev, auth)) {
+            appendLog("远程重连失败: " + m_remoteSource->lastError());
+            setConnState(RemoteConnState::Failed);
+            m_remoteBusy = false;
+            // 与连接失败分支统一 detach：不再调面板 refresh()——
+            // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
+            // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
+            detachRemotePanel();
             return;
         }
-
-        if (proto == "SFTP") {
-            auto* ssh = dynamic_cast<SshAdapter*>(adapter.get());
-            ok = isDir ? ssh->sftpDeleteDirectory(fullPath)
-                       : ssh->sftpDeleteFile(fullPath);
-        } else {
-            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-            ok = isDir ? ftp->deleteDirectory(fullPath)
-                       : ftp->deleteFile(fullPath);
-        }
-        adapter->disconnect();
-
-        QString displayName = QString::fromStdString(targetName);
-        QMetaObject::invokeMethod(this, [this, displayName, ok]() {
-            appendLog(ok ? QString("已删除: %1").arg(displayName) : "删除失败: " + displayName);
-            onRefreshRemote();
-        }, Qt::QueuedConnection);
-    });
-}
-
-void FtpDeployWidget::onDownloadRemote()
-{
-    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
-    if (sel.isEmpty()) return;
-    QString name = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
-
-    QString savePath = QFileDialog::getSaveFileName(this, "保存到",
-        QDir::home().filePath(name));
-    if (savePath.isEmpty()) return;
-
-    // 在传入后台线程前复制值，避免数据竞争
-    const int port = m_portSpin->value();
-    const std::string deviceIp = m_deviceCombo->currentText().toStdString();
-    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
-    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
-    const std::string remotePath = m_currentRemotePath.toStdString();
-    const std::string targetName = name.toStdString();
-    const std::string localSavePath = savePath.toStdString();
-    const std::string proto = m_protocolCombo->currentText().toStdString();
-
-    QtConcurrent::run([this, targetName, localSavePath, port, deviceIp, user, pass, remotePath, proto]() {
-        auto adapter = ProtocolRegistry::instance()->create(
-            proto == "SFTP" ? "ssh" : "ftp");
-
-        DeviceInfo dev;
-        dev.ip = deviceIp;
-        dev.port = port;
-        AuthInfo auth;
-        auth.user = user;
-        auth.password = pass;
-
-        if (!adapter->connect(dev, auth)) {
-            QString err = QString::fromStdString(adapter->lastError());
-            QMetaObject::invokeMethod(this, [this, err]() {
-                appendLog("下载失败 — 连接错误: " + err);
-            }, Qt::QueuedConnection);
-            return;
-        }
-
-        std::string fullPath = remotePath;
-        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-        fullPath += targetName;
-        bool ok = false;
-
-        if (proto == "SFTP") {
-            ok = dynamic_cast<SshAdapter*>(adapter.get())->sftpDownloadFile(fullPath, localSavePath);
-        } else {
-            ok = dynamic_cast<FtpAdapter*>(adapter.get())->downloadFile(fullPath, localSavePath);
-        }
-        adapter->disconnect();
-
-        QString displayName = QString::fromStdString(targetName);
-        QMetaObject::invokeMethod(this, [this, displayName, ok]() {
-            appendLog(ok ? QString("已下载: %1").arg(displayName) : "下载失败: " + displayName);
-        }, Qt::QueuedConnection);
-    });
-}
-
-void FtpDeployWidget::onRenameRemote()
-{
-    QModelIndexList sel = m_remoteTable->selectionModel()->selectedRows();
-    if (sel.isEmpty()) return;
-    QString oldName = QString::fromStdString(m_remoteModel->fileAt(sel.first().row()).name);
-
-    bool ok = false;
-    QString newName = QInputDialog::getText(this, "重命名",
-        QString("将 \"%1\" 重命名为:").arg(oldName), QLineEdit::Normal, oldName, &ok);
-    if (!ok || newName.isEmpty() || newName == oldName) return;
-
-    // 安全校验：禁止包含 / 或 ..（防止路径穿越到其他目录）
-    if (newName.contains('/') || newName.contains("..")) {
-        appendLog("重命名失败: 名称不能包含 / 或 ..");
-        QMessageBox::warning(this, "重命名",
-            "名称不能包含 '/' 或 '..'，请使用纯文件名。");
-        return;
+        setConnState(RemoteConnState::Connected);
     }
 
-    // 异步执行重命名
-    const QString proto = m_protocolCombo->currentText();
-    const QString old = oldName, nu = newName;
-    const QString deviceIp = m_deviceCombo->currentText();
-    const int port = m_portSpin->value();
-    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
-    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
-    const std::string remotePath = m_currentRemotePath.toStdString();
-
-    QtConcurrent::run([this, proto, old, nu, deviceIp, port, user, pass, remotePath]() {
-        auto adapter = ProtocolRegistry::instance()->create(
-            proto == "SFTP" ? "ssh" : "ftp");
-
-        DeviceInfo dev;
-        dev.ip = deviceIp.toStdString();
-        dev.port = port;
-        AuthInfo auth;
-        auth.user = user;
-        auth.password = pass;
-
-        if (!adapter->connect(dev, auth)) {
-            QString err = QString::fromStdString(adapter->lastError());
-            QMetaObject::invokeMethod(this, [this, err]() {
-                appendLog("重命名失败 — 连接错误: " + err);
-            }, Qt::QueuedConnection);
-            return;
-        }
-
-        std::string oldFull = remotePath;
-        if (!oldFull.empty() && oldFull.back() != '/') oldFull += '/';
-        oldFull += old.toStdString();
-
-        bool renameOk = false;
-        if (proto == "SFTP") {
-            // sftpRename 需要完整新路径
-            std::string newFull = remotePath;
-            if (!newFull.empty() && newFull.back() != '/') newFull += '/';
-            newFull += nu.toStdString();
-            renameOk = dynamic_cast<SshAdapter*>(adapter.get())->sftpRename(oldFull, newFull);
-        } else {
-            // FtpAdapter::renameFile 只需新文件名（不含路径前缀），内部处理路径拼接
-            renameOk = dynamic_cast<FtpAdapter*>(adapter.get())->renameFile(oldFull, nu.toStdString());
-        }
-        adapter->disconnect();
-
-        QMetaObject::invokeMethod(this, [this, old, nu, renameOk]() {
-            appendLog(renameOk ? QString("已重命名: %1 → %2").arg(old, nu)
-                               : QString("重命名失败: %1").arg(old));
-            if (renameOk) onRefreshRemote();
-        }, Qt::QueuedConnection);
-    });
+    m_remoteBusy = false;
+    m_rightPanel->refresh();
 }
 
-void FtpDeployWidget::onNewRemoteDir()
+// 连接状态点底色：固定用暗色版（灰 #7B8494 / 青绿 #40C8A0 / 红 #E85848）。
+// 说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
+// 故不按主题切换色值；圆角 border-radius 由双 QSS 的 #connStatusDot 规则提供。
+void FtpDeployWidget::setConnState(RemoteConnState state)
 {
-    bool ok = false;
-    QString dirName = QInputDialog::getText(this, "新建目录",
-        "目录名:", QLineEdit::Normal, "", &ok);
-    if (!ok || dirName.isEmpty()) return;
+    if (!m_connStatusDot) return;
+    const char* color = "#7B8494";
+    if (state == RemoteConnState::Connected)      color = "#40C8A0";
+    else if (state == RemoteConnState::Failed)    color = "#E85848";
+    m_connStatusDot->setStyleSheet(
+        QStringLiteral("background-color: %1;").arg(color));
+}
 
-    // 异步执行新建目录
-    const QString proto = m_protocolCombo->currentText();
-    const QString dir = dirName;
-    const QString deviceIp = m_deviceCombo->currentText();
-    const int port = m_portSpin->value();
-    const std::string user = m_deviceBus ? m_deviceBus->user().toStdString() : "";
-    const std::string pass = m_deviceBus ? m_deviceBus->password().toStdString() : "";
-    const std::string remotePath = m_currentRemotePath.toStdString();
+// 部署按钮文本「▶ 部署到 N 台设备」：N = 已选中设备数（未选中时与部署语义一致，取全部设备）
+void FtpDeployWidget::updateDeployBtnText()
+{
+    if (!m_deployBtn) return;
+    int n = 0;
+    if (m_deviceBus) {
+        auto devs = m_deviceBus->selectedDevices();
+        if (devs.empty()) devs = m_deviceBus->allDevices();
+        n = static_cast<int>(devs.size());
+    }
+    m_deployBtn->setText(QStringLiteral("▶ 部署到 %1 台设备").arg(n));
+}
 
-    QtConcurrent::run([this, proto, dir, deviceIp, port, user, pass, remotePath]() {
-        auto adapter = ProtocolRegistry::instance()->create(
-            proto == "SFTP" ? "ssh" : "ftp");
-
-        DeviceInfo dev;
-        dev.ip = deviceIp.toStdString();
-        dev.port = port;
-        AuthInfo auth;
-        auth.user = user;
-        auth.password = pass;
-
-        if (!adapter->connect(dev, auth)) {
-            QString err = QString::fromStdString(adapter->lastError());
-            QMetaObject::invokeMethod(this, [this, err]() {
-                appendLog("新建目录失败 — 连接错误: " + err);
-            }, Qt::QueuedConnection);
-            return;
-        }
-
-        std::string fullPath = remotePath;
-        if (!fullPath.empty() && fullPath.back() != '/') fullPath += '/';
-        fullPath += dir.toStdString();
-
-        bool mkdirOk = false;
-        if (proto == "SFTP") {
-            mkdirOk = dynamic_cast<SshAdapter*>(adapter.get())->sftpMakeDirectory(fullPath);
-        } else {
-            mkdirOk = dynamic_cast<FtpAdapter*>(adapter.get())->makeDirectory(fullPath);
-        }
-        adapter->disconnect();
-
-        QMetaObject::invokeMethod(this, [this, dir, mkdirOk]() {
-            appendLog(mkdirOk ? QString("已创建目录: %1").arg(dir)
-                              : QString("创建目录失败: %1").arg(dir));
-            if (mkdirOk) onRefreshRemote();
-        }, Qt::QueuedConnection);
-    });
+// 连接失败/重连失败/无设备统一 detach（I-1 / M-2 / M-3）：
+// 面板置无源（清空表格 + 路径栏 + 面包屑 + 当前路径，setSource(nullptr) 支持清空），
+// 远程源缓存一并失效——若只 detach 面板而保留缓存，下一次 onRefreshRemote 会走
+// 「原位重连」分支（configChanged=false），而面板无源时 refresh() 只会提示
+// 「未连接远程」永远不会重挂源，形成状态死锁；缓存清空后统一走全量重建分支
+void FtpDeployWidget::detachRemotePanel()
+{
+    m_remoteSource.reset();
+    m_remoteSrcDevice.clear();
+    m_remoteSrcProto.clear();
+    m_remoteSrcPort = 0;
+    m_remoteSrcUseFtps = false;
+    if (m_rightPanel) {
+        m_rightPanel->setSource(nullptr);
+        m_rightPanel->refresh();   // 无源 → loadDirectory 提示「未连接远程，请选择设备并刷新」
+    }
 }
 
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
@@ -954,26 +441,45 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
 {
     m_deviceBus = deviceBus;
 
-    // 同步设备下拉框
+    // 同步设备下拉框（填充期间 blockSignals，避免 currentTextChanged 触发远程连接）
     if (m_deviceBus) {
+        m_deviceCombo->blockSignals(true);
         m_deviceCombo->clear();
         for (const auto& d : m_deviceBus->allDevices()) {
             m_deviceCombo->addItem(QString::fromStdString(d.ip));
         }
+        m_deviceCombo->blockSignals(false);
+        updateDeployBtnText();
 
-        // 设备总线变更时同步下拉框
+        // 设备总线变更（添加/删除/选中切换）时同步下拉框，并在 blockSignals(false)
+        // 之后主动调用 onRefreshRemote() —— 修复触发链断裂：程序化填充期间
+        // currentTextChanged 被屏蔽，设备添加后远程源永不创建（面板 m_source 为
+        // null 静默无列表）。lambda 捕获 this，connect 以 this 为 context 对象，
+        // FtpDeployWidget 析构后连接自动断开，无悬垂捕获风险
         connect(m_deviceBus, &DeviceBusWidget::deviceSelectionChanged, this, [this]() {
+            m_deviceCombo->blockSignals(true);
+            // 重填前保存当前选中设备，重填后恢复——否则 clear() 后 currentIndex 回 0，
+            // 用户选中的非首台设备被静默切回首台 → configChanged=true 触发断连重建。
+            // 恢复操作同样在 blockSignals 内，不触发 currentTextChanged（I-2）
+            const QString prev = m_deviceCombo->currentText();
             m_deviceCombo->clear();
             for (const auto& d : m_deviceBus->allDevices()) {
                 m_deviceCombo->addItem(QString::fromStdString(d.ip));
             }
+            const int idx = m_deviceCombo->findText(prev);
+            if (idx >= 0) m_deviceCombo->setCurrentIndex(idx);
+            m_deviceCombo->blockSignals(false);
+            updateDeployBtnText();
+            // 设备添加/删除后自动连接刷新（无设备时 onRefreshRemote 内部提示并置灰状态点；
+            // 被删除的设备不在列表中 → 落到首台，onRefreshRemote 按当前文本刷新）
+            onRefreshRemote();
         });
     }
 }
 
 void FtpDeployWidget::onToolStart()
 {
-    appendLog("文件部署工具已就绪 — 拖拽文件到远程面板即可上传");
+    appendLog("文件部署工具已就绪 — 左侧选择本地文件，点击「部署」上传到右侧当前远程目录");
     emit toolStatusChanged("就绪");
 }
 
@@ -994,141 +500,4 @@ void FtpDeployWidget::appendLog(const QString& msg)
 std::string FtpDeployWidget::currentProtocol() const
 {
     return m_protocolCombo->currentText() == "SFTP" ? "ssh" : "ftp";
-}
-
-// ────────────────────────────── 拖拽支持 ──────────────────────────────
-
-void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
-{
-    std::vector<std::string> files;
-    for (const auto& url : urls) {
-        if (url.isLocalFile()) {
-            files.push_back(url.toLocalFile().toStdString());
-        }
-    }
-    if (files.empty()) return;
-
-    const QString protoLabel = m_protocolCombo->currentText();
-    appendLog(QString("📤 [%1] 拖拽上传 %2 个文件到远程目录...").arg(protoLabel).arg(files.size()));
-
-    if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
-        appendLog("错误：设备总线中没有目标设备");
-        return;
-    }
-    if (!m_backend) {
-        appendLog("错误：Backend 未就绪");
-        return;
-    }
-
-    auto devices = m_deviceBus->selectedDevices();
-    if (devices.empty()) devices = m_deviceBus->allDevices();
-    AuthInfo auth;
-    auth.user = m_deviceBus->user().toStdString();
-    auth.password = m_deviceBus->password().toStdString();
-    m_backend->bindCredentials(auth);
-    m_backend->bindDevices(devices);
-
-    m_deployBtn->setEnabled(false);
-    m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
-
-    m_backend->startUpload(files,
-        m_remotePathEdit->text().toStdString(),
-        m_clearCheck->isChecked(),
-        m_rebootCheck->isChecked(),
-        currentProtocol(),
-        m_ftpsCheck->isChecked(),
-        m_portSpin->value()
-    );
-}
-
-void FtpDeployWidget::handleDropOnLocal(const QList<QUrl>& urls)
-{
-    QString dir = urls.first().toLocalFile();
-    QFileInfo fi(dir);
-    if (fi.isDir()) {
-        m_localTree->setRootIndex(m_localFsModel->index(dir));
-        m_localPathEdit->setText(dir);
-    }
-}
-
-void FtpDeployWidget::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();
-    }
-}
-
-void FtpDeployWidget::dragMoveEvent(QDragMoveEvent* event)
-{
-    if (event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();
-    }
-}
-
-void FtpDeployWidget::dropEvent(QDropEvent* event)
-{
-    const QMimeData* mime = event->mimeData();
-    if (!mime->hasUrls()) return;
-
-    QList<QUrl> urls = mime->urls();
-    if (urls.isEmpty()) return;
-
-    // 判断拖放目标位置
-    QPoint remotePos = m_remoteTable->mapFrom(this, event->pos());
-    bool dropOnRemote = m_remoteTable->rect().contains(remotePos);
-
-    QPoint localPos = m_localTree->mapFrom(this, event->pos());
-    bool dropOnLocal = m_localTree->rect().contains(localPos);
-
-    if (dropOnRemote) {
-        handleDropOnRemote(urls);
-        event->acceptProposedAction();
-    } else if (dropOnLocal) {
-        handleDropOnLocal(urls);
-        event->acceptProposedAction();
-    }
-}
-
-bool FtpDeployWidget::eventFilter(QObject* watched, QEvent* event)
-{
-    // 拦截子控件视图口上的拖拽事件（远程表格 / 本地树），使系统文件拖入有效
-    switch (event->type()) {
-    case QEvent::DragEnter:
-        if (auto* de = static_cast<QDragEnterEvent*>(event);
-            de->mimeData()->hasUrls()) {
-            de->acceptProposedAction();
-            return true;
-        }
-        break;
-    case QEvent::DragMove:
-        if (auto* dm = static_cast<QDragMoveEvent*>(event);
-            dm->mimeData()->hasUrls()) {
-            dm->acceptProposedAction();
-            return true;
-        }
-        break;
-    case QEvent::Drop:
-        if (auto* drop = static_cast<QDropEvent*>(event)) {
-            const QMimeData* mime = drop->mimeData();
-            if (!mime->hasUrls()) break;
-
-            QList<QUrl> urls = mime->urls();
-            if (urls.isEmpty()) break;
-
-            if (watched == m_remoteTable->viewport()) {
-                handleDropOnRemote(urls);
-                drop->acceptProposedAction();
-                return true;
-
-            } else if (watched == m_localTree->viewport()) {
-                handleDropOnLocal(urls);
-                drop->acceptProposedAction();
-                return true;
-            }
-        }
-        break;
-    default:
-        break;
-    }
-    return ToolWidget::eventFilter(watched, event);
 }

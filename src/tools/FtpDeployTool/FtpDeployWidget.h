@@ -6,37 +6,33 @@
  * Date: 2026-07-25
  * Author: turnarond
  *
- * Description: FTP 部署 Tool 前端（v2.4 双栏重构） — QSplitter 双栏文件管理器，
- *              左侧本地目录树（QFileSystemModel），右侧远程 FTP 目录表格（RemoteFileModel），
- *              拖拽上传 + 多设备批量部署。
+ * Description: FTP 部署 Tool 前端（双面板宿主重构） — 组装两个 FileBrowserPanel：
+ *              左侧本地（LocalFileSource），右侧远程（RemoteFileSource），
+ *              工具栏保留工具级批量部署配置（协议/设备/FTPS/端口/清空/重启），
+ *              文件浏览/操作能力全部下沉到 FileBrowserPanel（Task 2/3）。
+ *              批量部署链路零改动（FtpDeployBackend 不变）。
  */
 
 #pragma once
 #include "framework/ToolWidget.h"
-#include "adapter/IProtocolAdapter.h"
 #include <memory>
 #include <atomic>
-#include <QTreeView>
-#include <QTableView>
-#include <QLineEdit>
+#include <vector>
+#include <string>
+#include <QString>
+#include <QComboBox>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSpinBox>
-#include <QComboBox>
 #include <QSplitter>
 #include <QLabel>
-#include <QFileSystemModel>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QDragEnterEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
-#include <QEvent>
 
 class FtpDeployBackend;
 class DeviceBusWidget;
 class MultiProgressWidget;
-class RemoteFileModel;
+class FileBrowserPanel;
+class RemoteFileSource;
 
 class FtpDeployWidget : public ToolWidget {
     Q_OBJECT
@@ -58,82 +54,58 @@ public:
     void startDeployFromMenu();
     void cancelDeployFromMenu();
 
+signals:
+    // 状态栏方向指示（Task 5）：左右面板路径/选中变化时组合发射「左路径 → 右路径」
+    void directionChanged(const QString& text);
+
 private slots:
     void onDeployClicked();
     void onRefreshRemote();
-    void onRemoteDirChanged(const QModelIndex& index);
-    void onRemoteContextMenu(const QPoint& pos);
-    void onDeleteRemote();
-    void onRenameRemote();
-    void onDownloadRemote();
-    void onNewRemoteDir();
 
 private:
-    // 拖拽辅助方法 — 供 dropEvent 和 eventFilter 共用
-    void handleDropOnRemote(const QList<QUrl>& urls);
-    void handleDropOnLocal(const QList<QUrl>& urls);
+    // 连接状态点状态（connStatusDot：灰=未连接/未配置，青绿=连接成功，红=连接失败）
+    enum class RemoteConnState { Unknown, Connected, Failed };
 
-protected:
-    // 拖拽支持 — 从系统资源管理器拖入文件到远程面板直接上传
-    void dragEnterEvent(QDragEnterEvent* event) override;
-    void dragMoveEvent(QDragMoveEvent* event) override;
-    void dropEvent(QDropEvent* event) override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
-private:
     void setupUi();
     void setupToolbar(QVBoxLayout* mainLayout);
-    void setupLocalPanel();
-    void setupRemotePanel();
     void setupBottomBar(QVBoxLayout* mainLayout);
-    void navigateToRemoteDir(const QString& path);
-    void refreshBreadcrumb(const QString& path);
     void appendLog(const QString& msg);
     std::vector<std::string> collectLocalFiles() const;
     void connectBackendSignals();
+    std::string currentProtocol() const;
+    void setConnState(RemoteConnState state);
+    void updateDeployBtnText();
+    // 连接失败/重连失败/无设备统一 detach：面板置无源（清空列表+路径），远程源缓存一并失效
+    void detachRemotePanel();
 
     FtpDeployBackend*  m_backend = nullptr;
-    DeviceBusWidget*    m_deviceBus = nullptr;
+    DeviceBusWidget*   m_deviceBus = nullptr;
 
-    std::string currentProtocol() const;
-
-    // 工具栏
+    // 工具栏（工具级批量部署配置）
     QComboBox*   m_protocolCombo = nullptr;
     QComboBox*   m_deviceCombo = nullptr;
-    QLineEdit*   m_remotePathEdit = nullptr;
     QSpinBox*    m_portSpin = nullptr;
     QCheckBox*   m_ftpsCheck = nullptr;
     QCheckBox*   m_clearCheck = nullptr;
     QCheckBox*   m_rebootCheck = nullptr;
+    QLabel*      m_connStatusDot = nullptr;   // 连接状态点（灰/青绿/红，底色代码动态设置）
+    QPushButton* m_refreshBtn = nullptr;      // 「⟳ 刷新」按钮（重新连接 + 刷新远程列表）
 
-    // 本地面板
-    QFileSystemModel* m_localFsModel = nullptr;
-    QTreeView*        m_localTree = nullptr;
-    QLineEdit*        m_localPathEdit = nullptr;
+    // 双栏面板（FileBrowserPanel 宿主）
+    FileBrowserPanel* m_leftPanel  = nullptr;   // 本地（LocalFileSource，固定）
+    FileBrowserPanel* m_rightPanel = nullptr;   // 远程（RemoteFileSource，协议/设备变化时重建）
 
-    // 远程面板
-    RemoteFileModel* m_remoteModel = nullptr;
-    QTableView*      m_remoteTable = nullptr;
-    QPushButton*     m_refreshBtn = nullptr;
-    QWidget*         m_breadcrumbWidget = nullptr;
-    QHBoxLayout*     m_breadcrumbLayout = nullptr;
-    QString          m_currentRemotePath;
-
-    // 缓存的远程连接（避免每次导航都重新 TCP + FTP 登录）
-    std::shared_ptr<IProtocolAdapter> m_cachedAdapter;
-    QString m_cachedDeviceIp;
-    QString m_cachedProto;
-    int     m_cachedPort = 0;
-    bool    m_cachedUseFtps = false;
-    std::atomic<bool> m_refreshBusy{false}; // 防止并发刷新（缓存适配器非线程安全）
+    // 远程源缓存（协议/设备/端口/FTPS 变化时重建；断线时原位重连保留面板路径）
+    std::shared_ptr<RemoteFileSource> m_remoteSource;
+    QString    m_remoteSrcDevice;
+    QString    m_remoteSrcProto;
+    int        m_remoteSrcPort = 0;
+    bool       m_remoteSrcUseFtps = false;
+    std::atomic<bool> m_remoteBusy{false}; // 防止并发刷新（远程源适配器非线程安全）
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;
     MultiProgressWidget*  m_multiProgress = nullptr;
-
-    // 容器面板（替代 setProperty 传递指针）
-    QWidget* m_localPanel  = nullptr;
-    QWidget* m_remotePanel = nullptr;
 
     // 分割器
     QSplitter* m_splitter = nullptr;
