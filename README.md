@@ -14,7 +14,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 | 🚀 **多设备批量部署** | 一次操作批量部署到多台设备（逐台执行，失败设备跳过），选择性部署（勾选设备）、部署前清空/部署后重启 |
 | 🔒 **FTPS 加密传输** | FTP over TLS，防止凭证和文件在网络中被窃听 |
 | 🔌 **SFTP 文件管理 + 批量部署** | SshAdapter SFTP 子系统，双栏 FTP/SFTP 协议一键切换，SFTP 批量部署/拖拽上传（与 FTP 同一部署逻辑） |
-| 🎨 **工业仪表盘主题** | 「琴色是动词」深色主题——琴色仅标记可操作/活跃状态，结构一律中性石墨，一眼可辨 |
+| 🎨 **工业仪表盘主题（暗/亮可切换）** | 「琴色是动词」主题体系——琴色仅标记可操作/活跃状态，结构一律中性，暗/亮双主题设置中即时切换 |
 | 📋 **设备总线** | 胶囊式设备管理（IP+端口+凭证），ConfigStore 持久化 + DPAPI 加密凭证 |
 | 📝 **统一日志** | 所有 Tool 日志统一路由到底部可折叠全局日志面板 |
 | 🔁 **网络中继 + 录制回放** | TCP/UDP 透明中继旁路抓包，流量录制为 `.nrec` 并按原始时序回放 |
@@ -76,7 +76,7 @@ Qt Shell (Widget)          Framework Layer           Adapter Layer
 NavBar 导航栏               ToolHost (桥接)          IProtocolAdapter
 DeviceBusWidget             ToolRegistry (注册表)      ├─ FtpAdapter
 QStackedWidget 工作区        ToolBackend (基类)         ├─ TelnetAdapter
-darkstyle.qss 深色主题      ToolWidget (基类)          ├─ SshAdapter (SFTP)
+darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)          ├─ SshAdapter (SFTP)
       ↕                          ↕                    ├─ OpcUaAdapter
   lwmsgq 消息队列            ServiceManager            └─ ProtocolRegistry
       ↕                          ↕                         ↕

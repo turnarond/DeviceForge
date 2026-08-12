@@ -144,7 +144,7 @@ void FtpDeployWidget::setupLocalPanel()
     // 标题行
     auto* header = new QHBoxLayout();
     auto* title = new QLabel("📁 本地文件", this);
-    title->setStyleSheet("font-weight: bold; color: #C8CCD4; font-size: 12px;");
+    title->setObjectName("panelTitle"); // 双主题 QSS（暗 #C8CCD4 / 亮 #2A2F38）
     header->addWidget(title);
     header->addStretch();
     localLayout->addLayout(header);
@@ -154,11 +154,8 @@ void FtpDeployWidget::setupLocalPanel()
     pathRow->setSpacing(4);
 
     m_localPathEdit = new QLineEdit(this);
+    m_localPathEdit->setObjectName("localPathEdit"); // 双主题 QSS（暗 #0E1219 / 亮 #ECEFF3）
     m_localPathEdit->setPlaceholderText("输入路径后回车跳转...");
-    m_localPathEdit->setStyleSheet(
-        "QLineEdit { background: #0E1219; border: 1px solid #333B48;"
-        "  border-radius: 3px; color: #C8CCD4; padding: 3px 8px; font-size: 11px; }"
-        "QLineEdit:focus { border-color: #F0A030; }");
     connect(m_localPathEdit, &QLineEdit::returnPressed, [this]() {
         QString path = m_localPathEdit->text().trimmed();
         QDir dir(path);
@@ -172,10 +169,7 @@ void FtpDeployWidget::setupLocalPanel()
     auto* browseBtn = new QPushButton("📂", this);
     browseBtn->setToolTip("浏览目录...");
     browseBtn->setFixedSize(28, 26);
-    browseBtn->setStyleSheet(
-        "QPushButton { background: #232A36; border: 1px solid #333B48;"
-        "  border-radius: 3px; color: #C8CCD4; font-size: 14px; }"
-        "QPushButton:hover { border-color: #7B8494; }");
+    browseBtn->setObjectName("browseBtn"); // 双主题 QSS（暗 #232A36 / 亮 #E4E8EE）
     connect(browseBtn, &QPushButton::clicked, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "选择本地目录");
         if (!dir.isEmpty()) {
@@ -248,7 +242,7 @@ void FtpDeployWidget::setupRemotePanel()
 
     auto* header = new QHBoxLayout();
     auto* iconLabel = new QLabel("📁 远程文件", this);
-    iconLabel->setStyleSheet("font-weight: bold; color: #C8CCD4;");
+    iconLabel->setObjectName("panelTitle"); // 双主题 QSS（暗 #C8CCD4 / 亮 #2A2F38）
     header->addWidget(iconLabel);
 
     // 面包屑
@@ -402,6 +396,21 @@ void FtpDeployWidget::onDeployClicked()
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );
+}
+
+void FtpDeployWidget::startDeployFromMenu()
+{
+    if (!m_deployBtn->isEnabled()) {          // 部署进行中（按钮已禁用）
+        appendLog("部署正在进行中，请先取消或等待完成");
+        return;
+    }
+    onDeployClicked();
+}
+
+void FtpDeployWidget::cancelDeployFromMenu()
+{
+    if (m_backend) m_backend->cancelUpload();
+    appendLog("已从菜单取消部署");
 }
 
 std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
@@ -643,11 +652,11 @@ void FtpDeployWidget::refreshBreadcrumb(const QString& path)
         auto* btn = new QPushButton(parts[i], this);
         btn->setFlat(true);
         btn->setCursor(Qt::PointingHandCursor);
-        btn->setStyleSheet(
-            i == parts.size() - 1
-                ? "color: #F0A030; font-weight: bold; padding: 0 4px; border: none;"
-                : "color: #7B8494; padding: 0 4px; border: none;"
-        );
+        if (i == parts.size() - 1) {
+            btn->setObjectName("crumbCurrent"); // 当前目录段，双主题 QSS（暗 #F0A030 / 亮 #D48820）
+        } else {
+            btn->setStyleSheet("color: #7B8494; padding: 0 4px; border: none;");
+        }
         connect(btn, &QPushButton::clicked, [this, fullPath]() { navigateToRemoteDir(fullPath); });
         m_breadcrumbLayout->addWidget(btn);
     }

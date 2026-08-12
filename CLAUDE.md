@@ -58,6 +58,8 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_opcua_loopback`：进程内 OPC UA 服务端-客户端环回测试（源在 `tests/opcua_encode/tst_opcua_loopback.cpp`）
 - `tst_sftp_plan`：SFTP 上传规划纯逻辑测试（源在 `tests/sftp/tst_sftp_plan.cpp`）
 - `tst_deploy_loop`：部署循环 mock 测试（源在 `tests/deploy/tst_deploy_loop.cpp`）
+- `tst_remote_model`：RemoteFileModel 排序语义（`.`/`..` 置顶 + 目录优先 + 名称序，源在 `tests/remote_model/tst_remote_model.cpp`）
+- `tst_theme`：ThemeUtils 主题路径映射 + 亮色 QSS 资源存在性（编译 QRC，源在 `tests/theme/tst_theme.cpp`）
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -169,7 +171,7 @@ UI Layer (Qt Widget)         Framework Layer            Adapter Layer
 DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   ├─ DeviceBusWidget          ToolRegistry (注册表)       ├─ FtpAdapter
   ├─ Tool Navigation          ToolBackend (基类)          ├─ TelnetAdapter
-  └─ QSS 深色主题             ToolWidget (基类)           └─ ProtocolRegistry
+  └─ QSS 双主题（暗/亮）     ToolWidget (基类)           └─ ProtocolRegistry
         ↕                         ↕                         ↕
     lwmsgq (消息队列)        ServiceManager             lwcommunicate::LWTcpClient
         ↕                         ↕                         ↕
@@ -229,14 +231,14 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 资源
 
-- **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `app.ico`（`:/icons/app.ico`）
+- **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `darkstyle-light.qss`（`:/styles/darkstyle-light.qss`）+ `app.ico`（`:/icons/app.ico`）
 - **QSS**：`src/app/darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
 - **UI 文件**：`src/app/DeviceForge.ui`（主窗口）
 
 ### 源码文件清单
 
 **应用壳（src/app/）**：
-`main.cpp` / `DeviceForge.cpp/.h`（主窗口类）/ `DeviceForge.ui` / `DeviceForge.qrc` / `DeviceForge.rc` / `resource.h` / `app.ico` / `darkstyle.qss` — 2026-08-02 由根目录迁入，统一应用壳入口
+`main.cpp` / `ThemeUtils.h`（主题路径映射）/ `DeviceForge.cpp/.h`（主窗口类）/ `DeviceForge.ui` / `DeviceForge.qrc` / `DeviceForge.rc` / `resource.h` / `app.ico` / `darkstyle.qss` / `darkstyle-light.qss` — 2026-08-02 由根目录迁入，统一应用壳入口
 
 **新架构源码（src/）**：
 - `src/framework/`：ToolBackend.h / ToolWidget.h(.cpp) / ToolHost(.cpp/.h) / ToolRegistry(.cpp/.h) / ManifestParser(.cpp/.h) / DeviceInfo.h / AppState(.cpp/.h)
@@ -294,10 +296,10 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 布局
 
-- 左侧 72px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
+- 左侧 56px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
 - 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
-- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 加载），工业仪表盘色板
+- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），工业仪表盘色板，双主题可切换
 - 所有 Tool 日志统一路由到底部全局日志（ToolWidget::setGlobalLogCallback）
 
 ## 设计文档
@@ -356,7 +358,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 8 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 10 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
@@ -364,6 +366,9 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   - 主要文字: #C8CCD4 | 次要文字: #7B8494
   - 强调色（琴色）: #F0A030 | 强调色 hover: #F0B840 | 强调色 pressed: #D48820
   - 进行中/成功（青绿）: #40C8A0 | 错误色: #E85848
+
+- **双主题（v2.6）**：`appearance.theme`（ConfigStore，默认 dark）。亮色板 darkstyle-light.qss 色值对应：背景 #F5F6F8 / 面板 #FFFFFF / 凹槽 #ECEFF3 / 边框 #D0D5DD/#C4CAD4 / 主文字 #2A2F38 / 次文字 #6B7480 / 琴色 #D48820（亮底加深，语义不变）/ 青绿 #2FA88A / 错误 #D6453A。「琴色是动词」语义跨主题一致：琴色仅信号态
+- **紧凑密度（v2.6）**：NavBar 56px、列表行高 ~22px、双主题同密度
 
 - **主题设计原则「琴色是动词」（关键，勿回退）**：琴色 #F0A030 **仅**用于标记"此刻可动作/此刻活跃"的信号态，绝不用作静止结构边框或大面积填充：
   - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性石墨色（#252A33 / #333B48）
@@ -377,7 +382,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   1. `QApplication` 创建
   2. `LogBridge::install()` — Qt → lwlog 桥接
   3. `ProtocolRegistry` 工厂注册（FtpAdapter + TelnetAdapter + SshAdapter + OpcUaAdapter）
-  4. 加载 darkstyle.qss
+  4. 加载主题样式表（`ThemeUtils::themeQssPath`，按 ConfigStore `appearance.theme` 选择 darkstyle.qss / darkstyle-light.qss）
   5. `DeviceForge window` — 构造函数：NavBar（7项） + DeviceBusWidget（胶囊式） + QStackedWidget + 全部 Tool Widget + 底部可折叠日志
   6. `ToolRegistry` 注册内置 Tool 元数据（ftp.deploy / telnet.command / websocket.comm）
   7. `ToolHost` 工厂注册（预留，当前 Tool 通过 DeviceForge 主窗口直接创建）

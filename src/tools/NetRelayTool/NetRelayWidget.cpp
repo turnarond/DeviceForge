@@ -102,7 +102,7 @@ void NetRelayWidget::setupUi()
 
     row1->addSpacing(12);
     auto* arrowLbl = new QLabel("→", this);
-    arrowLbl->setStyleSheet("font-size:16px; font-weight:bold; color:#F0A030;");
+    arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #F0A030 / 亮 #D48820）
     row1->addWidget(arrowLbl);
 
     row1->addWidget(new QLabel("上游地址:", this));

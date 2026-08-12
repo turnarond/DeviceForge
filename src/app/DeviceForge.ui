@@ -100,19 +100,14 @@
     <property name="title">
      <string>文件</string>
     </property>
-    <addaction name="action_new"/>
-    <addaction name="action_open"/>
-    <addaction name="action_save"/>
-    <addaction name="separator"/>
     <addaction name="action_exit"/>
    </widget>
    <widget class="QMenu" name="menu_deploy">
     <property name="title">
      <string>部署</string>
     </property>
-    <addaction name="action_start_deploy"/>
-    <addaction name="action_stop_deploy"/>
-    <addaction name="action_pause_deploy"/>
+    <addaction name="action_deploy_start"/>
+    <addaction name="action_deploy_cancel"/>
    </widget>
    <widget class="QMenu" name="menu_help">
     <property name="title">
@@ -124,27 +119,12 @@
    <addaction name="menu_deploy"/>
    <addaction name="menu_help"/>
   </widget>
-  <action name="action_new">
-   <property name="text">
-    <string>新建</string>
-   </property>
-  </action>
-  <action name="action_open">
-   <property name="text">
-    <string>打开</string>
-   </property>
-  </action>
-  <action name="action_save">
-   <property name="text">
-    <string>保存</string>
-   </property>
-  </action>
   <action name="action_exit">
    <property name="text">
     <string>退出</string>
    </property>
   </action>
-  <action name="action_start_deploy">
+  <action name="action_deploy_start">
    <property name="icon">
     <iconset theme="media-playback-start"/>
    </property>
@@ -152,30 +132,17 @@
     <string>开始部署</string>
    </property>
   </action>
-  <action name="action_stop_deploy">
+  <action name="action_deploy_cancel">
    <property name="icon">
     <iconset theme="media-playback-stop"/>
    </property>
    <property name="text">
-    <string>停止部署</string>
-   </property>
-  </action>
-  <action name="action_pause_deploy">
-   <property name="icon">
-    <iconset theme="media-playback-pause"/>
-   </property>
-   <property name="text">
-    <string>暂停部署</string>
+    <string>取消部署</string>
    </property>
   </action>
   <action name="action_about">
    <property name="text">
     <string>关于</string>
-   </property>
-  </action>
-  <action name="action_clear_log">
-   <property name="text">
-    <string>清除日志</string>
    </property>
   </action>
  </widget>

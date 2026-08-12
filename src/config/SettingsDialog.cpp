@@ -1,5 +1,6 @@
 #include "config/SettingsDialog.h"
 #include "config/ConfigStore.h"
+#include "app/ThemeUtils.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -7,6 +8,7 @@
 #include <QHeaderView>
 #include <QComboBox>
 #include <QLineEdit>
+#include <QLabel>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -15,6 +17,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QFile>
+#include <QTextStream>
 
 namespace {
 
@@ -27,6 +32,7 @@ const char* kKnownTypes[] = {
     "modbus.slave",
     "netrelay.server",
     "websocket.endpoint",
+    "appearance",
 };
 
 // ConfigStore 使用毫秒时间戳
@@ -125,6 +131,38 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     mainLayout->addLayout(topLayout);
     mainLayout->addWidget(m_table, 1);
     mainLayout->addLayout(bottomLayout);
+
+    // 外观：主题选择（即时生效 + 持久化，插入主布局顶部）
+    auto* themeRow = new QHBoxLayout();
+    themeRow->addWidget(new QLabel(QStringLiteral("外观"), this));
+    auto* themeCombo = new QComboBox(this);
+    themeCombo->addItem(QStringLiteral("暗色"), QStringLiteral("dark"));
+    themeCombo->addItem(QStringLiteral("亮色"), QStringLiteral("light"));
+    const QString curTheme = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString();
+    int themeIdx = themeCombo->findData(
+        curTheme.isEmpty() ? QStringLiteral("dark") : curTheme);
+    if (themeIdx < 0) themeIdx = 0; // 手改库非法值时兜底，避免下拉空白
+    themeCombo->setCurrentIndex(themeIdx);
+    connect(themeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+        [themeCombo](int) {
+            // 延迟到 lambda 内取当前项（QComboBox 信号参数为 index）
+            const QString theme = themeCombo->currentData().toString();
+            QVariantMap v;
+            v.insert(QStringLiteral("theme"), theme);
+            ConfigStore::instance().save(
+                QStringLiteral("appearance"), QStringLiteral("theme"), v);
+            QFile f(themeQssPath(theme));
+            if (f.open(QFile::ReadOnly | QFile::Text)) {
+                QTextStream ts(&f);
+                qApp->setStyleSheet(ts.readAll());
+            }
+        });
+    themeRow->addWidget(themeCombo, 1);
+    // 插入到主布局顶部
+    if (auto* mainLayoutPtr = qobject_cast<QVBoxLayout*>(layout()))
+        mainLayoutPtr->insertLayout(0, themeRow);
 
     populateTable();
 }

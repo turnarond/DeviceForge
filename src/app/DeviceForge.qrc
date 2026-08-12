@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="styles">
         <file>darkstyle.qss</file>
+        <file>darkstyle-light.qss</file>
     </qresource>
     <qresource prefix="icons">
         <file>app.ico</file>

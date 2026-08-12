@@ -69,22 +69,9 @@ void DeviceBusWidget::setupUi()
 
     // + 添加按钮
     m_addButton = new QPushButton(QStringLiteral("+ \xE6\xB7\xBB\xE5\x8A\xA0"), this);
+    m_addButton->setObjectName(QStringLiteral("btnAddDevice"));
     m_addButton->setFixedHeight(26);
     m_addButton->setCursor(Qt::PointingHandCursor);
-    m_addButton->setStyleSheet(
-        "QPushButton {"
-        "  background: transparent;"
-        "  border: 1px dashed #333B48;"
-        "  border-radius: 4px;"
-        "  color: #7B8494;"
-        "  font-size: 11px;"
-        "  padding: 2px 10px;"
-        "}"
-        "QPushButton:hover {"
-        "  border-color: #7B8494;"
-        "  color: #C8CCD4;"
-        "}"
-    );
     connect(m_addButton, &QPushButton::clicked, this, &DeviceBusWidget::onAddClicked);
     deviceRow->addWidget(m_addButton);
 
@@ -98,31 +85,21 @@ void DeviceBusWidget::setupUi()
     authRow->addWidget(userIcon);
 
     m_userEdit = new QLineEdit(this);
+    m_userEdit->setObjectName(QStringLiteral("deviceAuthUser"));
     m_userEdit->setPlaceholderText(QStringLiteral("\xE7\x94\xA8\xE6\x88\xB7\xE5\x90\x8D"));
     m_userEdit->setFixedWidth(120);
     m_userEdit->setFixedHeight(24);
-    m_userEdit->setStyleSheet(
-        "QLineEdit {"
-        "  background: #0E1219;"
-        "  border: 1px solid #333B48;"
-        "  border-radius: 3px;"
-        "  color: #C8CCD4;"
-        "  padding: 2px 6px;"
-        "  font-size: 12px;"
-        "}"
-        "QLineEdit:focus { border-color: #F0A030; }"
-    );
     authRow->addWidget(m_userEdit);
 
     auto* passIcon = new QLabel(QStringLiteral("\xF0\x9F\x94\x91"), this);
     authRow->addWidget(passIcon);
 
     m_passEdit = new QLineEdit(this);
+    m_passEdit->setObjectName(QStringLiteral("deviceAuthPass"));
     m_passEdit->setPlaceholderText(QStringLiteral("\xE5\xAF\x86\xE7\xA0\x81"));
     m_passEdit->setEchoMode(QLineEdit::Password);
     m_passEdit->setFixedWidth(140);
     m_passEdit->setFixedHeight(24);
-    m_passEdit->setStyleSheet(m_userEdit->styleSheet());
     authRow->addWidget(m_passEdit);
 
     authRow->addStretch();
@@ -203,30 +180,11 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
         label += QStringLiteral(":") + QString::number(device.port);
     }
     pill->setText(label + QStringLiteral("  \xC3\x97"));
+    pill->setObjectName(QStringLiteral("devicePill"));
     pill->setFixedHeight(26);
     pill->setCursor(Qt::PointingHandCursor);
     pill->setProperty("deviceIp", ipStr);
     pill->setProperty("selected", false);
-
-    pill->setStyleSheet(
-        "QPushButton {"
-        "  background: #232A36;"
-        "  border: 1px solid #333B48;"
-        "  border-radius: 4px;"
-        "  color: #C8CCD4;"
-        "  font-size: 12px;"
-        "  padding: 2px 10px;"
-        "}"
-        "QPushButton:hover {"
-        "  border-color: #7B8494;"
-        "}"
-        "QPushButton[selected=\"true\"] {"
-        "  border-color: #F0A030;"
-        "  background: #2A2518;"
-        "}"
-        "QPushButton[online=\"true\"]  { border-left: 3px solid #40C8A0; }"
-        "QPushButton[online=\"false\"] { border-left: 3px solid #E85848; }"
-    );
 
     // 左键点击切换选中，右键点击删除设备
     pill->setContextMenuPolicy(Qt::CustomContextMenu);

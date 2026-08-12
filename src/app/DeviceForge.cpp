@@ -110,6 +110,8 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 8. 底部日志折叠条（Task 4）
     m_logCollapseBar = new QWidget(this);
     m_logCollapseBar->setObjectName("logCollapseBar");
+    m_logCollapseBar->setAttribute(Qt::WA_StyledBackground, true); // 自定义 QWidget 子类，QSS 背景需显式声明
+    m_logCollapseBar->setProperty("flash", false); // 闪烁态由 QSS [flash="true"] 驱动，替代组件级 setStyleSheet
     m_logCollapseBar->setFixedHeight(4);
     m_logCollapseBar->setCursor(Qt::PointingHandCursor);
     m_logCollapseBar->installEventFilter(this);
@@ -142,6 +144,19 @@ DeviceForge::DeviceForge(QWidget* parent)
         else
             menuBar()->addAction(settingsAct);
     }
+
+    // 文件 → 退出
+    connect(ui.action_exit, &QAction::triggered, this, &QWidget::close);
+
+    // 部署 → 开始/取消（FtpDeployTool 存在时可用）
+    ui.action_deploy_start->setEnabled(m_ftpDeployTab != nullptr);
+    ui.action_deploy_cancel->setEnabled(m_ftpDeployTab != nullptr);
+    connect(ui.action_deploy_start, &QAction::triggered, this, [this]() {
+        if (m_ftpDeployTab) m_ftpDeployTab->startDeployFromMenu();
+    });
+    connect(ui.action_deploy_cancel, &QAction::triggered, this, [this]() {
+        if (m_ftpDeployTab) m_ftpDeployTab->cancelDeployFromMenu();
+    });
 
     // 在线更新集成（Task 5）：菜单"帮助-检查更新" + 状态栏版本标签 + 5 秒后自动检查
     setupUpdateChecker();
@@ -287,15 +302,16 @@ void DeviceForge::onClearLogClicked()
 void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
-    // 折叠态时琴色闪烁提示（Task 4）
+    // 折叠态时琴色闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
     if (!m_logExpanded && m_logCollapseBar) {
-        m_logCollapseBar->setStyleSheet("#logCollapseBar { background: #F0A030; }");
+        m_logCollapseBar->setProperty("flash", true);
+        m_logCollapseBar->style()->unpolish(m_logCollapseBar);
+        m_logCollapseBar->style()->polish(m_logCollapseBar);
         QTimer::singleShot(600, this, [this]() {
             if (m_logCollapseBar) {
-                m_logCollapseBar->setStyleSheet(
-                    "#logCollapseBar { background: #252A33; }"
-                    "#logCollapseBar:hover { background: #333B48; }"
-                );
+                m_logCollapseBar->setProperty("flash", false);
+                m_logCollapseBar->style()->unpolish(m_logCollapseBar);
+                m_logCollapseBar->style()->polish(m_logCollapseBar);
             }
         });
     }
@@ -354,8 +370,8 @@ void DeviceForge::setupUpdateChecker()
 
     // 状态栏版本标签（右侧永久挂件）
     m_versionLabel = new QLabel(this);
+    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #7B8494 / 亮 #6B7480），动态状态（琴色链接/检查失败）保持代码逻辑
     m_versionLabel->setText(currentVersionString() + " (检查中...)");
-    m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
     // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
     connect(m_versionLabel, &QLabel::linkActivated, this, &DeviceForge::onVersionLabelClicked);
@@ -434,7 +450,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
     switch (state) {
     case UpdateState::Checking:
         m_versionLabel->setText(ver + " (检查中...)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         m_checkUpdateAction->setText("检查更新...");
         break;
 
@@ -462,7 +477,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
 
     case UpdateState::Idle:
         m_versionLabel->setText(ver + " (已是最新)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         m_checkUpdateAction->setText("检查更新...");
         break;
 
@@ -470,7 +484,6 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
         // 自动检查失败静默,手动检查失败显示 "检查失败"
         if (!m_autoCheck) {
             m_versionLabel->setText(ver + " (检查失败)");
-            m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         }
         m_checkUpdateAction->setText("检查更新...");
         if (m_updateDialog) m_updateDialog->setState(state);
@@ -478,13 +491,11 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
 
     case UpdateState::Downloading:
         m_versionLabel->setText(ver + " (下载中...)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         if (m_updateDialog) m_updateDialog->setState(state);
         break;
 
     case UpdateState::Installed:
         m_versionLabel->setText(ver + " (已下载,待安装)");
-        m_versionLabel->setStyleSheet("color: #7B8494; padding: 0 8px;");
         if (m_updateDialog) m_updateDialog->setState(state);
         break;
     }

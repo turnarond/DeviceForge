@@ -1,4 +1,5 @@
 #include "DeviceForge.h"
+#include "ThemeUtils.h"
 #include <QtWidgets/QApplication>
 #include <QNetworkProxy>
 #include <QFile>
@@ -61,13 +62,18 @@ int main(int argc, char *argv[])
             return std::make_shared<OpcUaAdapter>();
         });
 
-    // 加载深色主题样式表
-    QFile styleFile(":/styles/darkstyle.qss");
+    // 加载主题样式表（按 ConfigStore 配置：appearance.theme = "dark"/"light"）
+    const QString theme = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString();
+    QFile styleFile(themeQssPath(theme));
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
         QTextStream stream(&styleFile);
         QString styleSheet = stream.readAll();
         app.setStyleSheet(styleSheet);
         styleFile.close();
+    } else {
+        qWarning() << "主题样式表加载失败（回退无样式）: " << styleFile.fileName();
     }
 
     DeviceForge window;

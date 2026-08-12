@@ -150,6 +150,8 @@ void OpcUaClientWidget::setupUi()
     row2->addSpacing(12);
     row2->addWidget(new QLabel("状态:", this));
     m_statusLabel = new QLabel("○ 未连接", this);
+    m_statusLabel->setObjectName("opcStatusLabel"); // 连接态走双主题 QSS 动态属性（暗 #40C8A0/#C8CCD4 / 亮 #2FA88A/#2A2F38）
+    m_statusLabel->setProperty("connState", "offline");
     row2->addWidget(m_statusLabel);
     row2->addStretch();
     connLayout->addLayout(row2);
@@ -627,18 +629,18 @@ void OpcUaClientWidget::onRemoveSubscriptionRow(int row)
 void OpcUaClientWidget::updateConnectionStatus(bool connected)
 {
     m_connected = connected;
-    QPalette pal = m_statusLabel->palette();
     if (connected) {
         m_statusLabel->setText("● 已连接");
-        pal.setColor(QPalette::WindowText, QColor("#40C8A0")); // 青绿，已连接态
         m_connectBtn->setText("断开");
     } else {
         m_statusLabel->setText("○ 未连接");
-        pal.setColor(QPalette::WindowText, QColor("#C8CCD4")); // 主文字色，未连接态
         m_connectBtn->setText("连接");
         if (m_subscribeBtn) { m_subscribeBtn->setChecked(false); m_subscribeBtn->setText("订阅"); }
     }
-    m_statusLabel->setPalette(pal);
+    // 颜色改由双主题 QSS 动态属性驱动（替代 palette，随主题切换自动生效）
+    m_statusLabel->setProperty("connState", connected ? "online" : "offline");
+    m_statusLabel->style()->unpolish(m_statusLabel);
+    m_statusLabel->style()->polish(m_statusLabel);
 }
 
 void OpcUaClientWidget::appendLog(const QString& msg)
