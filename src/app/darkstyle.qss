@@ -701,3 +701,16 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #E85848; }
 /* OPC UA 连接状态标签（动态属性驱动，随主题切换自动生效） */
 QLabel#opcStatusLabel[connState="online"]  { color: #40C8A0; }
 QLabel#opcStatusLabel[connState="offline"] { color: #C8CCD4; }
+
+/* FtpDeployTool 工具栏连接状态点（10x10 圆点）— 底色由代码 setStyleSheet 动态设置
+   （固定暗色版 #7B8494 灰 / #40C8A0 青绿 / #E85848 红），此处仅定圆角 */
+#connStatusDot {
+    border-radius: 5px;
+}
+
+/* FtpDeployTool 工具栏组间分隔条（QFrame VLine，石墨窄条） */
+QFrame#toolbarSeparator {
+    background-color: #252A33;
+    min-width: 1px;
+    max-width: 1px;
+}

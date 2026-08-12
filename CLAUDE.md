@@ -117,6 +117,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - `IFileSource` 文件源统一接口 + `LocalFileSource`/`RemoteFileSource` 两实现（`src/ui/`）；FtpDeployWidget 瘦身约 3 倍为双面板宿主（1134→396 行），文件浏览/导航/右键/拖拽全部下沉 `FileBrowserPanel`（统一表格视图 + 路径栏 + 面包屑，双击导航/F2/F5/F6/Tab/方向语义）
 - 批量部署链路保留（FtpDeployBackend 零改动）；部署目标目录 = 右侧远程面板当前路径（先右侧导航再部署；空路径回退根目录）
 - 状态栏 TC 化（快捷键提示条 + 部署方向指示）；QSS 清理 FTP 面板死规则（#panelTitle/#crumbCurrent/#localPathEdit/#browseBtn）
+- 远程面板修复（2026-08-12）：设备添加/删除后自动连接刷新（deviceSelectionChanged → onRefreshRemote，修复 blockSignals 触发链断裂导致远程源永不创建）；工具栏「⟳ 刷新」按钮回归；连接状态点（灰/青绿/红，底色代码动态设置 + 双 QSS 圆角）；工具栏分组布局（连接组：协议/设备/端口/FTPS/状态点；部署组：清空/重启/刷新/部署，组间 QFrame VLine 分隔）；FileBrowserPanel 无源提示「未连接远程，请选择设备并刷新」
 - 测试：新增 tst_file_source（IFileSource 本地源 4 用例）；回归 11 目标全过（含 tst_remote_model 等既有目标）
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
@@ -218,7 +219,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署）
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署）；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败，底色代码动态设置；部署组：清空/重启/「⟳ 刷新」/「▶ 部署到 N 台设备」，组间 QFrame VLine 分隔），设备总线添加/删除设备后自动连接刷新（deviceSelectionChanged → onRefreshRemote）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新

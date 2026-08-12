@@ -110,7 +110,12 @@ void FileBrowserPanel::refresh() { loadDirectory(m_currentPath); }
 
 void FileBrowserPanel::loadDirectory(const QString& path)
 {
-    if (!m_source || m_refreshing) return;
+    // 无源（远程面板在协议/设备确定前 m_source 为 null）：明确提示而非静默无列表
+    if (!m_source) {
+        m_breadcrumb->setText(tr("未连接远程，请选择设备并刷新"));
+        return;
+    }
+    if (m_refreshing) return;
     m_refreshing = true;
     m_pathEdit->setText(path);
     auto files = m_source->list(path);
