@@ -75,6 +75,8 @@ private:
     std::string currentProtocol() const;
     void setConnState(RemoteConnState state);
     void updateDeployBtnText();
+    // 连接失败/重连失败/无设备统一 detach：面板置无源（清空列表+路径），远程源缓存一并失效
+    void detachRemotePanel();
 
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*   m_deviceBus = nullptr;

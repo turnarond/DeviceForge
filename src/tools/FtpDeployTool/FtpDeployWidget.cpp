@@ -164,7 +164,9 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_deployBtn->setObjectName("btnPrimary");
     m_deployBtn->setMinimumHeight(30);
     connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
-    updateDeployBtnText();
+    // 初始文本「▶ 部署」：设备总线同步前不显示「0 台设备」；
+    // 同步后由 setDeviceBusWidget → updateDeployBtnText() 更新为「▶ 部署到 N 台设备」
+    m_deployBtn->setText(QStringLiteral("▶ 部署"));
     deployGroup->addWidget(m_deployBtn);
 
     toolbar->addLayout(connGroup);
@@ -307,6 +309,8 @@ void FtpDeployWidget::onRefreshRemote()
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
         appendLog("错误：设备总线中没有目标设备");
         setConnState(RemoteConnState::Unknown);   // 无目标设备 = 未配置 → 灰
+        // 删除全部设备后不残留旧设备目录（与连接失败 detach 同方案）
+        detachRemotePanel();
         return;
     }
     if (!m_rightPanel) return;
@@ -350,8 +354,11 @@ void FtpDeployWidget::onRefreshRemote()
             appendLog("远程连接失败: " + source->lastError());
             setConnState(RemoteConnState::Failed);   // 连接失败 → 红
             m_remoteBusy = false;
-            // 面板无源 → 触发 loadDirectory 无源提示（「未连接远程，请选择设备并刷新」）
-            m_rightPanel->refresh();
+            // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
+            // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
+            // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
+            // 「缓存匹配但面板无源」的死锁状态（I-1）
+            detachRemotePanel();
             return;
         }
         setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
@@ -367,7 +374,10 @@ void FtpDeployWidget::onRefreshRemote()
             appendLog("远程重连失败: " + m_remoteSource->lastError());
             setConnState(RemoteConnState::Failed);
             m_remoteBusy = false;
-            m_rightPanel->refresh();   // 失败也刷新面板：源仍存在时显示加载失败原因
+            // 与连接失败分支统一 detach：不再调面板 refresh()——
+            // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
+            // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
+            detachRemotePanel();
             return;
         }
         setConnState(RemoteConnState::Connected);
@@ -403,6 +413,24 @@ void FtpDeployWidget::updateDeployBtnText()
     m_deployBtn->setText(QStringLiteral("▶ 部署到 %1 台设备").arg(n));
 }
 
+// 连接失败/重连失败/无设备统一 detach（I-1 / M-2 / M-3）：
+// 面板置无源（清空表格 + 路径栏 + 面包屑 + 当前路径，setSource(nullptr) 支持清空），
+// 远程源缓存一并失效——若只 detach 面板而保留缓存，下一次 onRefreshRemote 会走
+// 「原位重连」分支（configChanged=false），而面板无源时 refresh() 只会提示
+// 「未连接远程」永远不会重挂源，形成状态死锁；缓存清空后统一走全量重建分支
+void FtpDeployWidget::detachRemotePanel()
+{
+    m_remoteSource.reset();
+    m_remoteSrcDevice.clear();
+    m_remoteSrcProto.clear();
+    m_remoteSrcPort = 0;
+    m_remoteSrcUseFtps = false;
+    if (m_rightPanel) {
+        m_rightPanel->setSource(nullptr);
+        m_rightPanel->refresh();   // 无源 → loadDirectory 提示「未连接远程，请选择设备并刷新」
+    }
+}
+
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
 {
     m_backend = backend;
@@ -430,13 +458,20 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
         // FtpDeployWidget 析构后连接自动断开，无悬垂捕获风险
         connect(m_deviceBus, &DeviceBusWidget::deviceSelectionChanged, this, [this]() {
             m_deviceCombo->blockSignals(true);
+            // 重填前保存当前选中设备，重填后恢复——否则 clear() 后 currentIndex 回 0，
+            // 用户选中的非首台设备被静默切回首台 → configChanged=true 触发断连重建。
+            // 恢复操作同样在 blockSignals 内，不触发 currentTextChanged（I-2）
+            const QString prev = m_deviceCombo->currentText();
             m_deviceCombo->clear();
             for (const auto& d : m_deviceBus->allDevices()) {
                 m_deviceCombo->addItem(QString::fromStdString(d.ip));
             }
+            const int idx = m_deviceCombo->findText(prev);
+            if (idx >= 0) m_deviceCombo->setCurrentIndex(idx);
             m_deviceCombo->blockSignals(false);
             updateDeployBtnText();
-            // 设备添加/删除后自动连接刷新（无设备时 onRefreshRemote 内部提示并置灰状态点）
+            // 设备添加/删除后自动连接刷新（无设备时 onRefreshRemote 内部提示并置灰状态点；
+            // 被删除的设备不在列表中 → 落到首台，onRefreshRemote 按当前文本刷新）
             onRefreshRemote();
         });
     }

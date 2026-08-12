@@ -97,6 +97,17 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
         m_currentPath = m_source->sourceId() == "local"
             ? QDir::currentPath() : QStringLiteral("/");
         navigateTo(m_currentPath);
+    } else {
+        // 置空源（连接失败 detach 等）：清空表格 + 路径栏 + 面包屑 + 当前路径，
+        // 避免残留旧源的目录列表（部署目标 = 面板当前路径，残留会误导部署目标）。
+        // 面包屑提示（「未连接远程...」）由调用方随后的 refresh()（loadDirectory
+        // 无源分支）呈现
+        m_files.clear();
+        if (auto* model = qobject_cast<RemoteFileModel*>(m_table->model()))
+            model->clear();
+        m_breadcrumb->clear();
+        emit currentPathChanged(QString());   // 状态栏方向指示同步（右路径为空）
+        emit selectionChanged();
     }
 }
 
