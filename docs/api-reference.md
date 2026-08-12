@@ -98,12 +98,36 @@ struct AuthInfo {
 
 ---
 
+## IDeployable — 可选部署能力接口
+
+位于 `src/adapter/IDeployable.h`。**可选部署能力**：协议适配器实现此接口即成为批量部署通道。部署循环（FtpDeployBackend）通过 `dynamic_cast` 探测该接口，与协议无关地执行上传/清空/进度/取消。目前由 FtpAdapter、SshAdapter 实现。
+
+```cpp
+class IDeployable {
+public:
+    virtual ~IDeployable() = default;
+
+    // 上传单个文件到远程路径（remotePath 含文件名）
+    virtual bool uploadFile(const std::string& localPath, const std::string& remotePath) = 0;
+    // 递归上传整个目录（目录本身作为远程子目录创建）
+    virtual bool uploadFolder(const std::string& localPath, const std::string& remotePath) = 0;
+    // 清空远程目录内容（保留目录本身）
+    virtual bool clearRemoteDirectory(const std::string& remotePath) = 0;
+    // 进度回调：0-100 整数百分比
+    virtual void setProgressCallback(std::function<void(int)> cb) = 0;
+    // 取消标志：部署循环设置后，传输在每文件/每块前检查并中止
+    virtual void setCancelFlag(std::atomic<bool>* flag) = 0;
+};
+```
+
+---
+
 ## FtpAdapter — FTP/FTPS 适配器
 
 位于 `src/adapter/FtpAdapter.h`。
 
 ```cpp
-class FtpAdapter : public IProtocolAdapter {
+class FtpAdapter : public IProtocolAdapter, public IDeployable {
 public:
     // IProtocolAdapter 实现
     std::string protocolId() const override { return "ftp"; }
@@ -111,14 +135,16 @@ public:
     void disconnect() override;
     // ...
 
+    // IDeployable 实现（批量部署通道）
+    bool uploadFile(const std::string& localPath, const std::string& remotePath) override;
+    bool uploadFolder(const std::string& localPath, const std::string& remotePath) override;
+    bool clearRemoteDirectory(const std::string& remotePath) override;
+
     // FTP 特有操作
-    bool uploadFile(const std::string& localPath, const std::string& remotePath);
-    bool uploadFolder(const std::string& localPath, const std::string& remotePath);
     bool downloadFile(const std::string& remotePath, const std::string& localPath);
     bool listDirectory(const std::string& remotePath, std::string& outJsonList);
     bool deleteFile(const std::string& remotePath);
     bool deleteDirectory(const std::string& remotePath);
-    bool clearRemoteDirectory(const std::string& remotePath);
 
     void setUseFtps(bool useFtps);  // 启用 FTPS 加密
 };
@@ -142,14 +168,35 @@ class TelnetAdapter : public IProtocolAdapter {
 
 ## SshAdapter — SSH 适配器
 
-位于 `src/adapter/SshAdapter.h`。基于 libssh2，密码认证 + TOFU 主机密钥验证。
+位于 `src/adapter/SshAdapter.h`。基于 libssh2，密码认证 + TOFU 主机密钥验证。SFTP 文件子系统（`sftp*` 方法）+ IDeployable 部署链路。
 
 ```cpp
-class SshAdapter : public IProtocolAdapter {
+class SshAdapter : public IProtocolAdapter, public IDeployable {
     std::string protocolId() const override { return "ssh"; }
     // request：打开 exec channel 执行单条命令，返回输出 + exit code
     // 首次连接自动记录主机指纹（TOFU）；指纹变化时报错（防 MITM）
     // libssh2 内建传输加密
+
+    // SFTP 文件子系统（SSH 文件传输子系统）
+    std::vector<FtpFileInfo> sftpListDirectory(const std::string& remotePath);
+    bool sftpUploadFile(const std::string& localPath, const std::string& remotePath);
+    bool sftpDownloadFile(const std::string& remotePath, const std::string& localPath);
+    bool sftpDeleteFile(const std::string& remotePath);
+    bool sftpDeleteDirectory(const std::string& remotePath);
+    bool sftpRename(const std::string& oldPath, const std::string& newPath);
+    bool sftpMakeDirectory(const std::string& remotePath);
+
+    // SFTP 部署能力（IDeployable 实现）
+    struct SftpPlanItem {           // 上传规划条目
+        std::string localPath;
+        std::string remotePath;
+        bool isDirectory = false;
+    };
+    static std::vector<SftpPlanItem> planFolderUpload(const std::string& localRoot,
+                                                      const std::string& remoteRoot);
+    bool sftpUploadFolder(const std::string& localPath, const std::string& remotePath);   // 递归 mkdir + 逐文件上传
+    bool sftpClearDirectory(const std::string& remotePath);                              // 清空保留目录
+    void sftpSetCancelFlag(std::atomic<bool>* flag);                                     // 取消支持
 };
 ```
 
@@ -184,7 +231,7 @@ public:
 
 > **NodeId 格式**：`ns=<命名空间>;i=<整型>` 或 `ns=<命名空间>;s=<字符串>`，内部用 `UA_NodeId_parse` 解析。
 >
-> **线程安全**：open62541 以 `UA_MULTITHREADING=0` 编译，`UA_Client` 非线程安全。所有 `UA_Client` 访问由内部 `recursive_mutex` 串行化；`subscribeDataChange` 的回调在 `runIterate`（svc 线程）内触发，使用方需将 UI 更新 marshal 到 GUI 线程。
+> **线程安全**：open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发）。`OpcUaAdapter` 的 `recursive_mutex` 保护适配器自身状态（`m_subscriptionId`/`m_monContexts` 等）；`subscribeDataChange` 的回调在 `runIterate`（svc 线程）内触发，使用方需将 UI 更新 marshal 到 GUI 线程。
 
 ---
 

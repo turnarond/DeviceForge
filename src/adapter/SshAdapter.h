@@ -1,5 +1,6 @@
 #pragma once
 #include "IProtocolAdapter.h"
+#include "adapter/IDeployable.h"
 #include <QTcpSocket>
 #include <libssh2/libssh2.h>
 #include <libssh2/libssh2_sftp.h>  // SFTP subsystem
@@ -9,10 +10,17 @@
 #include <QFuture>
 #include <atomic>
 
+// --- SFTP 部署能力（IDeployable）---
+struct SftpPlanItem {
+    std::string localPath;
+    std::string remotePath;
+    bool isDirectory = false;
+};
+
 // SSH 协议适配器 — 基于 libssh2 实现 IProtocolAdapter
 // 支持密码认证 + TOFU (Trust On First Use) 主机密钥校验
 // 阻塞模式，由调用方放入 QtConcurrent::run 线程中执行
-class SshAdapter : public IProtocolAdapter {
+class SshAdapter : public IProtocolAdapter, public IDeployable {
 public:
     SshAdapter();
     ~SshAdapter() override;
@@ -38,6 +46,20 @@ public:
     bool sftpMakeDirectory(const std::string& remotePath);
     void sftpSetProgressCallback(std::function<void(int)> cb);
 
+    // --- SFTP 部署能力（IDeployable）---
+    static std::vector<SftpPlanItem> planFolderUpload(const std::string& localRoot,
+                                                      const std::string& remoteRoot);
+    bool sftpUploadFolder(const std::string& localPath, const std::string& remotePath);
+    bool sftpClearDirectory(const std::string& remotePath);
+    void sftpSetCancelFlag(std::atomic<bool>* flag);
+
+    // --- IDeployable 实现 ---
+    bool uploadFile(const std::string& localPath, const std::string& remotePath) override;
+    bool uploadFolder(const std::string& localPath, const std::string& remotePath) override;
+    bool clearRemoteDirectory(const std::string& remotePath) override;
+    void setProgressCallback(std::function<void(int)> cb) override;
+    void setCancelFlag(std::atomic<bool>* flag) override;
+
 private:
     QTcpSocket*         m_socket = nullptr;
     LIBSSH2_SESSION*    m_session = nullptr;
@@ -55,6 +77,7 @@ private:
     // --- SFTP 内部辅助 ---
     LIBSSH2_SFTP* m_sftpSession = nullptr;
     std::function<void(int)> m_sftpProgressCb;
+    std::atomic<bool>* m_sftpCancelFlag = nullptr;  // 部署循环取消标志（IDeployable）
     bool sftpInit();
     bool sftpDeleteDirectoryRecursive(const std::string& remotePath, int depth); // 递归删除（带深度上限）
 };

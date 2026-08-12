@@ -83,3 +83,67 @@ if(_qt_bin_dir)
     set_tests_properties(tst_updatechecker PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- SFTP 上传规划纯逻辑测试（不连服务器）---
+# 注：planFolderUpload 定义于 SshAdapter.cpp，故测试目标需编译该 TU 并链接
+#     libssh2/lwlog/Qt6::Network（SshAdapter.h 引用 QTcpSocket 头），
+#     运行时需 libssh2.dll（PATH 前插 ${CMAKE_SOURCE_DIR}/lib）
+add_executable(tst_sftp_plan
+    sftp/tst_sftp_plan.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+)
+target_include_directories(tst_sftp_plan PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_sftp_plan PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_sftp_plan COMMAND tst_sftp_plan)
+if(_qt_bin_dir)
+    set_tests_properties(tst_sftp_plan PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
+
+# --- 部署循环 mock 测试（不连服务器，验证设备迭代/取消/失败收集）---
+# 注：brief 片段只列测试源，实际还需编译 FtpDeployBackend.cpp（startUpload
+#     定义）+ ProtocolRegistry.cpp（工厂注册/创建）+ FtpAdapter.cpp（部署循环
+#     dynamic_cast<FtpAdapter*> 需要其 RTTI/vtable）+ FtpListParser.cpp（被
+#     FtpAdapter.cpp 引用），并链接 Qt6::Concurrent（QtConcurrent::run）+
+#     lwserverbase（ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
+add_executable(tst_deploy_loop
+    deploy/tst_deploy_loop.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+)
+target_include_directories(tst_deploy_loop PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_deploy_loop PRIVATE
+    Qt6::Core Qt6::Concurrent Qt6::Test
+    lwserverbase
+    ${LIBCURL_IMPL_LIB}
+)
+add_test(NAME tst_deploy_loop COMMAND tst_deploy_loop)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_loop PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- RemoteFileModel 排序语义测试（纯 model，无网络）---
+add_executable(tst_remote_model remote_model/tst_remote_model.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+)
+target_include_directories(tst_remote_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_remote_model PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME tst_remote_model COMMAND tst_remote_model)
+if(_qt_bin_dir)
+    set_tests_properties(tst_remote_model PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

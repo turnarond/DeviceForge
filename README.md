@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.5.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.6.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -11,9 +11,9 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 | 特性 | 说明 |
 |------|------|
 | 📁 **FTP 双栏文件管理器** | 本地 ↔ 远程双栏浏览，拖拽上传、面包屑导航、远程文件管理（删除/重命名/新建目录/下载） |
-| 🚀 **多设备批量并行部署** | 一次操作并行部署到多台设备，选择性部署（勾选设备）、部署前清空/部署后重启 |
+| 🚀 **多设备批量部署** | 一次操作批量部署到多台设备（逐台执行，失败设备跳过），选择性部署（勾选设备）、部署前清空/部署后重启 |
 | 🔒 **FTPS 加密传输** | FTP over TLS，防止凭证和文件在网络中被窃听 |
-| 🔌 **SFTP 文件管理** | SshAdapter SFTP 子系统，双栏 FTP/SFTP 协议一键切换（批量部署待支持） |
+| 🔌 **SFTP 文件管理 + 批量部署** | SshAdapter SFTP 子系统，双栏 FTP/SFTP 协议一键切换，SFTP 批量部署/拖拽上传（与 FTP 同一部署逻辑） |
 | 🎨 **工业仪表盘主题** | 「琴色是动词」深色主题——琴色仅标记可操作/活跃状态，结构一律中性石墨，一眼可辨 |
 | 📋 **设备总线** | 胶囊式设备管理（IP+端口+凭证），ConfigStore 持久化 + DPAPI 加密凭证 |
 | 📝 **统一日志** | 所有 Tool 日志统一路由到底部可折叠全局日志面板 |
@@ -48,6 +48,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 - [open62541 与 Qt 集成的 5 个陷阱](docs/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
 - [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 主窗口布局现代化 + 日志统一
 - [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — 远程文件管理补完 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
+- [DeviceForge v2.6：SFTP 批量部署，从「能浏览」到「能部署」](docs/articles/2026-08-07-deviceforge-v2.6-sftp-deploy.md) — 传输能力补完：SFTP 部署与 FTP 完全对等，IDeployable 接口抽象
 
 ---
 
@@ -55,8 +56,8 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 
 | 模块 | 状态 | 协议 | 说明 |
 |------|------|------|------|
-| 文件部署 | ✅ 双栏文件管理器 | FTP/FTPS (libcurl) | 本地↔远程双栏、拖拽上传、多设备并行部署、选择性部署、目录递归删除、远程重命名/新建目录、远程文件精确对比 |
-| SFTP 文件管理 | ✅ 文件管理 | SFTP (libssh2) | 列目录/上传/下载/删除/重命名/新建目录，双栏协议切换 |
+| 文件部署 | ✅ 双栏文件管理器 | FTP/FTPS (libcurl) | 本地↔远程双栏、拖拽上传、多设备批量部署（逐台执行）、选择性部署、目录递归删除、远程重命名/新建目录、远程文件精确对比 |
+| SFTP 文件管理 | ✅ 文件管理 + 批量部署 | SFTP (libssh2) | 列目录/上传/下载/删除/重命名/新建目录，双栏协议切换，批量部署（IDeployable 统一部署循环，逐台执行） |
 | 批量命令执行 | ✅ Tool 架构 | Telnet / SSH (libssh2) | 批量 Shell 命令，Telnet/SSH 切换，认证失败阻断 |
 | WebSocket 通信 | ✅ Tool 架构 | WebSocket | Server/Client，默认 localhost + 可选 Token 认证 |
 | Modbus 集群测试 | ✅ Tool 架构 | Modbus TCP | 批量读写寄存器，自动刷新 |
@@ -105,7 +106,7 @@ darkstyle.qss 深色主题      ToolWidget (基类)          ├─ SshAdapter (
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.5.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.6.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建
@@ -146,7 +147,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 DeviceForge/
 ├── src/
 │   ├── app/             # 应用壳（main.cpp + DeviceForge 主窗口 + .ui/.qrc/.rc + 主题/图标）
-│   ├── adapter/         # 协议适配器（FtpAdapter / SshAdapter / TelnetAdapter / OpcUaAdapter / ProtocolRegistry）
+│   ├── adapter/         # 协议适配器（FtpAdapter / SshAdapter / TelnetAdapter / OpcUaAdapter / ProtocolRegistry / IDeployable）
 │   ├── framework/       # 框架层（ToolBackend / ToolWidget / ToolHost / ToolRegistry / AppState）
 │   ├── config/          # 配置持久化（ConfigStore / DpapiCrypto / SettingsDialog）
 │   ├── logging/         # LogBridge（Qt → lwlog）
@@ -172,6 +173,7 @@ DeviceForge/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| **2.6.0** | 2026-08-07 | SFTP 批量部署（IDeployable 部署接口 + SshAdapter 递归 mkdir 上传/清空目录/取消 + 部署循环协议化 + UI 解锁 FTP/SFTP 一键切换部署） |
 | **2.5.0** | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除） |
 | 2.4.0 | 2026-07-26 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）+ 日志统一 |
 | 2.3.0 | 2026-07-24 | ConfigStore 配置持久化（SQLite + DPAPI）+ OPC UA 订阅卡死修复 |
@@ -188,5 +190,5 @@ DeviceForge/
 
 - FTP 凭证密码可通过 DPAPI 加密后持久化（SettingsDialog 开启）；未启用时每次启动手动输入
 - OPC UA 客户端首期为 None 安全策略 + 匿名认证（无加密）；安全策略加密/证书认证为后续版本
-- SFTP 当前支持远程文件浏览/管理，批量部署待支持（选择 SFTP 协议时部署会提示切换 FTP）
+- SFTP 批量部署已支持：协议下拉选 SFTP 即可直接部署/拖拽上传（部署逻辑与 FTP 一致，复用 SSH 通道）
 - VS 手动调试时需确保 `libcurl-x64.dll` 在输出目录（CMake 构建已自动处理）

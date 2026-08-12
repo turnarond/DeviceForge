@@ -370,15 +370,6 @@ void FtpDeployWidget::onDeployClicked()
     if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
-    // SFTP 批量部署尚未接通（backend 仅支持 FTP 上传），阻止静默降级
-    if (m_protocolCombo->currentText() == "SFTP") {
-        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
-        QMessageBox::information(this, "协议不支持",
-            "SFTP 批量部署待支持，请切换为 FTP 协议。\n"
-            "SFTP 协议当前仅支持远程文件浏览/管理。");
-        return;
-    }
-
     auto devices = m_deviceBus->selectedDevices();
     if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
@@ -407,6 +398,7 @@ void FtpDeployWidget::onDeployClicked()
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
+        currentProtocol(),
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );
@@ -527,15 +519,44 @@ void FtpDeployWidget::onRefreshRemote()
         }
 
         // 列目录（复用已有连接）
-        std::vector<FtpFileInfo> files;
-        if (proto == "SFTP") {
-            files = dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
-        } else {
-            files = dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        auto listRemoteDir = [&]() -> std::vector<FtpFileInfo> {
+            if (proto == "SFTP") {
+                return dynamic_cast<SshAdapter*>(adapter.get())->sftpListDirectory(path.toStdString());
+            }
+            return dynamic_cast<FtpAdapter*>(adapter.get())->listDirectoryParsed(path.toStdString());
+        };
+
+        std::vector<FtpFileInfo> files = listRemoteDir();
+
+        // 连接失效自动重连重试一次（服务器空闲断开场景：LIST 失败 + lastError 非空）
+        if (files.empty() && !adapter->lastError().empty()) {
+            adapter->disconnect();
+            DeviceInfo dev;
+            dev.ip = deviceIp.toStdString();
+            dev.port = port;
+            AuthInfo auth;
+            auth.user = user;
+            auth.password = pass;
+            bool reconnected = false;
+            if (proto == "SFTP") {
+                reconnected = dynamic_cast<SshAdapter*>(adapter.get())->connect(dev, auth);
+            } else {
+                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+                ftp->setUseFtps(useFtps);
+                reconnected = ftp->connect(dev, auth);
+            }
+            if (reconnected) {
+                files = listRemoteDir();
+            }
         }
 
-        QMetaObject::invokeMethod(this, [this, files]() {
+        QString listError = QString::fromStdString(adapter->lastError());
+        QMetaObject::invokeMethod(this, [this, files, listError]() {
             m_refreshBusy = false;
+            if (files.empty() && !listError.isEmpty()) {
+                appendLog("远程目录加载失败: " + listError);
+                return;   // 失败时不渲染空列表、不打"已加载"日志
+            }
             // 过滤 . 条目（标准 FTP/SFTP 服务器会返回；无导航价值）
             // 补充 ..（SylixOS 等嵌入式 FTP 服务器 LIST 不返回）
             auto full = files;
@@ -551,6 +572,7 @@ void FtpDeployWidget::onRefreshRemote()
                 full.insert(full.begin(), dd);
             }
             m_remoteModel->setFileList(full);
+            m_remoteModel->sort(RemoteFileModel::ColName, Qt::AscendingOrder);
             appendLog(QString("远程目录已加载: %1 项").arg(full.size()));
         }, Qt::QueuedConnection);
     });
@@ -977,13 +999,7 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
     }
     if (files.empty()) return;
 
-    // SFTP 批量部署尚未接通，阻止静默降级（backend 仅支持 FTP 上传）
-    if (m_protocolCombo->currentText() == "SFTP") {
-        appendLog("SFTP 批量部署待支持，请切换为 FTP 协议");
-        return;
-    }
-
-    QString protoLabel = "FTP";
+    const QString protoLabel = m_protocolCombo->currentText();
     appendLog(QString("📤 [%1] 拖拽上传 %2 个文件到远程目录...").arg(protoLabel).arg(files.size()));
 
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
@@ -1010,6 +1026,7 @@ void FtpDeployWidget::handleDropOnRemote(const QList<QUrl>& urls)
         m_remotePathEdit->text().toStdString(),
         m_clearCheck->isChecked(),
         m_rebootCheck->isChecked(),
+        currentProtocol(),
         m_ftpsCheck->isChecked(),
         m_portSpin->value()
     );

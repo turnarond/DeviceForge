@@ -1,5 +1,6 @@
 #pragma once
 #include "IProtocolAdapter.h"
+#include "adapter/IDeployable.h"
 #include <string>
 #include <atomic>
 #include <future>
@@ -12,7 +13,7 @@
 
 struct FtpFileInfo;  // 前向声明（定义在 src/tools/FtpDeployTool/FtpFileInfo.h）
 
-class FtpAdapter : public IProtocolAdapter {
+class FtpAdapter : public IProtocolAdapter, public IDeployable {
 public:
     FtpAdapter();
     ~FtpAdapter() override;

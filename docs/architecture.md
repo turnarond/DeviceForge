@@ -28,7 +28,8 @@ DeviceForge 采用 **Tool + Protocol Adapter** 双层插件化架构。上层是
 │  IProtocolAdapter      协议适配器统一接口                     │
 │  ├─ FtpAdapter         FTP/FTPS (libcurl)                    │
 │  ├─ TelnetAdapter      Telnet (lwcommunicate)                │
-│  └─ ProtocolRegistry   适配器工厂注册表                       │
+│  ├─ ProtocolRegistry   适配器工厂注册表                       │
+│  IDeployable           可选部署能力（部署循环 dynamic_cast 探测）│
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,7 +61,7 @@ IProtocolAdapter (纯虚接口)
 现有实现：
 - **FtpAdapter**：封装 libcurl，支持 FTP/FTPS。提供 uploadFile/uploadFolder/downloadFile/listDirectory 等操作
 - **TelnetAdapter**：基于 lwcommunicate::LWTcpClient，支持请求-响应和流模式
-- **SshAdapter**：基于 libssh2，支持密码认证 + TOFU 主机密钥验证，request-响应模式（SSH exec channel）
+- **SshAdapter**：基于 libssh2，支持密码认证 + TOFU 主机密钥验证，request-响应模式（SSH exec channel）+ SFTP 文件子系统（sftpListDirectory/sftpUploadFile/sftpDownloadFile/sftpDeleteFile/sftpDeleteDirectory/sftpRename/sftpMakeDirectory）+ 部署链路（sftpUploadFolder 递归 mkdir 上传 / sftpClearDirectory 清空保留目录 / sftpSetCancelFlag 取消支持，实现 IDeployable）
 - **OpcUaAdapter**：基于 open62541，OPC UA 客户端。支持 None 安全策略 + 匿名认证、批量读/写节点、DataChange 订阅（MonitoredItem）、地址空间浏览。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发）；`recursive_mutex` 保护适配器自身状态（`m_subscriptionId`/`m_monContexts` 等）。`browseRoot()` 对引用结果做 `UA_NodeId_copy` 深拷贝，避免 `UA_BrowseResponse_clear` 后的悬垂指针。
 
 ### 配置与凭证层（v2.3.0+）
@@ -134,4 +135,5 @@ NetRelayTool 是一个透明中继代理：数据生产者（TCP/UDP 客户端�
 
 ## 测试
 
-- **tst_nrec**（`tests/`，QtTest + CTest，仅 CMake 构建）：项目首个单元测试目标，覆盖 `.nrec` 录制往返、坏 magic / 坏版本 / 超长 length / 截断文件拒绝、回放上行端到端。运行：`ctest -C Release -R tst_nrec`。其余模块暂无单元测试。
+- **tst_nrec**（`tests/`，QtTest + CTest，仅 CMake 构建）：项目首个单元测试目标，覆盖 `.nrec` 录制往返、坏 magic / 坏版本 / 超长 length / 截断文件拒绝、回放上行端到端。运行：`ctest -C Release -R tst_nrec`。
+- 另有 7 个测试目标，共 **8 个**：**tst_updatechecker**（OTA 更新检查）、**tst_dpapi_crypto**（DPAPI 加解密）、**tst_config_store**（ConfigStore SQLite 持久化）、**tst_opcua_encode** / **tst_opcua_loopback**（OPC UA 编解码与进程内环回）、**tst_sftp_plan**（SFTP 上传规划纯逻辑）、**tst_deploy_loop**（部署循环）。全部运行：`ctest -C Release --output-on-failure`。

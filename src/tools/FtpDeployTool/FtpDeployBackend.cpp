@@ -14,6 +14,7 @@
 
 #include "FtpDeployBackend.h"
 #include "adapter/ProtocolRegistry.h"
+#include "adapter/IDeployable.h"
 #include "adapter/FtpAdapter.h"
 #include <QtConcurrent/QtConcurrent>
 #include <lwlog/lwlog.h>
@@ -65,6 +66,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                                     const std::string& remotePath,
                                     bool clearBeforeDeploy,
                                     bool rebootAfterDeploy,
+                                    const std::string& protocol,
                                     bool useFtps,
                                     int port)
 {
@@ -78,7 +80,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
         m_uploadFuture.waitForFinished();
     }
 
-    m_uploadFuture = QtConcurrent::run([this, localFiles, useFtps, port]() {
+    m_uploadFuture = QtConcurrent::run([this, localFiles, protocol, useFtps, port]() {
         namespace fs = std::filesystem;
 
         std::vector<std::string> successes, failures;
@@ -101,30 +103,34 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 
             std::string deviceKey = device.ip + ":" + std::to_string(device.port);
 
-            // 从 ProtocolRegistry 创建 FTP 适配器
-            auto adapter = ProtocolRegistry::instance()->create("ftp");
+            // 从 ProtocolRegistry 按协议创建适配器（"ftp"/"ssh"，SFTP 复用 "ssh" 键）
+            auto adapter = ProtocolRegistry::instance()->create(protocol);
             if (!adapter) {
-                if (m_logCb) m_logCb("FTP 适配器不可用: " + deviceKey);
+                if (m_logCb) m_logCb("适配器不可用 (" + protocol + "): " + deviceKey);
                 failures.push_back(deviceKey);
                 continue;
             }
 
-            auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-            if (!ftp) {
-                if (m_logCb) m_logCb("FTP 适配器类型转换失败: " + deviceKey);
+            auto* deployable = dynamic_cast<IDeployable*>(adapter.get());
+            if (!deployable) {
+                if (m_logCb) m_logCb("适配器不支持部署能力 (" + protocol + "): " + deviceKey);
                 failures.push_back(deviceKey);
                 continue;
             }
 
-            if (useFtps) {
-                ftp->setUseFtps(true);
-                if (m_logCb) m_logCb("FTPS 模式已启用: " + deviceKey);
+            if (useFtps && protocol == "ftp") {
+                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
+                if (ftp) {
+                    ftp->setUseFtps(true);
+                    if (m_logCb) m_logCb("FTPS 模式已启用: " + deviceKey);
+                }
             }
 
-            // 连接设备
+            // 连接设备（connect/lastError/disconnect 属 IProtocolAdapter，
+            // 部署能力（上传/清空/进度/取消）属 IDeployable）
             if (m_logCb) m_logCb("正在连接: " + deviceKey + " ...");
-            if (!ftp->connect(device, m_auth)) {
-                if (m_logCb) m_logCb("连接失败: " + deviceKey + " — " + ftp->lastError());
+            if (!adapter->connect(device, m_auth)) {
+                if (m_logCb) m_logCb("连接失败: " + deviceKey + " — " + adapter->lastError());
                 failures.push_back(deviceKey);
                 continue;
             }
@@ -134,17 +140,17 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             // 可选：部署前清空远程目录
             if (m_clearBeforeDeploy) {
                 if (m_logCb) m_logCb("清空远程目录: " + deviceKey + m_remotePath);
-                if (!ftp->clearRemoteDirectory(m_remotePath)) {
-                    if (m_logCb) m_logCb("清空目录失败: " + deviceKey + " — " + ftp->lastError());
+                if (!deployable->clearRemoteDirectory(m_remotePath)) {
+                    if (m_logCb) m_logCb("清空目录失败: " + deviceKey + " — " + adapter->lastError());
                     // 清空失败不中止，继续上传
                 }
             }
 
             // 设置进度回调 + 取消标志
-            ftp->setProgressCallback([this](int pct) {
+            deployable->setProgressCallback([this](int pct) {
                 if (m_progressCb) m_progressCb(pct);
             });
-            ftp->setCancelFlag(&m_cancelled);
+            deployable->setCancelFlag(&m_cancelled);
 
             // 上传所有文件/文件夹
             bool allOk = true;
@@ -158,10 +164,10 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                     std::string folderName = fs::path(file).filename().string();
                     if (m_logCb) m_logCb("上传文件夹: " + folderName + " -> " + deviceKey);
 
-                    if (ftp->uploadFolder(file, m_remotePath)) {
+                    if (deployable->uploadFolder(file, m_remotePath)) {
                         if (m_logCb) m_logCb(folderName + " 上传完成 (" + deviceKey + ")");
                     } else {
-                        if (m_logCb) m_logCb(folderName + " 上传失败: " + ftp->lastError());
+                        if (m_logCb) m_logCb(folderName + " 上传失败: " + adapter->lastError());
                         allOk = false;
                     }
                 } else if (!ec) {
@@ -180,10 +186,10 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 
                     if (m_logCb) m_logCb("上传: " + fileName + " -> " + deviceKey);
 
-                    if (ftp->uploadFile(file, remoteFile)) {
+                    if (deployable->uploadFile(file, remoteFile)) {
                         if (m_logCb) m_logCb(fileName + " 上传完成 (" + deviceKey + ")");
                     } else {
-                        if (m_logCb) m_logCb(fileName + " 上传失败: " + ftp->lastError());
+                        if (m_logCb) m_logCb(fileName + " 上传失败: " + adapter->lastError());
                         allOk = false;
                     }
                 } else {
@@ -192,7 +198,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                 }
             }
 
-            ftp->disconnect();
+            adapter->disconnect();
 
             if (allOk) {
                 successes.push_back(deviceKey);

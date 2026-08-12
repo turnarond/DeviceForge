@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # 项目名称和版本
-project(DeviceForge VERSION 2.5.0 LANGUAGES C CXX)
+project(DeviceForge VERSION 2.6.0 LANGUAGES C CXX)
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
