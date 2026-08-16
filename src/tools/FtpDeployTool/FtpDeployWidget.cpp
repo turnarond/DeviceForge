@@ -26,7 +26,9 @@
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QLabel>
+#include <QTimer>
 #include <QDateTime>
+#include <QtConcurrent>
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
@@ -127,12 +129,23 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_ftpsCheck = new QCheckBox("FTPS 加密", this);
     connGroup->addWidget(m_ftpsCheck);
 
-    // 连接状态点（圆形指示灯）：灰=未连接/未配置，青绿=连接成功，红=连接失败
+    // 连接状态点（圆形指示灯）：灰=未连接/未配置，灰闪=连接中，青绿=连接成功，红=连接失败
     // 底色由代码动态设置（固定暗色版，双主题下对比度足够——指示点非文字），圆角见双 QSS
     m_connStatusDot = new QLabel(this);
     m_connStatusDot->setObjectName("connStatusDot");
     m_connStatusDot->setFixedSize(10, 10);
-    m_connStatusDot->setToolTip("远程连接状态：灰=未连接，青绿=已连接，红=连接失败");
+    m_connStatusDot->setToolTip("远程连接状态：灰=未连接，灰闪=连接中，青绿=已连接，红=连接失败");
+    // 灰闪定时器必须先于首次 setConnState 创建（setConnState 的静态态分支会停表）
+    m_connFlashTimer = new QTimer(this);
+    m_connFlashTimer->setInterval(500);
+    connect(m_connFlashTimer, &QTimer::timeout, this, [this]() {
+        if (!m_connStatusDot) return;
+        m_connFlashOn = !m_connFlashOn;
+        m_connStatusDot->setStyleSheet(
+            QStringLiteral("background-color: %1;")
+                .arg(m_connFlashOn ? QStringLiteral("#A8B0BF")
+                                   : QStringLiteral("#7B8494")));
+    });
     setConnState(RemoteConnState::Unknown);
     connGroup->addWidget(m_connStatusDot);
 
@@ -331,6 +344,7 @@ void FtpDeployWidget::onRefreshRemote()
     const int port = m_portSpin->value();
     const bool useFtps = m_ftpsCheck->isChecked();
     const QString proto = QString::fromStdString(currentProtocol());
+    const QString protoDisplay = m_protocolCombo->currentText();   // 显示名（"FTP"/"SFTP"）
 
     // 协议/设备/端口/FTPS 变化时重建远程源（重建后 setSource 导航到根目录）
     const bool configChanged = !m_remoteSource
@@ -346,53 +360,87 @@ void FtpDeployWidget::onRefreshRemote()
     auth.user = m_deviceBus->user().toStdString();
     auth.password = m_deviceBus->password().toStdString();
 
+    // 连接异步化（Task 2）：connect 移入 QtConcurrent 工作线程，断网 connect 超时
+    // （约 10s）不再冻结 UI；主线程回调负责状态点/缓存/面板挂载。RemoteFileSource
+    // 内部已有 QMutex 串行化 adapter 操作（Task 1），worker 调用 connect 走其内部锁，
+    // 无需重复加锁。lambda 按值捕获全部所需标量/结构（port 等）。
+    // 注意：Connecting 态只在真正发起连接的两个分支里进入（纯刷新分支保持已连接态）
     if (configChanged) {
-        auto source = std::make_shared<RemoteFileSource>(
-            proto, deviceIp + " (" + m_protocolCombo->currentText() + ")");
-        source->setUseFtps(useFtps);
-        if (!source->connect(dev, auth)) {
-            appendLog("远程连接失败: " + source->lastError());
-            setConnState(RemoteConnState::Failed);   // 连接失败 → 红
-            m_remoteBusy = false;
-            // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
-            // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
-            // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
-            // 「缓存匹配但面板无源」的死锁状态（I-1）
-            detachRemotePanel();
-            return;
-        }
-        setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
-        m_remoteSource = source;
-        m_remoteSrcDevice = deviceIp;
-        m_remoteSrcProto = proto;
-        m_remoteSrcPort = port;
-        m_remoteSrcUseFtps = useFtps;
-        m_rightPanel->setSource(source);
+        // 全量重建：工作线程 create + connect，主线程回调成功则更新缓存并挂载面板
+        setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
+        QtConcurrent::run([this, proto, protoDisplay, deviceIp, useFtps, port, dev, auth]() {
+            auto source = std::make_shared<RemoteFileSource>(
+                proto, deviceIp + " (" + protoDisplay + ")");
+            source->setUseFtps(useFtps);
+            const bool ok = source->connect(dev, auth);
+            const QString err = source->lastError();
+            QMetaObject::invokeMethod(this, [this, source, ok, err,
+                                             deviceIp, proto, useFtps, port]() {
+                m_remoteBusy = false;
+                if (!ok) {
+                    appendLog("远程连接失败: " + err);
+                    setConnState(RemoteConnState::Failed);   // 连接失败 → 红
+                    // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
+                    // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
+                    // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
+                    // 「缓存匹配但面板无源」的死锁状态（I-1）
+                    detachRemotePanel();
+                    return;
+                }
+                setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
+                m_remoteSource = source;
+                m_remoteSrcDevice = deviceIp;
+                m_remoteSrcProto = proto;
+                m_remoteSrcPort = port;
+                m_remoteSrcUseFtps = useFtps;
+                m_rightPanel->setSource(source);   // setSource 内 navigateTo → 异步 list
+            }, Qt::QueuedConnection);
+        });
     } else if (!m_remoteSource->isConnected()) {
-        // 连接失效原位重连（保留当前面板路径，复用旧连接缓存语义）
-        if (!m_remoteSource->connect(dev, auth)) {
-            appendLog("远程重连失败: " + m_remoteSource->lastError());
-            setConnState(RemoteConnState::Failed);
-            m_remoteBusy = false;
-            // 与连接失败分支统一 detach：不再调面板 refresh()——
-            // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
-            // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
-            detachRemotePanel();
-            return;
-        }
-        setConnState(RemoteConnState::Connected);
+        // 连接失效原位重连（保留当前面板路径，复用旧连接缓存语义）：
+        // 与全量重建分支同构——工作线程 connect（复用既有源对象），主线程回调状态点
+        setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
+        auto source = m_remoteSource;   // shared_ptr 拷贝：worker 持有期间源不被析构
+        QtConcurrent::run([this, source, dev, auth]() {
+            const bool ok = source->connect(dev, auth);
+            const QString err = source->lastError();
+            QMetaObject::invokeMethod(this, [this, ok, err]() {
+                m_remoteBusy = false;
+                if (!ok) {
+                    appendLog("远程重连失败: " + err);
+                    setConnState(RemoteConnState::Failed);
+                    // 与连接失败分支统一 detach：不再调面板 refresh()——
+                    // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
+                    // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
+                    detachRemotePanel();
+                    return;
+                }
+                setConnState(RemoteConnState::Connected);
+                m_rightPanel->refresh();   // 异步 list（保留当前路径，Task 1）
+            }, Qt::QueuedConnection);
+        });
+    } else {
+        // 已连接：仅刷新列表（异步 list，Task 1）
+        m_remoteBusy = false;
+        m_rightPanel->refresh();
     }
-
-    m_remoteBusy = false;
-    m_rightPanel->refresh();
 }
 
-// 连接状态点底色：固定用暗色版（灰 #7B8494 / 青绿 #40C8A0 / 红 #E85848）。
-// 说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
+// 连接状态点底色：固定用暗色版（灰 #7B8494 / 灰闪 #A8B0BF ↔ #7B8494 / 青绿 #40C8A0 /
+// 红 #E85848）。说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
 // 故不按主题切换色值；圆角 border-radius 由双 QSS 的 #connStatusDot 规则提供。
+// Connecting 态启动灰闪定时器（500ms 亮灰 ↔ 灰），其余状态停表并设静态底色。
 void FtpDeployWidget::setConnState(RemoteConnState state)
 {
     if (!m_connStatusDot) return;
+    if (state == RemoteConnState::Connecting) {
+        m_connFlashOn = true;
+        if (m_connFlashTimer) m_connFlashTimer->start();
+        m_connStatusDot->setStyleSheet(
+            QStringLiteral("background-color: #A8B0BF;"));   // 亮灰（闪的第一相）
+        return;
+    }
+    if (m_connFlashTimer) m_connFlashTimer->stop();
     const char* color = "#7B8494";
     if (state == RemoteConnState::Connected)      color = "#40C8A0";
     else if (state == RemoteConnState::Failed)    color = "#E85848";

@@ -33,6 +33,7 @@ class DeviceBusWidget;
 class MultiProgressWidget;
 class FileBrowserPanel;
 class RemoteFileSource;
+class QTimer;
 
 class FtpDeployWidget : public ToolWidget {
     Q_OBJECT
@@ -63,8 +64,8 @@ private slots:
     void onRefreshRemote();
 
 private:
-    // 连接状态点状态（connStatusDot：灰=未连接/未配置，青绿=连接成功，红=连接失败）
-    enum class RemoteConnState { Unknown, Connected, Failed };
+    // 连接状态点状态（connStatusDot：灰=未连接/未配置，灰闪=连接中，青绿=连接成功，红=连接失败）
+    enum class RemoteConnState { Unknown, Connecting, Connected, Failed };
 
     void setupUi();
     void setupToolbar(QVBoxLayout* mainLayout);
@@ -88,7 +89,9 @@ private:
     QCheckBox*   m_ftpsCheck = nullptr;
     QCheckBox*   m_clearCheck = nullptr;
     QCheckBox*   m_rebootCheck = nullptr;
-    QLabel*      m_connStatusDot = nullptr;   // 连接状态点（灰/青绿/红，底色代码动态设置）
+    QLabel*      m_connStatusDot = nullptr;   // 连接状态点（灰/灰闪/青绿/红，底色代码动态设置）
+    QTimer*      m_connFlashTimer = nullptr;  // Connecting 态灰闪定时器（亮灰 ↔ 灰，500ms）
+    bool         m_connFlashOn = false;       // 灰闪当前相位（定时器 tick 取反）
     QPushButton* m_refreshBtn = nullptr;      // 「⟳ 刷新」按钮（重新连接 + 刷新远程列表）
 
     // 双栏面板（FileBrowserPanel 宿主）
