@@ -2,6 +2,7 @@
 #include <QSignalSpy>
 #include <QLineEdit>
 #include <QLabel>
+#include <QComboBox>
 #include <QTableView>
 #include <thread>
 #include <chrono>
@@ -10,6 +11,7 @@
 
 #include "ui/IFileSource.h"
 #include "ui/FileBrowserPanel.h"
+#include "ui/LocalFileSource.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 
@@ -199,6 +201,108 @@ private slots:
         auto* pathEdit = panel.findChild<QLineEdit*>();
         QVERIFY(pathEdit);
         QCOMPARE(pathEdit->text(), QStringLiteral("/"));
+    }
+
+    // ============================================================
+    // Task 3：源选择器状态机（联动逻辑在 FtpDeployWidget 宿主，面板侧单测覆盖：
+    // 默认状态 / 用户切换发射信号 / 程序化设置静默（blockSignals）/ setSource 显示同步）
+    // ============================================================
+
+    // 用例 5：默认状态 — 源下拉三项（data role local/ftp/sftp），本地默认 + 设备下拉隐藏
+    void sourceChooser_defaults()
+    {
+        FileBrowserPanel panel;
+        auto* srcCombo = panel.findChild<QComboBox*>("panelSourceCombo");
+        auto* devCombo = panel.findChild<QComboBox*>("panelDeviceCombo");
+        QVERIFY(srcCombo);
+        QVERIFY(devCombo);
+        QCOMPARE(srcCombo->count(), 3);
+        QCOMPARE(srcCombo->itemData(0).toString(), QStringLiteral("local"));
+        QCOMPARE(srcCombo->itemData(1).toString(), QStringLiteral("ftp"));
+        QCOMPARE(srcCombo->itemData(2).toString(), QStringLiteral("sftp"));
+        QCOMPARE(srcCombo->currentData().toString(), QStringLiteral("local"));  // 默认本地
+        QVERIFY(devCombo->isHidden());   // 本地源设备下拉隐藏
+    }
+
+    // 用例 6：用户切换源/设备 → 发射 sourceChooserChanged(proto, device) + 设备下拉可见性
+    void sourceChooser_userChange_emits()
+    {
+        FileBrowserPanel panel;
+        panel.setSourceDevices({QStringLiteral("192.168.1.10"),
+                                QStringLiteral("192.168.1.11")});
+        auto* srcCombo = panel.findChild<QComboBox*>("panelSourceCombo");
+        auto* devCombo = panel.findChild<QComboBox*>("panelDeviceCombo");
+        QVERIFY(srcCombo && devCombo);
+
+        QSignalSpy spy(&panel, &FileBrowserPanel::sourceChooserChanged);
+        srcCombo->setCurrentIndex(1);   // FTP
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("ftp"));
+        QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("192.168.1.10"));  // 首台设备
+        QVERIFY(!devCombo->isHidden());   // 远程源显示设备下拉
+
+        devCombo->setCurrentIndex(1);   // 设备切换同样上报（携带当前源）
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("ftp"));
+        QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("192.168.1.11"));
+
+        srcCombo->setCurrentIndex(2);   // SFTP（保持当前设备）
+        QCOMPARE(spy.count(), 3);
+        QCOMPARE(spy.at(2).at(0).toString(), QStringLiteral("sftp"));
+        QCOMPARE(spy.at(2).at(1).toString(), QStringLiteral("192.168.1.11"));
+
+        srcCombo->setCurrentIndex(0);   // 回本地 → 设备下拉隐藏
+        QCOMPARE(spy.count(), 4);
+        QCOMPARE(spy.at(3).at(0).toString(), QStringLiteral("local"));
+        QVERIFY(devCombo->isHidden());
+    }
+
+    // 用例 7：程序化设置（setSourceProto/setSourceDevice/setSourceDevices）静默
+    // （blockSignals 防循环——宿主双向联动依赖此语义）
+    void sourceChooser_programmatic_silent()
+    {
+        FileBrowserPanel panel;
+        panel.setSourceDevices({QStringLiteral("192.168.1.10"),
+                                QStringLiteral("192.168.1.11")});
+        auto* srcCombo = panel.findChild<QComboBox*>("panelSourceCombo");
+        auto* devCombo = panel.findChild<QComboBox*>("panelDeviceCombo");
+        QVERIFY(srcCombo && devCombo);
+        QSignalSpy spy(&panel, &FileBrowserPanel::sourceChooserChanged);
+
+        panel.setSourceProto(QStringLiteral("sftp"));
+        QCOMPARE(spy.count(), 0);                        // 不发射
+        QCOMPARE(srcCombo->currentData().toString(), QStringLiteral("sftp"));
+        QVERIFY(!devCombo->isHidden());
+
+        panel.setSourceDevice(QStringLiteral("192.168.1.11"));
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(devCombo->currentText(), QStringLiteral("192.168.1.11"));
+
+        panel.setSourceDevices({QStringLiteral("192.168.1.10"),
+                                QStringLiteral("192.168.1.11"),
+                                QStringLiteral("192.168.1.12")});
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(devCombo->currentText(), QStringLiteral("192.168.1.11"));  // 重填保留选择
+
+        panel.setSourceProto(QStringLiteral("local"));
+        QCOMPARE(spy.count(), 0);
+        QVERIFY(devCombo->isHidden());
+    }
+
+    // 用例 8：setSource 显示同步 — 选择器跟随实际源（blockSignals 不发射；防挂载回环）
+    void sourceChooser_setSource_syncs()
+    {
+        FileBrowserPanel panel;
+        panel.setSource(std::make_shared<LocalFileSource>());
+        settleInitialLoad(panel);   // 排空异步 list（析构期 worker 不再触碰本面板）
+        auto* srcCombo = panel.findChild<QComboBox*>("panelSourceCombo");
+        auto* devCombo = panel.findChild<QComboBox*>("panelDeviceCombo");
+        QVERIFY(srcCombo && devCombo);
+        QCOMPARE(srcCombo->currentData().toString(), QStringLiteral("local"));
+        QVERIFY(devCombo->isHidden());
+
+        QSignalSpy spy(&panel, &FileBrowserPanel::sourceChooserChanged);
+        QCOMPARE(spy.count(), 0);   // setSource 程序化挂载不发射
     }
 };
 QTEST_MAIN(TstPanelAsync)

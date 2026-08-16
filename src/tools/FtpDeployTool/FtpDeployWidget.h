@@ -62,6 +62,9 @@ signals:
 private slots:
     void onDeployClicked();
     void onRefreshRemote();
+    // Task 3：面板源选择器联动（blockSignals 防循环；面板源=浏览配置，工具栏=部署目标）
+    void onLeftSourceChanged(const QString& proto, const QString& device);
+    void onRightSourceChanged(const QString& proto, const QString& device);
 
 private:
     // 连接状态点状态（connStatusDot：灰=未连接/未配置，灰闪=连接中，青绿=连接成功，红=连接失败）
@@ -78,6 +81,10 @@ private:
     void updateDeployBtnText();
     // 连接失败/重连失败/无设备统一 detach：面板置无源（清空列表+路径），远程源缓存一并失效
     void detachRemotePanel();
+    // Task 3：左面板远程浏览源连接失败统一 detach（缓存一并失效）
+    void detachLeftPanel();
+    // Task 3：设备列表同步到两面板源选择器（blockSignals 防循环）
+    void populatePanelDeviceCombos();
 
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*   m_deviceBus = nullptr;
@@ -104,6 +111,13 @@ private:
     QString    m_remoteSrcProto;
     int        m_remoteSrcPort = 0;
     bool       m_remoteSrcUseFtps = false;
+    // Task 3：左面板远程浏览源（独立于工具栏部署目标；源选择器=浏览配置，连接失败 detach）
+    std::shared_ptr<RemoteFileSource> m_leftRemoteSource;
+    QString    m_leftSrcDevice;
+    QString    m_leftSrcProto;
+    int        m_leftSrcPort = 0;
+    std::atomic<bool> m_leftRemoteBusy{false}; // 防止并发刷新（同 m_remoteBusy 语义）
+    quint64 m_leftConnGeneration = 0; // 左面板源连接代际令牌（同 m_connGeneration 模式）
     std::atomic<bool> m_remoteBusy{false}; // 防止并发刷新（远程源适配器非线程安全）
     quint64 m_connGeneration = 0; // 连接代际令牌：onRefreshRemote 入口 ++，worker 捕获、
                                   // 回调比对——连接在途时配置变更（切换设备/删除全部设备）

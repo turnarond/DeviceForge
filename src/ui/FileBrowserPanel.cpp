@@ -4,6 +4,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QComboBox>
 #include <QTableView>
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -30,6 +31,34 @@ void FileBrowserPanel::setupUi()
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
+
+    // 源选择器行（面板顶部，路径栏上方）：源类型（本地/FTP/SFTP）+ 设备（远程源时显示）。
+    // TC 彻底化：每面板可独立配置浏览源；面板源=浏览配置，批量部署目标由工具栏（宿主）决定。
+    auto* chooserRow = new QHBoxLayout();
+    m_sourceCombo = new QComboBox(this);
+    m_sourceCombo->setObjectName("panelSourceCombo");
+    m_sourceCombo->addItem(tr("本地"), QStringLiteral("local"));
+    m_sourceCombo->addItem("FTP", QStringLiteral("ftp"));
+    m_sourceCombo->addItem("SFTP", QStringLiteral("sftp"));
+    m_sourceCombo->setFixedWidth(80);
+    connect(m_sourceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+        const QString proto = m_sourceCombo->currentData().toString();
+        m_deviceCombo->setVisible(proto != QStringLiteral("local"));
+        emit sourceChooserChanged(proto, m_deviceCombo->currentText());
+    });
+    m_deviceCombo = new QComboBox(this);
+    m_deviceCombo->setObjectName("panelDeviceCombo");
+    m_deviceCombo->setMinimumWidth(140);
+    m_deviceCombo->setVisible(false);   // 本地源默认隐藏设备下拉
+    // 设备下拉变化同样上报（面板级设备=浏览配置的一部分，宿主据此重建对应面板源）
+    connect(m_deviceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+        emit sourceChooserChanged(m_sourceCombo->currentData().toString(),
+                                  m_deviceCombo->currentText());
+    });
+    chooserRow->addWidget(m_sourceCombo);
+    chooserRow->addWidget(m_deviceCombo);
+    chooserRow->addStretch();
+    layout->addLayout(chooserRow);
 
     // 路径栏（TC 风格：可编辑 + Enter 跳转）
     m_pathEdit = new QLineEdit(this);
@@ -89,6 +118,51 @@ void FileBrowserPanel::setupUi()
     layout->addWidget(m_breadcrumb);
 }
 
+// ============================================================
+// Task 3：源选择器 API — 程序化设置一律 blockSignals（宿主联动防循环；
+// 仅用户操作源/设备下拉时发射 sourceChooserChanged）
+// ============================================================
+
+void FileBrowserPanel::setSourceChooserVisible(bool visible)
+{
+    m_sourceCombo->setVisible(visible);
+    if (!visible) m_deviceCombo->setVisible(false);   // 行隐藏时设备下拉一并隐藏
+}
+
+void FileBrowserPanel::setSourceProto(const QString& proto)
+{
+    const int idx = m_sourceCombo->findData(proto);
+    if (idx >= 0 && idx != m_sourceCombo->currentIndex()) {
+        m_sourceCombo->blockSignals(true);
+        m_sourceCombo->setCurrentIndex(idx);
+        m_sourceCombo->blockSignals(false);
+    }
+    m_deviceCombo->setVisible(proto != QStringLiteral("local"));
+}
+
+void FileBrowserPanel::setSourceDevice(const QString& device)
+{
+    if (device.isEmpty()) return;
+    const int idx = m_deviceCombo->findText(device);
+    if (idx < 0 || idx == m_deviceCombo->currentIndex()) return;
+    m_deviceCombo->blockSignals(true);
+    m_deviceCombo->setCurrentIndex(idx);
+    m_deviceCombo->blockSignals(false);
+}
+
+void FileBrowserPanel::setSourceDevices(const QStringList& devices)
+{
+    // 重填保留当前选择（与工具栏设备下拉同步同套路）：clear() 后 currentIndex 回 0，
+    // 用户选中的非首台设备会被静默切回首台；恢复操作同样在 blockSignals 内
+    const QString prev = m_deviceCombo->currentText();
+    m_deviceCombo->blockSignals(true);
+    m_deviceCombo->clear();
+    m_deviceCombo->addItems(devices);
+    const int idx = m_deviceCombo->findText(prev);
+    if (idx >= 0) m_deviceCombo->setCurrentIndex(idx);
+    m_deviceCombo->blockSignals(false);
+}
+
 void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
 {
     ++m_loadGeneration;   // 源切换/置空也作废在途加载（连接失败 detach 旧源等）
@@ -96,6 +170,7 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
     m_pathEdit->clear();
     m_currentPath.clear();
     if (m_source) {
+        setSourceProto(m_source->sourceId());   // 选择器显示与实际源一致（blockSignals，不发射）
         // 本地默认当前目录；远程默认根
         m_currentPath = m_source->sourceId() == "local"
             ? QDir::currentPath() : QStringLiteral("/");
@@ -134,9 +209,11 @@ void FileBrowserPanel::loadDirectory(const QString& path)
     auto source = m_source;                    // shared_ptr 拷贝（线程安全）
     m_pathEdit->setText(path);
 
-    // 异步 list：慢速/断网目录读取不再冻结 UI；队列回调按代际令牌丢弃过期结果
-    QtConcurrent::run([this, gen, p, source]() {
-        QPointer<FileBrowserPanel> guard(this);   // 面板析构（如连接失败 detach）时防悬垂
+    // 异步 list：慢速/断网目录读取不再冻结 UI；队列回调按代际令牌丢弃过期结果。
+    // guard 在捕获列表用主线程（调度时 this 必然存活）构造 QPointer——若在 worker 内
+    // 构造，worker 启动前面板已析构时读已释放 QObjectPrivate 即 UAF（与 Task 2
+    // onRefreshRemote 的 guard 构造时机同模式）
+    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, p, source]() {
         auto files = source->list(p);
         if (!guard) return;
         QMetaObject::invokeMethod(this, [this, gen, p, files, source]() {
@@ -152,9 +229,9 @@ void FileBrowserPanel::loadDirectory(const QString& path)
 void FileBrowserPanel::retryWithReconnect(quint64 gen, const QString& path,
                                           std::shared_ptr<IFileSource> source)
 {
-    // 异步重连重试一次（本地源 reconnect no-op 成功，仅多一次重试；对齐 v2.6 行为）
-    QtConcurrent::run([this, gen, path, source]() {
-        QPointer<FileBrowserPanel> guard(this);   // 面板析构时防悬垂
+    // 异步重连重试一次（本地源 reconnect no-op 成功，仅多一次重试；对齐 v2.6 行为）。
+    // guard 同 loadDirectory：主线程调度时构造（防 worker 启动前面板已析构的 UAF）
+    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, path, source]() {
         bool ok = source->reconnect();
         auto files = ok ? source->list(path) : std::vector<FtpFileInfo>{};
         if (!guard) return;
