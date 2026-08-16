@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QClipboard>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 
 FileBrowserPanel::FileBrowserPanel(QWidget* parent) : QWidget(parent)
@@ -135,7 +136,9 @@ void FileBrowserPanel::loadDirectory(const QString& path)
 
     // 异步 list：慢速/断网目录读取不再冻结 UI；队列回调按代际令牌丢弃过期结果
     QtConcurrent::run([this, gen, p, source]() {
+        QPointer<FileBrowserPanel> guard(this);   // 面板析构（如连接失败 detach）时防悬垂
         auto files = source->list(p);
+        if (!guard) return;
         QMetaObject::invokeMethod(this, [this, gen, p, files, source]() {
             if (gen != m_loadGeneration) return;   // 过期：快速导航竞态丢弃
             if (files.empty() && !source->lastError().isEmpty())
@@ -151,8 +154,10 @@ void FileBrowserPanel::retryWithReconnect(quint64 gen, const QString& path,
 {
     // 异步重连重试一次（本地源 reconnect no-op 成功，仅多一次重试；对齐 v2.6 行为）
     QtConcurrent::run([this, gen, path, source]() {
+        QPointer<FileBrowserPanel> guard(this);   // 面板析构时防悬垂
         bool ok = source->reconnect();
         auto files = ok ? source->list(path) : std::vector<FtpFileInfo>{};
+        if (!guard) return;
         QString err = source->lastError();
         QMetaObject::invokeMethod(this, [this, gen, path, files, err, ok]() {
             if (gen != m_loadGeneration) return;

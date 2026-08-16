@@ -37,6 +37,13 @@ QString RemoteFileSource::displayName() const { return m_displayName; }
 
 bool RemoteFileSource::connect(const DeviceInfo& device, const AuthInfo& auth)
 {
+    QMutexLocker locker(&m_mutex);
+    return connectLocked(device, auth);
+}
+
+// 无锁私有体：调用方必须已持有 m_mutex（connect/reconnect 公共入口加锁后复用）
+bool RemoteFileSource::connectLocked(const DeviceInfo& device, const AuthInfo& auth)
+{
     // 缓存本次连接凭证，供 reconnect() 空闲断线重连复用
     m_device = device;
     m_auth = auth;
@@ -72,19 +79,26 @@ bool RemoteFileSource::connect(const DeviceInfo& device, const AuthInfo& auth)
 
 bool RemoteFileSource::reconnect()
 {
+    QMutexLocker locker(&m_mutex);
     // 用上次 connect 缓存的凭证原位重连（等价于 v2.6 的"断开→重连"语义）
-    return connect(m_device, m_auth);
+    return connectLocked(m_device, m_auth);
 }
 
 bool RemoteFileSource::isConnected() const
 {
+    QMutexLocker locker(&m_mutex);
     return m_adapter && m_adapter->isConnected();
 }
 
-QString RemoteFileSource::lastError() const { return m_lastError; }
+QString RemoteFileSource::lastError() const
+{
+    QMutexLocker locker(&m_mutex);
+    return m_lastError;
+}
 
 std::vector<FtpFileInfo> RemoteFileSource::list(const QString& path)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return {}; }
     const std::string p = path.toStdString();
     std::vector<FtpFileInfo> result;
@@ -102,6 +116,7 @@ std::vector<FtpFileInfo> RemoteFileSource::list(const QString& path)
 
 bool RemoteFileSource::mkdir(const QString& path)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string p = path.toStdString();
     bool ok = false;
@@ -118,6 +133,7 @@ bool RemoteFileSource::mkdir(const QString& path)
 
 bool RemoteFileSource::rename(const QString& oldPath, const QString& newPath)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string oldP = oldPath.toStdString();
     const std::string newP = newPath.toStdString();
@@ -135,6 +151,7 @@ bool RemoteFileSource::rename(const QString& oldPath, const QString& newPath)
 
 bool RemoteFileSource::remove(const QString& path, bool isDir)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string p = path.toStdString();
     bool ok = false;
@@ -151,6 +168,7 @@ bool RemoteFileSource::remove(const QString& path, bool isDir)
 
 bool RemoteFileSource::clearDirectory(const QString& path)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string p = path.toStdString();
     bool ok = false;
@@ -167,6 +185,7 @@ bool RemoteFileSource::clearDirectory(const QString& path)
 
 bool RemoteFileSource::upload(const QString& localPath, const QString& remotePath)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string l = localPath.toStdString();
     const std::string r = remotePath.toStdString();
@@ -184,6 +203,7 @@ bool RemoteFileSource::upload(const QString& localPath, const QString& remotePat
 
 bool RemoteFileSource::download(const QString& remotePath, const QString& localPath)
 {
+    QMutexLocker locker(&m_mutex);
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string r = remotePath.toStdString();
     const std::string l = localPath.toStdString();
@@ -201,6 +221,7 @@ bool RemoteFileSource::download(const QString& remotePath, const QString& localP
 
 void RemoteFileSource::setProgressCallback(std::function<void(int)> cb)
 {
+    QMutexLocker locker(&m_mutex);
     m_progressCb = std::move(cb);
     if (!m_adapter) return;
     if (auto* ftp = asFtp(m_adapter))
@@ -211,6 +232,7 @@ void RemoteFileSource::setProgressCallback(std::function<void(int)> cb)
 
 void RemoteFileSource::setCancelFlag(std::atomic<bool>* flag)
 {
+    QMutexLocker locker(&m_mutex);
     m_cancelFlag = flag;
     if (!m_adapter) return;
     if (auto* ftp = asFtp(m_adapter))
@@ -221,6 +243,7 @@ void RemoteFileSource::setCancelFlag(std::atomic<bool>* flag)
 
 void RemoteFileSource::setUseFtps(bool useFtps)
 {
+    QMutexLocker locker(&m_mutex);
     m_useFtps = useFtps;
     if (auto* ftp = asFtp(m_adapter))
         ftp->setUseFtps(useFtps);

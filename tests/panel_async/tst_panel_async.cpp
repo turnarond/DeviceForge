@@ -183,18 +183,22 @@ private slots:
         src->failNextList = true;    // list 失败 → 触发重试
         src->failReconnect = true;   // 重连亦失败
         panel.navigateTo(QStringLiteral("/x"));
-        QTRY_VERIFY_WITH_TIMEOUT(src->reconnectCalls.load() == 1, 5000);
-        QTRY_VERIFY_WITH_TIMEOUT(src->listCalls.load() >= 2, 5000);
+        // 首断言等回调落地：showLoadError 是整条链（list 失败→重连→回写）的最后一步，
+        // 面包屑出现「加载失败」即证明回调已处理，其余状态（重连次数/路径回写）随后必然就位
+        auto* breadcrumb = panel.findChild<QLabel*>("panelBreadcrumb");
+        QVERIFY(breadcrumb);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            breadcrumb->text().contains(QStringLiteral("加载失败")), 5000);
+        QVERIFY(breadcrumb->text().contains(QStringLiteral("mock: reconnect failed")));
 
+        // 回调已处理：重连恰好重试一次；重连失败短路不再 list（首败 + 无重试 list）
+        QCOMPARE(src->reconnectCalls.load(), 1);
+        QCOMPARE(src->listCalls.load(), 2);
         // 失败导航不改变当前有效路径；路径栏回写为上一个有效路径
         QCOMPARE(panel.currentPath(), QStringLiteral("/"));
         auto* pathEdit = panel.findChild<QLineEdit*>();
         QVERIFY(pathEdit);
         QCOMPARE(pathEdit->text(), QStringLiteral("/"));
-        auto* breadcrumb = panel.findChild<QLabel*>("panelBreadcrumb");
-        QVERIFY(breadcrumb);
-        QVERIFY(breadcrumb->text().contains(QStringLiteral("加载失败")));
-        QVERIFY(breadcrumb->text().contains(QStringLiteral("mock: reconnect failed")));
     }
 };
 QTEST_MAIN(TstPanelAsync)
