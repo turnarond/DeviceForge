@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QClipboard>
+#include <QtConcurrent/QtConcurrent>
 
 FileBrowserPanel::FileBrowserPanel(QWidget* parent) : QWidget(parent)
 {
@@ -89,6 +90,7 @@ void FileBrowserPanel::setupUi()
 
 void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
 {
+    ++m_loadGeneration;   // 源切换/置空也作废在途加载（连接失败 detach 旧源等）
     m_source = std::move(source);
     m_pathEdit->clear();
     m_currentPath.clear();
@@ -126,26 +128,55 @@ void FileBrowserPanel::loadDirectory(const QString& path)
         m_breadcrumb->setText(tr("未连接远程，请选择设备并刷新"));
         return;
     }
-    if (m_refreshing) return;
-    m_refreshing = true;
+    const quint64 gen = ++m_loadGeneration;   // 代际令牌
+    const QString p = path;
+    auto source = m_source;                    // shared_ptr 拷贝（线程安全）
     m_pathEdit->setText(path);
-    auto files = m_source->list(path);
-    m_refreshing = false;
-    if (files.empty() && !m_source->lastError().isEmpty()) {
-        // 空闲断线自动重连：断开→重连→重试一次（对齐 v2.6 行为；
-        // 本地源等无连接语义的源 reconnect() 为 no-op 成功，仅多一次重试）
-        if (m_source->reconnect())
-            files = m_source->list(path);
-        if (files.empty() && !m_source->lastError().isEmpty()) {
-            m_breadcrumb->setText(tr("加载失败: %1").arg(m_source->lastError()));
-            m_pathEdit->setText(m_currentPath);   // 失败回写：路径栏与当前有效路径保持一致
-            return;
-        }
-    }
+
+    // 异步 list：慢速/断网目录读取不再冻结 UI；队列回调按代际令牌丢弃过期结果
+    QtConcurrent::run([this, gen, p, source]() {
+        auto files = source->list(p);
+        QMetaObject::invokeMethod(this, [this, gen, p, files, source]() {
+            if (gen != m_loadGeneration) return;   // 过期：快速导航竞态丢弃
+            if (files.empty() && !source->lastError().isEmpty())
+                retryWithReconnect(gen, p, source);
+            else
+                applyFileList(p, files);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FileBrowserPanel::retryWithReconnect(quint64 gen, const QString& path,
+                                          std::shared_ptr<IFileSource> source)
+{
+    // 异步重连重试一次（本地源 reconnect no-op 成功，仅多一次重试；对齐 v2.6 行为）
+    QtConcurrent::run([this, gen, path, source]() {
+        bool ok = source->reconnect();
+        auto files = ok ? source->list(path) : std::vector<FtpFileInfo>{};
+        QString err = source->lastError();
+        QMetaObject::invokeMethod(this, [this, gen, path, files, err, ok]() {
+            if (gen != m_loadGeneration) return;
+            if (ok && !(files.empty() && !err.isEmpty()))
+                applyFileList(path, files);
+            else
+                showLoadError(gen, ok ? err : tr("重连失败: %1").arg(err));
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FileBrowserPanel::showLoadError(quint64, const QString& err)
+{
+    m_breadcrumb->setText(tr("加载失败: %1").arg(err));
+    m_pathEdit->setText(m_currentPath);   // 失败回写：路径栏与当前有效路径一致
+}
+
+void FileBrowserPanel::applyFileList(const QString& path,
+                                     const std::vector<FtpFileInfo>& files)
+{
     m_currentPath = path;
     m_files = files;
 
-    // 统一渲染：本地也用 RemoteFileModel（FtpFileInfo 统一结构）
+    // 统一渲染：本地也用 RemoteFileModel（FtpFileInfo 统一结构），首次加载惰性创建
     auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
     if (!model) {
         model = new RemoteFileModel(m_table);

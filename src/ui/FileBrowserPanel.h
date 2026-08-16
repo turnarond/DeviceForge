@@ -49,6 +49,11 @@ protected:
 private:
     void setupUi();
     void loadDirectory(const QString& path);
+    // --- 异步加载（代际令牌防竞态）---
+    void applyFileList(const QString& path, const std::vector<FtpFileInfo>& files);
+    void retryWithReconnect(quint64 gen, const QString& path,
+                            std::shared_ptr<IFileSource> source);
+    void showLoadError(quint64 gen, const QString& err);
     void onTableDoubleClicked(const QModelIndex& index);
     void onPathEnterPressed();
     // 拖拽来源面板判定：来源必须是另一个 FileBrowserPanel（含其表格视口），否则返回 nullptr
@@ -61,5 +66,5 @@ private:
     QLabel*     m_breadcrumb = nullptr;        // 底部面包屑（路径文本，含 / 分隔可点击——首版文本展示）
     QString     m_currentPath;
     std::vector<FtpFileInfo> m_files;
-    bool m_refreshing = false;
+    quint64 m_loadGeneration = 0;      // 代际令牌：每次导航/刷新/源切换 ++
 };

@@ -176,3 +176,25 @@ if(_qt_bin_dir)
     set_tests_properties(tst_file_source PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- 面板异步加载测试（代际令牌竞态/重连重试；mock 源注入 FileBrowserPanel）---
+# 注：与 brief 片段差异——测试仅引用 FileBrowserPanel/RemoteFileModel/LocalFileSource，
+#     RemoteFileSource/FtpAdapter/SshAdapter/ProtocolRegistry 不被 mock 测试触及，
+#     故不编译（避免引入 libcurl/libssh2/lwlog/Qt6::Network 链接依赖）
+add_executable(tst_panel_async
+    panel_async/tst_panel_async.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileBrowserPanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/LocalFileSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+)
+target_include_directories(tst_panel_async PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_panel_async PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Test
+)
+add_test(NAME tst_panel_async COMMAND tst_panel_async)
+if(_qt_bin_dir)
+    set_tests_properties(tst_panel_async PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
