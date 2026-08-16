@@ -278,6 +278,11 @@ private slots:
         QCOMPARE(spy.count(), 0);
         QCOMPARE(devCombo->currentText(), QStringLiteral("192.168.1.11"));
 
+        panel.setSourceProto(QStringLiteral("ssh"));   // 归一化：ssh（SshAdapter 键）→ sftp 显示
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(srcCombo->currentData().toString(), QStringLiteral("sftp"));
+        QVERIFY(!devCombo->isHidden());
+
         panel.setSourceDevices({QStringLiteral("192.168.1.10"),
                                 QStringLiteral("192.168.1.11"),
                                 QStringLiteral("192.168.1.12")});
@@ -303,6 +308,31 @@ private slots:
 
         QSignalSpy spy(&panel, &FileBrowserPanel::sourceChooserChanged);
         QCOMPARE(spy.count(), 0);   // setSource 程序化挂载不发射
+    }
+
+    // 用例 9：异步 list 在途时面板析构 — guard UAF 定向回归（guard 必须主线程调度时构造）。
+    // 旧实现（worker 内构造 QPointer）在「worker 启动前面板已析构」窗口内读已释放
+    // QObjectPrivate（getAndRef UAF）。本用例用 blockList 门控把 worker 悬停在 list 上，
+    // 在栈作用域内析构面板后再放行——覆盖「面板先析构、worker 后启动/后返回」的交错。
+    // 竞态非确定性（worker 启动时刻不定），循环 30 次 + 相位微调提高窗口命中率；
+    // 断言=不崩溃（QTest 崩溃处理器会终止本轮并报错）。
+    void destructDuringInflightLoad_doesNotCrash()
+    {
+        for (int i = 0; i < 30; ++i) {
+            auto src = std::make_shared<MockDelayedSource>();
+            src->m_files = { makeInfo("a.txt") };
+            src->blockList = true;   // 门控：worker 阻塞在 list（模拟慢速目录读取）
+            {
+                FileBrowserPanel panel;
+                panel.setSource(src);        // 调度初始加载 worker（门控挂起）
+                panel.navigateTo("/a");      // 再调度一个 worker（门控挂起）
+                QTest::qWait(i % 3);         // 相位变化：部分迭代给 worker 先行启动窗口
+            }                                // 面板先于在途 worker 完成析构（UAF 窗口）
+            src->blockList = false;          // 放行：worker list 返回 → guard 判空丢弃
+            QTest::qWait(30);                // 排空在途 worker（避免与下一迭代交错）
+            QVERIFY2(src->listCalls.load() >= 2,
+                     "worker 未执行——用例未命中在途场景");
+        }
     }
 };
 QTEST_MAIN(TstPanelAsync)

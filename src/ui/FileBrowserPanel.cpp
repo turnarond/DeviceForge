@@ -131,13 +131,17 @@ void FileBrowserPanel::setSourceChooserVisible(bool visible)
 
 void FileBrowserPanel::setSourceProto(const QString& proto)
 {
-    const int idx = m_sourceCombo->findData(proto);
+    // "ssh" 是 SshAdapter 的协议注册表键（RemoteFileSource::sourceId 对 SFTP 返回 "ssh"），
+    // 选择器 data role 用 "sftp"——归一化后 findData 命中，消除隐式依赖
+    QString p = proto;
+    if (p == QStringLiteral("ssh")) p = QStringLiteral("sftp");
+    const int idx = m_sourceCombo->findData(p);
     if (idx >= 0 && idx != m_sourceCombo->currentIndex()) {
         m_sourceCombo->blockSignals(true);
         m_sourceCombo->setCurrentIndex(idx);
         m_sourceCombo->blockSignals(false);
     }
-    m_deviceCombo->setVisible(proto != QStringLiteral("local"));
+    m_deviceCombo->setVisible(p != QStringLiteral("local"));
 }
 
 void FileBrowserPanel::setSourceDevice(const QString& device)

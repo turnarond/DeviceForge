@@ -696,6 +696,24 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
             if (idx >= 0) m_deviceCombo->setCurrentIndex(idx);
             m_deviceCombo->blockSignals(false);
             populatePanelDeviceCombos();   // 面板源选择器设备列表同步（Task 3）
+            // 左面板远程浏览源的目标设备被删除：作废在途连接 + detach 清缓存
+            // （对齐右面板 onRefreshRemote 兜底语义；面板选择器列表已由
+            // populatePanelDeviceCombos 重填，失效源不再挂载）
+            if (m_leftRemoteSource && !m_leftSrcDevice.isEmpty()) {
+                bool stillExists = false;
+                for (const auto& d : m_deviceBus->allDevices()) {
+                    if (QString::fromStdString(d.ip) == m_leftSrcDevice) {
+                        stillExists = true;
+                        break;
+                    }
+                }
+                if (!stillExists) {
+                    ++m_leftConnGeneration;   // 防陈旧回调把已删设备源挂回面板
+                    appendLog(QStringLiteral("左侧浏览目标设备 %1 已删除，已断开左侧远程浏览")
+                                  .arg(m_leftSrcDevice));
+                    detachLeftPanel();
+                }
+            }
             updateDeployBtnText();
             // 设备添加/删除后自动连接刷新（无设备时 onRefreshRemote 内部提示并置灰状态点；
             // 被删除的设备不在列表中 → 落到首台，onRefreshRemote 按当前文本刷新）
