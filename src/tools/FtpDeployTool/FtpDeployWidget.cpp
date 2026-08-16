@@ -27,6 +27,7 @@
 #include <QFrame>
 #include <QLabel>
 #include <QTimer>
+#include <QPointer>
 #include <QDateTime>
 #include <QtConcurrent>
 
@@ -319,6 +320,11 @@ std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
 
 void FtpDeployWidget::onRefreshRemote()
 {
+    // 连接代际令牌（入口即 ++，含空设备/忙拒绝等早退分支）：任何一次刷新请求都使
+    // 在途连接的陈旧回调失效——连接在途时切换设备/删除全部设备，回调到达后比对
+    // 令牌丢弃，不挂载过期源（与面板 loadGeneration 同模式）
+    const quint64 gen = ++m_connGeneration;
+
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
         appendLog("错误：设备总线中没有目标设备");
         setConnState(RemoteConnState::Unknown);   // 无目标设备 = 未配置 → 灰
@@ -366,17 +372,30 @@ void FtpDeployWidget::onRefreshRemote()
     // 无需重复加锁。lambda 按值捕获全部所需标量/结构（port 等）。
     // 注意：Connecting 态只在真正发起连接的两个分支里进入（纯刷新分支保持已连接态）
     if (configChanged) {
-        // 全量重建：工作线程 create + connect，主线程回调成功则更新缓存并挂载面板
+        // 全量重建：工作线程 create + connect，主线程回调成功则更新缓存并挂载面板。
+        // guard 在捕获列表用主线程（调度时 this 必然存活）构造 QPointer，worker 回调前
+        // 判空——应用退出等在途 connect ~10s 窗口内 widget 析构后不再回调，防悬垂 UAF
         setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
-        QtConcurrent::run([this, proto, protoDisplay, deviceIp, useFtps, port, dev, auth]() {
+        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+                           proto, protoDisplay, deviceIp, useFtps, port, dev, auth]() {
             auto source = std::make_shared<RemoteFileSource>(
                 proto, deviceIp + " (" + protoDisplay + ")");
             source->setUseFtps(useFtps);
             const bool ok = source->connect(dev, auth);
             const QString err = source->lastError();
-            QMetaObject::invokeMethod(this, [this, source, ok, err,
+            if (!guard) return;   // widget 已析构 → 丢弃（invokeMethod 到悬垂接收者才防不了）
+            QMetaObject::invokeMethod(this, [this, gen, source, ok, err,
                                              deviceIp, proto, useFtps, port]() {
                 m_remoteBusy = false;
+                if (gen != m_connGeneration) {
+                    // 连接期间配置已变更（切换设备/删除全部设备等）：丢弃陈旧回调不挂载
+                    // 过期源；状态点按当前缓存源恢复（面板未被本次回调触碰，仍显示旧源）
+                    appendLog("远程连接已取消（刷新期间配置变更）");
+                    setConnState(m_remoteSource && m_remoteSource->isConnected()
+                                     ? RemoteConnState::Connected
+                                     : RemoteConnState::Unknown);
+                    return;
+                }
                 if (!ok) {
                     appendLog("远程连接失败: " + err);
                     setConnState(RemoteConnState::Failed);   // 连接失败 → 红
@@ -401,11 +420,21 @@ void FtpDeployWidget::onRefreshRemote()
         // 与全量重建分支同构——工作线程 connect（复用既有源对象），主线程回调状态点
         setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
         auto source = m_remoteSource;   // shared_ptr 拷贝：worker 持有期间源不被析构
-        QtConcurrent::run([this, source, dev, auth]() {
+        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+                           source, dev, auth]() {
             const bool ok = source->connect(dev, auth);
             const QString err = source->lastError();
-            QMetaObject::invokeMethod(this, [this, ok, err]() {
+            if (!guard) return;   // widget 已析构 → 丢弃
+            QMetaObject::invokeMethod(this, [this, gen, ok, err]() {
                 m_remoteBusy = false;
+                if (gen != m_connGeneration) {
+                    // 连接期间配置已变更：丢弃陈旧回调（同全量重建分支）
+                    appendLog("远程重连已取消（刷新期间配置变更）");
+                    setConnState(m_remoteSource && m_remoteSource->isConnected()
+                                     ? RemoteConnState::Connected
+                                     : RemoteConnState::Unknown);
+                    return;
+                }
                 if (!ok) {
                     appendLog("远程重连失败: " + err);
                     setConnState(RemoteConnState::Failed);

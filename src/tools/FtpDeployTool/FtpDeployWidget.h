@@ -105,6 +105,9 @@ private:
     int        m_remoteSrcPort = 0;
     bool       m_remoteSrcUseFtps = false;
     std::atomic<bool> m_remoteBusy{false}; // 防止并发刷新（远程源适配器非线程安全）
+    quint64 m_connGeneration = 0; // 连接代际令牌：onRefreshRemote 入口 ++，worker 捕获、
+                                  // 回调比对——连接在途时配置变更（切换设备/删除全部设备）
+                                  // 作废在途连接的陈旧回调，防过期源挂载（与面板 loadGeneration 同模式）
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;
