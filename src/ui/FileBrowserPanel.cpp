@@ -653,16 +653,21 @@ void FileBrowserPanel::dropEvent(QDropEvent* event)
     // 系统文件拖入：目标为远程源 → 逐文件上传
     if (m_source && m_source->sourceId() != QLatin1String("local")) {
         const auto urls = event->mimeData()->urls();
-        int failed = 0;
+        int valid = 0, failed = 0;
         for (const auto& url : urls) {
             const QString localPath = url.toLocalFile();
             if (localPath.isEmpty()) continue;
+            ++valid;
             const QString remotePath = m_currentPath + "/" + QFileInfo(localPath).fileName();
             if (!m_source->upload(localPath, remotePath)) ++failed;
         }
-        m_breadcrumb->setText(failed > 0
-            ? tr("上传完成，%1 项失败").arg(failed)
-            : tr("上传完成"));
+        if (valid == 0) {
+            m_breadcrumb->setText(tr("未检测到可上传的文件"));
+        } else {
+            m_breadcrumb->setText(failed > 0
+                ? tr("上传完成，%1 项失败").arg(failed)
+                : tr("上传完成"));
+        }
         event->acceptProposedAction();
         refresh();   // 异步刷新（Task 1）
         return;
