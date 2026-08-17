@@ -11,6 +11,9 @@
 #include <QLabel>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QUrl>
+#include <QMimeData>
 #include <QEvent>
 #include <QShortcut>
 #include <QInputDialog>
@@ -613,8 +616,12 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 
 void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 {
-    // 非表格区域（路径栏/面包屑等）上的面板间拖入
+    // 非表格区域（路径栏/面包屑等）上的拖入：
+    //   面板间拖拽 → 接受（CopyAction）；系统文件拖入 → 接受（dropEvent 按目标源分流）
     if (dragSourcePanel(event)) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else if (event->mimeData()->hasUrls()) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -627,6 +634,9 @@ void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
     if (dragSourcePanel(event)) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
+    } else if (event->mimeData()->hasUrls()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
     } else {
         event->ignore();
     }
@@ -634,12 +644,29 @@ void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
 
 void FileBrowserPanel::dropEvent(QDropEvent* event)
 {
-    if (auto* srcPanel = dragSourcePanel(event)) {
-        srcPanel->copySelectedTo(this);
+    // 面板间拖拽（来源面板存在）→ 现有复制/移动语义
+    if (FileBrowserPanel* src = dragSourcePanel(event)) {
+        src->copySelectedTo(this);
         event->acceptProposedAction();
-    } else {
-        // 非面板间拖拽（外部文件等）不落盘，明确提示
-        m_breadcrumb->setText(tr("仅支持面板间拖拽"));
-        event->ignore();
+        return;
     }
+    // 系统文件拖入：目标为远程源 → 逐文件上传
+    if (m_source && m_source->sourceId() != QLatin1String("local")) {
+        const auto urls = event->mimeData()->urls();
+        int failed = 0;
+        for (const auto& url : urls) {
+            const QString localPath = url.toLocalFile();
+            if (localPath.isEmpty()) continue;
+            const QString remotePath = m_currentPath + "/" + QFileInfo(localPath).fileName();
+            if (!m_source->upload(localPath, remotePath)) ++failed;
+        }
+        m_breadcrumb->setText(failed > 0
+            ? tr("上传完成，%1 项失败").arg(failed)
+            : tr("上传完成"));
+        event->acceptProposedAction();
+        refresh();   // 异步刷新（Task 1）
+        return;
+    }
+    m_breadcrumb->setText(tr("拖拽上传仅支持远程面板"));
+    event->ignore();
 }
