@@ -2,11 +2,11 @@
 
 > 本文件描述 DeviceForge 的发展方向。计划会随社区反馈调整——**如果你正好需要某个功能,欢迎在 [Issues](../../issues) 提出或 👍,这会直接影响优先级。**
 
-**当前版本**：v2.6.0 · **平台**：Windows（x64）· **许可**：MIT
+**当前版本**：v2.7.0 · **平台**：Windows（x64）· **许可**：MIT
 
 ---
 
-## 已交付（至 v2.6.0）
+## 已交付（至 v2.7.0）
 
 | 模块 | 能力 |
 |------|------|
@@ -28,15 +28,16 @@
 - **v2.3**（2026-07-24）：ConfigStore 配置持久化（SQLite + DPAPI）+ OPC UA 订阅卡死修复
 - **v2.4**（2026-07-26）：FTP 双栏重构 + 主窗口布局现代化（NavBar/胶囊设备栏/可折叠日志）+ 日志统一
 - **v2.5**（2026-07-26）：远程文件管理补完（重命名/新建目录/精确对比）+ SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除）
-- **v2.6**（2026-08-07）：SFTP 批量部署——IDeployable 部署能力接口 + SshAdapter 部署链路 + 部署循环协议化（FTP/SFTP 同一逻辑）+ UI 解锁
+- **v2.6**（2026-08-07）：SFTP 批量部署——IDeployable 部署能力接口 + SshAdapter 部署链路 + 部署循环协议化（FTP/SFTP 同一逻辑）+ UI 解锁 + 双主题/紧凑密度
+- **v2.7**（2026-08-18）：UX 收尾——远程列表/连接异步化（QtConcurrent + 代际令牌，慢速目录不冻结 UI）+ 面板源选择器（本地/FTP/SFTP 独立浏览）+ 系统文件拖入上传恢复 + 顺带项（readdir 错误上报/sort 降序 SWO/双主题像素验证）
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + IDeployable 部署能力接口 + 工业仪表盘深色主题（「琴色是动词」体系）。
 产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
-测试：8 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop）。
+测试：13 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels）。
 
 ---
 
-## 近期（v2.7 候选）
+## 近期候选
 
 按当前评估的优先级排列。带 🔷 的是社区呼声可显著提前的项。
 
