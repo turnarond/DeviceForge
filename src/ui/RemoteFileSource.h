@@ -1,6 +1,7 @@
 #pragma once
 #include "ui/IFileSource.h"
 #include "framework/DeviceInfo.h"
+#include <QMutex>
 #include <memory>
 
 class IProtocolAdapter;
@@ -29,6 +30,11 @@ public:
 
     void setUseFtps(bool useFtps);   // FTP 源启用 FTPS 加密（connect 时生效）
 private:
+    // 无锁私有体：调用方必须已持有 m_mutex（connect/reconnect 的公共入口加锁后复用，
+    // 避免 QMutex 非递归死锁）
+    bool connectLocked(const DeviceInfo& device, const AuthInfo& auth);
+
+    mutable QMutex m_mutex;   // 串行化 adapter 操作（异步 list/reconnect 并发安全）
     std::shared_ptr<IProtocolAdapter> m_adapter;
     QString m_protocol;     // "ftp"/"ssh"（ProtocolRegistry 注册表键；SFTP 能力由 SshAdapter 提供）
     QString m_displayName;

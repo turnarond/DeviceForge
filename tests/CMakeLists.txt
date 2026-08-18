@@ -162,6 +162,22 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 双主题像素验证（#18：离屏渲染采样 + 色值字符串断言保底）---
+# 渲染依赖 QPA 平台插件（QApplication），故同样前插 Qt bin 并显式指定插件路径
+add_executable(tst_qss_pixels theme/tst_qss_pixels.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/DeviceForge.qrc
+)
+target_include_directories(tst_qss_pixels PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_qss_pixels PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME tst_qss_pixels COMMAND tst_qss_pixels)
+if(_qt_bin_dir)
+    set_tests_properties(tst_qss_pixels PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
 # --- 文件源抽象测试（LocalFileSource 纯本地操作） ---
 # 注：RemoteFileSource 依赖适配器/协议注册，测试仅在 Task 4 集成后手动验证
 add_executable(tst_file_source file_source/tst_file_source.cpp
@@ -174,5 +190,27 @@ target_link_libraries(tst_file_source PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME tst_file_source COMMAND tst_file_source)
 if(_qt_bin_dir)
     set_tests_properties(tst_file_source PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- 面板异步加载测试（代际令牌竞态/重连重试；mock 源注入 FileBrowserPanel）---
+# 注：与 brief 片段差异——测试仅引用 FileBrowserPanel/RemoteFileModel/LocalFileSource，
+#     RemoteFileSource/FtpAdapter/SshAdapter/ProtocolRegistry 不被 mock 测试触及，
+#     故不编译（避免引入 libcurl/libssh2/lwlog/Qt6::Network 链接依赖）
+add_executable(tst_panel_async
+    panel_async/tst_panel_async.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileBrowserPanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/LocalFileSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+)
+target_include_directories(tst_panel_async PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_panel_async PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Test
+)
+add_test(NAME tst_panel_async COMMAND tst_panel_async)
+if(_qt_bin_dir)
+    set_tests_properties(tst_panel_async PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()

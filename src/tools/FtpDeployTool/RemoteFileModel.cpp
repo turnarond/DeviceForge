@@ -154,17 +154,22 @@ void RemoteFileModel::sort(int column, Qt::SortOrder order)
             // 目录始终排在文件前面
             if (a.isDir != b.isDir) return a.isDir;
 
-            bool less = false;
+            bool less = false, eq = false;
             switch (column) {
-            case ColName:
-                less = QString::compare(QString::fromStdString(a.name),
-                    QString::fromStdString(b.name), Qt::CaseInsensitive) < 0;
+            case ColName: {
+                const int cmp = QString::compare(QString::fromStdString(a.name),
+                    QString::fromStdString(b.name), Qt::CaseInsensitive);
+                less = cmp < 0;
+                eq = cmp == 0;
                 break;
-            case ColSize:     less = a.size < b.size; break;
-            case ColDateTime: less = a.dateTime < b.dateTime; break;
-            case ColPermissions: less = a.permissions < b.permissions; break;
-            default:          less = a.name < b.name; break;
             }
+            case ColSize:          less = a.size < b.size; eq = a.size == b.size; break;
+            case ColDateTime:      less = a.dateTime < b.dateTime; eq = a.dateTime == b.dateTime; break;
+            case ColPermissions:   less = a.permissions < b.permissions; eq = a.permissions == b.permissions; break;
+            default:               less = a.name < b.name; eq = a.name == b.name; break;
+            }
+            // 相等键：升序/降序均返回 false（严格弱序不可反身性，旧降序分支 comp(a,b) 与 comp(b,a) 双向 true 系 UB）
+            if (eq) return false;
             return order == Qt::AscendingOrder ? less : !less;
         });
 

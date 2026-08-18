@@ -88,10 +88,10 @@ C:\Qt\6.11.1\msvc2022_64\bin\windeployqt.exe dist\DeviceForge\DeviceForge.exe --
 dist\DeviceForge\DeviceForge.exe
 
 # 5. 打包
-powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.6.0-win64.zip
+powershell Compress-Archive -Path dist\DeviceForge -DestinationPath DeviceForge-v2.7.0-win64.zip
 
 # 6. 上传 GitHub Release
-gh release upload v2.6.0 dist\DeviceForge-v2.6.0-win64.zip --clobber
+gh release upload v2.7.0 dist\DeviceForge-v2.7.0-win64.zip --clobber
 ```
 
 ## CI/CD

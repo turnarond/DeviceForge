@@ -26,7 +26,11 @@
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QLabel>
+#include <QTimer>
+#include <QPointer>
 #include <QDateTime>
+#include <QStringList>
+#include <QtConcurrent>
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
@@ -57,6 +61,17 @@ void FtpDeployWidget::setupUi()
     // 面板互指（F5 复制/F6 移动/Tab 切换/拖拽方向语义依赖 peer）
     m_leftPanel->setPeerPanel(m_rightPanel);
     m_rightPanel->setPeerPanel(m_leftPanel);
+
+    // 源选择器默认布局：左面板本地（设备下拉隐藏）；右面板=工具栏配置（FTP + 设备，
+    // 设备列表在 setDeviceBusWidget 填充）——左面板可再切换远程浏览，右面板恒为部署目标浏览
+    m_leftPanel->setSourceProto(QStringLiteral("local"));
+    m_rightPanel->setSourceProto(QStringLiteral("ftp"));
+
+    // Task 3：面板源选择器 → 重建对应面板源（blockSignals 防循环见各处理器）
+    connect(m_leftPanel, &FileBrowserPanel::sourceChooserChanged, this,
+            &FtpDeployWidget::onLeftSourceChanged);
+    connect(m_rightPanel, &FileBrowserPanel::sourceChooserChanged, this,
+            &FtpDeployWidget::onRightSourceChanged);
 
     // 方向指示（Task 5）：任一面板路径/选中变化 → 组合左右路径发射（状态栏中央指示）
     // FileBrowserPanel 的 currentPathChanged/selectionChanged 已由面板自身落实（setModel 后连接）
@@ -104,6 +119,10 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
             m_portSpin->setValue(21);
             m_ftpsCheck->setEnabled(true);
         }
+        // 工具栏协议 → 右面板源选择器显示同步（blockSignals 防循环；重建走 onRefreshRemote）
+        if (m_rightPanel)
+            m_rightPanel->setSourceProto(proto == "SFTP" ? QStringLiteral("sftp")
+                                                         : QStringLiteral("ftp"));
         // 协议变化 → 远程源重建 + 刷新（setSource 导航到根目录）
         onRefreshRemote();
     });
@@ -114,8 +133,10 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_deviceCombo->setMinimumWidth(160);
     m_deviceCombo->setToolTip("选择目标设备（多选支持——从设备总线同步）");
     // 设备切换 → 远程源重建 + 刷新（程序化填充期间 blockSignals，见 setDeviceBusWidget）
-    connect(m_deviceCombo, &QComboBox::currentTextChanged, this,
-            [this](const QString&) { onRefreshRemote(); });
+    connect(m_deviceCombo, &QComboBox::currentTextChanged, this, [this](const QString& dev) {
+        if (m_rightPanel) m_rightPanel->setSourceDevice(dev);   // 右面板显示同步（blockSignals）
+        onRefreshRemote();
+    });
     connGroup->addWidget(m_deviceCombo);
 
     connGroup->addWidget(new QLabel("端口:", this));
@@ -127,12 +148,23 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_ftpsCheck = new QCheckBox("FTPS 加密", this);
     connGroup->addWidget(m_ftpsCheck);
 
-    // 连接状态点（圆形指示灯）：灰=未连接/未配置，青绿=连接成功，红=连接失败
+    // 连接状态点（圆形指示灯）：灰=未连接/未配置，灰闪=连接中，青绿=连接成功，红=连接失败
     // 底色由代码动态设置（固定暗色版，双主题下对比度足够——指示点非文字），圆角见双 QSS
     m_connStatusDot = new QLabel(this);
     m_connStatusDot->setObjectName("connStatusDot");
     m_connStatusDot->setFixedSize(10, 10);
-    m_connStatusDot->setToolTip("远程连接状态：灰=未连接，青绿=已连接，红=连接失败");
+    m_connStatusDot->setToolTip("远程连接状态：灰=未连接，灰闪=连接中，青绿=已连接，红=连接失败");
+    // 灰闪定时器必须先于首次 setConnState 创建（setConnState 的静态态分支会停表）
+    m_connFlashTimer = new QTimer(this);
+    m_connFlashTimer->setInterval(500);
+    connect(m_connFlashTimer, &QTimer::timeout, this, [this]() {
+        if (!m_connStatusDot) return;
+        m_connFlashOn = !m_connFlashOn;
+        m_connStatusDot->setStyleSheet(
+            QStringLiteral("background-color: %1;")
+                .arg(m_connFlashOn ? QStringLiteral("#A8B0BF")
+                                   : QStringLiteral("#7B8494")));
+    });
     setConnState(RemoteConnState::Unknown);
     connGroup->addWidget(m_connStatusDot);
 
@@ -236,6 +268,12 @@ void FtpDeployWidget::onDeployClicked()
     auto devices = m_deviceBus->selectedDevices();
     if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
     if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
+    // 左侧面板可切远程浏览源（Task 3）：部署语义=从左侧本地收集文件，远程源时拒绝——
+    // 后端按本地路径上传，远程路径会误传（批量部署目标始终按工具栏配置执行）
+    if (m_leftPanel->source() && m_leftPanel->source()->sourceId() != "local") {
+        appendLog("左侧面板当前为远程浏览源，请切换为「本地」后再部署");
+        return;
+    }
     auto files = collectLocalFiles();
     if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
 
@@ -306,6 +344,11 @@ std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
 
 void FtpDeployWidget::onRefreshRemote()
 {
+    // 连接代际令牌（入口即 ++，含空设备/忙拒绝等早退分支）：任何一次刷新请求都使
+    // 在途连接的陈旧回调失效——连接在途时切换设备/删除全部设备，回调到达后比对
+    // 令牌丢弃，不挂载过期源（与面板 loadGeneration 同模式）
+    const quint64 gen = ++m_connGeneration;
+
     if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
         appendLog("错误：设备总线中没有目标设备");
         setConnState(RemoteConnState::Unknown);   // 无目标设备 = 未配置 → 灰
@@ -331,6 +374,7 @@ void FtpDeployWidget::onRefreshRemote()
     const int port = m_portSpin->value();
     const bool useFtps = m_ftpsCheck->isChecked();
     const QString proto = QString::fromStdString(currentProtocol());
+    const QString protoDisplay = m_protocolCombo->currentText();   // 显示名（"FTP"/"SFTP"）
 
     // 协议/设备/端口/FTPS 变化时重建远程源（重建后 setSource 导航到根目录）
     const bool configChanged = !m_remoteSource
@@ -346,53 +390,110 @@ void FtpDeployWidget::onRefreshRemote()
     auth.user = m_deviceBus->user().toStdString();
     auth.password = m_deviceBus->password().toStdString();
 
+    // 连接异步化（Task 2）：connect 移入 QtConcurrent 工作线程，断网 connect 超时
+    // （约 10s）不再冻结 UI；主线程回调负责状态点/缓存/面板挂载。RemoteFileSource
+    // 内部已有 QMutex 串行化 adapter 操作（Task 1），worker 调用 connect 走其内部锁，
+    // 无需重复加锁。lambda 按值捕获全部所需标量/结构（port 等）。
+    // 注意：Connecting 态只在真正发起连接的两个分支里进入（纯刷新分支保持已连接态）
     if (configChanged) {
-        auto source = std::make_shared<RemoteFileSource>(
-            proto, deviceIp + " (" + m_protocolCombo->currentText() + ")");
-        source->setUseFtps(useFtps);
-        if (!source->connect(dev, auth)) {
-            appendLog("远程连接失败: " + source->lastError());
-            setConnState(RemoteConnState::Failed);   // 连接失败 → 红
-            m_remoteBusy = false;
-            // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
-            // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
-            // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
-            // 「缓存匹配但面板无源」的死锁状态（I-1）
-            detachRemotePanel();
-            return;
-        }
-        setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
-        m_remoteSource = source;
-        m_remoteSrcDevice = deviceIp;
-        m_remoteSrcProto = proto;
-        m_remoteSrcPort = port;
-        m_remoteSrcUseFtps = useFtps;
-        m_rightPanel->setSource(source);
+        // 全量重建：工作线程 create + connect，主线程回调成功则更新缓存并挂载面板。
+        // guard 在捕获列表用主线程（调度时 this 必然存活）构造 QPointer，worker 回调前
+        // 判空——应用退出等在途 connect ~10s 窗口内 widget 析构后不再回调，防悬垂 UAF
+        setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
+        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+                           proto, protoDisplay, deviceIp, useFtps, port, dev, auth]() {
+            auto source = std::make_shared<RemoteFileSource>(
+                proto, deviceIp + " (" + protoDisplay + ")");
+            source->setUseFtps(useFtps);
+            const bool ok = source->connect(dev, auth);
+            const QString err = source->lastError();
+            if (!guard) return;   // widget 已析构 → 丢弃（invokeMethod 到悬垂接收者才防不了）
+            QMetaObject::invokeMethod(this, [this, gen, source, ok, err,
+                                             deviceIp, proto, useFtps, port]() {
+                m_remoteBusy = false;
+                if (gen != m_connGeneration) {
+                    // 连接期间配置已变更（切换设备/删除全部设备等）：丢弃陈旧回调不挂载
+                    // 过期源；状态点按当前缓存源恢复（面板未被本次回调触碰，仍显示旧源）
+                    appendLog("远程连接已取消（刷新期间配置变更）");
+                    setConnState(m_remoteSource && m_remoteSource->isConnected()
+                                     ? RemoteConnState::Connected
+                                     : RemoteConnState::Unknown);
+                    return;
+                }
+                if (!ok) {
+                    appendLog("远程连接失败: " + err);
+                    setConnState(RemoteConnState::Failed);   // 连接失败 → 红
+                    // 切换设备/协议后旧源已失效：detach 防止面板残留旧设备目录
+                    // （部署目标 = 面板当前路径，残留目录会误导部署目标）；
+                    // 缓存一并清空 → 下次刷新走全量重建分支，不会出现
+                    // 「缓存匹配但面板无源」的死锁状态（I-1）
+                    detachRemotePanel();
+                    return;
+                }
+                setConnState(RemoteConnState::Connected);    // 连接成功 → 青绿
+                m_remoteSource = source;
+                m_remoteSrcDevice = deviceIp;
+                m_remoteSrcProto = proto;
+                m_remoteSrcPort = port;
+                m_remoteSrcUseFtps = useFtps;
+                m_rightPanel->setSource(source);   // setSource 内 navigateTo → 异步 list
+            }, Qt::QueuedConnection);
+        });
     } else if (!m_remoteSource->isConnected()) {
-        // 连接失效原位重连（保留当前面板路径，复用旧连接缓存语义）
-        if (!m_remoteSource->connect(dev, auth)) {
-            appendLog("远程重连失败: " + m_remoteSource->lastError());
-            setConnState(RemoteConnState::Failed);
-            m_remoteBusy = false;
-            // 与连接失败分支统一 detach：不再调面板 refresh()——
-            // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
-            // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
-            detachRemotePanel();
-            return;
-        }
-        setConnState(RemoteConnState::Connected);
+        // 连接失效原位重连（保留当前面板路径，复用旧连接缓存语义）：
+        // 与全量重建分支同构——工作线程 connect（复用既有源对象），主线程回调状态点
+        setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
+        auto source = m_remoteSource;   // shared_ptr 拷贝：worker 持有期间源不被析构
+        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+                           source, dev, auth]() {
+            const bool ok = source->connect(dev, auth);
+            const QString err = source->lastError();
+            if (!guard) return;   // widget 已析构 → 丢弃
+            QMetaObject::invokeMethod(this, [this, gen, ok, err]() {
+                m_remoteBusy = false;
+                if (gen != m_connGeneration) {
+                    // 连接期间配置已变更：丢弃陈旧回调（同全量重建分支）
+                    appendLog("远程重连已取消（刷新期间配置变更）");
+                    setConnState(m_remoteSource && m_remoteSource->isConnected()
+                                     ? RemoteConnState::Connected
+                                     : RemoteConnState::Unknown);
+                    return;
+                }
+                if (!ok) {
+                    appendLog("远程重连失败: " + err);
+                    setConnState(RemoteConnState::Failed);
+                    // 与连接失败分支统一 detach：不再调面板 refresh()——
+                    // 否则无源/失败状态下面板内 loadDirectory 的自动重连链会二次触发；
+                    // 面板置无源后仅提示「未连接远程，请选择设备并刷新」（M-2）
+                    detachRemotePanel();
+                    return;
+                }
+                setConnState(RemoteConnState::Connected);
+                m_rightPanel->refresh();   // 异步 list（保留当前路径，Task 1）
+            }, Qt::QueuedConnection);
+        });
+    } else {
+        // 已连接：仅刷新列表（异步 list，Task 1）
+        m_remoteBusy = false;
+        m_rightPanel->refresh();
     }
-
-    m_remoteBusy = false;
-    m_rightPanel->refresh();
 }
 
-// 连接状态点底色：固定用暗色版（灰 #7B8494 / 青绿 #40C8A0 / 红 #E85848）。
-// 说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
+// 连接状态点底色：固定用暗色版（灰 #7B8494 / 灰闪 #A8B0BF ↔ #7B8494 / 青绿 #40C8A0 /
+// 红 #E85848）。说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
 // 故不按主题切换色值；圆角 border-radius 由双 QSS 的 #connStatusDot 规则提供。
+// Connecting 态启动灰闪定时器（500ms 亮灰 ↔ 灰），其余状态停表并设静态底色。
 void FtpDeployWidget::setConnState(RemoteConnState state)
 {
     if (!m_connStatusDot) return;
+    if (state == RemoteConnState::Connecting) {
+        m_connFlashOn = true;
+        if (m_connFlashTimer) m_connFlashTimer->start();
+        m_connStatusDot->setStyleSheet(
+            QStringLiteral("background-color: #A8B0BF;"));   // 亮灰（闪的第一相）
+        return;
+    }
+    if (m_connFlashTimer) m_connFlashTimer->stop();
     const char* color = "#7B8494";
     if (state == RemoteConnState::Connected)      color = "#40C8A0";
     else if (state == RemoteConnState::Failed)    color = "#E85848";
@@ -431,6 +532,130 @@ void FtpDeployWidget::detachRemotePanel()
     }
 }
 
+// ============================================================
+// Task 3：面板源选择器联动
+// 语义分工：面板源=浏览配置；工具栏=批量部署目标（部署按钮仍按工具栏执行）。
+// 双向联动全部经 blockSignals 防循环：程序化设置不发射 sourceChooserChanged，
+// 仅用户操作面板下拉/工具栏下拉时单向驱动对侧显示，重建源走各自异步链路。
+// ============================================================
+
+void FtpDeployWidget::onLeftSourceChanged(const QString& proto, const QString& device)
+{
+    // 代际令牌（入口即 ++，含早退分支）：左面板源再切换作废在途连接的陈旧回调
+    // （与 onRefreshRemote 同模式；回调首行清 busy，不会死锁）
+    const quint64 gen = ++m_leftConnGeneration;
+
+    if (proto == QStringLiteral("local")) {
+        // 本地：直接挂本地源（浏览配置与部署收集一致）；缓存清空
+        m_leftRemoteSource.reset();
+        m_leftSrcDevice.clear();
+        m_leftSrcProto.clear();
+        m_leftSrcPort = 0;
+        m_leftPanel->setSource(std::make_shared<LocalFileSource>());
+        return;
+    }
+    if (!m_deviceBus || m_deviceBus->allDevices().empty()) {
+        appendLog("错误：设备总线中没有目标设备，无法浏览远程");
+        detachLeftPanel();
+        return;
+    }
+    if (m_leftRemoteBusy.load()) {
+        appendLog("正在连接中，请稍候...");
+        return;
+    }
+    m_leftRemoteBusy = true;
+
+    // 面板级设备（未选设备时回退首台）；端口取设备自身（无则按协议默认）——浏览配置
+    const QString deviceIp = device.isEmpty()
+        ? QString::fromStdString(m_deviceBus->allDevices().front().ip) : device;
+    const QString protoKey = proto == QStringLiteral("sftp")
+        ? QStringLiteral("ssh") : QStringLiteral("ftp");
+    const QString display = proto == QStringLiteral("sftp") ? "SFTP" : "FTP";
+    int port = 0;
+    for (const auto& d : m_deviceBus->allDevices()) {
+        if (QString::fromStdString(d.ip) == deviceIp) { port = d.port; break; }
+    }
+    if (port <= 0) port = (protoKey == QStringLiteral("ssh")) ? 22 : 21;
+
+    DeviceInfo dev;
+    dev.ip = deviceIp.toStdString();
+    dev.port = port;
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
+
+    // 连接异步（与 onRefreshRemote 同构：QtConcurrent + QPointer 守卫 + 代际令牌）。
+    // 左面板远程源仅影响浏览，不动工具栏部署目标
+    QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+                       protoKey, display, deviceIp, port, dev, auth]() {
+        auto source = std::make_shared<RemoteFileSource>(protoKey,
+                                                         deviceIp + " (" + display + ")");
+        const bool ok = source->connect(dev, auth);
+        const QString err = source->lastError();
+        if (!guard) return;   // widget 已析构 → 丢弃
+        QMetaObject::invokeMethod(this, [this, gen, source, ok, err, deviceIp, protoKey, port]() {
+            m_leftRemoteBusy = false;
+            if (gen != m_leftConnGeneration) {
+                // 连接期间左面板源再切换（如连回本地）：丢弃陈旧回调不挂载
+                appendLog("左侧浏览连接已取消（刷新期间配置变更）");
+                return;
+            }
+            if (!ok) {
+                appendLog("左侧远程浏览连接失败: " + err);
+                detachLeftPanel();   // 面板置无源 + 缓存清空（与右面板失败统一方案）
+                return;
+            }
+            m_leftRemoteSource = source;
+            m_leftSrcDevice = deviceIp;
+            m_leftSrcProto = protoKey;
+            m_leftSrcPort = port;
+            m_leftPanel->setSource(source);   // setSource 内 navigateTo → 异步 list
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FtpDeployWidget::onRightSourceChanged(const QString& proto, const QString& device)
+{
+    // 右面板=工具栏的浏览视图：源变化回写工具栏（blockSignals 防循环）+ 按新配置
+    // 重建远程源。本地选项映射回 FTP（右面板语义上恒为远程部署目标浏览）
+    m_protocolCombo->blockSignals(true);
+    m_protocolCombo->setCurrentIndex(proto == QStringLiteral("sftp") ? 1 : 0);
+    m_protocolCombo->blockSignals(false);
+    if (!device.isEmpty()) {
+        const int idx = m_deviceCombo->findText(device);
+        if (idx >= 0) {
+            m_deviceCombo->blockSignals(true);
+            m_deviceCombo->setCurrentIndex(idx);
+            m_deviceCombo->blockSignals(false);
+        }
+    }
+    onRefreshRemote();   // 按新配置重建远程源（Task 2 异步链路就绪）
+}
+
+// 左面板远程浏览源连接失败统一 detach：面板置无源 + 缓存清空（与右面板 I-1 同方案）
+void FtpDeployWidget::detachLeftPanel()
+{
+    m_leftRemoteSource.reset();
+    m_leftSrcDevice.clear();
+    m_leftSrcProto.clear();
+    m_leftSrcPort = 0;
+    if (m_leftPanel) {
+        m_leftPanel->setSource(nullptr);
+        m_leftPanel->refresh();   // 无源提示「未连接远程，请选择设备并刷新」
+    }
+}
+
+// 设备列表同步到两面板源选择器（blockSignals 防循环；面板级设备=浏览配置）
+void FtpDeployWidget::populatePanelDeviceCombos()
+{
+    if (!m_deviceBus || !m_leftPanel || !m_rightPanel) return;
+    QStringList ips;
+    for (const auto& d : m_deviceBus->allDevices())
+        ips << QString::fromStdString(d.ip);
+    m_leftPanel->setSourceDevices(ips);
+    m_rightPanel->setSourceDevices(ips);
+}
+
 void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
 {
     m_backend = backend;
@@ -449,6 +674,7 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
             m_deviceCombo->addItem(QString::fromStdString(d.ip));
         }
         m_deviceCombo->blockSignals(false);
+        populatePanelDeviceCombos();   // 面板源选择器设备列表同步（Task 3）
         updateDeployBtnText();
 
         // 设备总线变更（添加/删除/选中切换）时同步下拉框，并在 blockSignals(false)
@@ -469,6 +695,25 @@ void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
             const int idx = m_deviceCombo->findText(prev);
             if (idx >= 0) m_deviceCombo->setCurrentIndex(idx);
             m_deviceCombo->blockSignals(false);
+            populatePanelDeviceCombos();   // 面板源选择器设备列表同步（Task 3）
+            // 左面板远程浏览源的目标设备被删除：作废在途连接 + detach 清缓存
+            // （对齐右面板 onRefreshRemote 兜底语义；面板选择器列表已由
+            // populatePanelDeviceCombos 重填，失效源不再挂载）
+            if (m_leftRemoteSource && !m_leftSrcDevice.isEmpty()) {
+                bool stillExists = false;
+                for (const auto& d : m_deviceBus->allDevices()) {
+                    if (QString::fromStdString(d.ip) == m_leftSrcDevice) {
+                        stillExists = true;
+                        break;
+                    }
+                }
+                if (!stillExists) {
+                    ++m_leftConnGeneration;   // 防陈旧回调把已删设备源挂回面板
+                    appendLog(QStringLiteral("左侧浏览目标设备 %1 已删除，已断开左侧远程浏览")
+                                  .arg(m_leftSrcDevice));
+                    detachLeftPanel();
+                }
+            }
             updateDeployBtnText();
             // 设备添加/删除后自动连接刷新（无设备时 onRefreshRemote 内部提示并置灰状态点；
             // 被删除的设备不在列表中 → 落到首台，onRefreshRemote 按当前文本刷新）

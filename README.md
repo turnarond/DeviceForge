@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.6.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.7.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -106,7 +106,7 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.6.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.7.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建
@@ -173,6 +173,7 @@ DeviceForge/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| **2.7.0** | 2026-08-18 | UX 收尾（远程列表/连接异步化不冻结 UI + 面板源选择器 + 系统文件拖入上传恢复 + 顺带项：readdir 错误上报/sort 降序 SWO 修复/像素验证测试） |
 | **2.6.0** | 2026-08-07 | SFTP 批量部署（IDeployable 部署接口 + SshAdapter 递归 mkdir 上传/清空目录/取消 + 部署循环协议化 + UI 解锁 FTP/SFTP 一键切换部署） |
 | **2.5.0** | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除） |
 | 2.4.0 | 2026-07-26 | FTP 双栏重构 + 布局现代化（NavBar + 胶囊设备栏 + 可折叠日志）+ 日志统一 |

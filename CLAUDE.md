@@ -39,7 +39,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.6.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.7.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
 
 ### 测试（CTest）
 
@@ -93,9 +93,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.6.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.7.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -119,6 +119,13 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - 状态栏 TC 化（快捷键提示条 + 部署方向指示）；QSS 清理 FTP 面板死规则（#panelTitle/#crumbCurrent/#localPathEdit/#browseBtn）
 - 远程面板修复（2026-08-12）：设备添加/删除后自动连接刷新（deviceSelectionChanged → onRefreshRemote，修复 blockSignals 触发链断裂导致远程源永不创建）；工具栏「⟳ 刷新」按钮回归；连接状态点（灰/青绿/红，底色代码动态设置 + 双 QSS 圆角）；工具栏分组布局（连接组：协议/设备/端口/FTPS/状态点；部署组：清空/重启/刷新/部署，组间 QFrame VLine 分隔）；FileBrowserPanel 无源提示「未连接远程，请选择设备并刷新」
 - 测试：新增 tst_file_source（IFileSource 本地源 4 用例）；回归 11 目标全过（含 tst_remote_model 等既有目标）
+
+**v2.7 UX 收尾（2026-08，ux-finish）**：
+- **远程列表/连接异步化**：FileBrowserPanel::loadDirectory 用 QtConcurrent::run + 代际令牌（旧回调丢弃）+ QueuedConnection 主线程回调，慢速/断网目录读取不再冻结 UI，失败面包屑「加载失败」；RemoteFileSource 加 QMutex 串行化（修复异步化引入的多 worker 并发崩溃/UAF/数据竞争，reconnect 拆 connectLocked 防非递归死锁）；onRefreshRemote 三分支 QtConcurrent 化 + 状态点 **Connecting 灰闪态**（500ms）+ 连接代际令牌 m_connGeneration 防陈旧回调挂载 + worker 捕获列表 QPointer 守卫
+- **面板源选择器**：面板顶部源类型下拉（本地/FTP/SFTP）+ 面板级设备下拉；左面板可独立切远程浏览源（独立连接缓存 + 代际令牌 + busy 串行化，端口取设备自身）；右面板 ↔ 工具栏协议/设备双向联动（blockSignals 防循环）；左面板远程源时部署守卫拦截；「ssh」协议 id 归一化为 sftp
+- **系统文件拖入上传恢复**：资源管理器文件拖入远程面板逐文件上传（面包屑汇总「上传完成」/「N 项失败」）+ 异步 refresh；与面板间拖拽共存（dropEvent 三分支）；DragEnter/DragMove 放开 hasUrls；空 url 防护「未检测到可上传的文件」
+- **顺带项**：SshAdapter readdir 中途错误上报 lastError（自动重连盲区修复）；RemoteFileModel::sort 降序相等键短路（严格弱序 UB 修复）；面包屑双主题色值测试锁定
+- 测试：新增 tst_panel_async（异步加载竞态/重连/UAF 定向回归/源选择器）+ tst_qss_pixels（双主题像素验证）；回归 13 目标全过
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
@@ -160,11 +167,9 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **待完成**：
 - QPluginLoader DLL 加载
-- SCP 支持（实现 IDeployable + 复用 ssh 协议键，集成到 FTP 双栏远程面板中，v2.7 候选）
+- SCP 支持（实现 IDeployable + 复用 ssh 协议键，集成到 FTP 双栏远程面板中，v2.8 候选）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
-- SshAdapter `sftpListDirectory` readdir 中途错误不设 lastError（自动重连盲区，v2.6 终审裁定优先跟进，约 2 行）
-- `RemoteFileModel::sort` 降序分支严格弱序违规（相等键双向 true，UB；v2.6 终审裁定随上条一并修，约 2 行）
 - FtpDeployWidget 远程表头排序指示器刷新后失配（cosmetic，低优先）
 
 详细设计见 `docs/superpowers/specs/2026-07-04-tool-framework-design.md`。
@@ -212,14 +217,14 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 ### UI 组件（src/ui/）
 
 - **DeviceBusWidget**：顶部紧凑设备栏。胶囊形 QPushButton 水平流式布局，支持多选、添加、删除设备。石墨底 + 琴色选中态边框。工业仪表盘风格
-- **FileBrowserPanel**：通用双栏文件面板（FTP 双栏宿主组装；源可配置）。统一表格视图（RemoteFileModel/FtpFileInfo 渲染）+ 面板顶部路径栏（Enter 跳转）+ 底部面包屑（当前路径文本）；双击进入目录/`..` 退出；TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：拖入对面=复制，本地↔远程=上传/下载，远程↔远程提示暂不支持）
+- **FileBrowserPanel**：通用双栏文件面板（FTP 双栏宿主组装；源可配置）。统一表格视图（RemoteFileModel/FtpFileInfo 渲染）+ 面板顶部路径栏（Enter 跳转）+ 底部面包屑（当前路径文本）+ **面板源选择器行**（源类型下拉 本地/FTP/SFTP + 面板级设备下拉，远程源时显示；setSource 显示自动同步，blockSignals 防回环）；双击进入目录/`..` 退出；TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：拖入对面=复制，本地↔远程=上传/下载，远程↔远程提示暂不支持）；**系统文件拖入**（资源管理器文件拖入远程面板逐文件上传，空 url 防护）；**异步加载**（loadDirectory QtConcurrent + 代际令牌，慢速目录不冻结 UI，失败面包屑「加载失败」+ 重连重试一次）
 - **IFileSource**：文件源统一接口（list/mkdir/rename/remove(path,isDir)/clearDirectory/upload/download/connect/isConnected/lastError/进度回调/取消标志），与协议无关地操作文件系统。实现：**LocalFileSource**（本地 std::filesystem，纯逻辑可单测）与 **RemoteFileSource**（包装 FtpAdapter FTP/FTPS / SshAdapter SFTP）
 
 ### 已完成的 Tool（src/tools/）
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署）；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败，底色代码动态设置；部署组：清空/重启/「⟳ 刷新」/「▶ 部署到 N 台设备」，组间 QFrame VLine 分隔），设备总线添加/删除设备后自动连接刷新（deviceSelectionChanged → onRefreshRemote）
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署；左面板为远程浏览源时部署被守卫拦截）；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪，底色代码动态设置；部署组：清空/重启/「⟳ 刷新」/「▶ 部署到 N 台设备」，组间 QFrame VLine 分隔），设备总线添加/删除设备后自动连接刷新（deviceSelectionChanged → onRefreshRemote）；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration 防陈旧回调 + QPointer 守卫，断网超时不再冻结 UI）；面板源选择器与工具栏双向联动（blockSignals 防循环，右面板源变化回写协议/设备并自动重建）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
@@ -230,7 +235,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 | 功能 Tab | UI 类 | 业务逻辑 | 协议 | 架构状态 |
 |----------|-------|----------|------|----------|
-| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter/SshAdapter | FTP/FTPS (libcurl) / SFTP (libssh2) | ✅ 已迁移 + FTPS 加密 + SFTP 批量部署 + 双栏面板化（FileBrowserPanel/IFileSource，TC 交互） |
+| 文件部署 | FtpDeployWidget (Tool) | FtpDeployBackend → FtpAdapter/SshAdapter | FTP/FTPS (libcurl) / SFTP (libssh2) | ✅ 已迁移 + FTPS 加密 + SFTP 批量部署 + 双栏面板化（FileBrowserPanel/IFileSource，TC 交互）+ v2.7 UX 收尾（异步加载/源选择器/系统拖入） |
 | 批量命令 | TelnetWidget (Tool) | TelnetBackend → TelnetAdapter/SshAdapter | Telnet (lwcommunicate) / SSH (libssh2) | ✅ 已迁移 + SSH 支持 |
 | WebSocket | WebSocketWidget (Tool) | WebSocketBackend → QWebSocket | WebSocket (QWebSocket) | ✅ 已迁移 + 绑定/认证 |
 | 日志查询 | 已删除 | 所有 Tool 日志统一路由到全局日志面板（v2.4 日志统一） |  | 🗑 已移除 |
@@ -368,7 +373,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 11 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射、文件源抽象。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 13 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射、文件源抽象、面板异步加载（竞态/重连/源选择器/UAF 定向回归）、双主题像素验证。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
