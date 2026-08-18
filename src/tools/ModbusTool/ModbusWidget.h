@@ -31,6 +31,8 @@ private slots:
 private:
     void setupUi();
     void appendLog(const QString& msg);
+    void updateCountMax();
+    void syncDevicesToBackend();
 
     ModbusBackend* m_backend = nullptr;
 

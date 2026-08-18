@@ -36,11 +36,13 @@ WebSocketWidget::WebSocketWidget(QWidget* parent)
             m_radioServer->setChecked(true);
             m_spinPort->setValue(h.value(QStringLiteral("port")).toInt());
             m_chkWss->setChecked(h.value(QStringLiteral("ssl")).toBool());
+            m_editToken->setText(h.value(QStringLiteral("token")).toString());
         } else if (mode == QStringLiteral("client")) {
             m_radioClient->setChecked(true);
             const QString url = h.value(QStringLiteral("url")).toString();
             if (!url.isEmpty())
                 m_editUrl->setText(url);
+            m_chkTrustCert->setChecked(h.value(QStringLiteral("trustCert")).toBool());
         }
     }
 }
@@ -79,8 +81,17 @@ void WebSocketWidget::setupUi()
     serverLayout->addWidget(m_spinPort);
 
     m_chkWss = new QCheckBox("WSS（安全模式）", this);
-    m_chkWss->setToolTip("启用 WebSocket Secure，需配置 SSL 证书");
+    m_chkWss->setToolTip("启用 WebSocket Secure，自动生成自签名证书");
     serverLayout->addWidget(m_chkWss);
+
+    serverLayout->addSpacing(8);
+    serverLayout->addWidget(new QLabel("Token:", this));
+    m_editToken = new QLineEdit(this);
+    m_editToken->setPlaceholderText("可选：客户端连接须带 ?token=xxx");
+    m_editToken->setClearButtonEnabled(true);
+    m_editToken->setFixedWidth(170);
+    serverLayout->addWidget(m_editToken);
+
     serverLayout->addStretch();
     mainLayout->addWidget(m_groupServer);
 
@@ -93,6 +104,10 @@ void WebSocketWidget::setupUi()
     m_editUrl->setPlaceholderText("ws://localhost:12345  或  wss://host:port");
     m_editUrl->setText("ws://localhost:12345");
     clientLayout->addWidget(m_editUrl, 1);
+
+    m_chkTrustCert = new QCheckBox("信任自签名证书", this);
+    m_chkTrustCert->setToolTip("勾选后忽略 TLS 证书校验（用于连接本工具的 WSS 自签名服务端或测试环境）");
+    clientLayout->addWidget(m_chkTrustCert);
     mainLayout->addWidget(m_groupClient);
 
     // 初始状态：Server 模式
@@ -133,14 +148,17 @@ void WebSocketWidget::setupUi()
     pubLayout->addLayout(msgLayout);
 
     auto* pubBtnLayout = new QHBoxLayout();
-    m_btnSubscribe = new QPushButton("订阅", this);
-    m_btnPublish   = new QPushButton("发布", this);
+    m_btnSubscribe   = new QPushButton("订阅", this);
+    m_btnUnsubscribe = new QPushButton("退订", this);
+    m_btnPublish     = new QPushButton("发布", this);
 
-    connect(m_btnSubscribe, &QPushButton::clicked, this, &WebSocketWidget::onSubscribeClicked);
-    connect(m_btnPublish,   &QPushButton::clicked, this, &WebSocketWidget::onPublishClicked);
+    connect(m_btnSubscribe,   &QPushButton::clicked, this, &WebSocketWidget::onSubscribeClicked);
+    connect(m_btnUnsubscribe, &QPushButton::clicked, this, &WebSocketWidget::onUnsubscribeClicked);
+    connect(m_btnPublish,     &QPushButton::clicked, this, &WebSocketWidget::onPublishClicked);
 
     pubBtnLayout->addStretch();
     pubBtnLayout->addWidget(m_btnSubscribe);
+    pubBtnLayout->addWidget(m_btnUnsubscribe);
     pubBtnLayout->addWidget(m_btnPublish);
     pubLayout->addLayout(pubBtnLayout);
 
@@ -243,14 +261,17 @@ void WebSocketWidget::onStartClicked()
     if (m_radioServer->isChecked()) {
         int port = m_spinPort->value();
         bool ssl = m_chkWss->isChecked();
+        QString token = m_editToken->text().trimmed();
         QVariantMap v{
             {QStringLiteral("mode"), QStringLiteral("server")},
             {QStringLiteral("port"), port},
             {QStringLiteral("ssl"), ssl},
+            {QStringLiteral("token"), token},
             {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
         };
         ConfigStore::instance().save(QStringLiteral("websocket.endpoint"),
                                      QStringLiteral("server:%1").arg(port), v);
+        m_backend->setAuthToken(token.toStdString());
         m_backend->startServer(port, ssl);
         emit toolStatusChanged("Server 启动中...");
     } else {
@@ -266,9 +287,11 @@ void WebSocketWidget::onStartClicked()
         QVariantMap v{
             {QStringLiteral("mode"), QStringLiteral("client")},
             {QStringLiteral("url"), url},
+            {QStringLiteral("trustCert"), m_chkTrustCert->isChecked()},
             {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}
         };
         ConfigStore::instance().save(QStringLiteral("websocket.endpoint"), url, v);
+        m_backend->setIgnoreSslErrors(m_chkTrustCert->isChecked());
         m_backend->startClient(url.toStdString());
         emit toolStatusChanged("Client 连接中...");
     }
@@ -314,6 +337,24 @@ void WebSocketWidget::onSubscribeClicked()
     }
 
     m_backend->subscribe(topic.toStdString());
+}
+
+void WebSocketWidget::onUnsubscribeClicked()
+{
+    if (!m_backend) return;
+
+    QString topic = m_editTopic->text().trimmed();
+    if (topic.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请输入主题");
+        return;
+    }
+
+    if (!m_backend->isRunning()) {
+        QMessageBox::warning(this, "警告", "请先启动 WebSocket 服务");
+        return;
+    }
+
+    m_backend->unsubscribe(topic.toStdString());
 }
 
 void WebSocketWidget::onPublishClicked()

@@ -3,6 +3,8 @@
 #include <sstream>
 #include <chrono>
 #include <cstring>
+#include <algorithm>
+#include <cctype>
 
 // ============================================================
 // Pimpl 实现体 — 封装 lwcommunicate::LWTcpClient 操作细节
@@ -28,7 +30,47 @@ struct TelnetAdapter::Impl {
     static constexpr int kReadTimeoutMs = 200;
     static constexpr int kSendTimeoutMs = 5000;
     static constexpr int kConnectTimeoutMs = 10000;
-    static constexpr int kAuthDelayMs = 500;
+    static constexpr int kPasswordPromptTimeoutMs = 3000;  // 等待 "Password:" 提示
+    static constexpr int kAuthResultWindowMs = 1000;       // 发送密码后检测登录失败窗口
+
+    // 等待 "login:" 提示的超时（默认 3s，setLoginPromptTimeoutMs 可调，测试用短值）
+    int m_loginPromptTimeoutMs = 3000;
+    // 外部取消标志（TelnetBackend::m_cancelled 注入，setCancelFlag）
+    std::atomic<bool>* m_cancelFlag = nullptr;
+
+    // ASCII 小写（提示匹配用，避免 locale 依赖）
+    static std::string toLowerAscii(const std::string& s)
+    {
+        std::string out = s;
+        std::transform(out.begin(), out.end(), out.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return out;
+    }
+
+    // 阻塞等待提示出现（大小写不敏感）。出现返回 true；超时/断连/取消返回 false。
+    // received 收集期间收到的原始字节（供调用方做 "Login incorrect" 检测）
+    bool waitForPrompt(const std::string& prompt, int timeoutMs, std::string& received)
+    {
+        received.clear();
+        std::string lowerAcc;
+        const std::string lowerPrompt = toLowerAscii(prompt);
+        char buf[512];
+        int waited = 0;
+        while (waited < timeoutMs) {
+            if (m_cancelFlag && m_cancelFlag->load()) return false;
+            size_t n = 0;
+            LWConnError err = m_client->receive(buf, sizeof(buf), n, kReadTimeoutMs);
+            if (err == LWConnError::SUCCESS && n > 0) {
+                received.append(buf, n);
+                lowerAcc += toLowerAscii(std::string(buf, n));
+                if (lowerAcc.find(lowerPrompt) != std::string::npos) return true;
+            } else if (err != LWConnError::TIMEOUT && err != LWConnError::SUCCESS) {
+                return false;  // NOT_CONNECTED / RECEIVE_FAILED / CONNECTION_FAILED
+            }
+            waited += kReadTimeoutMs;
+        }
+        return false;
+    }
 
     // --- 连接事件回调 ---
     void onConnectionEvent(bool connected, const std::string& extra) {
@@ -121,33 +163,65 @@ bool TelnetAdapter::connect(const DeviceInfo& device, const AuthInfo& auth) {
         return false;
     }
 
-    // Telnet 认证：发送用户名 + 密码
-    // 等待服务端就绪（发送登录提示）
-    std::this_thread::sleep_for(std::chrono::milliseconds(Impl::kAuthDelayMs));
-
-    std::string loginCmd = auth.user + "\r\n";
-    LWConnError sendErr = m_impl->m_client->send(loginCmd.c_str(),
-                                                   loginCmd.size(), Impl::kSendTimeoutMs);
-    if (sendErr != LWConnError::SUCCESS) {
-        m_impl->m_lastError = "Telnet 发送用户名失败，连接已断开";
+    // 认证失败统一收尾：设置错误 + 断开连接
+    auto failAuth = [this](const std::string& msg) {
+        m_impl->m_lastError = msg;
         m_impl->m_client->stop();
         m_impl->m_client.reset();
+    };
+
+    // Telnet 认证：按服务端提示驱动（等待 "login:" → 用户名 → "Password:" → 密码）
+    // 无登录提示（如 SylixOS telnetd 无认证）→ 跳过认证直接可用（向后兼容）
+    std::string received;
+    const bool loginSeen = m_impl->waitForPrompt("login:", m_impl->m_loginPromptTimeoutMs,
+                                                 received);
+    if (m_impl->m_cancelFlag && m_impl->m_cancelFlag->load()) {
+        failAuth("Telnet 登录已取消");
         return false;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(Impl::kAuthDelayMs));
+    if (loginSeen) {
+        std::string loginCmd = auth.user + "\r\n";
+        LWConnError sendErr = m_impl->m_client->send(loginCmd.c_str(),
+                                                       loginCmd.size(), Impl::kSendTimeoutMs);
+        if (sendErr != LWConnError::SUCCESS) {
+            failAuth("Telnet 发送用户名失败，连接已断开");
+            return false;
+        }
 
-    std::string passCmd = auth.password + "\r\n";
-    sendErr = m_impl->m_client->send(passCmd.c_str(), passCmd.size(), Impl::kSendTimeoutMs);
-    if (sendErr != LWConnError::SUCCESS) {
-        m_impl->m_lastError = "Telnet 发送密码失败，连接已断开";
-        m_impl->m_client->stop();
-        m_impl->m_client.reset();
-        return false;
+        if (!m_impl->waitForPrompt("password:", Impl::kPasswordPromptTimeoutMs, received)) {
+            failAuth("Telnet 登录失败：未收到密码提示（服务端认证行为异常）");
+            return false;
+        }
+
+        std::string passCmd = auth.password + "\r\n";
+        sendErr = m_impl->m_client->send(passCmd.c_str(), passCmd.size(), Impl::kSendTimeoutMs);
+        if (sendErr != LWConnError::SUCCESS) {
+            failAuth("Telnet 发送密码失败，连接已断开");
+            return false;
+        }
+
+        // 检测认证结果："Login incorrect"/"incorrect" → 断开并失败
+        char authBuf[512];
+        std::string authOut;
+        int waited = 0;
+        while (waited < Impl::kAuthResultWindowMs) {
+            if (m_impl->m_cancelFlag && m_impl->m_cancelFlag->load()) break;
+            size_t n = 0;
+            LWConnError rerr = m_impl->m_client->receive(authBuf, sizeof(authBuf), n,
+                                                         Impl::kReadTimeoutMs);
+            if (rerr == LWConnError::SUCCESS && n > 0) authOut.append(authBuf, n);
+            waited += Impl::kReadTimeoutMs;
+        }
+        if (m_impl->m_cancelFlag && m_impl->m_cancelFlag->load()) {
+            failAuth("Telnet 登录已取消");
+            return false;
+        }
+        if (Impl::toLowerAscii(authOut).find("incorrect") != std::string::npos) {
+            failAuth("Telnet 登录失败：用户名或密码错误");
+            return false;
+        }
     }
-
-    // 再等待服务端处理认证
-    std::this_thread::sleep_for(std::chrono::milliseconds(Impl::kAuthDelayMs));
 
     // 启动后台读取线程
     m_impl->m_readThreadRunning = true;
@@ -224,10 +298,17 @@ std::future<Response> TelnetAdapter::request(const Request& req) {
         int waited = 0;
         int timeoutMs = req.timeoutMs > 0 ? req.timeoutMs : 5000;
         int pollInterval = 100; // 每 100ms 检查一次
+        bool cancelled = false;
 
         while (waited < timeoutMs) {
             std::this_thread::sleep_for(std::chrono::milliseconds(pollInterval));
             waited += pollInterval;
+
+            // 取消检查：可中断在途命令（不必等满超时）
+            if (m_impl->m_cancelFlag && m_impl->m_cancelFlag->load()) {
+                cancelled = true;
+                break;
+            }
 
             // 检查是否已收到数据
             {
@@ -244,8 +325,18 @@ std::future<Response> TelnetAdapter::request(const Request& req) {
 
         {
             std::lock_guard<std::mutex> lock(m_impl->m_responseMutex);
-            resp.success = true;
-            resp.data = m_impl->m_responseBuffer;
+            if (cancelled) {
+                // 用户取消：中断在途命令
+                resp.success = false;
+                resp.errorMessage = "已取消";
+            } else if (m_impl->m_responseBuffer.empty()) {
+                // 超时且零字节 → 失败（不再无条件假成功）
+                resp.success = false;
+                resp.errorMessage = "响应超时";
+            } else {
+                resp.success = true;
+                resp.data = m_impl->m_responseBuffer;
+            }
             m_impl->m_responseBuffer.clear();
         }
 
@@ -292,4 +383,12 @@ ProtocolCapability TelnetAdapter::capability() const {
     cap.publishSubscribe = false;
     cap.maxConnections = 50;
     return cap;
+}
+
+void TelnetAdapter::setLoginPromptTimeoutMs(int ms) {
+    if (ms > 0) m_impl->m_loginPromptTimeoutMs = ms;
+}
+
+void TelnetAdapter::setCancelFlag(std::atomic<bool>* flag) {
+    m_impl->m_cancelFlag = flag;
 }

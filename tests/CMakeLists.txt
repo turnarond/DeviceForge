@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql SerialBus)
 
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
@@ -212,5 +212,44 @@ target_link_libraries(tst_panel_async PRIVATE
 add_test(NAME tst_panel_async COMMAND tst_panel_async)
 if(_qt_bin_dir)
     set_tests_properties(tst_panel_async PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- Modbus 寄存器类型映射 + 数量上限纯逻辑测试（不连设备）---
+# 注：仅引用 ModbusBackend.h 内的 inline 纯函数，不编译 ModbusBackend.cpp；
+#     但头文件依赖 ToolBackend.h（lwserverbase）与 QModbusTcpClient（SerialBus），
+#     故链接 lwserverbase（静态库，无符号被引用则不会拉入对象）+ Qt6::SerialBus
+add_executable(tst_modbus_mapping modbus/tst_modbus_mapping.cpp)
+target_include_directories(tst_modbus_mapping PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_modbus_mapping PRIVATE
+    Qt6::Core Qt6::SerialBus Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_mapping COMMAND tst_modbus_mapping)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_mapping PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- Telnet 超时/免认证逻辑测试（本地 QTcpServer，不连外部设备）---
+# 注：编译 TelnetAdapter.cpp（Pimpl 实现），链接 lwcommunicate（LWTcpClient，
+#     INTERFACE 拉入 lwcomm/lwlog/lwevent）+ lwlog；TcpServer 握手由内核完成，
+#     无需事件循环，接受连接但不回包即可驱动"响应超时"路径
+add_executable(tst_telnet_timeout
+    telnet/tst_telnet_timeout.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/TelnetAdapter.cpp
+)
+target_include_directories(tst_telnet_timeout PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_telnet_timeout PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    lwcommunicate lwlog
+)
+add_test(NAME tst_telnet_timeout COMMAND tst_telnet_timeout)
+if(_qt_bin_dir)
+    set_tests_properties(tst_telnet_timeout PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()

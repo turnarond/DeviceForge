@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.7.0] — 2026-08-18
+## [2.7.0] — 2026-08-19
 
 ### UX 收尾（feature/ux-finish）
 
@@ -11,6 +11,38 @@
 - **系统文件拖入上传恢复**：资源管理器文件直接拖入**远程面板**逐文件上传（面包屑汇总「上传完成」/「上传完成，N 项失败」）+ 异步 refresh；与面板间拖拽共存（dropEvent 三分支：面板间复制 → 系统文件上传 → 本地面板提示「拖拽上传仅支持远程面板」）；DragEnter/DragMove 放开 `hasUrls()` 接受；空 url 防护（全部非 file:// 时提示「未检测到可上传的文件」）
 - **顺带项（v2.6 终审裁定 + 测试基建）**：SshAdapter `sftpListDirectory` readdir 中途错误上报 lastError（修复自动重连盲区，错误路径同样关闭句柄）；`RemoteFileModel::sort` 降序分支**相等键短路**（修复严格弱序违规 UB，QString::compare 顺带单次化）；面包屑双主题色值测试锁定（`#panelBreadcrumb`，暗 #7B8494 / 亮 #6B7480）
 - **测试**：新增 **tst_panel_async**（异步加载竞态/重连重试/源选择器行为/UAF 定向回归 30 循环门控）+ **tst_qss_pixels**（双主题像素验证：离屏渲染采样面板/导航栏/主按钮/进度条 4 控件精确色值 + QSS 块级字符串保底断言）；tst_remote_model 补降序相等键用例；回归 **13 目标全过**
+
+### 全量健康评审修复（21 项，2026-08-19）
+
+**ModbusTool（6 项）**
+- **寄存器类型映射修复（Critical）**：界面「保持寄存器/输入寄存器/离散输入」此前分别发送 0x02/0x01/0x04（读错 PLC 存储区，静默数据错误），现按 `registerTypeFromComboIndex()` 正确映射（Holding→0x03 / Input→0x04 / Coils→0x01 / Discrete→0x02）
+- **设备列表注入修复**：`ModbusBackend::bindDevices` 全仓无调用方，读取路径此前无目标设备（功能形同虚设）；Widget 读/写前从 ConfigStore `device.list`（与设备总线同源）同步设备
+- **异常码展示**：读失败时 Modbus 异常码（0x01-0x0B 中文名）+ errorString 红色行展示（原为静默空读「(42ms)」）
+- **写入对话框接通**：「写入」按钮接通：单点写寄存器 0x06 / 写线圈 0x05（非零→ON），设备下拉选择
+- 连接失败经 errorOccurred 上报日志 + stateChanged 一次性连接（原处理器无限累积 + 重连风暴）
+- 数量上限按类型：Holding/Input 125、Coils/Discrete 2000
+
+**Telnet/SSH 命令（5 项）**
+- **空超时假成功修复（Critical）**：命令无任何响应时不再报成功，`success=false`「响应超时」（原死设备显示绿色成功行）
+- **提示驱动登录**：等待 `login:`/`Password:` 提示（各 3s 超时），检测「incorrect」立即断开报「用户名或密码错误」；无认证服务器（如 SylixOS telnetd）跳过认证向后兼容
+- **取消可中断**：停止按钮 100ms 内中断在途命令（原 `future.get()` 阻塞至 300s 超时），报「已取消」
+- QSettings → ConfigStore（`telnet.prefs/securityWarning`）；状态色改 QLabel state 属性 + 双主题 QSS 规则
+
+**WebSocketTool（7 项）**
+- **WSS 服务端修复**：启动时自动生成 RSA 2048 自签名证书（原无证书导致 TLS 握手必然失败）
+- **Token 认证接线**：Server 设置区新增 Token 输入框 + ConfigStore 持久化（`websocket.endpoint` map `token` 键，明文）+ `setAuthToken` 接通（原为死代码）
+- SUBSCRIBE/PUBLISH/UNSUBSCRIBE 消息进入消息日志（原不可见）
+- 协议解析改**首冒号切分**（topic 可含 `:`，Client 侧 TOPIC 同款 bug 一并修复）
+- 新增 UNSUBSCRIBE wire 处理 + Widget「退订」按钮；stopClient 先断开再删除（对齐 stopServer 模式）；死代码 m_cancelled 移除
+
+**NetRelayTool（2 项）**
+- **TCP 写背压**：双端 64KB 读缓冲 + 写缓冲 1MB 高水位暂停转发 / 512KB 低水位滞回恢复（原慢消费者 Qt 缓冲无界积压；bytesWritten 恢复回调连接对创建时一次性挂接，关闭时连带清理）
+- 会话树更新 O(n) → O(1)（`QHash<int, QTreeWidgetItem*>` 索引，clear 同步）
+
+**SshAdapter（1 项）**
+- 静态 known-hosts QSet 加静态 QMutex（原 Telnet SSH 批量 + FTP 面板 SFTP 并发数据竞争）
+
+**测试**：新增 **tst_modbus_mapping**（4 映射 + 4 上限断言）+ **tst_telnet_timeout**（本地 QTcpServer 空响应，断言失败路径）；回归 **15 目标全过**
 
 
 

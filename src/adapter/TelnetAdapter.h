@@ -27,6 +27,12 @@ public:
     void unsubscribe() override;
     ProtocolCapability capability() const override;
 
+    // --- Telnet 特有配置 ---
+    // 登录提示超时（毫秒）：等待 "login:" 提示；超时视为无认证服务器（如 SylixOS telnetd），跳过认证直接可用
+    void setLoginPromptTimeoutMs(int ms);
+    // 取消标志注入：request() 等待循环 / connect() 登录流程中定期检查，置位则中断并报"已取消"
+    void setCancelFlag(std::atomic<bool>* flag);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

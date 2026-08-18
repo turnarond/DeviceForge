@@ -714,3 +714,14 @@ QFrame#toolbarSeparator {
     min-width: 1px;
     max-width: 1px;
 }
+
+/* Telnet 结果状态列（setItemWidget QLabel + state 属性选择器，随主题切换） */
+QTreeWidget QLabel[state="success"] {
+    color: #40C8A0;
+    font-weight: 600;
+}
+
+QTreeWidget QLabel[state="error"] {
+    color: #E85848;
+    font-weight: 600;
+}

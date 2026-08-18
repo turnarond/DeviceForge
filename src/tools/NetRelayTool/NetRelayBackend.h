@@ -115,6 +115,8 @@ private:
         int          sessionId = 0;
         QByteArray   pending;              // 上游未连接前缓冲的客户端数据
         bool         upstreamConnected = false;
+        bool         clientReadPaused = false;   // 背压：上游写缓冲超限时暂停转发客户端数据
+        bool         upstreamReadPaused = false; // 背压：客户端写缓冲超限时暂停转发上游数据
         RelaySession session;
     };
 
@@ -213,6 +215,9 @@ private:
 
     // 安全限制常量
     static constexpr qint64 kMaxPendingBytes = 1 * 1024 * 1024;      // TCP pending 缓冲上限 1MB
+    static constexpr qint64 kSocketReadBufferSize = 64 * 1024;       // 中继 socket 读缓冲上限 64KB（背压）
+    static constexpr qint64 kWriteHighWatermark = 1 * 1024 * 1024;   // 写缓冲高水位 1MB（暂停对端读取）
+    static constexpr qint64 kWriteLowWatermark = 512 * 1024;         // 写缓冲低水位 512KB（恢复读取，滞回防抖动）
     static constexpr qint64 kUdpSessionTimeoutMs = 300 * 1000;       // UDP 空闲超时 5 分钟
     static constexpr int     kUdpCleanupIntervalMs = 30 * 1000;      // UDP 清理周期 30 秒
 
