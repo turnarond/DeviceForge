@@ -186,6 +186,9 @@ bool RemoteFileSource::clearDirectory(const QString& path)
 bool RemoteFileSource::upload(const QString& localPath, const QString& remotePath)
 {
     QMutexLocker locker(&m_mutex);
+    // 注意：持锁期间适配器进度回调同线程执行——回调若重入本源的 isConnected/lastError
+    // 将死锁（非递归 QMutex）。当前无调用方设置 setProgressCallback（部署走 backend
+    // 直连适配器），此路径为预留；若未来启用需改为锁外回调或递归锁。
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string l = localPath.toStdString();
     const std::string r = remotePath.toStdString();
@@ -204,6 +207,9 @@ bool RemoteFileSource::upload(const QString& localPath, const QString& remotePat
 bool RemoteFileSource::download(const QString& remotePath, const QString& localPath)
 {
     QMutexLocker locker(&m_mutex);
+    // 注意：持锁期间适配器进度回调同线程执行——回调若重入本源的 isConnected/lastError
+    // 将死锁（非递归 QMutex）。当前无调用方设置 setProgressCallback（部署走 backend
+    // 直连适配器），此路径为预留；若未来启用需改为锁外回调或递归锁。
     if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
     const std::string r = remotePath.toStdString();
     const std::string l = localPath.toStdString();
