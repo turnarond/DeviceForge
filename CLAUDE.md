@@ -127,6 +127,14 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - **顺带项**：SshAdapter readdir 中途错误上报 lastError（自动重连盲区修复）；RemoteFileModel::sort 降序相等键短路（严格弱序 UB 修复）；面包屑双主题色值测试锁定
 - 测试：新增 tst_panel_async（异步加载竞态/重连/UAF 定向回归/源选择器）+ tst_qss_pixels（双主题像素验证）；回归 13 目标全过
 
+**v2.7.0 全量健康评审修复（2026-08-19，fix/v2.7-review，21 项）**：
+- **ModbusTool**：寄存器类型映射修复（Critical——Holding 此前发 0x02 读错存储区）、设备列表注入修复（bindDevices 全仓无调用方，读取路径实际无目标设备；Widget 读/写前从 ConfigStore device.list 同源同步）、异常码中文展示（0x01-0x0B + errorString 红色行）、写入对话框接通（0x06 寄存器 / 0x05 线圈，设备下拉）、连接失败 errorOccurred 上报 + stateChanged 一次性连接、上限按类型（Holding/Input 125、Coils/Discrete 2000）
+- **Telnet**：空超时假成功修复（Critical——无响应报「响应超时」）、提示驱动登录（login:/Password: 等待 + 「incorrect」立即断开；无认证服务器跳过认证向后兼容）、取消 100ms 内中断在途命令（原阻塞 300s）、QSettings → ConfigStore（telnet.prefs/securityWarning）、状态色双主题 QSS（QLabel state 属性）
+- **WebSocket**：WSS 服务端自签名证书（RSA 2048 自动生成）、Token 认证接线（Server 设置区输入框 + ConfigStore 明文）、pubsub 消息进日志、首冒号切分（Client TOPIC 同款修复）、UNSUBSCRIBE + 退订按钮、stopClient 先断开再删除
+- **NetRelay**：TCP 写背压（64KB 读缓冲 / 1MB 暂停 / 512KB 滞回恢复）、会话树 O(1) 索引
+- **Ssh**：静态 known-hosts QSet 加互斥锁（并发数据竞争）
+- 测试：新增 tst_modbus_mapping + tst_telnet_timeout；回归 15 目标全过
+
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
 - **cd() 只支持单级路径**：必须用 `CURLFTPMETHOD_MULTICWD` 逐级 CWD（`CWD apps` → `CWD xxx`），SINGLECWD 发送 `CWD a/b` 多级相对路径会失败
@@ -169,7 +177,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - QPluginLoader DLL 加载
 - SCP 支持（实现 IDeployable + 复用 ssh 协议键，集成到 FTP 双栏远程面板中，v2.8 候选）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
-- NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、post-connect 背压（setReadBufferSize + bytesToWrite 节流）、客户端来源 allowlist（暴露到不可信网段时必需）
+- NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、客户端来源 allowlist（暴露到不可信网段时必需）
 - FtpDeployWidget 远程表头排序指示器刷新后失配（cosmetic，低优先）
 
 详细设计见 `docs/superpowers/specs/2026-07-04-tool-framework-design.md`。
@@ -227,7 +235,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署；左面板为远程浏览源时部署被守卫拦截）；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪，底色代码动态设置；部署组：清空/重启/「⟳ 刷新」/「▶ 部署到 N 台设备」，组间 QFrame VLine 分隔），设备总线添加/删除设备后自动连接刷新（deviceSelectionChanged → onRefreshRemote）；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration 防陈旧回调 + QPointer 守卫，断网超时不再冻结 UI）；面板源选择器与工具栏双向联动（blockSignals 防循环，右面板源变化回写协议/设备并自动重建）
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
-- **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器，QTimer 自动刷新
+- **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器（读：0x01-0x04 按类型正确映射 + 异常码中文展示；写：0x06 寄存器 / 0x05 线圈对话框），QTimer 自动刷新
 - **NetRelayTool**（`src/tools/NetRelayTool/`）：NetRelayBackend（QTcpServer + QUdpSocket）+ NetRelayWidget，TCP/UDP/组播(Multicast) 透明中继代理，双向流量双向原样转发，Hex+ASCII 实时视图 + 导出；支持流量录制（`.nrec` 自定义二进制格式）+ 按原始时序回放上行到消费者（RelayRecorder/RelayRecording/RelayPlayer，RelayMode 中继/回放互斥状态机）；组播录制零影响加入组抄收(.nrec protocol=2 存组地址)+ 回灌原组
 - **OpcUaClientTool**（`src/tools/OpcUaClientTool/`）：OpcUaClientBackend（OpcUaAdapter → open62541）+ OpcUaClientWidget，支持批量读/写节点、DataChange 订阅（`UA_MULTITHREADING=100` 线程安全）、地址空间 5 列浏览（DisplayName/NodeId/Type/Value/Actions + × 删除按钮），endpoint 历史下拉（ConfigStore 持久化）
 
@@ -373,7 +381,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 13 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射、文件源抽象、面板异步加载（竞态/重连/源选择器/UAF 定向回归）、双主题像素验证。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 15 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels / tst_modbus_mapping / tst_telnet_timeout），覆盖 NetRelay 录制回放、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射、文件源抽象、面板异步加载（竞态/重连/源选择器/UAF 定向回归）、双主题像素验证、Modbus 寄存器映射与上限、Telnet 空超时失败断言。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36

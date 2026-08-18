@@ -18,6 +18,8 @@
 #include <chrono>
 #include <QHostAddress>
 #include <QSslConfiguration>
+#include <QSslKey>
+#include <QSslCertificate>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -77,9 +79,19 @@ void WebSocketBackend::startServer(int port, bool sslMode)
     m_server = new QWebSocketServer("DeviceForge WebSocket Server", qSslMode);
 
     if (sslMode) {
-        QSslConfiguration sslConfig;
-        m_server->setSslConfiguration(sslConfig);
-        if (m_logCb) m_logCb("[Server] WSS 模式：SSL 证书未配置，连接可能失败");
+        // 生成自签名证书（测试用途，客户端会提示证书不受信任）
+        QSslKey sslKey(QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey, QByteArray(), 2048);
+        QSslCertificate sslCert = QSslCertificate::generateSelfSignedCertificate(sslKey);
+        if (!sslKey.isNull() && !sslCert.isNull()) {
+            QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
+            sslConfig.setLocalCertificate(sslCert);
+            sslConfig.setPrivateKey(sslKey);
+            m_server->setSslConfiguration(sslConfig);
+            if (m_logCb) m_logCb("[Server] WSS 模式：已生成自签名证书（测试用，客户端需信任该证书）");
+        } else {
+            if (m_errorCb) m_errorCb("自签名证书生成失败，WSS 客户端连接将无法建立");
+            if (m_logCb) m_logCb("[Server] WSS 模式：自签名证书生成失败");
+        }
     }
 
     QHostAddress bindAddr(m_bindAddress);
@@ -189,17 +201,34 @@ void WebSocketBackend::onServerTextMessage(const QString& message, QWebSocket* c
             }
         }
         if (m_logCb) m_logCb("[Server] 客户端 " + addr + " 订阅主题 " + topic.toStdString());
-    } else if (message.startsWith("PUBLISH:")) {
-        QStringList parts = message.split(":");
-        if (parts.size() >= 3) {
-            QString topic = parts[1];
-            QString publishMsg = parts.mid(2).join(":");
-            serverPublishToSubscribers(topic, publishMsg);
-            if (m_logCb) {
-                m_logCb("[Server] 客户端 " + addr + " 发布到主题 "
-                        + topic.toStdString() + " (" + std::to_string(publishMsg.size()) + " 字节)");
+        // 协议消息同样路由到消息日志，保证发布/订阅流量在消息面板可见
+        if (m_messageCb) m_messageCb(addr + "> [订阅] " + topic.toStdString());
+    } else if (message.startsWith("UNSUBSCRIBE:")) {
+        QString topic = message.mid(12);
+        // 从订阅映射移除；退订后无订阅者的主题一并清理
+        {
+            QMutexLocker locker(&m_topicMutex);
+            if (m_topicSubscribers.contains(topic)) {
+                m_topicSubscribers[topic].removeAll(client);
+                if (m_topicSubscribers[topic].isEmpty()) {
+                    m_topicSubscribers.remove(topic);
+                }
             }
         }
+        if (m_logCb) m_logCb("[Server] 客户端 " + addr + " 退订主题 " + topic.toStdString());
+        if (m_messageCb) m_messageCb(addr + "> [退订] " + topic.toStdString());
+    } else if (message.startsWith("PUBLISH:")) {
+        // 仅按第一个 ':' 切分：topic = 首个 ':' 之前，payload = 其后所有内容（兼容 topic 含 ':'）
+        QString rest = message.mid(8);
+        int sep = rest.indexOf(':');
+        QString topic = (sep < 0) ? rest : rest.left(sep);
+        QString publishMsg = (sep < 0) ? QString() : rest.mid(sep + 1);
+        serverPublishToSubscribers(topic, publishMsg);
+        if (m_logCb) {
+            m_logCb("[Server] 客户端 " + addr + " 发布到主题 "
+                    + topic.toStdString() + " (" + std::to_string(publishMsg.size()) + " 字节)");
+        }
+        if (m_messageCb) m_messageCb(addr + "> [发布] " + topic.toStdString() + ": " + publishMsg.toStdString());
     } else {
         std::string fullMsg = message.toStdString();
         if (m_messageCb) m_messageCb(addr + "> " + fullMsg);
@@ -270,6 +299,7 @@ void WebSocketBackend::startClient(const std::string& url)
     if (qUrl.startsWith("wss://")) {
         QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
         m_client->setSslConfiguration(sslConfig);
+        if (m_ignoreSslErrors) m_client->ignoreSslErrors();  // 信任自签名证书（测试用）
         if (m_logCb) m_logCb("[Client] 正在以 WSS 模式连接到: " + url);
     } else {
         if (m_logCb) m_logCb("[Client] 正在以 WS 模式连接到: " + url);
@@ -282,8 +312,10 @@ void WebSocketBackend::stopClient()
 {
     if (!m_client) return;
 
+    // 先断开所有信号再关闭，避免 close() 触发的 disconnected 回调在对象删除后执行
+    QObject::disconnect(m_client, nullptr, nullptr, nullptr);
     m_client->close();
-    delete m_client;
+    m_client->deleteLater();
     m_client = nullptr;
     m_subscribedTopics.clear();
     m_isRunning = false;
@@ -300,14 +332,14 @@ void WebSocketBackend::onClientConnected()
 void WebSocketBackend::onClientTextMessage(const QString& message)
 {
     if (message.startsWith("TOPIC:")) {
-        QStringList parts = message.split(":");
-        if (parts.size() >= 3) {
-            QString topic = parts[1];
-            QString topicMsg = parts.mid(2).join(":");
-            std::string full = "[主题 " + topic.toStdString() + "] " + topicMsg.toStdString();
-            if (m_messageCb) m_messageCb(full);
-            if (m_logCb) m_logCb("[Client] 收到主题 " + topic.toStdString() + " 消息 (" + std::to_string(topicMsg.size()) + " 字节)");
-        }
+        // 仅按第一个 ':' 切分（主题可含 ':'）
+        QString rest = message.mid(6);
+        int sep = rest.indexOf(':');
+        QString topic = (sep < 0) ? rest : rest.left(sep);
+        QString topicMsg = (sep < 0) ? QString() : rest.mid(sep + 1);
+        std::string full = "[主题 " + topic.toStdString() + "] " + topicMsg.toStdString();
+        if (m_messageCb) m_messageCb(full);
+        if (m_logCb) m_logCb("[Client] 收到主题 " + topic.toStdString() + " 消息 (" + std::to_string(topicMsg.size()) + " 字节)");
     } else {
         std::string full = message.toStdString();
         if (m_messageCb) m_messageCb(full);
@@ -351,6 +383,26 @@ void WebSocketBackend::subscribe(const std::string& topic)
         m_client->sendTextMessage(subscribeMsg);
         m_subscribedTopics.append(qTopic);
         if (m_logCb) m_logCb("[Client] 订阅主题: " + topic);
+    } else {
+        if (m_errorCb) m_errorCb("客户端未连接");
+    }
+}
+
+void WebSocketBackend::unsubscribe(const std::string& topic)
+{
+    QString qTopic = QString::fromStdString(topic);
+    if (!m_isRunning) {
+        if (m_errorCb) m_errorCb("请先启动 WebSocket 服务");
+        return;
+    }
+    if (m_isServerMode) {
+        if (m_errorCb) m_errorCb("Server 模式不支持主动退订操作");
+        return;
+    }
+    if (m_client && m_client->state() == QAbstractSocket::ConnectedState) {
+        m_client->sendTextMessage("UNSUBSCRIBE:" + qTopic);
+        m_subscribedTopics.removeAll(qTopic);
+        if (m_logCb) m_logCb("[Client] 退订主题: " + topic);
     } else {
         if (m_errorCb) m_errorCb("客户端未连接");
     }

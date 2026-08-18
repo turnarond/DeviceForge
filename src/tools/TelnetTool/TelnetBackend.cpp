@@ -109,6 +109,12 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
                 continue;
             }
 
+            // 取消标志注入：Telnet 等待循环检查 m_cancelled，使"停止"可中断在途命令
+            // （m_cancelled 为后端成员，生命周期覆盖整个异步任务，见析构等待）
+            if (auto* telnet = dynamic_cast<TelnetAdapter*>(adapter.get())) {
+                telnet->setCancelFlag(&m_cancelled);
+            }
+
             // 构建设备信息
             // C2: 端口按协议区分。telnet 固定 23；ssh 保持 0，
             //     由 SshAdapter 回退到默认 22（原先硬编码 23 导致 SSH 连到 telnet 端口）

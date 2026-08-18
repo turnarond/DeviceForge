@@ -13,6 +13,7 @@
 
 // TOFU 已接受主机指纹集合 — 进程级静态存储，跨适配器实例共享
 QSet<QString> SshAdapter::s_knownHosts;
+QMutex        SshAdapter::s_knownHostsMutex;
 
 // ============================================================
 // 构造 / 析构
@@ -255,6 +256,9 @@ bool SshAdapter::verifyHostKey()
     }
 
     QString qfp = QString::fromStdString(fp);
+
+    // I7: 指纹校验整体持锁——批量 SSH + SFTP 并发时 s_knownHosts 为跨线程共享
+    QMutexLocker locker(&s_knownHostsMutex);
 
     // I7: 指纹已在进程级 TOFU 集合中 → 与历史一致，通过
     if (s_knownHosts.contains(qfp)) {

@@ -57,6 +57,7 @@ bool RelayPlayer::start(const QString& nrecPath, const QString& consumerHost,
 
     if (m_protocol == RelayProtocol::Tcp) {
         m_tcp = new QTcpSocket();
+        m_tcp->setReadBufferSize(64 * 1024);   // 回放为人为节拍（不持续灌数据），仅设读缓冲上限即可
         QObject::connect(m_tcp, &QTcpSocket::connected, [this]() {
             m_connected = true;
             log("回放: 已连接消费者，开始重放");

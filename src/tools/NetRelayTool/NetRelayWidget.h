@@ -26,6 +26,7 @@
 #include <QTreeWidget>
 #include <QProgressBar>
 #include <QByteArray>
+#include <QHash>
 #include <QNetworkInterface>
 
 class NetRelayBackend;
@@ -100,6 +101,8 @@ private:
 
     // 会话列表
     QTreeWidget*     m_sessionTree = nullptr;
+    // 会话 id → 树项索引（高流量下避免每包线性扫描整棵会话树）
+    QHash<int, QTreeWidgetItem*> m_sessionItems;
 
     // Hex 视图
     QPlainTextEdit*  m_hexView = nullptr;

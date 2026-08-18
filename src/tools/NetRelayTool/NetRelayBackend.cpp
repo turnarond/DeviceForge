@@ -522,6 +522,29 @@ void NetRelayBackend::onTcpNewConnection()
                              }
                          });
 
+        // --- 背压控制：限制读缓冲（OS 层自然限速对端），写缓冲超限时暂停转发，bytesWritten 排空后恢复 ---
+        client->setReadBufferSize(kSocketReadBufferSize);
+        upstream->setReadBufferSize(kSocketReadBufferSize);
+
+        // 上游写缓冲低于低水位时恢复读取客户端数据（并排空暂停期间积压的数据）
+        QObject::connect(upstream, &QTcpSocket::bytesWritten, [this, pair]() {
+            if (pair->clientReadPaused && pair->upstream
+                && pair->upstream->bytesToWrite() < kWriteLowWatermark) {
+                pair->clientReadPaused = false;
+                log("[TCP] 会话#" + std::to_string(pair->sessionId) + " 写缓冲排空，恢复读取客户端数据");
+                onTcpClientReadyRead(pair->client);
+            }
+        });
+        // 客户端写缓冲低于低水位时恢复读取上游数据
+        QObject::connect(client, &QTcpSocket::bytesWritten, [this, pair]() {
+            if (pair->upstreamReadPaused && pair->client
+                && pair->client->bytesToWrite() < kWriteLowWatermark) {
+                pair->upstreamReadPaused = false;
+                log("[TCP] 会话#" + std::to_string(pair->sessionId) + " 写缓冲排空，恢复读取上游数据");
+                onTcpUpstreamReadyRead(pair->upstream);
+            }
+        });
+
         upstream->connectToHost(m_upstreamHost, m_upstreamPort);
 
         if (m_sessionCb) m_sessionCb(pair->session);
@@ -534,7 +557,8 @@ void NetRelayBackend::onTcpClientReadyRead(QTcpSocket* client)
 {
     if (m_cancelled) return;
     TcpPair* pair = m_pairByClient.value(client, nullptr);
-    if (!pair) return;
+    // 背压暂停中：数据积压在 64KB 读缓冲（受限），等 bytesWritten 排空后恢复并排空
+    if (!pair || pair->clientReadPaused) return;
 
     QByteArray data = client->readAll();
     if (data.isEmpty()) return;
@@ -545,6 +569,12 @@ void NetRelayBackend::onTcpClientReadyRead(QTcpSocket* client)
 
     if (pair->upstreamConnected && pair->upstream) {
         pair->upstream->write(data);
+        // 写缓冲超限 → 暂停继续转发，防止 Qt 内部写缓冲无界增长
+        if (!pair->clientReadPaused && pair->upstream->bytesToWrite() >= kWriteHighWatermark) {
+            pair->clientReadPaused = true;
+            log("[TCP] 会话#" + std::to_string(pair->sessionId)
+                + " 上游写缓冲达上限，暂停读取客户端数据");
+        }
     } else if (pair->pending.size() < kMaxPendingBytes) {
         pair->pending.append(data);
     } else {
@@ -564,7 +594,8 @@ void NetRelayBackend::onTcpUpstreamReadyRead(QTcpSocket* upstream)
 {
     if (m_cancelled) return;
     TcpPair* pair = m_pairByUpstream.value(upstream, nullptr);
-    if (!pair) return;
+    // 背压暂停中：数据积压在 64KB 读缓冲（受限），等 bytesWritten 排空后恢复并排空
+    if (!pair || pair->upstreamReadPaused) return;
 
     QByteArray data = upstream->readAll();
     if (data.isEmpty()) return;
@@ -575,6 +606,12 @@ void NetRelayBackend::onTcpUpstreamReadyRead(QTcpSocket* upstream)
 
     if (pair->client) {
         pair->client->write(data);
+        // 写缓冲超限 → 暂停继续转发，防止 Qt 内部写缓冲无界增长
+        if (!pair->upstreamReadPaused && pair->client->bytesToWrite() >= kWriteHighWatermark) {
+            pair->upstreamReadPaused = true;
+            log("[TCP] 会话#" + std::to_string(pair->sessionId)
+                + " 客户端写缓冲达上限，暂停读取上游数据");
+        }
     }
     if (m_sessionCb) m_sessionCb(pair->session);
 }

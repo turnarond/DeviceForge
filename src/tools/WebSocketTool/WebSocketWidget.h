@@ -45,6 +45,7 @@ private slots:
     void onServerToggled(bool checked);
     void onClientToggled(bool checked);
     void onSubscribeClicked();
+    void onUnsubscribeClicked();
     void onPublishClicked();
 
 private:
@@ -60,11 +61,14 @@ private:
     QGroupBox*       m_groupClient    = nullptr;
     QSpinBox*        m_spinPort       = nullptr;
     QCheckBox*       m_chkWss         = nullptr;
+    QLineEdit*       m_editToken      = nullptr;
     QLineEdit*       m_editUrl        = nullptr;
+    QCheckBox*       m_chkTrustCert   = nullptr;
     QPushButton*     m_btnStart       = nullptr;
     QPushButton*     m_btnStop        = nullptr;
     QLineEdit*       m_editTopic      = nullptr;
     QLineEdit*       m_editMessage    = nullptr;
     QPushButton*     m_btnSubscribe   = nullptr;
+    QPushButton*     m_btnUnsubscribe = nullptr;
     QPushButton*     m_btnPublish     = nullptr;
 };

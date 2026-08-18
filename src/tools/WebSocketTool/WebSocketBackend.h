@@ -23,7 +23,6 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include <atomic>
 
 class WebSocketBackend : public ToolBackend {
 public:
@@ -54,8 +53,9 @@ public:
     void startClient(const std::string& url);
     void stopClient();
 
-    // 发布/订阅（Client 模式发送订阅/发布协议消息）
+    // 发布/订阅（Client 模式发送订阅/退订/发布协议消息）
     void subscribe(const std::string& topic);
+    void unsubscribe(const std::string& topic);
     void publish(const std::string& topic, const std::string& message);
 
     // 状态查询
@@ -64,6 +64,7 @@ public:
 
     void setBindAddress(const QString& addr) { m_bindAddress = addr; }
     void setAuthToken(const std::string& tok) { m_authToken = tok; }
+    void setIgnoreSslErrors(bool ignore) { m_ignoreSslErrors = ignore; }  // Client 模式信任自签名证书（测试用）
 
     // 回调设置（由 Widget 调用，跨线程安全）
     using LogCallback = std::function<void(const std::string&)>;
@@ -114,10 +115,10 @@ private:
     // --- 状态 ---
     bool m_isRunning = false;          // 仅主线程访问
     bool m_isServerMode = true;        // 仅主线程访问
-    std::atomic<bool> m_cancelled{false}; // svc() 线程读取，主线程写入
 
     QString m_bindAddress = "127.0.0.1";
     std::string m_authToken;
+    bool m_ignoreSslErrors = false;   // Client 忽略 TLS 证书校验（信任自签名证书）
 
     std::vector<DeviceInfo> m_devices;
     AuthInfo m_auth;

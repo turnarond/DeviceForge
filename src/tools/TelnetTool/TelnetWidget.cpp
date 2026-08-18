@@ -28,7 +28,6 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QClipboard>
-#include <QSettings>
 #include <QCheckBox>
 
 TelnetWidget::TelnetWidget(QWidget* parent)
@@ -170,35 +169,31 @@ void TelnetWidget::setBackend(TelnetBackend* backend)
                     .left(100).replace('\n', ' ').replace('\r', "");
 
                 // 更新已有行
-                bool found = false;
+                QTreeWidgetItem* item = nullptr;
                 for (int i = 0; i < m_resultTree->topLevelItemCount(); ++i) {
-                    auto* item = m_resultTree->topLevelItem(i);
-                    if (item->text(0) == qIp) {
-                        item->setText(1, status);
-                        item->setText(2, QString::number(elapsedMs));
-                        item->setText(3, outputPreview);
-                        item->setData(0, Qt::UserRole, QString::fromStdString(output));
-                        item->setData(1, Qt::UserRole, success);
-                        // 设置行颜色
-                        QColor color = success ? QColor("#4caf50") : QColor("#f44336");
-                        item->setForeground(1, color);
-                        found = true;
-                        break;
-                    }
+                    auto* it = m_resultTree->topLevelItem(i);
+                    if (it->text(0) == qIp) { item = it; break; }
                 }
-
-                if (!found) {
-                    auto* item = new QTreeWidgetItem(m_resultTree);
+                if (!item) {
+                    item = new QTreeWidgetItem(m_resultTree);
                     item->setText(0, qIp);
-                    item->setText(1, status);
-                    item->setText(2, QString::number(elapsedMs));
-                    item->setText(3, outputPreview);
-                    item->setData(0, Qt::UserRole, QString::fromStdString(output));
-                    item->setData(1, Qt::UserRole, success);
-                    QColor color = success ? QColor("#4caf50") : QColor("#f44336");
-                    item->setForeground(1, color);
                     m_resultTree->addTopLevelItem(item);
                 }
+                item->setText(1, status);  // 保留文本（导出用），显示以状态 Label 为准
+                item->setText(2, QString::number(elapsedMs));
+                item->setText(3, outputPreview);
+                item->setData(0, Qt::UserRole, QString::fromStdString(output));
+                item->setData(1, Qt::UserRole, success);
+
+                // 状态列：QLabel + QSS 属性选择器驱动（双主题各自定义色值，见两套 QSS）
+                // QTreeWidgetItem 非 QWidget，无法直接 QSS 上色，故用 setItemWidget
+                if (auto* oldW = m_resultTree->itemWidget(item, 1)) oldW->deleteLater();
+                auto* statusLabel = new QLabel(status, m_resultTree);
+                statusLabel->setProperty("state", success ? "success" : "error");
+                statusLabel->setAttribute(Qt::WA_TransparentForMouseEvents);  // 不挡行点击/双击
+                statusLabel->style()->unpolish(statusLabel);
+                statusLabel->style()->polish(statusLabel);
+                m_resultTree->setItemWidget(item, 1, statusLabel);
             }, Qt::QueuedConnection);
         });
 
@@ -262,11 +257,13 @@ void TelnetWidget::onExecuteClicked()
         return;
     }
 
-    // Telnet 明文凭证警告（首次弹出，可勾选不再提示）
+    // Telnet 明文凭证警告（首次弹出，可勾选不再提示；持久化走 ConfigStore）
     // M10: 仅在选中 Telnet 协议时提示；SSH 加密传输无此风险
     if (m_protoCombo->currentText() == "Telnet") {
-        QSettings settings("turnarond", "DeviceForge");
-        if (!settings.value("Telnet/SecurityWarningDontShowAgain", false).toBool()) {
+        const bool dontShow = ConfigStore::instance()
+            .load(QStringLiteral("telnet.prefs"), QStringLiteral("securityWarning"))
+            .value(QStringLiteral("dontShowAgain"), false).toBool();
+        if (!dontShow) {
             QMessageBox warnBox(this);
             warnBox.setWindowTitle("安全警告");
             warnBox.setIcon(QMessageBox::Warning);
@@ -277,7 +274,12 @@ void TelnetWidget::onExecuteClicked()
             warnBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
             warnBox.setDefaultButton(QMessageBox::No);
             if (warnBox.exec() != QMessageBox::Yes) return;
-            if (cb->isChecked()) settings.setValue("Telnet/SecurityWarningDontShowAgain", true);
+            if (cb->isChecked()) {
+                QVariantMap v{{QStringLiteral("dontShowAgain"), true},
+                              {QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch()}};
+                ConfigStore::instance().save(QStringLiteral("telnet.prefs"),
+                                             QStringLiteral("securityWarning"), v);
+            }
         }
     }
 

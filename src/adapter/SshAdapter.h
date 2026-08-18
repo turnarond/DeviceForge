@@ -7,6 +7,7 @@
 #include "tools/FtpDeployTool/FtpFileInfo.h"  // 复用 FtpFileInfo
 #include <functional>
 #include <QSet>
+#include <QMutex>
 #include <QFuture>
 #include <atomic>
 
@@ -67,6 +68,7 @@ private:
     std::string         m_lastError;
     std::atomic<bool>   m_cancelled{false};
     static QSet<QString> s_knownHosts;        // TOFU: 已接受的主机指纹集合（进程级共享）
+    static QMutex        s_knownHostsMutex;   // 保护 s_knownHosts（SSH 批量 + SFTP 并发访问）
     QFuture<void>       m_subscribeFuture;
     std::atomic<bool>   m_subscribeActive{false};
 

@@ -351,6 +351,7 @@ void NetRelayWidget::onStartClicked()
     }
 
     m_sessionTree->clear();
+    m_sessionItems.clear();
 
     if (m_chkRecord->isChecked()) {
         QString rp = m_editRecPath->text().trimmed();
@@ -442,6 +443,7 @@ void NetRelayWidget::onClearClicked()
     m_hexView->clear();
     m_exportBuffer.clear();
     m_sessionTree->clear();
+    m_sessionItems.clear();
     appendLog("数据已清空");
 }
 
@@ -603,21 +605,15 @@ QString NetRelayWidget::formatHexDump(const QByteArray& data)
 
 void NetRelayWidget::updateSession(const RelaySession& session)
 {
-    // 查找已有项（按 session id）
-    QTreeWidgetItem* item = nullptr;
+    // 通过索引 O(1) 定位会话项（高流量下避免每包线性扫描整棵会话树）
+    QTreeWidgetItem* item = m_sessionItems.value(session.id, nullptr);
     bool isNew = false;
-    for (int i = 0; i < m_sessionTree->topLevelItemCount(); ++i) {
-        QTreeWidgetItem* candidate = m_sessionTree->topLevelItem(i);
-        if (candidate->data(0, Qt::UserRole).toInt() == session.id) {
-            item = candidate;
-            break;
-        }
-    }
 
     if (!item) {
         item = new QTreeWidgetItem();
         item->setData(0, Qt::UserRole, session.id);
         m_sessionTree->insertTopLevelItem(0, item);
+        m_sessionItems.insert(session.id, item);
         isNew = true;
     }
 
