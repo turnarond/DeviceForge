@@ -303,7 +303,8 @@ std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remote
 
     char filename[512];
     LIBSSH2_SFTP_ATTRIBUTES attrs;
-    while (libssh2_sftp_readdir(dir, filename, sizeof(filename), &attrs) > 0) {
+    int rc = 0;
+    while ((rc = libssh2_sftp_readdir(dir, filename, sizeof(filename), &attrs)) > 0) {
         std::string name(filename);
         // . 和 .. 保留，由 RemoteFileModel 处理导航
 
@@ -326,6 +327,10 @@ std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remote
         }
 
         result.push_back(fi);
+    }
+    // readdir 中途错误（< 0）不静默退出：上报 lastError（自动重连盲区修复）
+    if (rc < 0) {
+        m_lastError = "SFTP 列目录中途失败: " + remotePath;
     }
     libssh2_sftp_closedir(dir);
     return result;
