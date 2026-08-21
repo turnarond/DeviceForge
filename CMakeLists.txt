@@ -60,8 +60,31 @@ find_package(Qt6 REQUIRED COMPONENTS
     WebSockets
     Concurrent
     Sql
+    Test
 )
 qt_standard_project_setup(REQUIRES 6.8)
+
+# ============================================================
+# Qt 库 CRT 一致性（关键，勿回退）
+# 本项目全局强制 /MD + _ITERATOR_DEBUG_LEVEL=0（对齐预编译 lw 库，见上），
+# 而 Qt 的 Debug 库（Qt6Cored.dll）为 /MDd + IDL=2 构建——Debug 配置下
+# exe 链接 debug Qt 会导致跨 DLL 边界的 std 类型（QString::toStdWString
+# 等）ABI 错位 → 启动崩溃（LocalFileSource 曾崩在 std::wstring 析构）。
+# 方案：Debug 配置也映射到 Release Qt 库（Qt6.dll，/MD 构建），使
+# exe / lw 库 / Qt 三者 CRT 全一致。代价：Debug 下不能单步 Qt 库内部。
+# ============================================================
+set(_QT_MAP_TARGETS
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network
+    Qt6::SerialBus Qt6::WebSockets Qt6::Concurrent Qt6::Sql Qt6::Test
+)
+foreach(_qt_tgt IN LISTS _QT_MAP_TARGETS)
+    if(TARGET ${_qt_tgt})
+        set_target_properties(${_qt_tgt} PROPERTIES
+            MAP_IMPORTED_CONFIG_DEBUG RELEASE
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE)
+    endif()
+endforeach()
+unset(_QT_MAP_TARGETS)
 
 # ============================================================
 # libcurl（FTP 文件传输）
