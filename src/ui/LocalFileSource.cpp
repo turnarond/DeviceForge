@@ -1,4 +1,4 @@
-#include "ui/LocalFileSource.h"
+﻿#include "ui/LocalFileSource.h"
 #include <QDateTime>
 #include <filesystem>
 #include <system_error>
@@ -6,6 +6,16 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+// QString → std::filesystem::path 的安全转换：
+// 禁止 QString::toStdWString() 直接构造——其返回的 std::wstring 在 Qt DLL 内分配，
+// Debug 配置下 Qt DLL（/MDd+IDL=2）与 exe（/MD+IDL=0）CRT 不匹配，跨边界析构会崩溃
+// （启动崩溃栈：std::wstring::_Deallocate in LocalFileSource::list）。
+// 用 QByteArray（Qt 类型，跨 DLL 安全）+ const char* 在 exe 内构造 path。
+inline fs::path toFsPath(const QString& p)
+{
+    return fs::path(p.toLocal8Bit().constData());   // Windows ANSI（GBK）编码，fs::path(char*) 同按 ANSI 解释
+}
 
 // 文件时间戳 → ISO 8601 "yyyy-MM-dd HH:mm:ss"（C++17 兼容转换：file_clock → system_clock）
 QString formatFileTime(const fs::file_time_type& ft)
@@ -39,7 +49,7 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
     std::vector<FtpFileInfo> result;
 
     std::error_code ec;
-    fs::directory_iterator it(fs::path(path.toStdWString()), ec);
+    fs::directory_iterator it(toFsPath(path), ec);
     if (ec) {
         m_lastError = QStringLiteral("列目录失败: %1").arg(QString::fromStdString(ec.message()));
         return result;
@@ -85,7 +95,7 @@ bool LocalFileSource::mkdir(const QString& path)
     // error_code 重载不抛异常（跨 bool 接口安全）；目录已存在时返回 false 但
     // ec 为空——视为幂等成功（与远程 MKD 已存在语义对齐），故仅按 ec 判断
     std::error_code ec;
-    std::filesystem::create_directories(path.toStdWString(), ec);
+    std::filesystem::create_directories(toFsPath(path), ec);
     if (ec) {
         m_lastError = QString::fromLocal8Bit(ec.message().c_str());
         return false;
@@ -97,7 +107,7 @@ bool LocalFileSource::mkdir(const QString& path)
 bool LocalFileSource::rename(const QString& oldPath, const QString& newPath)
 {
     std::error_code ec;
-    fs::rename(oldPath.toStdWString(), newPath.toStdWString(), ec);
+    fs::rename(toFsPath(oldPath), toFsPath(newPath), ec);
     if (ec) {
         m_lastError = QStringLiteral("重命名失败: %1").arg(QString::fromStdString(ec.message()));
         return false;
@@ -110,9 +120,9 @@ bool LocalFileSource::remove(const QString& path, bool isDir)
 {
     std::error_code ec;
     if (isDir)
-        fs::remove_all(path.toStdWString(), ec);   // 目录：递归删除
+        fs::remove_all(toFsPath(path), ec);   // 目录：递归删除
     else
-        fs::remove(path.toStdWString(), ec);       // 文件
+        fs::remove(toFsPath(path), ec);       // 文件
     if (ec) {
         m_lastError = QStringLiteral("删除失败: %1").arg(QString::fromStdString(ec.message()));
         return false;
@@ -124,7 +134,7 @@ bool LocalFileSource::remove(const QString& path, bool isDir)
 bool LocalFileSource::clearDirectory(const QString& path)
 {
     std::error_code ec;
-    fs::directory_iterator it(fs::path(path.toStdWString()), ec);
+    fs::directory_iterator it(toFsPath(path), ec);
     if (ec) {
         m_lastError = QStringLiteral("清空目录失败: %1").arg(QString::fromStdString(ec.message()));
         return false;
@@ -155,7 +165,7 @@ bool LocalFileSource::clearDirectory(const QString& path)
 bool LocalFileSource::upload(const QString& localPath, const QString& remotePath)
 {
     std::error_code ec;
-    fs::copy_file(localPath.toStdWString(), remotePath.toStdWString(),
+    fs::copy_file(toFsPath(localPath), toFsPath(remotePath),
                   fs::copy_options::overwrite_existing, ec);
     if (ec) {
         m_lastError = QStringLiteral("复制失败: %1").arg(QString::fromStdString(ec.message()));
