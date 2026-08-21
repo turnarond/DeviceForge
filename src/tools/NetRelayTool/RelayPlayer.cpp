@@ -70,15 +70,27 @@ bool RelayPlayer::start(const QString& nrecPath, const QString& consumerHost,
         m_tcp->connectToHost(m_consumerAddr, m_consumerPort);
     } else if (m_protocol == RelayProtocol::Multicast) {
         m_udp = new QUdpSocket();
+        QNetworkInterface itf;
         if (!m_mcastIfaceAddr.isEmpty()) {
-            for (const QNetworkInterface& itf : QNetworkInterface::allInterfaces()) {
-                for (const QNetworkAddressEntry& e : itf.addressEntries()) {
-                    if (e.ip().toString() == m_mcastIfaceAddr) {
-                        m_udp->setMulticastInterface(itf); break;
-                    }
+            for (const QNetworkInterface& i : QNetworkInterface::allInterfaces()) {
+                for (const QNetworkAddressEntry& e : i.addressEntries()) {
+                    if (e.ip().toString() == m_mcastIfaceAddr) { itf = i; break; }
                 }
+                if (itf.isValid()) break;
             }
         }
+        // Windows 上发送组播必须先 bind（BoundState）再 join 目标组（IP_ADD_MEMBERSHIP），
+        // 否则 join 失败、发送被内核丢弃（与抓收转发 setupForward 同理）
+        m_udp->bind(QHostAddress::AnyIPv4, 0,
+                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);   // 任意源端口
+        const bool joined = itf.isValid()
+            ? m_udp->joinMulticastGroup(m_consumerAddr, itf)
+            : m_udp->joinMulticastGroup(m_consumerAddr);
+        if (!joined) {
+            fail("加入回放目标组失败: " + m_udp->errorString().toStdString());
+            return false;
+        }
+        if (itf.isValid()) m_udp->setMulticastInterface(itf);
         m_connected = true;            // 组播无连接，直接开调度
         log("回放: 组播回灌模式，开始重放");
         scheduleNext();
