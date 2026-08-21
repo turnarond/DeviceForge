@@ -1,5 +1,12 @@
 # Changelog
 
+## [未发布]
+
+### 修复（2026-08-21，fix/v2.7-编译修复）
+
+- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
+- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
+
 ## [2.7.0] — 2026-08-19
 
 ### UX 收尾（feature/ux-finish）
@@ -29,7 +36,7 @@
 - QSettings → ConfigStore（`telnet.prefs/securityWarning`）；状态色改 QLabel state 属性 + 双主题 QSS 规则
 
 **WebSocketTool（7 项）**
-- **WSS 服务端修复**：启动时自动生成 RSA 2048 自签名证书（原无证书导致 TLS 握手必然失败）
+- **WSS 服务端修复**：加载随包预生成的自签名测试证书（RSA 2048，QRC 打包；原无证书导致 TLS 握手必然失败）
 - **Token 认证接线**：Server 设置区新增 Token 输入框 + ConfigStore 持久化（`websocket.endpoint` map `token` 键，明文）+ `setAuthToken` 接通（原为死代码）
 - SUBSCRIBE/PUBLISH/UNSUBSCRIBE 消息进入消息日志（原不可见）
 - 协议解析改**首冒号切分**（topic 可含 `:`，Client 侧 TOPIC 同款 bug 一并修复）

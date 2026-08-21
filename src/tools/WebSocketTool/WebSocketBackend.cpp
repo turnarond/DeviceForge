@@ -16,6 +16,7 @@
 #include <lwlog/lwlog.h>
 #include <thread>
 #include <chrono>
+#include <QFile>
 #include <QHostAddress>
 #include <QSslConfiguration>
 #include <QSslKey>
@@ -79,18 +80,28 @@ void WebSocketBackend::startServer(int port, bool sslMode)
     m_server = new QWebSocketServer("DeviceForge WebSocket Server", qSslMode);
 
     if (sslMode) {
-        // 生成自签名证书（测试用途，客户端会提示证书不受信任）
-        QSslKey sslKey(QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey, QByteArray(), 2048);
-        QSslCertificate sslCert = QSslCertificate::generateSelfSignedCertificate(sslKey);
+        // 加载随程序打包的测试自签名证书（Qt 6.11 无运行时生成 API；
+        // 证书由 src/app/certs/ 预生成并编入 QRC，测试用途，客户端会提示证书不受信任）
+        QFile certFile(QStringLiteral(":/certs/deviceforge-wss.pem"));
+        QFile keyFile(QStringLiteral(":/certs/deviceforge-wss-key.pem"));
+        QByteArray certData, keyData;
+        if (certFile.open(QIODevice::ReadOnly) && keyFile.open(QIODevice::ReadOnly)) {
+            certData = certFile.readAll();
+            keyData = keyFile.readAll();
+            certFile.close();
+            keyFile.close();
+        }
+        QSslKey sslKey(keyData, QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
+        QSslCertificate sslCert(certData, QSsl::Pem);
         if (!sslKey.isNull() && !sslCert.isNull()) {
             QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
             sslConfig.setLocalCertificate(sslCert);
             sslConfig.setPrivateKey(sslKey);
             m_server->setSslConfiguration(sslConfig);
-            if (m_logCb) m_logCb("[Server] WSS 模式：已生成自签名证书（测试用，客户端需信任该证书）");
+            if (m_logCb) m_logCb("[Server] WSS 模式：已加载自签名证书（测试用，客户端需信任该证书）");
         } else {
-            if (m_errorCb) m_errorCb("自签名证书生成失败，WSS 客户端连接将无法建立");
-            if (m_logCb) m_logCb("[Server] WSS 模式：自签名证书生成失败");
+            if (m_errorCb) m_errorCb("自签名证书加载失败，WSS 客户端连接将无法建立");
+            if (m_logCb) m_logCb("[Server] WSS 模式：自签名证书加载失败");
         }
     }
 
