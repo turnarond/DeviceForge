@@ -383,3 +383,7 @@ tools/.test-tmp/
 
 # CTest 输出（build 内已忽略；根目录残留的 Testing/ 一并忽略）
 Testing/
+
+# 录制/运行产物（.nrec 录制输出等，不随代码发布）
+data/
+
