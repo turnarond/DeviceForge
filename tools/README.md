@@ -65,6 +65,15 @@ python tools/devtools/cli.py smoke <exe> --timeout 60 --title DeviceForge
 
 流程：启动进程 → 轮询主窗口标题（EnumWindows 包含匹配，默认 `DeviceForge`）→ 找到后发送 `WM_CLOSE` 优雅退出 → 等待退出 → 退出码 0 即通过；超时/提前崩溃/退出码非 0 均失败。
 
+### 3. gen_wss_cert.py — 重新生成 WSS 测试自签名证书
+
+Qt 6.11 无运行时生成自签名证书的 API，`src/app/certs/` 中的测试证书（RSA 2048、SAN 含 localhost）由本脚本预生成并随 QRC 打包。证书过期或需更换密钥时执行：
+
+```bash
+python tools/devtools/gen_wss_cert.py
+python tools/devtools/gen_wss_cert.py --openssl <openssl路径> --days 3650
+```
+
 ## 添加新工具
 
 1. 在 `devtools/` 新建 `xxx.py`，纯标准库实现

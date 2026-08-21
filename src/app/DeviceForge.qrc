@@ -6,4 +6,8 @@
     <qresource prefix="icons">
         <file>app.ico</file>
     </qresource>
+    <qresource prefix="certs">
+        <file>certs/deviceforge-wss.pem</file>
+        <file>certs/deviceforge-wss-key.pem</file>
+    </qresource>
 </RCC>

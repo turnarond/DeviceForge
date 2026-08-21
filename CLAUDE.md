@@ -137,7 +137,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 **v2.7.0 全量健康评审修复（2026-08-19，fix/v2.7-review，21 项）**：
 - **ModbusTool**：寄存器类型映射修复（Critical——Holding 此前发 0x02 读错存储区）、设备列表注入修复（bindDevices 全仓无调用方，读取路径实际无目标设备；Widget 读/写前从 ConfigStore device.list 同源同步）、异常码中文展示（0x01-0x0B + errorString 红色行）、写入对话框接通（0x06 寄存器 / 0x05 线圈，设备下拉）、连接失败 errorOccurred 上报 + stateChanged 一次性连接、上限按类型（Holding/Input 125、Coils/Discrete 2000）
 - **Telnet**：空超时假成功修复（Critical——无响应报「响应超时」）、提示驱动登录（login:/Password: 等待 + 「incorrect」立即断开；无认证服务器跳过认证向后兼容）、取消 100ms 内中断在途命令（原阻塞 300s）、QSettings → ConfigStore（telnet.prefs/securityWarning）、状态色双主题 QSS（QLabel state 属性）
-- **WebSocket**：WSS 服务端自签名证书（RSA 2048 自动生成）、Token 认证接线（Server 设置区输入框 + ConfigStore 明文）、pubsub 消息进日志、首冒号切分（Client TOPIC 同款修复）、UNSUBSCRIBE + 退订按钮、stopClient 先断开再删除
+- **WebSocket**：WSS 服务端自签名证书（RSA 2048 预生成打包入 QRC 加载式）、Token 认证接线（Server 设置区输入框 + ConfigStore 明文）、pubsub 消息进日志、首冒号切分（Client TOPIC 同款修复）、UNSUBSCRIBE + 退订按钮、stopClient 先断开再删除
 - **NetRelay**：TCP 写背压（64KB 读缓冲 / 1MB 暂停 / 512KB 滞回恢复）、会话树 O(1) 索引
 - **Ssh**：静态 known-hosts QSet 加互斥锁（并发数据竞争）
 - 测试：新增 tst_modbus_mapping + tst_telnet_timeout；回归 15 目标全过

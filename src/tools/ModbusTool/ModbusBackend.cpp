@@ -39,7 +39,9 @@ QModbusTcpClient* ModbusBackend::getOrCreateClient(const QString& ip, int port)
     m_clients[key] = client;
 
     // 状态/错误信号只在客户端创建处挂一次，避免每次读取未连接时重复累加 stateChanged
-    QObject::connect(client, &QModbusDevice::stateChanged, this,
+    // 注意：ModbusBackend 非 QObject，不能用 context=this 的 4 参数 connect；
+    // 用 3 参数（以 client 为 context，DirectConnection），client 析构时连接自动断开
+    QObject::connect(client, &QModbusDevice::stateChanged,
         [this, key](QModbusDevice::State state) {
             if (state != QModbusDevice::ConnectedState) return;
             auto it = m_pendingActions.find(key);
@@ -48,7 +50,7 @@ QModbusTcpClient* ModbusBackend::getOrCreateClient(const QString& ip, int port)
             m_pendingActions.erase(it);
             entry.action(m_clients.value(key));
         });
-    QObject::connect(client, &QModbusDevice::errorOccurred, this,
+    QObject::connect(client, &QModbusDevice::errorOccurred,
         [this, key](QModbusDevice::Error error) {
             if (error == QModbusDevice::NoError) return;
             auto it = m_pendingActions.find(key);
@@ -163,11 +165,14 @@ void ModbusBackend::writeRegister(const std::string& device, int slaveId,
     auto doWrite = [=](QModbusTcpClient* c) {
         QModbusReply* reply = nullptr;
         if (regType == QModbusDataUnit::Coils) {
-            // 线圈：非零 → ON (0xFF00)，零 → OFF (0x0000)；函数码 0x05
-            reply = c->sendWriteSingleCoil(slaveId, addr, value != 0);
+            // 线圈：非零 → ON (0xFF00)，零 → OFF (0x0000)；Qt 按单点自动用函数码 0x05
+            QModbusDataUnit unit(QModbusDataUnit::Coils, addr,
+                                 { static_cast<quint16>(value != 0 ? 0xFF00 : 0x0000) });
+            reply = c->sendWriteRequest(unit, slaveId);
         } else {
-            // 寄存器：函数码 0x06
-            reply = c->sendWriteSingleRegister(slaveId, addr, value);
+            // 寄存器：函数码 0x06（写单寄存器）
+            QModbusDataUnit unit(QModbusDataUnit::HoldingRegisters, addr, { value });
+            reply = c->sendWriteRequest(unit, slaveId);
         }
         if (!reply) {
             if (m_resultCb) m_resultCb(device, {}, 0, "Modbus 写入请求发送失败");
@@ -179,7 +184,7 @@ void ModbusBackend::writeRegister(const std::string& device, int slaveId,
                 if (m_logCb) m_logCb(err.toStdString());
                 if (m_resultCb) m_resultCb(device, {}, 0, err.toStdString());
             } else {
-                if (m_logCb) m_logCb("写入成功: " + QString::fromStdString(device));
+                if (m_logCb) m_logCb(("写入成功: " + QString::fromStdString(device)).toStdString());
                 if (m_resultCb) m_resultCb(device, {}, 0, "");
             }
             reply->deleteLater();
