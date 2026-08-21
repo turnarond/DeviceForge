@@ -14,6 +14,7 @@
 
 #include "NetRelayWidget.h"
 #include "NetRelayBackend.h"
+#include "RelayRecording.h"
 #include "config/ConfigStore.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -68,6 +69,8 @@ void NetRelayWidget::setupUi()
     m_comboProtocol->addItem("UDP");
     m_comboProtocol->addItem("Multicast");
     row1->addWidget(m_comboProtocol);
+    connect(m_comboProtocol, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &NetRelayWidget::onProtocolChanged);
 
     row1->addSpacing(8);
     row1->addWidget(new QLabel("网卡:", this));
@@ -86,14 +89,16 @@ void NetRelayWidget::setupUi()
     row1->addWidget(m_comboIface);
 
     row1->addSpacing(8);
-    row1->addWidget(new QLabel("监听地址:", this));
+    m_lblListenAddr = new QLabel("监听地址:", this);
+    row1->addWidget(m_lblListenAddr);
     m_editListenAddr = new QLineEdit(this);
     m_editListenAddr->setPlaceholderText("127.0.0.1");
     m_editListenAddr->setText("127.0.0.1");
     m_editListenAddr->setFixedWidth(110);
     row1->addWidget(m_editListenAddr);
 
-    row1->addWidget(new QLabel("端口:", this));
+    m_lblListenPort = new QLabel("端口:", this);
+    row1->addWidget(m_lblListenPort);
     m_spinListenPort = new QSpinBox(this);
     m_spinListenPort->setRange(1, 65535);
     m_spinListenPort->setValue(9000);
@@ -105,14 +110,16 @@ void NetRelayWidget::setupUi()
     arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #F0A030 / 亮 #D48820）
     row1->addWidget(arrowLbl);
 
-    row1->addWidget(new QLabel("上游地址:", this));
+    m_lblUpstream = new QLabel("上游地址:", this);
+    row1->addWidget(m_lblUpstream);
     m_editUpstreamHost = new QLineEdit(this);
     m_editUpstreamHost->setPlaceholderText("192.168.1.100");
     m_editUpstreamHost->setText("192.168.1.100");
     m_editUpstreamHost->setFixedWidth(130);
     row1->addWidget(m_editUpstreamHost);
 
-    row1->addWidget(new QLabel("端口:", this));
+    m_lblUpstreamPort = new QLabel("端口:", this);
+    row1->addWidget(m_lblUpstreamPort);
     m_spinUpstreamPort = new QSpinBox(this);
     m_spinUpstreamPort->setRange(1, 65535);
     m_spinUpstreamPort->setValue(502);
@@ -121,6 +128,30 @@ void NetRelayWidget::setupUi()
 
     row1->addStretch();
     configLayout->addLayout(row1);
+
+    // ========== 转发行（仅 Multicast 显示；M→U 单播目标 / M→M 组播目标）==========
+    auto* fwdRow = new QHBoxLayout();
+    m_chkForward = new QCheckBox("实时转发到:", this);
+    m_chkForward->setToolTip("抓收同时把数据报实时转发到目标地址（组播→组播需目标组无真实源）");
+    fwdRow->addWidget(m_chkForward);
+    m_lblFwdHost = new QLabel("目标地址:", this);
+    fwdRow->addWidget(m_lblFwdHost);
+    m_editFwdHost = new QLineEdit(this);
+    m_editFwdHost->setPlaceholderText("239.2.3.4 / 192.168.1.200");
+    m_editFwdHost->setFixedWidth(130);
+    fwdRow->addWidget(m_editFwdHost);
+    m_lblFwdPort = new QLabel("端口:", this);
+    fwdRow->addWidget(m_lblFwdPort);
+    m_spinFwdPort = new QSpinBox(this);
+    m_spinFwdPort->setRange(1, 65535);
+    m_spinFwdPort->setValue(6000);
+    m_spinFwdPort->setFixedWidth(70);
+    fwdRow->addWidget(m_spinFwdPort);
+    fwdRow->addStretch();
+    configLayout->addLayout(fwdRow);
+    // 初始隐藏（仅 Multicast 显示），TCP/UDP 不涉及转发
+    m_chkForward->setVisible(false); m_lblFwdHost->setVisible(false); m_editFwdHost->setVisible(false);
+    m_lblFwdPort->setVisible(false); m_spinFwdPort->setVisible(false);
 
     // ========== 控制按钮行 ==========
     auto* ctrlRow = new QHBoxLayout();
@@ -208,7 +239,9 @@ void NetRelayWidget::setupUi()
     connect(m_btnReplayBrowse, &QPushButton::clicked, this, &NetRelayWidget::onReplayBrowse);
     rr1->addWidget(m_editReplayFile, 1); rr1->addWidget(m_btnReplayBrowse);
     rr1->addWidget(new QLabel("消费者:", this));
-    m_editReplayHost = new QLineEdit("127.0.0.1", this); m_editReplayHost->setFixedWidth(120);
+    m_editReplayHost = new QLineEdit(this);
+    m_editReplayHost->setPlaceholderText("留空=回灌原组(组播)；TCP/UDP 必填");
+    m_editReplayHost->setFixedWidth(160);
     m_spinReplayPort = new QSpinBox(this); m_spinReplayPort->setRange(1, 65535); m_spinReplayPort->setValue(9001);
     rr1->addWidget(m_editReplayHost); rr1->addWidget(m_spinReplayPort);
     rr1->addWidget(new QLabel("速率:", this));
@@ -306,6 +339,30 @@ void NetRelayWidget::onToolStop()
     emit toolStatusChanged("已停止");
 }
 
+// ============ 协议联动 ============
+
+void NetRelayWidget::onProtocolChanged(int idx)
+{
+    const bool isMcast = (idx == 2);   // Multicast：抓收模式（无监听概念）
+
+    // 监听地址/端口：抓收模式无监听语义，隐藏（避免"填了不生效"的困惑）
+    m_lblListenAddr->setVisible(!isMcast);
+    m_editListenAddr->setVisible(!isMcast);
+    m_lblListenPort->setVisible(!isMcast);
+    m_spinListenPort->setVisible(!isMcast);
+
+    // 目标地址标签语义化：TCP/UDP = 上游地址；Multicast = 组播组地址
+    m_lblUpstream->setText(isMcast ? "组播组地址:" : "上游地址:");
+    m_editUpstreamHost->setPlaceholderText(isMcast ? "239.1.2.3" : "192.168.1.100");
+
+    // 转发配置：仅组播显示
+    m_chkForward->setVisible(isMcast);
+    m_lblFwdHost->setVisible(isMcast);
+    m_editFwdHost->setVisible(isMcast);
+    m_lblFwdPort->setVisible(isMcast);
+    m_spinFwdPort->setVisible(isMcast);
+}
+
 // ============ 按钮槽 ============
 
 void NetRelayWidget::onStartClicked()
@@ -361,9 +418,43 @@ void NetRelayWidget::onStartClicked()
         m_backend->disableRecording();
     }
 
-    if (protoIdx == 2) {   // Multicast：加入组播组抓收（组地址/端口复用上游地址/端口）
+    if (protoIdx == 2) {   // Multicast：加入组播组抓收（组地址/端口复用上游地址/端口）+ 可选实时转发
         QString iface = m_comboIface->currentData().toString();
-        m_backend->startMulticastCapture(upstreamHost, upstreamPort, iface);
+        CaptureForward fwd;
+        if (m_chkForward->isChecked()) {
+            const QString fwdHost = m_editFwdHost->text().trimmed();
+            const quint16 fwdPort = static_cast<quint16>(m_spinFwdPort->value());
+            if (fwdHost.isEmpty() || fwdPort == 0) {
+                QMessageBox::warning(this, "警告", "已勾选转发，请填写有效的转发目标地址和端口");
+                return;
+            }
+            if (!isValidForwardTarget(fwdHost)) {
+                QMessageBox::warning(this, "警告", "转发目标地址无效（须为单播 IP 或组播地址）");
+                return;
+            }
+            // M→M：转发目标是组播 → 二次确认（目标组可能被真实源占用 / A→B→A 环路）
+            if (isValidMulticastAddress(fwdHost)) {
+                auto reply = QMessageBox::warning(this, "组播转发确认",
+                    "转发目标是组播地址（M→M）。请确认目标组（" + fwdHost + "）没有真实源在发送，"
+                    "否则接收方会收到混叠数据；同时避免转发环路（A→B→A）。\n是否继续？",
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                if (reply != QMessageBox::Yes) return;
+            }
+            fwd.enabled = true;
+            fwd.target = QHostAddress(fwdHost);
+            fwd.port = fwdPort;
+            // 转发网卡：复用网卡下拉（M→M join 目标组需要指定网卡）
+            const QString ifaceIp = m_comboIface->currentData().toString();
+            if (!ifaceIp.isEmpty()) {
+                for (const QNetworkInterface& itf : QNetworkInterface::allInterfaces()) {
+                    for (const QNetworkAddressEntry& e : itf.addressEntries()) {
+                        if (e.ip().toString() == ifaceIp) { fwd.iface = itf; break; }
+                    }
+                    if (fwd.iface.isValid()) break;
+                }
+            }
+        }
+        m_backend->startMulticastCapture(upstreamHost, upstreamPort, iface, fwd);
     } else {
         RelayProtocol proto = (protoIdx == 0) ? RelayProtocol::Tcp : RelayProtocol::Udp;
         m_backend->startRelay(proto, listenAddr, listenPort, upstreamHost, upstreamPort);
@@ -473,10 +564,18 @@ void NetRelayWidget::onReplayStart()
     double speed = (m_comboSpeed->currentIndex() == 0) ? 1.0 : 1e9;  // 尽快=极大倍率
     QString iface = m_comboIface->currentData().toString();
 
-    // 回放组播（协议选 Multicast）前二次确认：真实源必须离线，否则回灌与实时源混叠
-    if (m_comboProtocol->currentIndex() == 2) {
+    // 依据 .nrec 文件头判断协议（而非协议下拉当前值）：组播文件回放提示真实源离线 + 目标语义
+    NrecFile nrec;
+    QString nrecErr;
+    const bool isMcastFile = RelayRecording::load(file, nrec, nrecErr)
+        && nrec.protocol == RelayProtocol::Multicast;
+    if (isMcastFile) {
+        QString targetDesc = "回灌原组 " + nrec.groupAddr + ":" + QString::number(nrec.groupPort);
+        if (!m_editReplayHost->text().trimmed().isEmpty())
+            targetDesc = "覆盖为单播 " + m_editReplayHost->text().trimmed()
+                       + ":" + QString::number(m_spinReplayPort->value());
         auto reply = QMessageBox::warning(this, "组播回放确认",
-            "确认真实源已离线，避免数据混叠。\n是否继续回放？",
+            "确认真实源已离线，避免数据混叠。\n" + targetDesc + "\n是否继续回放？",
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (reply != QMessageBox::Yes) return;
     }

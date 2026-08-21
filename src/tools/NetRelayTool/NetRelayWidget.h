@@ -58,6 +58,7 @@ private slots:
     void onReplayStart();
     void onReplayPause();
     void onReplayStop();
+    void onProtocolChanged(int idx);   // 协议联动：抓收模式隐藏监听框 + 标签语义化
 
 private:
     void setupUi();
@@ -72,10 +73,21 @@ private:
     // 配置区
     QComboBox*  m_comboProtocol  = nullptr;
     QComboBox*  m_comboIface      = nullptr;   // 网卡选择（组播用）
+    QLabel*     m_lblListenAddr   = nullptr;   // "监听地址:"（组播时隐藏）
+    QLabel*     m_lblListenPort   = nullptr;   // "端口:"（监听，组播时隐藏）
     QLineEdit*  m_editListenAddr = nullptr;
     QSpinBox*   m_spinListenPort = nullptr;
+    QLabel*     m_lblUpstream     = nullptr;   // "上游地址:"（组播时改"组播组地址:"）
+    QLabel*     m_lblUpstreamPort = nullptr;   // "端口:"（上游）
     QLineEdit*  m_editUpstreamHost = nullptr;
     QSpinBox*   m_spinUpstreamPort = nullptr;
+
+    // 转发配置（仅组播模式显示；M→U 单播目标 / M→M 组播目标）
+    QCheckBox*  m_chkForward    = nullptr;
+    QLabel*     m_lblFwdHost    = nullptr;
+    QLabel*     m_lblFwdPort    = nullptr;
+    QLineEdit*  m_editFwdHost   = nullptr;
+    QSpinBox*   m_spinFwdPort   = nullptr;
 
     // 控制按钮
     QPushButton* m_btnStart  = nullptr;

@@ -73,8 +73,10 @@ public:
     bool isRunning() const { return m_running; }
     void setMaxConnections(int n) { if (n > 0) m_maxConn = n; }
 
-    // 组播抓收（加入组播组，抄收数据 + 可选录制；对源与现有消费者零影响）
-    void startMulticastCapture(const QString& groupAddr, quint16 port, const QString& ifaceAddr);
+    // 组播抓收（加入组播组，抄收数据 + 可选录制 + 可选实时转发；对源与现有消费者零影响）
+    // forward：M→U（单播目标）或 M→M（组播目标）；enabled=false 时仅抓收
+    void startMulticastCapture(const QString& groupAddr, quint16 port, const QString& ifaceAddr,
+                               const CaptureForward& forward = CaptureForward());
 
     // --- 录制 ---
     void enableRecording(const QString& path);   // startRelay 前调用；启动时打开录制
@@ -192,6 +194,14 @@ private:
     QString      m_mcastGroup;              // 当前组播组地址
     quint16      m_mcastPort = 0;           // 当前组播端口
     void onMulticastReadyRead();            // 组播数据到达
+
+    // 组播转发状态（M→U / M→M，抓收旁路实时转发）
+    QUdpSocket*  m_forwardSocket = nullptr; // 转发发送 socket（M→M 需先 join 目标组）
+    bool         m_forwardJoined = false;   // 是否已 join 转发目标组（清理时 leave）
+    QHostAddress m_forwardTarget;           // 转发目标地址（单播或组播）
+    quint16      m_forwardPort = 0;         // 转发目标端口
+    void setupForward(const CaptureForward& forward);   // 创建转发 socket + M→M join
+    void teardownForward();                 // 清理转发 socket（stop 时调用）
 
     // 运行状态
     bool                        m_running = false;

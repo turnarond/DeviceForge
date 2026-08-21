@@ -2,6 +2,13 @@
 
 ## [未发布]
 
+### 新增（2026-08-21，feature/netrelay-multicast-forward）
+
+- **NetRelayTool 组播实时转发**：抓收组播的同时可勾选实时转发——**M→U**（转指定单播消费者）与 **M→M**（转另一组播组，启动前二次确认防混叠/环路）；转发与录制并行，归入 Relaying 状态（与回放互斥）
+- **UI 易用性**：协议下拉联动（选 Multicast 隐藏无效的「监听地址/端口」、目标标签动态改「组播组地址」）；回放面板**依据 .nrec 文件头**判断组播（原误用协议下拉当前值）并提示目标语义（留空=回灌原组）；组播转发配置区（默认关）
+- 地址校验收敛为纯逻辑函数（`NetRelayTypes.h`，拒绝 IPv4 简写如 `239.1.2`）
+- 测试：新增 tst_relay_addr（组播/转发目标地址校验 6 用例）；回归 tst_nrec 组播录制通过
+
 ### 修复（2026-08-21，fix/v2.7-编译修复）
 
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
