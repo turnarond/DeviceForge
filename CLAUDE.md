@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 行为准则
 
-1. **中文优先**：对话和文档尽量使用中文撰写，专业术语（如 MVP、EventBus、FTP、Modbus）和论文引述除外
-2. **文档是唯一的对外标准，必须保证正确性**：文档（`docs/`、`docs/superpowers/`、`README.md`、`CHANGELOG.md` 等）是交互接口与对齐标准，不是代码的附属品。修改代码若涉及需求、接口、设计、架构、手册等内容，必须同步更新对应文档，且文档中不得出现与代码不一致的事实性信息（版本号、Qt 路径、构建命令、功能状态等）。改版本号时必须全仓同步（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / CLAUDE.md 等），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准
-3. **新功能开发必须使用新分支**：新功能、重构、涉及多文件的大改动一律从 `main` 新建分支（如 `feature/xxx`、`fix/xxx`）开发，完成并验证后再合并回 `main`；不要直接在 `main` 上堆叠未提交的改动，不要在同一分支里混入多个无关功能
+> 完整 16 条规范见 **`docs/00-开发规范/开发规范.md`**（强制行为准则，本处为摘要）。
+
+1. **中文优先**：对话与文档一律使用中文，专业术语（MVP、EventBus、FTP、Modbus、TDD、SDD、ABI 等）与论文引述除外
+2. **文档是唯一对外标准，必须保持最新、不得腐败**：文档（`docs/`，索引见 `docs/README.md`）是交互接口与对齐标准。修改代码若涉及需求、接口、设计、架构、手册、版本号等内容，必须**同一提交内**同步更新对应文档，且文档中不得出现与代码不一致的事实性信息；发现重复/英文残留/失效引用立即合并清理。改版本号时必须全仓同步（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / `docs/01-白皮书/白皮书.md` / CLAUDE.md 等），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准，并用 `tools/devtools/versioncheck.py` 校验
+3. **分支规范**：需求开发、变更、修复 issue 一律从 `main` 新建分支（`feature/xxx`、`fix/xxx`、`docs/xxx`、`refactor/xxx`、`chore/xxx`）开发，验证后 `--no-ff` 合并回 `main`；不在 `main` 堆叠未提交改动，一个分支只做一件事
+4. **TDD**：永远遵循红-绿-重构循环；每次请求实现必须附带对应测试代码或指明要变绿的测试用例；红灯代码不提交
+5. **SDD 工程化流程**：需求 → 方案设计 → 任务规划 → 实施 → 交付，关键阶段专家评审（**尤其方案设计**）；见 `docs/00-开发规范/SDD-工程化流程.md`
+6. **整洁**：代码整洁（《代码整洁之道》）与架构整洁（《架构整洁之道》）——依赖方向 UI → 业务 → 适配器，复用 lwserverbase/lwmsgq/IProtocolAdapter/ConfigStore 等既有机制，全局考虑不绕开
+7. **工具集**：配套工程工具统一放 `tools/`（Python 系列，独立架构 + 自带测试）：`versioncheck.py`（版本一致性）、`smoke.py`（UI 冒烟）
+8. **其余条款**（详见总纲）：问题及时提 issue（供应商问题提 vendor，不混入本工程）；版本边界 + 打包节点打 tag `vX.Y.Z`（`docs/01-白皮书/版本发布与Tag规范.md`）；重构先讨论评审再独立分支；对外 SDK 接口向前兼容不破坏 ABI；长稳（内存/句柄泄漏）检查；Debug（Windows 用 cdb、Linux 用 gdb、Windows 不好调转 WSL）
 
 ## 项目概述
 
@@ -156,7 +163,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - WebSocket 默认绑定 127.0.0.1 + 可选 Token 认证（URL 参数 ?token=）
 - 内存密码安全擦除（AuthInfo::clear）
 - 日志去敏感化（Telnet/WebSocket 消息内容改为记录字节数）
-- 安全审查报告见 `docs/superpowers/specs/2026-07-05-ftp-deploy-improvement-design.md`
+- 安全审查报告见 `docs/03-设计/方案设计/2026-07-05-FTP部署改进设计.md`
 
 **配置持久化（2026-07-25，v2.3.0）**：
 - ConfigStore 单例（`src/config/ConfigStore.cpp/.h`）：基于 SQLite 的键值配置持久化（设备列表/凭证/端点历史/Tool 设置），支持 JSON 导入导出
@@ -180,8 +187,8 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、客户端来源 allowlist（暴露到不可信网段时必需）
 - FtpDeployWidget 远程表头排序指示器刷新后失配（cosmetic，低优先）
 
-详细设计见 `docs/superpowers/specs/2026-07-04-tool-framework-design.md`。
-实施计划见 `docs/superpowers/plans/2026-07-04-tool-framework-plan.md`。
+详细设计见 `docs/03-设计/方案设计/2026-07-04-工具框架设计.md`。
+实施计划见 `docs/03-设计/实施计划/2026-07-04-工具框架计划.md`。
 
 ### 双层架构
 
@@ -327,31 +334,33 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ## 设计文档
 
-重构和 UI 设计的关键决策记录在 `docs/superpowers/` 中，修改架构前应先查阅：
+文档结构以 `docs/README.md` 为索引（`00-开发规范 / 01-白皮书 / 02-需求分析 / 03-设计 / 04-使用手册 / 05-部署文档 / 06-运营与文章`）。修改架构前应先查阅：
 
-**对外交付文档（docs/ 顶层，面向用户/集成方）**：
-- `docs/architecture.md` — 架构设计
-- `docs/api-reference.md` — 接口参考
-- `docs/user-guide.md` — 用户手册
-- `docs/build-guide.md` — 构建指南
-- `docs/security.md` — 安全说明
-- `docs/运营流程.md` — 运营流程
+**对外交付文档**：
+- `docs/04-使用手册/架构设计.md` — 架构设计
+- `docs/04-使用手册/接口参考.md` — 接口参考
+- `docs/04-使用手册/用户手册.md` — 用户手册
+- `docs/05-部署文档/构建指南.md` — 构建指南
+- `docs/05-部署文档/部署文档.md` — 部署文档
+- `docs/05-部署文档/安全说明.md` — 安全说明
+- `docs/05-部署文档/调试指南.md` — 调试指南
+- `docs/06-运营与文章/运营流程.md` — 运营流程
 - `docs/images/` — README 使用的界面截图（文件部署/批量命令/MODBUS/WebSocket/OPCUA）
 
 **DeviceForge（原名 DeployMaster 2.0）设计文档**：
-- `docs/superpowers/specs/2026-07-04-tool-framework-design.md` — DeployMaster 2.0 通用设备运维平台设计（lwserverbase + Tool 框架 + IProtocolAdapter + 插件化架构）
-- `docs/superpowers/plans/2026-07-04-tool-framework-plan.md` — Phase 0-1 框架搭建实施计划（15 Tasks，已全部完成）
+- `docs/03-设计/方案设计/2026-07-04-工具框架设计.md` — DeployMaster 2.0 通用设备运维平台设计（lwserverbase + Tool 框架 + IProtocolAdapter + 插件化架构）
+- `docs/03-设计/实施计划/2026-07-04-工具框架计划.md` — Phase 0-1 框架搭建实施计划（15 Tasks，已全部完成）
 
-**历史设计文档（MVP+EventBus 架构，已过时）**：
-- `docs/superpowers/specs/2026-06-14-refactor-design.md` — MVP+EventBus 架构重构设计
-- `docs/superpowers/specs/2026-06-14-ui-modernization.md` — UI 现代化方案
-- `docs/superpowers/specs/2026-06-19-ui-redesign-design.md` — QSplitter 动态可调整布局重设计
-- `docs/superpowers/specs/2026-06-19-compact-layout-design.md` — 1366x768 低分辨率紧凑布局方案
+**历史设计文档（MVP+EventBus 架构，已过时，归档于 03-设计/方案设计）**：
+- `docs/03-设计/方案设计/2026-06-14-重构设计.md` — MVP+EventBus 架构重构设计
+- `docs/03-设计/方案设计/2026-06-14-UI现代化设计.md` — UI 现代化方案
+- `docs/03-设计/方案设计/2026-06-19-UI重设计.md` — QSplitter 动态可调整布局重设计
+- `docs/03-设计/方案设计/2026-06-19-紧凑布局设计.md` — 1366x768 低分辨率紧凑布局方案
 
-**实施计划（plans/）**：
-- `docs/superpowers/plans/2026-06-14-refactor.md` — 旧版重构计划
-- `docs/superpowers/plans/2026-06-14-ui-modernization.md` — QSS 创建/QRC 更新计划
-- `docs/superpowers/plans/2026-06-19-ui-redesign-plan.md` — 布局重构计划
+**历史实施计划（归档于 03-设计/实施计划）**：
+- `docs/03-设计/实施计划/2026-06-14-重构计划.md` — 旧版重构计划
+- `docs/03-设计/实施计划/2026-06-14-UI现代化计划.md` — QSS 创建/QRC 更新计划
+- `docs/03-设计/实施计划/2026-06-19-UI重设计计划.md` — 布局重构计划
 
 **需求文档（doc/）**：已随 VSOA 依赖移除而删除
 

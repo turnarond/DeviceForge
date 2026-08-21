@@ -44,11 +44,11 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 
 ## 技术文章
 
-- [我写了一个透明 TCP/UDP 中继调试工具：在不打断生产链路的前提下抓包 + 录制回放](docs/articles/2026-07-09-透明中继调试工具设计.md) — NetRelayTool 设计与实现，透明中继、`.nrec` 录制、按原始时序回放
-- [open62541 与 Qt 集成的 5 个陷阱](docs/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
-- [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 主窗口布局现代化 + 日志统一
-- [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — 远程文件管理补完 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
-- [DeviceForge v2.6：SFTP 批量部署，从「能浏览」到「能部署」](docs/articles/2026-08-07-deviceforge-v2.6-sftp-deploy.md) — 传输能力补完：SFTP 部署与 FTP 完全对等，IDeployable 接口抽象
+- [我写了一个透明 TCP/UDP 中继调试工具：在不打断生产链路的前提下抓包 + 录制回放](docs/06-运营与文章/articles/2026-07-09-透明中继调试工具设计.md) — NetRelayTool 设计与实现，透明中继、`.nrec` 录制、按原始时序回放
+- [open62541 与 Qt 集成的 5 个陷阱](docs/06-运营与文章/articles/2026-07-13-opc-ua-open62541-qt-集成陷阱.md) — OPC UA 客户端开发踩坑实录（内存管理/线程安全/编码细节）
+- [DeviceForge v2.4：一个工业设备运维工具的现代化历程](docs/06-运营与文章/articles/2026-07-25-deviceforge-v2.4-现代化工业运维平台.md) — FTP 双栏重构 + 主窗口布局现代化 + 日志统一
+- [DeviceForge v2.5：一个工业设备运维工具的现代化历程](docs/06-运营与文章/articles/2026-08-06-deviceforge-v2.5-现代化工业运维平台.md) — 远程文件管理补完 + SFTP 文件管理 + SylixOS 深度适配，务实推广文
+- [DeviceForge v2.6：SFTP 批量部署，从「能浏览」到「能部署」](docs/06-运营与文章/articles/2026-08-07-deviceforge-v2.6-sftp-deploy.md) — 传输能力补完：SFTP 部署与 FTP 完全对等，IDeployable 接口抽象
 
 ---
 
@@ -83,7 +83,9 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
   AppState                   ServiceTask               libcurl / libssh2 / QTcpSocket
 ```
 
-**设计文档**：[架构设计](docs/01-方案设计/2026-07-04-工具框架设计.md) | [实施计划](docs/02-实施计划/2026-07-04-工具框架计划.md) | [FTP 双栏重构设计](docs/01-方案设计/2026-07-25-FTP双栏重构设计.md) | [v2.5 功能补完设计](docs/01-方案设计/2026-07-26-v2.5-ftp-scp-功能补完设计.md)
+**文档中心**：[docs/README.md](docs/README.md)（00-开发规范 / 01-白皮书 / 02-需求分析 / 03-设计 / 04-使用手册 / 05-部署文档 / 06-运营与文章，文档是唯一对外标准）
+
+**设计文档**：[架构设计](docs/03-设计/方案设计/2026-07-04-工具框架设计.md) | [实施计划](docs/03-设计/实施计划/2026-07-04-工具框架计划.md) | [FTP 双栏重构设计](docs/03-设计/方案设计/2026-07-25-FTP双栏重构设计.md) | [v2.5 功能补完设计](docs/03-设计/方案设计/2026-07-26-v2.5-ftp-scp-功能补完设计.md)
 
 ### 第三方库
 
