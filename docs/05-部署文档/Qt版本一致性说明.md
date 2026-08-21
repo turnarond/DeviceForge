@@ -20,15 +20,15 @@
 
 ### 文档更新记录
 
-- ✅ **2026-07-17**：批量统一所有文档为 Qt 6.11.1
+- ✅ **2026-07-17**：批量统一所有文档为 Qt 6.11.1（文档路径后经 2026-08-21 目录重整更新）
   - build.bat
-  - docs/build-guide.md
-  - docs/debugging-guide.md
+  - docs/05-部署文档/构建指南.md
+  - docs/05-部署文档/调试指南.md
   - README.md
-  - docs/architecture.md
+  - docs/04-使用手册/架构设计.md
   - CLAUDE.md
   - CONTRIBUTING.md
-  - docs/superpowers/plans/*.md（7 个计划文档）
+  - docs/03-设计/实施计划/*.md（7 个计划文档）
 
 ### Qt 版本兼容性说明
 

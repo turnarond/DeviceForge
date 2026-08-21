@@ -370,13 +370,16 @@ dist/
 build_opc/
 DeployMaster.vcxproj.bak
 # 内部运营文档（不随代码发布）
-docs/运营流程.md
-# 注：docs/articles/ 为发布用推广文章，随代码发布（README 引用）
+docs/06-运营与文章/运营流程.md
+# 注：docs/06-运营与文章/articles/ 为发布用推广文章，随代码发布（README 引用）
 
 # 本地/内部工具与 CI/设计草稿（不随代码发布）
 .codegraph/
 .github/
-docs/superpowers/
+# docs/superpowers/ 已随 2026-08-21 目录重整移除（历史归档于 docs/03-设计/）
+
+# Python 工具集测试临时目录
+tools/.test-tmp/
 
 # CTest 输出（build 内已忽略；根目录残留的 Testing/ 一并忽略）
 Testing/
