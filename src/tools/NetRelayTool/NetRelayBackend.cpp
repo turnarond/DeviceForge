@@ -440,6 +440,17 @@ void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 po
     m_running = true;
     m_mode = RelayMode::Relaying;
 
+    // 抓收通道会话（会话列表展示：固定 ID=1，方向恒 Upstream）
+    m_captureSession = RelaySession();
+    m_captureSession.id = 1;
+    m_captureSession.protocol = RelayProtocol::Multicast;
+    m_captureSession.clientAddr = groupAddr + ":" + QString::number(port);
+    m_captureSession.upstreamAddr = forward.enabled
+        ? forward.target.toString() + ":" + QString::number(forward.port)
+        : QStringLiteral("（仅抓收）");
+    m_captureSession.active = true;
+    if (m_sessionCb) m_sessionCb(m_captureSession);
+
     // 转发通道（可选）：M→U 直发单播；M→M 需先 join 目标组（Windows 发组播要求）
     if (forward.enabled) {
         setupForward(forward);
@@ -465,7 +476,8 @@ void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 po
         + "（额外订阅者，对源与现有消费者无影响）");
 }
 
-// 创建转发 socket：M→M 需先 join 目标组（Windows 上未 join 直接发组播会被内核丢弃）
+// 创建转发 socket：M→M 需先 bind（BoundState）再 join 目标组——Windows 上未加入
+// membership 直接发组播会被内核丢弃；未 bind 就 join 会失败（QUdpSocket 要求 BoundState）
 void NetRelayBackend::setupForward(const CaptureForward& forward)
 {
     teardownForward();
@@ -473,6 +485,13 @@ void NetRelayBackend::setupForward(const CaptureForward& forward)
     m_forwardPort = forward.port;
     m_forwardSocket = new QUdpSocket();
     if (isValidMulticastAddress(forward.target.toString())) {
+        const bool bound = m_forwardSocket->bind(QHostAddress::AnyIPv4, 0,
+            QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);   // 任意源端口
+        if (!bound) {
+            reportError("转发 socket 绑定失败: " + m_forwardSocket->errorString().toStdString());
+            delete m_forwardSocket; m_forwardSocket = nullptr;
+            return;
+        }
         const bool ok = forward.iface.isValid()
             ? m_forwardSocket->joinMulticastGroup(forward.target, forward.iface)
             : m_forwardSocket->joinMulticastGroup(forward.target);
@@ -508,11 +527,19 @@ void NetRelayBackend::onMulticastReadyRead()
         QString peer = sender.toString() + ":" + QString::number(senderPort);
         if (m_dataCb) m_dataCb(RelayDirection::Upstream, peer, 1, data);  // 组播单向，方向恒 Upstream，会话号固定 1
         recordData(RelayDirection::Upstream, 1, data);
+        updateCaptureSession(data.size());   // 会话列表累计字节（避免"有数据但会话列表为空"）
         // 实时转发（可选）：抓收旁路直通，UDP 无连接不排队；失败即丢（与旁路语义一致）
         if (m_forwardSocket && m_forwardSocket->isValid()) {
             m_forwardSocket->writeDatagram(data, m_forwardTarget, m_forwardPort);
         }
     }
+}
+
+// 更新抓收通道会话字节数并通知 UI（会话列表展示）
+void NetRelayBackend::updateCaptureSession(qint64 bytes)
+{
+    m_captureSession.bytesUp += bytes;
+    if (m_sessionCb) m_sessionCb(m_captureSession);
 }
 
 // ============ TCP 处理 ============

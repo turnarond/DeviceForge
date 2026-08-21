@@ -193,7 +193,9 @@ private:
     QUdpSocket*  m_mcastSocket = nullptr;   // 组播抓收 socket
     QString      m_mcastGroup;              // 当前组播组地址
     quint16      m_mcastPort = 0;           // 当前组播端口
+    RelaySession m_captureSession;          // 抓收通道会话（ID=1，会话列表展示累计字节）
     void onMulticastReadyRead();            // 组播数据到达
+    void updateCaptureSession(qint64 bytes); // 更新抓收通道会话字节数并通知 UI（会话列表）
 
     // 组播转发状态（M→U / M→M，抓收旁路实时转发）
     QUdpSocket*  m_forwardSocket = nullptr; // 转发发送 socket（M→M 需先 join 目标组）
