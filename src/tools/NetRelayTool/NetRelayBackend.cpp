@@ -371,6 +371,7 @@ void NetRelayBackend::stopRelay()
     }
     m_mcastGroup.clear();
     m_mcastPort = 0;
+    teardownForward();   // 清理转发 socket（M→M 时 leave 目标组）
 
     m_running = false;
     if (m_recorder) { m_recorder->close(); m_recorder.reset(); log("录制已保存"); }
@@ -381,21 +382,26 @@ void NetRelayBackend::stopRelay()
 // ============ 组播抓收 ============
 
 void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 port,
-                                            const QString& ifaceAddr)
+                                            const QString& ifaceAddr,
+                                            const CaptureForward& forward)
 {
     if (m_running) { reportError("已在运行中，请先停止"); return; }
     if (m_mode == RelayMode::Replaying) { reportError("回放进行中，无法抓收"); return; }
 
-    // 组播地址校验：IPv4 D 类 224.0.0.0 ~ 239.255.255.255
-    QHostAddress group(groupAddr);
-    quint32 v4 = group.toIPv4Address();
-    bool okProto = (group.protocol() == QAbstractSocket::IPv4Protocol);
-    quint8 firstOctet = quint8((v4 >> 24) & 0xFF);
-    if (!okProto || firstOctet < 224 || firstOctet > 239) {
+    // 组播地址校验（复用纯逻辑校验函数；fail-closed）
+    if (!isValidMulticastAddress(groupAddr)) {
         reportError("非法组播地址（须 224.0.0.0~239.255.255.255）: " + groupAddr.toStdString());
         return;
     }
     if (port == 0) { reportError("组播端口无效"); return; }
+
+    // 转发配置校验（fail-closed）：enabled 时目标必须有效（单播或组播）、端口非 0
+    if (forward.enabled) {
+        if (!isValidForwardTarget(forward.target.toString()) || forward.port == 0) {
+            reportError("转发目标无效（须为单播 IP 或组播地址 + 有效端口）");
+            return;
+        }
+    }
 
     // 选定网卡（按本地 IP 匹配）
     QNetworkInterface iface;
@@ -417,6 +423,7 @@ void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 po
         delete m_mcastSocket; m_mcastSocket = nullptr;
         return;
     }
+    const QHostAddress group(groupAddr);   // 已通过 isValidMulticastAddress 校验
     bool joined = iface.isValid()
         ? m_mcastSocket->joinMulticastGroup(group, iface)
         : m_mcastSocket->joinMulticastGroup(group);
@@ -432,6 +439,15 @@ void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 po
     m_mcastPort = port;
     m_running = true;
     m_mode = RelayMode::Relaying;
+
+    // 转发通道（可选）：M→U 直发单播；M→M 需先 join 目标组（Windows 发组播要求）
+    if (forward.enabled) {
+        setupForward(forward);
+        const QString fwdType = isValidMulticastAddress(forward.target.toString())
+            ? "组播(M→M)" : "单播(M→U)";
+        log("[组播] 转发已开启 → " + forward.target.toString().toStdString() + ":"
+            + std::to_string(forward.port) + "（" + fwdType.toStdString() + "）");
+    }
 
     // 录制：组播录制把组地址/端口写入 .nrec 头
     if (m_recordEnabled && !m_recordPath.isEmpty()) {
@@ -449,6 +465,37 @@ void NetRelayBackend::startMulticastCapture(const QString& groupAddr, quint16 po
         + "（额外订阅者，对源与现有消费者无影响）");
 }
 
+// 创建转发 socket：M→M 需先 join 目标组（Windows 上未 join 直接发组播会被内核丢弃）
+void NetRelayBackend::setupForward(const CaptureForward& forward)
+{
+    teardownForward();
+    m_forwardTarget = forward.target;
+    m_forwardPort = forward.port;
+    m_forwardSocket = new QUdpSocket();
+    if (isValidMulticastAddress(forward.target.toString())) {
+        const bool ok = forward.iface.isValid()
+            ? m_forwardSocket->joinMulticastGroup(forward.target, forward.iface)
+            : m_forwardSocket->joinMulticastGroup(forward.target);
+        if (!ok) {
+            reportError("加入转发目标组失败: " + m_forwardSocket->errorString().toStdString());
+            delete m_forwardSocket; m_forwardSocket = nullptr;
+            return;
+        }
+        m_forwardJoined = true;
+    }
+}
+
+void NetRelayBackend::teardownForward()
+{
+    if (m_forwardSocket) {
+        // join 过的组随 socket close/析构由内核自动清理（IP_DROP_MEMBERSHIP），无需显式 leave
+        m_forwardSocket->close();
+        m_forwardSocket->deleteLater();
+        m_forwardSocket = nullptr;
+    }
+    m_forwardJoined = false;
+}
+
 void NetRelayBackend::onMulticastReadyRead()
 {
     if (m_cancelled || !m_mcastSocket) return;
@@ -461,6 +508,10 @@ void NetRelayBackend::onMulticastReadyRead()
         QString peer = sender.toString() + ":" + QString::number(senderPort);
         if (m_dataCb) m_dataCb(RelayDirection::Upstream, peer, 1, data);  // 组播单向，方向恒 Upstream，会话号固定 1
         recordData(RelayDirection::Upstream, 1, data);
+        // 实时转发（可选）：抓收旁路直通，UDP 无连接不排队；失败即丢（与旁路语义一致）
+        if (m_forwardSocket && m_forwardSocket->isValid()) {
+            m_forwardSocket->writeDatagram(data, m_forwardTarget, m_forwardPort);
+        }
     }
 }
 
