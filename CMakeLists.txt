@@ -316,6 +316,7 @@ target_compile_definitions(DeviceForge PRIVATE
 # ============================================================
 add_executable(Updater
     src/updater/UpdaterMain.cpp
+    src/updater/UpdaterFileOps.cpp
 )
 set_target_properties(Updater PROPERTIES WIN32_EXECUTABLE ON)
 

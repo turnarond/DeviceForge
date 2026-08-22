@@ -12,6 +12,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include "UpdaterFileOps.h"   // 文件操作原语（copyDirectory/removeDirectory，可测共享层）
 
 namespace {
 
@@ -119,53 +120,8 @@ bool waitForProcessExit(const char* exeName, DWORD timeoutMs) {
     return false;
 }
 
-// 递归复制目录
-bool copyDirectory(const char* src, const char* dst) {
-    CreateDirectoryA(dst, nullptr);
-
-    std::string searchPath = std::string(src) + "\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return false;
-
-    bool ok = true;
-    do {
-        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
-        std::string srcPath = std::string(src) + "\\" + fd.cFileName;
-        std::string dstPath = std::string(dst) + "\\" + fd.cFileName;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if (!copyDirectory(srcPath.c_str(), dstPath.c_str())) ok = false;
-        } else {
-            if (!CopyFileA(srcPath.c_str(), dstPath.c_str(), FALSE)) {
-                log("CopyFile 失败: %s -> %s (err=%lu)\n",
-                    srcPath.c_str(), dstPath.c_str(), GetLastError());
-                ok = false;
-            }
-        }
-    } while (FindNextFileA(hFind, &fd));
-    FindClose(hFind);
-    return ok;
-}
-
-// 递归删除目录
-bool removeDirectory(const char* path) {
-    std::string searchPath = std::string(path) + "\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return false;
-
-    do {
-        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
-        std::string full = std::string(path) + "\\" + fd.cFileName;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            removeDirectory(full.c_str());
-        } else {
-            DeleteFileA(full.c_str());
-        }
-    } while (FindNextFileA(hFind, &fd));
-    FindClose(hFind);
-    return RemoveDirectoryA(path);
-}
+// 递归复制目录 / 递归删除目录：已搬移至 UpdaterFileOps.{h,cpp}（issue #22 可测性拆分），
+// 备份步骤的失败返回值检查见下方 Step 2。
 
 } // namespace
 
@@ -224,9 +180,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         }
     }
 
-    // Step 2: 备份
+    // Step 2: 备份（issue #22：备份失败必须中止更新。否则替换失败时的"回滚"
+    // 会把残缺备份覆盖到安装目录，毁掉原本可运行的旧版且无二次恢复手段）
     log("创建备份: %s -> %s\n", m.installDir.c_str(), m.backupDir.c_str());
-    copyDirectory(m.installDir.c_str(), m.backupDir.c_str());
+    if (!copyDirectory(m.installDir.c_str(), m.backupDir.c_str())) {
+        log("ERROR: 创建备份失败,中止更新(未执行任何替换)\n");
+        MessageBoxA(nullptr,
+            "更新失败:创建备份出错。\n原版本未被修改,请检查磁盘空间或文件占用后重试。",
+            "DeviceForge Updater", MB_ICONERROR);
+        if (g_logFile) fclose(g_logFile);
+        return 1;
+    }
 
     // Step 3: 替换
     log("替换文件: %s -> %s\n", m.tempDir.c_str(), m.installDir.c_str());
