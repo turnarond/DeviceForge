@@ -294,10 +294,18 @@ ReleaseInfo UpdateChecker::fetchReleaseInfo(std::string& errorOut) {
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curlWriteCb);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    // 检查类请求快速失败（issue #23）：退出时 ~UpdateChecker 置位 m_cancelled 后
+    // waitForFinished 的最长阻塞 = 本超时，收敛到 3s 保证应用关闭确定性；
+    // 下载路径（downloadZip）超时设置独立，不受影响。
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    // 取消传播（issue #23）：此前自动检查在飞时关窗，m_cancelled 置位传不到
+    // libcurl，waitForFinished 只能等满超时（最长 30s），拖住进程退出。
+    // 复用下载路径已有的进度回调：非零返回 = 中止传输。
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curlProgressCb);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, this);
 
     CURLcode res = curl_easy_perform(curl);
 
