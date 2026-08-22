@@ -158,15 +158,19 @@ DeviceForge/
 │   ├── updater/         # OTA 在线更新（UpdateChecker / UpdateDialog / Updater.exe）
 │   ├── utils/           # 工具类（FormatUtils）
 │   └── thirdparty/      # 第三方库
-├── docs/                # 文档目录
-│   ├── 01-方案设计/      # 设计文档（FTP 双栏 / 布局现代化 / v2.5 功能补完）
-│   ├── 02-实施计划/      # 实施计划
-│   ├── images/          # 界面截图
-│   └── articles/        # 技术文章（发布用）
+├── docs/                # 文档中心（索引见 docs/README.md）
+│   ├── 00-开发规范/      # 强制行为准则（16 条）+ SDD 流程 + 评审检查单
+│   ├── 01-白皮书/        # 白皮书 / 产品路线图 / 版本发布与 Tag 规范
+│   ├── 02-需求分析/      # 需求文档
+│   ├── 03-设计/          # 方案设计 / 实施计划（过程归档）
+│   ├── 04-使用手册/      # 用户手册 / 接口参考 / 架构设计
+│   ├── 05-部署文档/      # 构建 / 部署 / 安全 / 调试指南
+│   ├── 06-运营与文章/    # 运营流程 / articles 技术文章
+│   └── images/          # 界面截图
 ├── include/curl/        # libcurl 头文件
 ├── lib/                 # libcurl / libssh2 二进制
 ├── CMakeLists.txt       # CMake 构建
-└── CLAUDE.md            # AI 助手指引
+└── AGENTS.md            # AI 助手知识库（导航层，细节源见 CLAUDE.md 与 docs/）
 ```
 
 ---
