@@ -50,6 +50,7 @@ public:
     static int s_uploadMs;
     static std::set<std::string> s_failFiles;  // 命中文件名的 uploadFile 返回 false
     static std::atomic<bool> s_gate;           // false = uploadFile 挂起等待放闸
+    static int s_progressBurst;                // 成功路径连发的进度回调数（≥1）
 
     std::string protocolId() const override { return "mockrun"; }
     bool connect(const DeviceInfo&, const AuthInfo&) override {
@@ -95,7 +96,13 @@ public:
             m_error = name + ": 模拟传输失败";
             return false;
         }
-        if (m_progressCb) m_progressCb(100);
+        if (m_progressCb) {
+            // 连发模拟高频进度注入（curl 分块上报同理），用于总进度节流验证
+            const int burst = std::max(1, s_progressBurst);
+            for (int b = 1; b <= burst; ++b) {
+                m_progressCb(b * 100 / burst);
+            }
+        }
         return true;
     }
     bool uploadFolder(const std::string&, const std::string&) override {
@@ -118,6 +125,7 @@ std::atomic<int> MockDeployable::s_connectCalls{0};
 int MockDeployable::s_uploadMs = 0;
 std::set<std::string> MockDeployable::s_failFiles;
 std::atomic<bool> MockDeployable::s_gate{true};
+int MockDeployable::s_progressBurst = 1;
 
 // ---------------------------------------------------------------------------
 class TstDeployRunner : public QObject {
@@ -162,6 +170,7 @@ private slots:
         MockDeployable::s_uploadMs = 0;
         MockDeployable::s_failFiles.clear();
         MockDeployable::s_gate = true;
+        MockDeployable::s_progressBurst = 1;
         ProtocolRegistry::instance()->registerFactory("mockrun", [] {
             return std::shared_ptr<IProtocolAdapter>(new MockDeployable);
         });
@@ -301,6 +310,45 @@ private slots:
             QVERIFY2(progressKeys.count(k) > 0,
                      qPrintable(QString("缺少设备进度 key: %1").arg(QString::fromStdString(k))));
         }
+    }
+
+    // 断言 5（Brief Step 3）：总进度节流——高频进度注入下，聚合总进度
+    // （kOverallKey 通道）转发次数受 ≥100ms 窗口约束、显著小于注入数；
+    // 且全部完成后的强制末次保证 100% 必达（不被节流窗口吞掉）。
+    void totalProgress_throttled_finalForced() {
+        MockDeployable::s_uploadMs = 0;
+        MockDeployable::s_progressBurst = 30;  // 每文件连发 30 次进度（<<100ms 内完成）
+        DeploymentRunner runner;
+        std::atomic<bool> cancel{false};
+
+        QMutex cbMutex;
+        int injectedPerDevice = 0;  // per-device 流收到的原始回调数（=注入数）
+        int overallForwards = 0;    // kOverallKey 转发次数（节流后）
+        int overallLast = -1;
+        const auto progress = [&](const std::string& key, int pct) {
+            QMutexLocker lock(&cbMutex);
+            if (key == DeploymentRunner::kOverallKey) {
+                ++overallForwards;
+                overallLast = pct;
+            } else {
+                ++injectedPerDevice;
+            }
+            QVERIFY2(pct >= 0 && pct <= 100, "进度百分比越界");
+        };
+
+        runner.run(makeParams(2, {m_goodFile}), 2, cancel, progress);
+
+        QMutexLocker lock(&cbMutex);
+        // 注入 2 台 × 30 次 = 60 次：若未节流总进度转发 ≈ 61 次；节流生效则远小于注入数
+        QVERIFY2(injectedPerDevice == 60,
+                 qPrintable(QString("per-device 注入数异常: %1").arg(injectedPerDevice)));
+        QVERIFY2(overallForwards < injectedPerDevice,
+                 qPrintable(QString("总进度转发 %1 次未小于注入 %2 次——节流失效")
+                                .arg(overallForwards).arg(injectedPerDevice)));
+        QVERIFY2(overallForwards <= 10,
+                 qPrintable(QString("总进度转发 %1 次超出节流上界 10").arg(overallForwards)));
+        // 强制末次：最后一次转发必为 100%（全部 Ok）
+        QCOMPARE(overallLast, 100);
     }
 
     // 取消传播（controller Ruling 1）：requestCancel 经 DeployJob::setCancel 生效——

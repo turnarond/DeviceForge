@@ -15,6 +15,7 @@
 #include "DeploymentRunner.h"
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 
 DeploymentRunner::~DeploymentRunner()
@@ -76,17 +77,60 @@ DeployReport DeploymentRunner::run(
         m_liveFlags.reserve(params.size());
     }
 
-    for (const auto& p : params) {
+    // 聚合总进度（设计 §4.3）：每台一个原子槽位，任一进度更新即重算
+    // overall = Σ devicePct / N，经同一 deviceProgress 通道以保留键 kOverallKey
+    // 上报；上报受 ≥100ms 时间戳节流约束（防 UI 刷屏），全部完成后强制补发
+    // 末次，杜绝 100% 被节流窗口吞掉。
+    const size_t n = params.size();
+    std::vector<std::unique_ptr<std::atomic<int>>> pcts(n);
+    for (auto& slot : pcts) {
+        slot = std::make_unique<std::atomic<int>>(0);
+    }
+
+    std::mutex emitMutex;
+    auto lastEmit = std::chrono::steady_clock::time_point::min();
+    auto overallOf = [&pcts, n]() -> int {
+        long long sum = 0;
+        for (const auto& slot : pcts) {
+            sum += slot->load(std::memory_order_relaxed);
+        }
+        return static_cast<int>(sum / static_cast<long long>(n));
+    };
+    auto tryEmitOverall = [&](bool force) {
+        if (!deviceProgress || n == 0) {
+            return;
+        }
+        bool fire = force;
+        if (!fire) {
+            // 仅锁节流窗口判定，回调在锁外触发（用户代码不得持锁调用）
+            std::lock_guard<std::mutex> lock(emitMutex);
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastEmit >= std::chrono::milliseconds(100)) {
+                lastEmit = now;
+                fire = true;
+            }
+        }
+        if (fire) {
+            deviceProgress(std::string(kOverallKey), overallOf());
+        }
+    };
+
+    for (size_t i = 0; i < params.size(); ++i) {
+        const DeployJob::Params& p = params[i];
         DeployJob::Params wired = p;
         wired.globalCancel = &globalCancel;  // 引用参数恒有效——入池前统一接好，
                                              // 消除 Params 默认空指针入池的可能
-        // 进度出口统一收口为 deviceProgress(key,pct)，key 由 Runner 补齐
+        // 进度出口统一收口为 deviceProgress(key,pct)，key 由 Runner 补齐：
+        // per-device 即时转发不变；总进度走聚合节流通道
         const std::string key =
             wired.device.ip + ":" + std::to_string(wired.device.port);
-        wired.progressSink = [deviceProgress, key](int pct) {
+        wired.progressSink = [deviceProgress, key, slot = pcts[i].get(),
+                              tryEmitOverall](int pct) {
+            slot->store(pct, std::memory_order_relaxed);
             if (deviceProgress) {
                 deviceProgress(key, pct);
             }
+            tryEmitOverall(false);
         };
 
         auto job = std::make_shared<DeployJob>(std::move(wired));
@@ -107,6 +151,9 @@ DeployReport DeploymentRunner::run(
     // 阻塞等待全部完成——此后读 result()/state 即安全：
     // 每个 job 恰好执行一次且 run() 已完整返回（红线约束）
     m_pool.waitForDone();
+
+    // 强制末次总进度：不受节流窗口约束，保证完成态（全部 Ok 时即 100%）必达
+    tryEmitOverall(true);
 
     for (const auto& job : m_liveJobs) {
         report.results.push_back(job->result());
