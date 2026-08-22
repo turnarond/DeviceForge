@@ -303,3 +303,20 @@ if(_qt_bin_dir)
     set_tests_properties(tst_ftplist_parser PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- 部署报告数据结构与 CSV/HTML 渲染纯函数测试（v2.8 并行批量部署 Task 1）---
+# 编入产品源码 DeployReport.cpp（仅标准库，无 Qt/网络依赖；QtTest 仅作测试壳）
+add_executable(tst_deploy_report
+    deploy/tst_deploy_report.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+)
+target_include_directories(tst_deploy_report PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool
+)
+target_link_libraries(tst_deploy_report PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_report COMMAND tst_deploy_report)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_report PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
