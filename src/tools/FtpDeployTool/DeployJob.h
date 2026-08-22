@@ -40,7 +40,7 @@ public:
         std::string protocol;               // 协议注册键（"ftp"/"ssh"，SFTP 复用 "ssh"）
         const std::atomic<bool>* globalCancel = nullptr;  // 共享取消标志（只读引用；
                                                           // 生命周期契约：存活至 run() 结束，
-                                                          // 本任务由后端成员 m_cancelled 保证）
+                                                          // 本任务由后端成员 m_batchCancel 保证）
         std::function<void(const std::string&)> logSink;  // 日志出口（Job 内统一注入
                                                           // "[ip:port] " 前缀，业务文案不变）
         std::function<void(int)> progressSink;            // 进度出口（单台整体百分比 0-100）

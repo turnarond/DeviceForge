@@ -227,6 +227,15 @@ void FtpDeployWidget::connectBackendSignals()
             m_multiProgress->setOverallProgress(pct);
         }, Qt::QueuedConnection);
     });
+    // per-device 进度管道（v2.8 Task 4）：后端已完成 kOverallKey 分流，
+    // 此处收到的 key 恒为 "ip:port"，直接派发到对应行。回调从 Runner 池线程
+    // 触发 → 统一 QueuedConnection 编组到 GUI 线程（既有模式）
+    m_backend->setDeviceProgressCallback([this](const std::string& key, int pct) {
+        const QString devKey = QString::fromStdString(key);
+        QMetaObject::invokeMethod(this, [this, devKey, pct]() {
+            m_multiProgress->setDeviceProgress(devKey, pct);
+        }, Qt::QueuedConnection);
+    });
     m_backend->setLogCallback([this](const std::string& msg) {
         QMetaObject::invokeMethod(this, [this, msg]() {
             appendLog(QString::fromStdString(msg));
@@ -285,12 +294,13 @@ void FtpDeployWidget::onDeployClicked()
 
     m_deployBtn->setEnabled(false);
     m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
-    // 设置设备标签为 IP:port
-    for (size_t i = 0; i < devices.size(); ++i) {
-        QString devKey = QString::fromStdString(devices[i].ip);
-        if (devices[i].port > 0 && devices[i].port != 21)
-            devKey += ":" + QString::number(devices[i].port);
-        m_multiProgress->setDeviceInfo(static_cast<int>(i), devKey);
+    // 行键与 Runner 进度回调 / DeviceResult.deviceKey 严格同源："ip:port"。
+    // 后端以工具栏端口覆盖全部设备端口（port 恒 >0），故此处行键端口
+    // 直接取 spin 值——否则 port=21 时行键缺端口段，终态回调将无法命中行
+    const int effPort = m_portSpin->value();
+    for (const auto& d : devices) {
+        m_multiProgress->setDeviceInfo(
+            QString::fromStdString(d.ip) + ":" + QString::number(effPort));
     }
 
     appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
