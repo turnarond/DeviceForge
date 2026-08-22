@@ -14,6 +14,7 @@
 
 #pragma once
 #include "framework/ToolBackend.h"
+#include "tools/FtpDeployTool/DeployReport.h"
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -59,6 +60,12 @@ public:
                      int port = 0);
     void cancelUpload();
 
+    // 最近一轮批量部署报告（v2.8 Task 5）：startUpload 工作线程在 Runner::run()
+    // 返回后缓存，供 Widget「导出报告」事后读取（CSV/HTML 渲染见 DeployReport.h）。
+    // 无任何部署历史时返回空报告（results 为空）。按值返回 + 互斥保护，
+    // 写入在 QtConcurrent 工作线程、读取在 GUI 线程
+    DeployReport lastReport() const;
+
     // 进度回调设置（由 Widget 调用，跨线程安全）
     // setProgressCallback：聚合总进度（0-100，来自 Runner kOverallKey 哨兵分流）
     void setProgressCallback(std::function<void(int)> cb);
@@ -88,6 +95,10 @@ private:
     // 跨线程传播到各台独立取消标志。互斥锁保护指针换入/换出。
     std::mutex m_runnerMutex;
     std::shared_ptr<DeploymentRunner> m_activeRunner;
+
+    // 最近一轮报告缓存（v2.8 Task 5）：工作线程写、GUI 线程读，互斥保证可见性
+    mutable std::mutex m_reportMutex;
+    DeployReport m_lastReport;
 
     std::function<void(int)> m_progressCb;
     std::function<void(const std::string& key, int pct)> m_deviceProgressCb;

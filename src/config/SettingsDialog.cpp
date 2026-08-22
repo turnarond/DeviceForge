@@ -20,6 +20,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QTextStream>
+#include <QSlider>
 
 namespace {
 
@@ -118,7 +119,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     connect(expBtn, &QPushButton::clicked, this, &SettingsDialog::onExportClicked);
     connect(impBtn, &QPushButton::clicked, this, &SettingsDialog::onImportClicked);
     connect(clrBtn, &QPushButton::clicked, this, &SettingsDialog::onClearAllClicked);
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
+    // 关闭 = 确认并写回（accept() 落库并发式部署并发度后关窗）；Esc/X 仍为取消不落库
+    connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
     bottomLayout->addWidget(editBtn);
     bottomLayout->addWidget(delBtn);
     bottomLayout->addStretch();
@@ -164,7 +166,45 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     if (auto* mainLayoutPtr = qobject_cast<QVBoxLayout*>(layout()))
         mainLayoutPtr->insertLayout(0, themeRow);
 
+    // 部署组：批量部署并发度滑块（v2.8）— 与后端 loadConcurrency 同键同形：
+    // type="deploy"、key="concurrency"、值字段 "concurrency"，范围 1-8；
+    // 缺省/非法值回退 1 = 与串行行为一致。accept() 时统一写回
+    auto* deployRow = new QHBoxLayout();
+    deployRow->addWidget(new QLabel(QStringLiteral("部署并发度"), this));
+    m_deployConcurrencySlider = new QSlider(Qt::Horizontal, this);
+    m_deployConcurrencySlider->setRange(1, 8);
+    m_deployConcurrencySlider->setPageStep(1);
+    m_deployConcurrencySlider->setTickPosition(QSlider::TicksBelow);
+    bool concOk = false;
+    int concInit = ConfigStore::instance()
+        .load(QStringLiteral("deploy"), QStringLiteral("concurrency"))
+        .value(QStringLiteral("concurrency"), 1).toInt(&concOk);
+    if (!concOk || concInit < 1 || concInit > 8)
+        concInit = 1;   // 与后端 loadConcurrency 钳制规则一致
+    m_deployConcurrencySlider->setValue(concInit);
+    auto* concValueLabel = new QLabel(QString::number(concInit), this);
+    concValueLabel->setMinimumWidth(16);
+    connect(m_deployConcurrencySlider, &QSlider::valueChanged, this,
+            [concValueLabel](int v) { concValueLabel->setText(QString::number(v)); });
+    deployRow->addWidget(m_deployConcurrencySlider, 1);
+    deployRow->addWidget(concValueLabel);
+    auto* concNote = new QLabel(
+        QStringLiteral("嵌入式 FTP 注意服务器最大连接数，建议 2-4"), this);
+    deployRow->addWidget(concNote);
+    if (auto* mainLayoutPtr2 = qobject_cast<QVBoxLayout*>(layout()))
+        mainLayoutPtr2->insertLayout(1, deployRow);   // 紧随外观主题行
+
     populateTable();
+}
+
+void SettingsDialog::accept()
+{
+    // 仅在显式确认路径写回（Esc/X 关闭视为取消，不落库）
+    QVariantMap v;
+    v.insert(QStringLiteral("concurrency"), m_deployConcurrencySlider->value());
+    ConfigStore::instance().save(
+        QStringLiteral("deploy"), QStringLiteral("concurrency"), v);
+    QDialog::accept();
 }
 
 void SettingsDialog::populateTable()

@@ -180,6 +180,13 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
         const DeployReport report =
             runner->run(allParams, concurrency, m_batchCancel, deviceProgress);
 
+        // 报告缓存（v2.8 Task 5）：供 Widget「导出报告」事后读取；互斥保护
+        // 跨线程可见性（此处工作线程写，GUI 线程经 lastReport() 读）
+        {
+            std::lock_guard<std::mutex> lock(m_reportMutex);
+            m_lastReport = report;
+        }
+
         {
             std::lock_guard<std::mutex> lock(m_runnerMutex);
             if (m_activeRunner == runner) {
@@ -214,6 +221,12 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             m_finishedCb(!successes.empty(), successes, failures);
         }
     });
+}
+
+DeployReport FtpDeployBackend::lastReport() const
+{
+    std::lock_guard<std::mutex> lock(m_reportMutex);
+    return m_lastReport;
 }
 
 void FtpDeployBackend::cancelUpload()

@@ -219,6 +219,7 @@ set(SOURCES
     src/tools/FtpDeployTool/FtpDeployBackend.cpp
     src/tools/FtpDeployTool/DeploymentRunner.cpp
     src/tools/FtpDeployTool/DeployJob.cpp
+    src/tools/FtpDeployTool/DeployReport.cpp
     src/tools/FtpDeployTool/FtpDeployWidget.cpp
     src/tools/FtpDeployTool/FtpListParser.cpp
     src/tools/FtpDeployTool/RemoteFileModel.cpp
