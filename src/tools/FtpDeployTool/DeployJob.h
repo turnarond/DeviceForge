@@ -52,9 +52,25 @@ public:
     // 仅在 run() 返回后调用；返回本台设备的事务结果
     DeviceResult result() const { return m_result; }
 
+    // v2.8 Task 3（controller Ruling 1）：调度方注入的本台独立取消标志。
+    // 生命周期契约：*flag 必须存活至本 job 的 run() 返回
+    // （DeploymentRunner 以 shared_ptr 列表持有保证）。与 Params.globalCancel
+    // 任一置位即取消；两者皆空视为不取消（防御式空守卫，Task 2 遗留项闭环）。
+    void setCancel(std::atomic<bool>* flag) { m_cancelFlag = flag; }
+
     void run() override;
 
 private:
+    // 统一取消判定入口——所有取消检查点必须经此（含空指针守卫）
+    bool isCancelled() const {
+        return (m_params.globalCancel && m_params.globalCancel->load())
+            || (m_cancelFlag && m_cancelFlag->load());
+    }
+
     Params m_params;
     DeviceResult m_result;
+    std::atomic<bool>* m_cancelFlag = nullptr;
+    // 两路取消标志皆空时的兜底哑标志：仅满足适配器「非空指针」契约，
+    // 恒为 false，不影响 isCancelled() 判定
+    std::atomic<bool> m_fallbackCancel{false};
 };

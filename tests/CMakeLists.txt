@@ -321,3 +321,30 @@ if(_qt_bin_dir)
     set_tests_properties(tst_deploy_report PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- DeploymentRunner 并发调度测试（v2.8 并行批量部署 Task 3，零网络）---
+# 编入产品源码 DeploymentRunner.cpp + DeployJob.cpp（run() 实际执行路径）+
+#     ProtocolRegistry.cpp（mock 工厂注册/创建）。DeployJob 的 useFtps 分支引用
+#     FtpAdapter::setUseFtps 符号，故须编入 FtpAdapter.cpp+FtpListParser.cpp 并链接
+#     libcurl 导入库（仅满足链接，测试走 mock 适配器不触网）
+add_executable(tst_deploy_runner
+    deploy/tst_deploy_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+)
+target_include_directories(tst_deploy_runner PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(tst_deploy_runner PRIVATE
+    Qt6::Core Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+)
+add_test(NAME tst_deploy_runner COMMAND tst_deploy_runner)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_runner PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

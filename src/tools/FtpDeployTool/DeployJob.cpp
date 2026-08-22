@@ -39,6 +39,16 @@ void DeployJob::run()
     const auto startClock = std::chrono::steady_clock::now();
     m_result.startedAt = std::time(nullptr);
 
+    // v2.8 Task 3：未启动即取消的台次直接记 Cancelled——不创建适配器、不连接
+    // （设计 §6「用户取消：未开始台次跳过」；同时是 requestCancel 对排队 job 的生效点）
+    if (isCancelled()) {
+        m_result.state = DeviceResult::Cancelled;
+        m_result.durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now() - startClock)
+                                  .count();
+        return;
+    }
+
     // 日志出口统一注入 "[ip:port] " 前缀，业务调用点保留原始文案
     auto log = [this](const std::string& msg) {
         if (m_params.logSink) {
@@ -98,19 +108,29 @@ void DeployJob::run()
     // 设置进度回调 + 取消标志。
     // 进度换算：适配器按单文件报 0-100，此处折算为跨文件总进度
     // devicePct = (doneFiles*100 + curPct) / totalFiles；
-    // 取消标志：Params 持 const 指针而 IDeployable 契约要求可写 atomic，
-    // 底层对象实为后端非 const 成员，此处去 const 安全。
+    // 取消标志（carry-forward a 空守卫）：调度方注入的 per-job 标志优先，
+    // 回退 Params.globalCancel（串行等价路径，适配器中途断点语义不变）；
+    // 两者皆空时挂接内部哑标志，满足 IDeployable「非空指针存活至传输结束」契约。
     const size_t totalFiles = m_params.files.empty() ? 1 : m_params.files.size();
     size_t doneFiles = 0;
     deployable->setProgressCallback([this, &doneFiles, totalFiles, &reportProgress](int pct) {
         reportProgress(static_cast<int>((doneFiles * 100 + pct) / totalFiles));
     });
-    deployable->setCancelFlag(const_cast<std::atomic<bool>*>(m_params.globalCancel));
+    std::atomic<bool>* adapterCancel =
+        m_params.globalCancel ? const_cast<std::atomic<bool>*>(m_params.globalCancel)
+                              : (m_cancelFlag ? m_cancelFlag : &m_fallbackCancel);
+    deployable->setCancelFlag(adapterCancel);
 
-    // 上传所有文件/文件夹
+    // 上传所有文件/文件夹；cancelledMidway 记录「跳过了余下工作」的取消中断，
+    // cancelAbortedTransfer 记录「传输被取消检查点中止」（设计 §6：归 Cancelled）
     bool allOk = true;
+    bool cancelledMidway = false;
+    bool cancelAbortedTransfer = false;
     for (const auto& file : m_params.files) {
-        if (m_params.globalCancel->load()) break;
+        if (isCancelled()) {
+            cancelledMidway = true;
+            break;
+        }
 
         std::error_code ec;
 
@@ -126,6 +146,7 @@ void DeployJob::run()
                 m_result.failedFiles.push_back(folderName);
                 m_result.lastError = adapter->lastError();
                 allOk = false;
+                if (isCancelled()) cancelAbortedTransfer = true;  // 取消期中止
             }
         } else if (!ec) {
             // 单文件上传
@@ -150,6 +171,7 @@ void DeployJob::run()
                 m_result.failedFiles.push_back(fileName);
                 m_result.lastError = adapter->lastError();
                 allOk = false;
+                if (isCancelled()) cancelAbortedTransfer = true;  // 取消期中止
             }
         } else {
             log("无法访问路径: " + file);
@@ -162,7 +184,14 @@ void DeployJob::run()
 
     adapter->disconnect();
 
-    m_result.state = allOk ? DeviceResult::Ok : DeviceResult::Failed;
+    // 显式状态赋值（carry-forward b）：默认 Ok 绝不允许静默外漏——
+    //  · 取消导致的中止/跳过（循环头跳过余下文件、或取消检查点中止传输）→ Cancelled
+    //    （设计 §6：用户取消的批量以 Cancelled 收场；failedFiles 明细保留，信息不丢）
+    //  · 与取消无关的真实失败 → Failed（「重试失败设备」按钮的依据）
+    //  · 全部文件成功且无中断 → Ok
+    const bool cancelledOutcome = cancelledMidway || cancelAbortedTransfer;
+    m_result.state = cancelledOutcome ? DeviceResult::Cancelled
+                     : (!allOk ? DeviceResult::Failed : DeviceResult::Ok);
     m_result.durationMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - startClock)
