@@ -116,15 +116,19 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
 
     out.dateTime = normalizeUnixDateTime(tokens[dateIdx], tokens[dateIdx + 1], tokens[dateIdx + 2]);
 
-    // 文件名从 dateIdx + 3 开始，在原始行中定位
-    // 用原始 line 查找文件名起始位置（更可靠）
-    std::string dateStr = tokens[dateIdx] + " " + tokens[dateIdx + 1] + " " + tokens[dateIdx + 2];
-    size_t namePos = line.find(dateStr);
-    if (namePos == std::string::npos) return false;
-    namePos += dateStr.length();
-    while (namePos < line.length() && line[namePos] == ' ') namePos++;
-    if (namePos < line.length()) {
-        out.name = line.substr(namePos);
+    // 文件名从日期第三字段之后开始，可能含空格。
+    // 按 token 序推进到第 dateIdx+2 个字段末尾——容忍任意空格数与 tab
+    // （标准 ls -l 对单数字日右对齐补双空格，旧实现用单空格拼接子串做精确查找会整行丢失）。
+    {
+        size_t pos = 0;
+        size_t tok = 0;
+        while (tok <= static_cast<size_t>(dateIdx) + 2 && pos < line.length()) {
+            while (pos < line.length() && (line[pos] == ' ' || line[pos] == '\t')) ++pos;   // 字段间空白
+            while (pos < line.length() && line[pos] != ' ' && line[pos] != '\t') ++pos;     // 当前字段内容
+            ++tok;
+        }
+        while (pos < line.length() && (line[pos] == ' ' || line[pos] == '\t')) ++pos;       // 文件名前空白
+        out.name = (pos < line.length()) ? line.substr(pos) : std::string();
         // 处理符号链接 "link -> target" — 只取 link 名
         auto arrowPos = out.name.find(" -> ");
         if (arrowPos != std::string::npos) {
@@ -176,8 +180,11 @@ bool FtpListParser::tryParseWindowsLine(const std::string& line, FtpFileInfo& ou
     std::sscanf(dateStr.c_str(), "%d/%d/%d", &mo, &dy, &yr);
     int hr = 0, mn = 0;
     std::sscanf(timeStr.c_str(), "%d:%d", &hr, &mn);
-    // 转换 PM 时间（regex 已 icase，只需检查 'P'）
-    if (timeStr.find('P') != std::string::npos) {
+    // 转换 PM 时间。注意：regex icase 只影响匹配，捕获组保留原始大小写
+    // （小写服务器输出 "pm" 很常见），必须做大小写不敏感判断而非只查 'P'。
+    const bool isPm = timeStr.find('P') != std::string::npos ||
+                      timeStr.find('p') != std::string::npos;
+    if (isPm) {
         if (hr != 12) hr += 12;
     } else if (hr == 12) {
         hr = 0;
