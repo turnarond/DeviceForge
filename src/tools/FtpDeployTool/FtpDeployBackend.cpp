@@ -13,14 +13,14 @@
  */
 
 #include "FtpDeployBackend.h"
-#include "adapter/ProtocolRegistry.h"
-#include "adapter/IDeployable.h"
+#include "DeployJob.h"
 #include "adapter/FtpAdapter.h"
+#include "adapter/IDeployable.h"
+#include "adapter/ProtocolRegistry.h"
 #include <QtConcurrent/QtConcurrent>
 #include <lwlog/lwlog.h>
 #include <thread>
 #include <chrono>
-#include <filesystem>
 
 FtpDeployBackend::FtpDeployBackend()
 {
@@ -81,8 +81,6 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
     }
 
     m_uploadFuture = QtConcurrent::run([this, localFiles, protocol, useFtps, port]() {
-        namespace fs = std::filesystem;
-
         std::vector<std::string> successes, failures;
 
         if (m_devices.empty()) {
@@ -91,6 +89,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             return;
         }
 
+        // v2.8 Task 2：逐台顺序执行 DeployJob（concurrency=1 串行等价，
+        // Task 3 将替换为 DeploymentRunner 并发调度）。
         for (size_t i = 0; i < m_devices.size(); ++i) {
             if (m_cancelled) break;
 
@@ -101,109 +101,30 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                 device.port = port;
             }
 
-            std::string deviceKey = device.ip + ":" + std::to_string(device.port);
-
-            // 从 ProtocolRegistry 按协议创建适配器（"ftp"/"ssh"，SFTP 复用 "ssh" 键）
-            auto adapter = ProtocolRegistry::instance()->create(protocol);
-            if (!adapter) {
-                if (m_logCb) m_logCb("适配器不可用 (" + protocol + "): " + deviceKey);
-                failures.push_back(deviceKey);
-                continue;
-            }
-
-            auto* deployable = dynamic_cast<IDeployable*>(adapter.get());
-            if (!deployable) {
-                if (m_logCb) m_logCb("适配器不支持部署能力 (" + protocol + "): " + deviceKey);
-                failures.push_back(deviceKey);
-                continue;
-            }
-
-            if (useFtps && protocol == "ftp") {
-                auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-                if (ftp) {
-                    ftp->setUseFtps(true);
-                    if (m_logCb) m_logCb("FTPS 模式已启用: " + deviceKey);
-                }
-            }
-
-            // 连接设备（connect/lastError/disconnect 属 IProtocolAdapter，
-            // 部署能力（上传/清空/进度/取消）属 IDeployable）
-            if (m_logCb) m_logCb("正在连接: " + deviceKey + " ...");
-            if (!adapter->connect(device, m_auth)) {
-                if (m_logCb) m_logCb("连接失败: " + deviceKey + " — " + adapter->lastError());
-                failures.push_back(deviceKey);
-                continue;
-            }
-
-            if (m_logCb) m_logCb("已连接: " + deviceKey);
-
-            // 可选：部署前清空远程目录
-            if (m_clearBeforeDeploy) {
-                if (m_logCb) m_logCb("清空远程目录: " + deviceKey + m_remotePath);
-                if (!deployable->clearRemoteDirectory(m_remotePath)) {
-                    if (m_logCb) m_logCb("清空目录失败: " + deviceKey + " — " + adapter->lastError());
-                    // 清空失败不中止，继续上传
-                }
-            }
-
-            // 设置进度回调 + 取消标志
-            deployable->setProgressCallback([this](int pct) {
+            DeployJob::Params params;
+            params.device = device;
+            params.auth = m_auth;
+            params.files = localFiles;
+            params.remotePath = m_remotePath;
+            params.clearBefore = m_clearBeforeDeploy;
+            params.useFtps = useFtps;
+            params.protocol = protocol;
+            params.globalCancel = &m_cancelled;  // 后端成员生命周期覆盖全部 Job
+            params.logSink = [this](const std::string& msg) {
+                if (m_logCb) m_logCb(msg);
+            };
+            params.progressSink = [this](int pct) {
                 if (m_progressCb) m_progressCb(pct);
-            });
-            deployable->setCancelFlag(&m_cancelled);
+            };
 
-            // 上传所有文件/文件夹
-            bool allOk = true;
-            for (const auto& file : localFiles) {
-                if (m_cancelled) break;
+            DeployJob job(std::move(params));
+            job.run();  // 同步执行，保持逐台串行语义
 
-                std::error_code ec;
-
-                if (fs::is_directory(file, ec)) {
-                    // 文件夹：递归上传整个目录
-                    std::string folderName = fs::path(file).filename().string();
-                    if (m_logCb) m_logCb("上传文件夹: " + folderName + " -> " + deviceKey);
-
-                    if (deployable->uploadFolder(file, m_remotePath)) {
-                        if (m_logCb) m_logCb(folderName + " 上传完成 (" + deviceKey + ")");
-                    } else {
-                        if (m_logCb) m_logCb(folderName + " 上传失败: " + adapter->lastError());
-                        allOk = false;
-                    }
-                } else if (!ec) {
-                    // 单文件上传
-                    std::string fileName = file;
-                    size_t lastSlash = file.find_last_of("/\\");
-                    if (lastSlash != std::string::npos) {
-                        fileName = file.substr(lastSlash + 1);
-                    }
-
-                    std::string remoteFile = m_remotePath;
-                    if (!remoteFile.empty() && remoteFile.back() != '/') {
-                        remoteFile += '/';
-                    }
-                    remoteFile += fileName;
-
-                    if (m_logCb) m_logCb("上传: " + fileName + " -> " + deviceKey);
-
-                    if (deployable->uploadFile(file, remoteFile)) {
-                        if (m_logCb) m_logCb(fileName + " 上传完成 (" + deviceKey + ")");
-                    } else {
-                        if (m_logCb) m_logCb(fileName + " 上传失败: " + adapter->lastError());
-                        allOk = false;
-                    }
-                } else {
-                    if (m_logCb) m_logCb("无法访问路径: " + file);
-                    allOk = false;
-                }
-            }
-
-            adapter->disconnect();
-
-            if (allOk) {
-                successes.push_back(deviceKey);
+            const DeviceResult& r = job.result();
+            if (r.state == DeviceResult::Ok) {
+                successes.push_back(r.deviceKey);
             } else {
-                failures.push_back(deviceKey);
+                failures.push_back(r.deviceKey);
             }
         }
 

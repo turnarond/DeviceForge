@@ -131,6 +131,7 @@ endif()
 add_executable(tst_deploy_loop
     deploy/tst_deploy_loop.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
