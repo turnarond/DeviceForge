@@ -58,6 +58,7 @@ public:
     // deviceProgress 线程契约（I2）：回调从 ≤concurrency 个池线程上【并发】触发、
     // 必不在 GUI 线程——消费方（如 MultiProgressWidget 等 QWidget）自行串行化/
     // 编组（QueuedConnection 或队列转发），严禁在回调内直连 UI。
+    // 回调可为空（为空时 Runner 跳过全部进度上报，其余行为不变）。
     //   · key 为 "ip:port" → per-device 即时进度（0-100）；
     //   · key == kOverallKey → 聚合总进度（节流上报 + 末次强制，见 kOverallKey 注释）。
     DeployReport run(const std::vector<DeployJob::Params>& params,

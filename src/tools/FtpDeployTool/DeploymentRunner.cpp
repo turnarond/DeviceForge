@@ -88,7 +88,10 @@ DeployReport DeploymentRunner::run(
     }
 
     std::mutex emitMutex;
-    auto lastEmit = std::chrono::steady_clock::time_point::min();
+    // 初值取「当前时刻 − 100ms」：首个更新即可通过窗口判定立即发射。
+    // 不可用 time_point::min()——与 now() 相减会发生有符号 int64 纳秒溢出
+    // （UB，实测回绕为巨大负值），门闸将永不开启、节流沦为死代码。
+    auto lastEmit = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
     auto overallOf = [&pcts, n]() -> int {
         long long sum = 0;
         for (const auto& slot : pcts) {

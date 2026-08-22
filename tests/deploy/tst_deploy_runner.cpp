@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <set>
 #include <string>
@@ -312,23 +313,27 @@ private slots:
         }
     }
 
-    // 断言 5（Brief Step 3）：总进度节流——高频进度注入下，聚合总进度
-    // （kOverallKey 通道）转发次数受 ≥100ms 窗口约束、显著小于注入数；
-    // 且全部完成后的强制末次保证 100% 必达（不被节流窗口吞掉）。
+    // 断言 5（Brief Step 3）：总进度节流——错开设备文件数使进度更新簇跨越
+    // 多个 ≥100ms 节流窗口：中程（强制末次之前）至少发射一次，且转发总数
+    // 远小于注入数；全部完成后的强制末次保证 100% 必达。
+    // 空转免疫：若门闸失效（如 lastEmit 初值与 now() 相减溢出导致永不发射），
+    // 中程计数为 0、仅剩 1 次强制末次——forwards>=2 断言即失败，缺陷无法被掩盖。
     void totalProgress_throttled_finalForced() {
-        MockDeployable::s_uploadMs = 0;
-        MockDeployable::s_progressBurst = 30;  // 每文件连发 30 次进度（<<100ms 内完成）
+        MockDeployable::s_uploadMs = 150;      // 单文件 150ms，使更新簇错峰跨窗口
+        MockDeployable::s_progressBurst = 5;   // 每文件连发 5 次（同簇内仅首个可能过闸）
         DeploymentRunner runner;
         std::atomic<bool> cancel{false};
 
         QMutex cbMutex;
         int injectedPerDevice = 0;  // per-device 流收到的原始回调数（=注入数）
-        int overallForwards = 0;    // kOverallKey 转发次数（节流后）
+        // 每次总进度发射的采样时刻：最后一条必为 waitForDone 后的强制末次
+        // （此后无线程存活、不可能再有任何发射），其余全部为中程发射
+        std::vector<std::chrono::steady_clock::time_point> overallStamps;
         int overallLast = -1;
         const auto progress = [&](const std::string& key, int pct) {
             QMutexLocker lock(&cbMutex);
             if (key == DeploymentRunner::kOverallKey) {
-                ++overallForwards;
+                overallStamps.emplace_back(std::chrono::steady_clock::now());
                 overallLast = pct;
             } else {
                 ++injectedPerDevice;
@@ -336,19 +341,29 @@ private slots:
             QVERIFY2(pct >= 0 && pct <= 100, "进度百分比越界");
         };
 
-        runner.run(makeParams(2, {m_goodFile}), 2, cancel, progress);
+        // 设备 1 传 1 个文件、设备 2 传 3 个文件（并发 2）：更新簇落在
+        // ≈150/300/450ms——首簇必过闸（初值已开窗），后续簇以 150ms 间隔
+        // 落入新开的节流窗口，保证 ≥1 次中程发射
+        std::vector<DeployJob::Params> params = makeParams(1, {m_goodFile});
+        DeployJob::Params multi = params[0];
+        multi.files = {m_goodFile, m_goodFile, m_goodFile};
+        params.push_back(std::move(multi));
+
+        runner.run(params, 2, cancel, progress);
 
         QMutexLocker lock(&cbMutex);
-        // 注入 2 台 × 30 次 = 60 次：若未节流总进度转发 ≈ 61 次；节流生效则远小于注入数
-        QVERIFY2(injectedPerDevice == 60,
-                 qPrintable(QString("per-device 注入数异常: %1").arg(injectedPerDevice)));
-        QVERIFY2(overallForwards < injectedPerDevice,
-                 qPrintable(QString("总进度转发 %1 次未小于注入 %2 次——节流失效")
-                                .arg(overallForwards).arg(injectedPerDevice)));
-        QVERIFY2(overallForwards <= 10,
-                 qPrintable(QString("总进度转发 %1 次超出节流上界 10").arg(overallForwards)));
-        // 强制末次：最后一次转发必为 100%（全部 Ok）
-        QCOMPARE(overallLast, 100);
+        const int midFlight = static_cast<int>(overallStamps.size()) - 1;
+        qDebug("总进度发射 %lld 次（中程 %d + 强制末次 1），per-device 注入 %d 次",
+               static_cast<long long>(overallStamps.size()), midFlight,
+               injectedPerDevice);
+        QCOMPARE(injectedPerDevice, 20);  // 1+3 个文件 × 连发 5 次（确定性）
+        QVERIFY2(midFlight >= 1,
+                 "无任何中程总进度发射——节流门闸未开启（疑似初值溢出回归）");
+        // 结构上界：每簇至多过闸 1 次 + 强制末次；4 簇 ⇒ 上限 5，留慢机余量取 10
+        QVERIFY2(static_cast<int>(overallStamps.size()) <= 10,
+                 qPrintable(QString("总进度转发 %1 次超出节流上界 10")
+                                .arg(overallStamps.size())));
+        QCOMPARE(overallLast, 100);       // 强制末次：最后一次必为 100%（全部 Ok）
     }
 
     // 取消传播（controller Ruling 1）：requestCancel 经 DeployJob::setCancel 生效——
