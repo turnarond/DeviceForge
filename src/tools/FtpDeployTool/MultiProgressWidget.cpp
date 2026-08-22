@@ -19,8 +19,10 @@ namespace {
 // 行结构本身不着色）。与连接状态点用色同源。
 constexpr const char* kOkColor   = "#40C8A0";
 constexpr const char* kFailColor = "#E85848";
+// 取消终态中性灰（次要文字色）：取消既非成功亦非告警，不占信号态色
+constexpr const char* kCancelColor = "#7B8494";
 
-// 状态文案：等待中 → 上传中（首个进度事件起）→ 成功/失败（终态）
+// 状态文案：等待中 → 上传中（首个进度事件起）→ 成功/失败/已取消（终态）
 const QString kStatusPending = QStringLiteral("等待中");
 }  // namespace
 
@@ -144,6 +146,17 @@ void MultiProgressWidget::setDeviceStatusByKey(const QString& key, bool ok)
         it->status->setText(QStringLiteral("失败"));
         it->status->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(kFailColor)));
     }
+}
+
+void MultiProgressWidget::setDeviceCancelled(const QString& key)
+{
+    const auto it = m_rows.constFind(key);
+    if (it == m_rows.constEnd()) {
+        return;   // 未注册键（重试轮差集中的历史键等）：静默忽略
+    }
+    it->status->setText(QStringLiteral("已取消"));
+    it->status->setStyleSheet(
+        QStringLiteral("color: %1;").arg(QLatin1String(kCancelColor)));
 }
 
 void MultiProgressWidget::setOverallProgress(int pct)

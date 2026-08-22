@@ -286,9 +286,28 @@ void FtpDeployWidget::connectBackendSignals()
                 for (const auto& key : failures)
                     m_multiProgress->setDeviceStatusByKey(
                         QString::fromStdString(key), false);
+                // G2 补全：Backend 结果映射把 Cancelled 排除在两列之外（串行
+                // 等价裁定，m_finishedCb 签名不可改），取消集由 Widget 侧做
+                // 差集还原：本轮注册键 − 成功 − 失败 ＝ 取消。键公式与行注册/
+                // 重试匹配严格同源（d.ip + ":" + m_lastPort）；重试轮行表只含
+                // 子集，差集中未注册键由 setDeviceCancelled 静默忽略
+                for (const auto& d : m_lastDevices) {
+                    const std::string key = d.ip + ":" + std::to_string(m_lastPort);
+                    const bool settled =
+                        std::find(successes.begin(), successes.end(), key)
+                            != successes.end()
+                        || std::find(failures.begin(), failures.end(), key)
+                               != failures.end();
+                    if (!settled) {
+                        m_multiProgress->setDeviceCancelled(
+                            QString::fromStdString(key));
+                    }
+                }
                 int total = static_cast<int>(successes.size() + failures.size());
                 int done = static_cast<int>(successes.size());
-                m_multiProgress->setOverallProgress(ok ? 100 : 0);
+                // 总条语义＝批量生命周期进度：全部台次已出结果即置满，成败比例
+                // 由收尾文案与行级着色承载——失败收场归零会与 summary 并存矛盾
+                m_multiProgress->setOverallProgress(100);
                 m_multiProgress->setFinishedSummary(done, total);
                 // v2.8 Task 5：缓存失败清单并按结果点亮结果操作按钮。
                 // failures 仅含 Failed 台次（Backend 结果映射把 Cancelled 排除在
@@ -473,8 +492,17 @@ void FtpDeployWidget::onExportReportClicked()
         appendLog(QString("导出报告失败：无法写入 %1").arg(filePath));
         return;
     }
-    f.write(content.data(), static_cast<qint64>(content.size()));
+    const qint64 written = f.write(content.data(), static_cast<qint64>(content.size()));
+    const bool complete =
+        written == static_cast<qint64>(content.size()) && f.flush();
     f.close();
+    // 写盘结果核验：磁盘满/权限问题导致写入不完整时不得谎报导出成功
+    if (!complete) {
+        appendLog(QString("导出报告失败：%1 写入不完整（%2/%3 字节），请检查磁盘空间与写权限")
+                      .arg(filePath).arg(written)
+                      .arg(static_cast<qint64>(content.size())));
+        return;
+    }
     appendLog(QString("部署报告已导出：%1（%2 条记录）")
                   .arg(filePath).arg(static_cast<int>(report.results.size())));
 }
