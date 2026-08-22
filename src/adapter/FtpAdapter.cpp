@@ -299,7 +299,11 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     curl_easy_setopt(curl, CURLOPT_READDATA, file);
     curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
     curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    // 闲置判定替代总时长限制（issue #20）：CURLOPT_TIMEOUT 是整个传输的总时限，
+    // 工业慢链路上传大固件超 5 分钟必被硬切；改为连续 30s 速度低于 1 B/s 判定连接停滞快速失败，
+    // 正常慢速传输不受人为上限约束。控制命令类操作仍走 setupCommonOpts 的短 TIMEOUT。
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
@@ -415,7 +419,9 @@ bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& 
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeToFileCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    // 同 uploadFile：闲置判定替代总时长限制（issue #20）
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
