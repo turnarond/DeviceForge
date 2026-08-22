@@ -286,3 +286,20 @@ if(_qt_bin_dir)
     set_tests_properties(tst_updater_fileops PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- FtpListParser LIST 解析格式矩阵测试（issue #21：最易碎纯逻辑部件的回归防线）---
+# 编入产品源码 FtpListParser.cpp（仅依赖同目录 header-only 的 FtpFileInfo.h，无网络）
+add_executable(tst_ftplist_parser
+    ftplist/tst_ftplist_parser.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+)
+target_include_directories(tst_ftplist_parser PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool
+)
+target_link_libraries(tst_ftplist_parser PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_ftplist_parser COMMAND tst_ftplist_parser)
+if(_qt_bin_dir)
+    set_tests_properties(tst_ftplist_parser PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
