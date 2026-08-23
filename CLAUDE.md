@@ -46,7 +46,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.7.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.8.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
 
 ### 测试（CTest）
 
@@ -100,7 +100,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.7.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.8.0
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）。
 
@@ -376,6 +376,8 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 ## 注意事项
 
 - **libcurl 运行时依赖**：编译链接 `lib/libcurl_imp.lib`，运行时需要 `lib/libcurl-x64.dll`（已纳入仓库）。CMake 构建后会自动复制 DLL 到输出目录（`add_custom_command(TARGET POST_BUILD)`），VS 手动调试时需自行复制到生成目录（如 `x64/Debug/`）
+
+- **增量构建陈旧 obj 类布局错位坑（2026-08-23 实录，勿指望 CI 兜底）**：MSBuild 增量编译可能漏编「包含了被修改头文件」的 TU——814654a 给 `FtpDeployBackend` 扩容（新增 `m_reportMutex`/`m_lastReport`）后，`tst_deploy_loop.obj` 停留在旧类尺寸而 `FtpDeployBackend.obj` 已按新布局重编，混链产物里测试槽函数以旧 sizeof 在栈上构造 backend 局部对象、成员函数却按新偏移写入越界，踩毁 GS cookie 与相邻帧数据，表现为 `tst_deploy_loop` 四用例逐一运行均确定性 `0xc0000409`（`__report_gsfailure`），而不含该头文件的目标（如 `tst_deploy_runner`）不受累；CI 全新构建永不复现此类污染。**处置＝真·全量清理重建**：删除整个 `build/` 目录后重新配置编译。两个工程事实：① `build.bat` 清理步骤只删缓存文件（CMakeCache/CMakeFiles/.vs 等）不清陈旧 `.obj`，无法治愈本类污染；② 其 cmake 配置步骤可能打印成功却返回非零，脚本在编译前走错误分支退出（错误分支误报），此时直接执行 `cmake --build build --config Release` 即可。预防纪律：改类布局的头文件提交后，交付验证前先做全量重建
 
 - **thirdparty 静态库依赖链**：
   ```

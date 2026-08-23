@@ -16,6 +16,7 @@
 #include "FtpDeployWidget.h"
 #include "FtpDeployBackend.h"
 #include "MultiProgressWidget.h"
+#include "DeployReport.h"
 #include "framework/DeviceInfo.h"
 #include "ui/DeviceBusWidget.h"
 #include "ui/FileBrowserPanel.h"
@@ -30,7 +31,11 @@
 #include <QPointer>
 #include <QDateTime>
 #include <QStringList>
+#include <QFileDialog>
+#include <QStandardPaths>
+#include <QFile>
 #include <QtConcurrent>
+#include <algorithm>
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
@@ -201,9 +206,37 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_deployBtn->setText(QStringLiteral("▶ 部署"));
     deployGroup->addWidget(m_deployBtn);
 
+    // === 结果操作组（v2.8 Task 5）：导出报告 | 重试失败设备（部署结束后点亮） ===
+    auto* resultSeparator = new QFrame(this);
+    resultSeparator->setObjectName("toolbarSeparator");
+    resultSeparator->setFrameShape(QFrame::VLine);
+    resultSeparator->setFrameShadow(QFrame::Plain);
+    resultSeparator->setFixedWidth(1);
+
+    auto* resultGroup = new QHBoxLayout();
+    resultGroup->setSpacing(4);
+
+    m_exportReportBtn = new QPushButton(QStringLiteral("⬇ 导出报告"), this);
+    m_exportReportBtn->setToolTip(
+        QStringLiteral("导出最近一轮部署报告（CSV 归档 / HTML 打印）"));
+    m_exportReportBtn->setEnabled(false);   // 首轮部署结束（finished 回调）后点亮
+    connect(m_exportReportBtn, &QPushButton::clicked,
+            this, &FtpDeployWidget::onExportReportClicked);
+    resultGroup->addWidget(m_exportReportBtn);
+
+    m_retryBtn = new QPushButton(QStringLiteral("↻ 重试失败设备"), this);
+    m_retryBtn->setToolTip(
+        QStringLiteral("把上一轮失败的设备单独重新部署（沿用上次文件/目录/选项；取消的设备不在重试范围）"));
+    m_retryBtn->setEnabled(false);          // 存在失败台次时才点亮
+    connect(m_retryBtn, &QPushButton::clicked,
+            this, &FtpDeployWidget::onRetryFailedClicked);
+    resultGroup->addWidget(m_retryBtn);
+
     toolbar->addLayout(connGroup);
     toolbar->addWidget(separator);
     toolbar->addLayout(deployGroup);
+    toolbar->addWidget(resultSeparator);
+    toolbar->addLayout(resultGroup);
     toolbar->addStretch();
 
     mainLayout->addWidget(toolbarWidget);
@@ -227,6 +260,15 @@ void FtpDeployWidget::connectBackendSignals()
             m_multiProgress->setOverallProgress(pct);
         }, Qt::QueuedConnection);
     });
+    // per-device 进度管道（v2.8 Task 4）：后端已完成 kOverallKey 分流，
+    // 此处收到的 key 恒为 "ip:port"，直接派发到对应行。回调从 Runner 池线程
+    // 触发 → 统一 QueuedConnection 编组到 GUI 线程（既有模式）
+    m_backend->setDeviceProgressCallback([this](const std::string& key, int pct) {
+        const QString devKey = QString::fromStdString(key);
+        QMetaObject::invokeMethod(this, [this, devKey, pct]() {
+            m_multiProgress->setDeviceProgress(devKey, pct);
+        }, Qt::QueuedConnection);
+    });
     m_backend->setLogCallback([this](const std::string& msg) {
         QMetaObject::invokeMethod(this, [this, msg]() {
             appendLog(QString::fromStdString(msg));
@@ -244,10 +286,35 @@ void FtpDeployWidget::connectBackendSignals()
                 for (const auto& key : failures)
                     m_multiProgress->setDeviceStatusByKey(
                         QString::fromStdString(key), false);
+                // G2 补全：Backend 结果映射把 Cancelled 排除在两列之外（串行
+                // 等价裁定，m_finishedCb 签名不可改），取消集由 Widget 侧做
+                // 差集还原：本轮注册键 − 成功 − 失败 ＝ 取消。键公式与行注册/
+                // 重试匹配严格同源（d.ip + ":" + m_lastPort）；重试轮行表只含
+                // 子集，差集中未注册键由 setDeviceCancelled 静默忽略
+                for (const auto& d : m_lastDevices) {
+                    const std::string key = d.ip + ":" + std::to_string(m_lastPort);
+                    const bool settled =
+                        std::find(successes.begin(), successes.end(), key)
+                            != successes.end()
+                        || std::find(failures.begin(), failures.end(), key)
+                               != failures.end();
+                    if (!settled) {
+                        m_multiProgress->setDeviceCancelled(
+                            QString::fromStdString(key));
+                    }
+                }
                 int total = static_cast<int>(successes.size() + failures.size());
                 int done = static_cast<int>(successes.size());
-                m_multiProgress->setOverallProgress(ok ? 100 : 0);
+                // 总条语义＝批量生命周期进度：全部台次已出结果即置满，成败比例
+                // 由收尾文案与行级着色承载——失败收场归零会与 summary 并存矛盾
+                m_multiProgress->setOverallProgress(100);
                 m_multiProgress->setFinishedSummary(done, total);
+                // v2.8 Task 5：缓存失败清单并按结果点亮结果操作按钮。
+                // failures 仅含 Failed 台次（Backend 结果映射把 Cancelled 排除在
+                // 两列之外）——重试口径只含 Failed，与设计语义边界一致
+                m_lastFailures = failures;
+                m_retryBtn->setEnabled(!failures.empty());
+                m_exportReportBtn->setEnabled(true);   // 本轮报告已由 Backend 缓存
                 if (ok && !successes.empty()) {
                     appendLog(QString("✅ 部署完成 — 成功: %1, 失败: %2")
                         .arg(successes.size()).arg(failures.size()));
@@ -277,6 +344,40 @@ void FtpDeployWidget::onDeployClicked()
     auto files = collectLocalFiles();
     if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
 
+    // 部署目标目录 = 右侧远程面板当前目录（远程路径栏已在面板内置）；
+    // 空路径回退根目录（远程源延迟注入时 currentPath() 为空——SFTP 空路径会
+    // 上传到登录 cwd 而非根目录，必须显式回退 "/"）
+    QString remotePath = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
+    if (remotePath.isEmpty()) remotePath = QStringLiteral("/");
+
+    const bool clearBefore = m_clearCheck->isChecked();
+    const bool rebootAfter = m_rebootCheck->isChecked();
+    const std::string protocol = currentProtocol();
+    const bool useFtps = m_ftpsCheck->isChecked();
+    const int port = m_portSpin->value();
+
+    // 缓存本次部署请求（v2.8 Task 5 失败重试依据）：放在全部校验通过之后，
+    // 校验失败的点击不会覆盖上一轮有效请求
+    m_lastDevices = devices;
+    m_lastFiles = files;
+    m_lastRemotePath = remotePath.toStdString();
+    m_lastClearBefore = clearBefore;
+    m_lastRebootAfter = rebootAfter;
+    m_lastProtocol = protocol;
+    m_lastUseFtps = useFtps;
+    m_lastPort = port;
+
+    startDeployment(devices, files, remotePath, clearBefore, rebootAfter,
+                    protocol, useFtps, port, QString());
+}
+
+void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
+                                      const std::vector<std::string>& files,
+                                      const QString& remotePath,
+                                      bool clearBefore, bool rebootAfter,
+                                      const std::string& protocol, bool useFtps,
+                                      int port, const QString& logPrefix)
+{
     AuthInfo auth;
     auth.user = m_deviceBus->user().toStdString();
     auth.password = m_deviceBus->password().toStdString();
@@ -284,29 +385,28 @@ void FtpDeployWidget::onDeployClicked()
     m_backend->bindDevices(devices);
 
     m_deployBtn->setEnabled(false);
+    // 新一轮批量启动：结果操作按钮先熄灭（finished 回调按本轮结果重新点亮）
+    m_exportReportBtn->setEnabled(false);
+    m_retryBtn->setEnabled(false);
+
     m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
-    // 设置设备标签为 IP:port
-    for (size_t i = 0; i < devices.size(); ++i) {
-        QString devKey = QString::fromStdString(devices[i].ip);
-        if (devices[i].port > 0 && devices[i].port != 21)
-            devKey += ":" + QString::number(devices[i].port);
-        m_multiProgress->setDeviceInfo(static_cast<int>(i), devKey);
+    // 行键与 Runner 进度回调 / DeviceResult.deviceKey 严格同源："ip:port"。
+    // 后端以工具栏端口覆盖全部设备端口（port 恒 >0），故此处行键端口
+    // 直接取传入端口——否则 port=21 时行键缺端口段，终态回调将无法命中行
+    for (const auto& d : devices) {
+        m_multiProgress->setDeviceInfo(
+            QString::fromStdString(d.ip) + ":" + QString::number(port));
     }
 
-    appendLog(QString("开始部署到 %1 台设备...").arg(devices.size()));
+    appendLog(logPrefix + QString("开始部署到 %1 台设备...").arg(devices.size()));
 
-    // 部署目标目录 = 右侧远程面板当前目录（远程路径栏已在面板内置）；
-    // 空路径回退根目录（远程源延迟注入时 currentPath() 为空——SFTP 空路径会
-    // 上传到登录 cwd 而非根目录，必须显式回退 "/"）
-    QString remotePath = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
-    if (remotePath.isEmpty()) remotePath = QStringLiteral("/");
     m_backend->startUpload(files,
         remotePath.toStdString(),
-        m_clearCheck->isChecked(),
-        m_rebootCheck->isChecked(),
-        currentProtocol(),
-        m_ftpsCheck->isChecked(),
-        m_portSpin->value()
+        clearBefore,
+        rebootAfter,
+        protocol,
+        useFtps,
+        port
     );
 }
 
@@ -323,6 +423,88 @@ void FtpDeployWidget::cancelDeployFromMenu()
 {
     if (m_backend) m_backend->cancelUpload();
     appendLog("已从菜单取消部署");
+}
+
+void FtpDeployWidget::onRetryFailedClicked()
+{
+    if (!m_backend) { appendLog("Backend 未就绪"); return; }
+    if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
+    if (m_lastFailures.empty()) { appendLog("没有可重试的失败设备"); return; }
+
+    // 行键与 DeviceResult.deviceKey 严格同源："ip:port"，端口取上次部署的
+    // 工具栏端口（后端以该端口覆盖全部设备端口）。只筛 Failed 台次——
+    // Cancelled（用户取消/未启动）不入 m_lastFailures，天然排除在重试口径外
+    std::vector<DeviceInfo> failedDevices;
+    for (const auto& d : m_lastDevices) {
+        const std::string key =
+            d.ip + ":" + std::to_string(m_lastPort);
+        if (std::find(m_lastFailures.begin(), m_lastFailures.end(), key)
+                != m_lastFailures.end()) {
+            failedDevices.push_back(d);
+        }
+    }
+    if (failedDevices.empty()) {
+        appendLog("未能在上次部署设备中匹配到失败设备，无法重试");
+        return;
+    }
+
+    // 沿用上次请求缓存（文件/目录/选项/协议），凭证取设备总线当前值；
+    // 走与普通部署完全相同的 startDeployment → startUpload 链路
+    appendLog(QString("重试 %1 台失败设备...").arg(failedDevices.size()));
+    startDeployment(failedDevices, m_lastFiles,
+                    QString::fromStdString(m_lastRemotePath),
+                    m_lastClearBefore, m_lastRebootAfter,
+                    m_lastProtocol, m_lastUseFtps, m_lastPort,
+                    QStringLiteral("【重试】"));
+}
+
+void FtpDeployWidget::onExportReportClicked()
+{
+    if (!m_backend) { appendLog("Backend 未就绪"); return; }
+    const DeployReport report = m_backend->lastReport();
+    if (report.results.empty()) { appendLog("暂无可导出的部署报告"); return; }
+
+    QString selectedFilter;
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出部署报告"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+            + QStringLiteral("/deploy-report.csv"),
+        QStringLiteral("CSV (*.csv);;HTML (*.html)"),
+        &selectedFilter);
+    if (path.isEmpty())
+        return;
+
+    // 按所选过滤器选择渲染格式；文件名缺扩展名时按格式补齐
+    const bool asHtml = selectedFilter.contains(QStringLiteral("HTML"));
+    QString filePath = path;
+    if (asHtml) {
+        if (!filePath.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive)
+            && !filePath.endsWith(QStringLiteral(".htm"), Qt::CaseInsensitive))
+            filePath += QStringLiteral(".html");
+    } else if (!filePath.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive)) {
+        filePath += QStringLiteral(".csv");
+    }
+
+    const std::string content = asHtml ? renderReportHtml(report)
+                                       : renderReportCsv(report);
+    QFile f(filePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        appendLog(QString("导出报告失败：无法写入 %1").arg(filePath));
+        return;
+    }
+    const qint64 written = f.write(content.data(), static_cast<qint64>(content.size()));
+    const bool complete =
+        written == static_cast<qint64>(content.size()) && f.flush();
+    f.close();
+    // 写盘结果核验：磁盘满/权限问题导致写入不完整时不得谎报导出成功
+    if (!complete) {
+        appendLog(QString("导出报告失败：%1 写入不完整（%2/%3 字节），请检查磁盘空间与写权限")
+                      .arg(filePath).arg(written)
+                      .arg(static_cast<qint64>(content.size())));
+        return;
+    }
+    appendLog(QString("部署报告已导出：%1（%2 条记录）")
+                  .arg(filePath).arg(static_cast<int>(report.results.size())));
 }
 
 std::vector<std::string> FtpDeployWidget::collectLocalFiles() const

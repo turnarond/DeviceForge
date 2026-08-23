@@ -124,14 +124,19 @@ endif()
 
 # --- 部署循环 mock 测试（不连服务器，验证设备迭代/取消/失败收集）---
 # 注：brief 片段只列测试源，实际还需编译 FtpDeployBackend.cpp（startUpload
-#     定义）+ ProtocolRegistry.cpp（工厂注册/创建）+ FtpAdapter.cpp（部署循环
-#     dynamic_cast<FtpAdapter*> 需要其 RTTI/vtable）+ FtpListParser.cpp（被
-#     FtpAdapter.cpp 引用），并链接 Qt6::Concurrent（QtConcurrent::run）+
-#     lwserverbase（ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
+#     定义）+ DeploymentRunner.cpp（v2.8 Task 4 起 startUpload 经 Runner 调度）
+#     + ConfigStore.cpp（并发度读取）+ ProtocolRegistry.cpp（工厂注册/创建）+
+#     FtpAdapter.cpp（部署循环 dynamic_cast<FtpAdapter*> 需要其 RTTI/vtable）+
+#     FtpListParser.cpp（被 FtpAdapter.cpp 引用），并链接 Qt6::Concurrent
+#     （QtConcurrent::run）+ Qt6::Sql（ConfigStore SQLite）+ lwserverbase
+#     （ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
 add_executable(tst_deploy_loop
     deploy/tst_deploy_loop.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
 )
@@ -139,7 +144,7 @@ target_include_directories(tst_deploy_loop PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 target_link_libraries(tst_deploy_loop PRIVATE
-    Qt6::Core Qt6::Concurrent Qt6::Test
+    Qt6::Core Qt6::Concurrent Qt6::Sql Qt6::Test
     lwserverbase
     ${LIBCURL_IMPL_LIB}
 )
@@ -301,5 +306,49 @@ target_link_libraries(tst_ftplist_parser PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME tst_ftplist_parser COMMAND tst_ftplist_parser)
 if(_qt_bin_dir)
     set_tests_properties(tst_ftplist_parser PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- 部署报告数据结构与 CSV/HTML 渲染纯函数测试（v2.8 并行批量部署 Task 1）---
+# 编入产品源码 DeployReport.cpp（仅标准库，无 Qt/网络依赖；QtTest 仅作测试壳）
+add_executable(tst_deploy_report
+    deploy/tst_deploy_report.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+)
+target_include_directories(tst_deploy_report PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool
+)
+target_link_libraries(tst_deploy_report PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_report COMMAND tst_deploy_report)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_report PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- DeploymentRunner 并发调度测试（v2.8 并行批量部署 Task 3，零网络）---
+# 编入产品源码 DeploymentRunner.cpp + DeployJob.cpp（run() 实际执行路径）+
+#     ProtocolRegistry.cpp（mock 工厂注册/创建）。DeployJob 的 useFtps 分支引用
+#     FtpAdapter::setUseFtps 符号，故须编入 FtpAdapter.cpp+FtpListParser.cpp 并链接
+#     libcurl 导入库（仅满足链接，测试走 mock 适配器不触网）
+add_executable(tst_deploy_runner
+    deploy/tst_deploy_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+)
+target_include_directories(tst_deploy_runner PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(tst_deploy_runner PRIVATE
+    Qt6::Core Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+)
+add_test(NAME tst_deploy_runner COMMAND tst_deploy_runner)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_runner PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()

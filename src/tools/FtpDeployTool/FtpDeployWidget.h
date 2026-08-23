@@ -15,6 +15,7 @@
 
 #pragma once
 #include "framework/ToolWidget.h"
+#include "framework/DeviceInfo.h"
 #include <memory>
 #include <atomic>
 #include <vector>
@@ -62,6 +63,9 @@ signals:
 private slots:
     void onDeployClicked();
     void onRefreshRemote();
+    // v2.8 Task 5：部署报告导出（CSV/HTML 二选一）+ 失败设备一键重试
+    void onExportReportClicked();
+    void onRetryFailedClicked();
     // Task 3：面板源选择器联动（blockSignals 防循环；面板源=浏览配置，工具栏=部署目标）
     void onLeftSourceChanged(const QString& proto, const QString& device);
     void onRightSourceChanged(const QString& proto, const QString& device);
@@ -76,6 +80,15 @@ private:
     void appendLog(const QString& msg);
     std::vector<std::string> collectLocalFiles() const;
     void connectBackendSignals();
+    // 既有部署路径收口（v2.8 Task 5）：绑定凭证/设备 + 进度行初始化 + 日志 +
+    // startUpload。onDeployClicked 与 onRetryFailedClicked 共用，logPrefix
+    // 区分普通部署与重试（重试传「【重试】」）
+    void startDeployment(const std::vector<DeviceInfo>& devices,
+                         const std::vector<std::string>& files,
+                         const QString& remotePath,
+                         bool clearBefore, bool rebootAfter,
+                         const std::string& protocol, bool useFtps, int port,
+                         const QString& logPrefix);
     std::string currentProtocol() const;
     void setConnState(RemoteConnState state);
     void updateDeployBtnText();
@@ -126,6 +139,20 @@ private:
     // 部署
     QPushButton*          m_deployBtn = nullptr;
     MultiProgressWidget*  m_multiProgress = nullptr;
+
+    // 结果操作（v2.8 Task 5）：部署结束后点亮——导出本轮报告 / 重试失败设备
+    QPushButton*          m_exportReportBtn = nullptr;
+    QPushButton*          m_retryBtn = nullptr;
+    // 上次部署请求缓存（重试依据）：仅在实际启动一轮部署后更新
+    std::vector<DeviceInfo> m_lastDevices;             // 上次绑定的完整设备集（含成功台）
+    std::vector<std::string> m_lastFiles;              // 上次部署的本地文件清单
+    std::string            m_lastRemotePath;           // 上次部署目标目录
+    bool                   m_lastClearBefore = false;
+    bool                   m_lastRebootAfter = false;
+    std::string            m_lastProtocol;
+    bool                   m_lastUseFtps = false;
+    int                    m_lastPort = 21;            // 行键/端口覆盖与上次一致
+    std::vector<std::string> m_lastFailures;           // finished 回调给出的失败行键（"ip:port"，Cancelled 不在内）
 
     // 分割器
     QSplitter* m_splitter = nullptr;

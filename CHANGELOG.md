@@ -14,6 +14,20 @@
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
 - **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
 
+## [2.8.0] — 2026-08-22
+
+### 并行批量部署（feature/v28-parallel-deploy）
+
+- **多设备并行批量部署**：新增 DeploymentRunner 并发调度器（私有 QThreadPool），多设备部署从「逐台串行」升级为「上限并发」——并发度可配 1-8（SettingsDialog 滑块，ConfigStore 键 `deploy.concurrency` 持久化）；单台事务抽取为 DeployJob（自 FtpDeployBackend 设备循环体串行等价平移）；全局取消传播贯穿调度检查点（未启动台次预检跳过、传输中台次经文件循环头/协议栈检查点中止，统一归 Cancelled 态，failedFiles 明细保留）
+- **每设备实时进度**：多设备进度组件并行实装——deviceProgress 回调按设备键（ip:port）独立上报 0-100（线程契约固定：池线程并发触发、消费方 QueuedConnection 编组回 GUI 线程）；聚合总进度 100ms 时间戳节流 + 完成时强制末次发射（节流门闸初值取 now()-100ms 修复首拍溢出 UB）
+- **部署报告导出**：DeployReport 结果聚合数据结构 + CSV/HTML 双格式渲染纯函数（纯逻辑零 Qt 依赖）——CSV 供 Excel 归档、HTML 为打印友好黑白表格；逐设备状态/失败文件/错误摘要/耗时明细
+- **失败设备一键重试**：部署结束后对失败设备集合一键重跑，无需重新勾选设备与文件
+
+### 顺带缺陷修复（已并入 main，随本版本发布）
+
+- **FtpListParser 解析缺陷两处（#21）**：格式矩阵回归测试（Unix/Windows 双格式多变体用例）铺开后修复「单数字日期」（如 `Aug  4`）与「小写 pm」两种 LIST 行解析失败
+- **更新检查退出阻塞（#23）**：UpdateChecker 挂接取消回调 + 收紧连接超时，消除应用退出窗口期偶发的进程阻塞
+
 ## [2.7.0] — 2026-08-19
 
 ### UX 收尾（feature/ux-finish）

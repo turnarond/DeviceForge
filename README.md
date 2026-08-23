@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.7.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.8.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -56,8 +56,8 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 
 | 模块 | 状态 | 协议 | 说明 |
 |------|------|------|------|
-| 文件部署 | ✅ 双栏文件管理器 | FTP/FTPS (libcurl) | 本地↔远程双栏统一表格视图、双击导航/路径栏跳转、F2 重命名、F5 复制到对面、F6 移动到对面、Tab 切栏、面板间拖拽（方向语义）、多设备批量部署（逐台执行，部署目标=右侧面板当前路径）、选择性部署、目录递归删除、远程重命名/新建目录、远程文件精确对比 |
-| SFTP 文件管理 | ✅ 文件管理 + 批量部署 | SFTP (libssh2) | 列目录/上传/下载/删除/重命名/新建目录，双栏协议切换，批量部署（IDeployable 统一部署循环，逐台执行） |
+| 文件部署 | ✅ 双栏文件管理器 | FTP/FTPS (libcurl) | 本地↔远程双栏统一表格视图、双击导航/路径栏跳转、F2 重命名、F5 复制到对面、F6 移动到对面、Tab 切栏、面板间拖拽（方向语义）、多设备批量部署（并发度可配 1-8，部署目标=右侧面板当前路径）、部署报告导出（CSV/HTML）、失败设备一键重试、选择性部署、目录递归删除、远程重命名/新建目录、远程文件精确对比 |
+| SFTP 文件管理 | ✅ 文件管理 + 批量部署 | SFTP (libssh2) | 列目录/上传/下载/删除/重命名/新建目录，双栏协议切换，批量部署（IDeployable 统一部署循环，与文件部署同源：并发度可配/报告导出/失败重试） |
 | 批量命令执行 | ✅ Tool 架构 | Telnet / SSH (libssh2) | 批量 Shell 命令，Telnet/SSH 切换，认证失败阻断 |
 | WebSocket 通信 | ✅ Tool 架构 | WebSocket | Server/Client，默认 localhost + 可选 Token 认证，WSS 服务端自签名证书（测试用） |
 | Modbus 集群测试 | ✅ Tool 架构 | Modbus TCP | 批量读写寄存器（0x01-0x04 正确映射、0x06/0x05 写入对话框、异常码中文展示），自动刷新 |
@@ -108,7 +108,7 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.7.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.8.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建
@@ -179,6 +179,7 @@ DeviceForge/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| **2.8.0** | 2026-08-22 | 并行批量部署（DeploymentRunner 线程池并发调度，并发度可配 1-8）+ 每设备实时进度（总进度节流聚合）+ 部署报告导出（CSV/HTML）+ 失败设备一键重试；顺带修复 FtpListParser 单数字日/小写 pm 解析缺陷与更新检查偶发退出阻塞 |
 | **2.7.0** | 2026-08-19 | UX 收尾（远程列表/连接异步化不冻结 UI + 面板源选择器 + 系统文件拖入上传恢复 + 顺带项：readdir 错误上报/sort 降序 SWO 修复/像素验证测试）+ 全量健康评审修复 21 项（Modbus 映射/写入/异常码、Telnet 登录/超时/取消、WSS 自签名证书、NetRelay 背压等） |
 | **2.6.0** | 2026-08-07 | SFTP 批量部署（IDeployable 部署接口 + SshAdapter 递归 mkdir 上传/清空目录/取消 + 部署循环协议化 + UI 解锁 FTP/SFTP 一键切换部署） |
 | **2.5.0** | 2026-07-26 | FTP 重命名/新建目录 + 远程精确对比 + SFTP 文件管理 + SylixOS 适配（EPSV/MULTICWD/递归删除） |
