@@ -68,11 +68,25 @@ class ExtractTest(unittest.TestCase):
         self.assertIsNone(vc.extract_cmake(_make_tmp() / "nope.txt"))
 
 
+    def test_release_notes_version_parsing(self):
+        p = _write(_make_tmp(), "RELEASE_NOTES.md",
+                   "# DeviceForge v2.8.0 Release Notes\n")
+        self.assertEqual(vc.extract_release_notes(p), "2.8.0")
+
+    def test_roadmap_current_version_parsing(self):
+        p = _write(_make_tmp(), "ROADMAP.md",
+                   "**当前版本**：v2.8.0 ｜ **平台**：Windows\n")
+        self.assertEqual(vc.extract_roadmap(p), "2.8.0")
+
+
 def _build_tree(version: str = "2.7.0", omit=None) -> Path:
     """构造一个全仓版本一致的假仓库（可指定缺省文件）。"""
     tmp = _make_tmp()
     files = {
         "CMakeLists.txt": f"project(DeviceForge VERSION {version} LANGUAGES C CXX)\n",
+        "RELEASE_NOTES.md": f"# DeviceForge v{version} Release Notes\n",
+        "ROADMAP.md": f"**当前版本**：v{version} ｜ **平台**：Windows\n",
+        "docs/01-白皮书/产品路线图.md": f"**当前版本**：v{version} ｜ **平台**：Windows\n",
         "src/app/DeviceForge.rc": f'FILEVERSION {version.replace(".", ",")},0\n',
         "README.md": f"**版本**：{version} | **许可**：MIT License\n",
         "CHANGELOG.md": f"# Changelog\n\n## [{version}] — 2026-08-19\n",
@@ -105,11 +119,23 @@ class CheckVersionsTest(unittest.TestCase):
 
     def test_缺失来源不阻断但报告(self):
         result = vc.check_versions(_build_tree(omit="README.md"))
-        self.assertTrue(result.consistent)
+        self.assertFalse(result.consistent)
         self.assertIsNone(result.reports["readme"].found)
         self.assertIn("readme", result.missing)
 
     def test_权威缺失视为不一致(self):
+        for rel, name, content in (
+            ("RELEASE_NOTES.md", "release_notes", "# DeviceForge v2.6.0 Release Notes\n"),
+            ("ROADMAP.md", "roadmap", "**当前版本**：v2.6.0\n"),
+            ("docs/01-白皮书/产品路线图.md", "product_roadmap", "**当前版本**：v2.6.0\n"),
+        ):
+            with self.subTest(source=name):
+                tmp = _build_tree()
+                _write(tmp, rel, content)
+                result = vc.check_versions(tmp)
+                self.assertFalse(result.consistent)
+                self.assertIn(name, result.mismatches)
+
         tmp = _build_tree(omit="CMakeLists.txt")
         result = vc.check_versions(tmp)
         self.assertFalse(result.consistent)

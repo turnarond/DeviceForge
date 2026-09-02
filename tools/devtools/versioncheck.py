@@ -83,7 +83,25 @@ def extract_whitepaper(path: Path) -> Optional[str]:
 # ---------------------------------------------------------------- 来源表
 
 # (名称, 相对路径, 提取函数, 是否权威)
+def extract_release_notes(path: Path) -> Optional[str]:
+    if not path.is_file():
+        return None
+    m = re.search(r"^#\s+DeviceForge\s+v(\d+\.\d+\.\d+)\s+Release Notes\s*$",
+                  _read(path), re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def extract_roadmap(path: Path) -> Optional[str]:
+    if not path.is_file():
+        return None
+    m = re.search(r"\*\*当前版本\*\*：v?(\d+\.\d+\.\d+)", _read(path))
+    return m.group(1) if m else None
+
+
 DEFAULT_SOURCES: Tuple[Tuple[str, str, Extractor, bool], ...] = (
+    ("release_notes", "RELEASE_NOTES.md", extract_release_notes, False),
+    ("roadmap", "ROADMAP.md", extract_roadmap, False),
+    ("product_roadmap", "docs/01-白皮书/产品路线图.md", extract_roadmap, False),
     ("cmake",    "CMakeLists.txt",                 extract_cmake,      True),
     ("rc",       "src/app/DeviceForge.rc",         extract_rc,         False),
     ("readme",   "README.md",                      extract_readme,     False),
@@ -131,7 +149,9 @@ def check_versions(root: str = ".", sources: Tuple = DEFAULT_SOURCES) -> CheckRe
             missing.append(name)
         elif rep.found != authority:
             mismatches.append(name)
-    return CheckResult(reports, authority, not mismatches, mismatches, missing)
+    return CheckResult(reports, authority,
+                       not mismatches and not missing,
+                       mismatches, missing)
 
 
 # ---------------------------------------------------------------- CLI
@@ -147,10 +167,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"  {name:<10} {rep.path:<36} -> {status}")
 
     if not result.consistent:
-        print(f"[FAIL] 版本不一致（权威 {result.authority}）: {result.mismatches}")
+        print(f"[FAIL] mismatches={result.mismatches} missing={result.missing}")
         return 1
-    if result.missing:
-        print(f"[WARN] 以下来源缺失/未解析（不阻断）: {result.missing}")
+
     print(f"[OK] 全仓版本一致: {result.authority}")
     return 0
 
