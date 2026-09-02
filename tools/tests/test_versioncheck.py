@@ -142,6 +142,16 @@ class CheckVersionsTest(unittest.TestCase):
 
 
 class CliTest(unittest.TestCase):
+    def test_new_required_source_missing_cli_nonzero(self):
+        for rel in (
+            "RELEASE_NOTES.md",
+            "ROADMAP.md",
+            "docs/01-白皮书/产品路线图.md",
+        ):
+            with self.subTest(source=rel):
+                tmp = _build_tree(omit=rel)
+                self.assertNotEqual(vc.main(["--root", str(tmp)]), 0)
+
     def test_不一致时退出码非零(self):
         tmp = _build_tree()
         _write(tmp, "README.md", "**版本**：9.9.9\n")
