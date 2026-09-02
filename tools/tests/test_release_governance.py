@@ -32,3 +32,13 @@ class RepositoryGovernanceTest(unittest.TestCase):
             "ctest --test-dir",
         ):
             self.assertIn(token, text)
+
+    def test_发布验收只允许手动触发且不发布Release(self):
+        text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", text)
+        self.assertNotIn("push:", text)
+        self.assertNotIn("pull_request:", text)
+        self.assertNotIn("gh release", text.lower())
+        for token in ("version:", "versioncheck.py", "ctest --test-dir",
+                      "windeployqt", "smoke.py", "makensis", "upload-artifact@v4"):
+            self.assertIn(token, text)

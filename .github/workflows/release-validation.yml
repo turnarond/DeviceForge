@@ -1,0 +1,80 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version matching CMakeLists.txt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release-validation:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.2'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtserialport qtserialbus qtwebsockets'
+          cache: true
+
+      - name: Validate requested version
+        shell: pwsh
+        run: |
+          $cmakeText = Get-Content -LiteralPath CMakeLists.txt -Raw
+          $match = [regex]::Match(
+            $cmakeText,
+            'project\s*\(\s*DeviceForge\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+          if (-not $match.Success) {
+            throw 'Unable to extract the DeviceForge version from CMakeLists.txt.'
+          }
+          $cmakeVersion = $match.Groups[1].Value
+          if ($cmakeVersion -ne '${{ inputs.version }}') {
+            throw "Requested version ${{ inputs.version }} does not match CMake version $cmakeVersion."
+          }
+
+      - name: Validate, build, and test
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tools/tests -v
+          python tools/devtools/versioncheck.py
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Deploy, smoke test, and package
+        shell: pwsh
+        run: |
+          windeployqt --release --no-translations build\Release\DeviceForge.exe
+          python tools/devtools/smoke.py build\Release\DeviceForge.exe
+          choco install nsis -y --no-progress
+          makensis "/DVERSION=${{ inputs.version }}" "/DSTAGING_DIR=${{ github.workspace }}\build\Release" packaging\deviceforge.nsi
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build\Release\* -DestinationPath "dist\DeviceForge-v${{ inputs.version }}-win64.zip" -Force
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeviceForge-v${{ inputs.version }}-win64
+          path: dist\DeviceForge-v${{ inputs.version }}-win64.zip
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeviceForge-v${{ inputs.version }}-setup
+          path: DeviceForge-v${{ inputs.version }}-setup.exe
+          if-no-files-found: error
