@@ -14,6 +14,8 @@ permissions:
 jobs:
   release-validation:
     runs-on: windows-latest
+    env:
+      REQUESTED_VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +35,10 @@ jobs:
       - name: Validate requested version
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:REQUESTED_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'Requested version must use the x.y.z format.'
+          }
           $cmakeText = Get-Content -LiteralPath CMakeLists.txt -Raw
           $match = [regex]::Match(
             $cmakeText,
@@ -42,39 +48,102 @@ jobs:
             throw 'Unable to extract the DeviceForge version from CMakeLists.txt.'
           }
           $cmakeVersion = $match.Groups[1].Value
-          if ($cmakeVersion -ne '${{ inputs.version }}') {
-            throw "Requested version ${{ inputs.version }} does not match CMake version $cmakeVersion."
+          if ($cmakeVersion -ne $env:REQUESTED_VERSION) {
+            throw "Requested version $env:REQUESTED_VERSION does not match CMake version $cmakeVersion."
           }
 
-      - name: Validate, build, and test
+      - name: Run repository tools tests
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           python -m unittest discover -s tools/tests -v
-          python tools/devtools/versioncheck.py
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
-          cmake --build build --config Release --parallel
-          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Deploy, smoke test, and package
+      - name: Run version consistency gate
         shell: pwsh
         run: |
-          windeployqt --release --no-translations build\Release\DeviceForge.exe
+          $ErrorActionPreference = 'Stop'
+          python tools/devtools/versioncheck.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run release tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Deploy Qt runtime and required plugins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          windeployqt --release --no-translations --plugindir build\Release\plugins --include-plugins qwindows,qsqlite build\Release\DeviceForge.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($pluginPath in @(
+            'build\Release\plugins\platforms\qwindows.dll',
+            'build\Release\plugins\sqldrivers\qsqlite.dll'
+          )) {
+            if (-not (Test-Path -LiteralPath $pluginPath)) {
+              throw "Required Qt plugin is missing: $pluginPath"
+            }
+          }
+
+      - name: Run release smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           python tools/devtools/smoke.py build\Release\DeviceForge.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           choco install nsis -y --no-progress
-          makensis "/DVERSION=${{ inputs.version }}" "/DSTAGING_DIR=${{ github.workspace }}\build\Release" packaging\deviceforge.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $makensisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path -LiteralPath $makensisPath)) {
+            throw "NSIS compiler was not installed at $makensisPath"
+          }
+          & $makensisPath "/DVERSION=$env:REQUESTED_VERSION" "/DSTAGING_DIR=$env:GITHUB_WORKSPACE\build\Release" packaging\deviceforge.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build\Release\* -DestinationPath "dist\DeviceForge-v${{ inputs.version }}-win64.zip" -Force
+          Compress-Archive -Path build\Release\* -DestinationPath "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip" -Force
 
       - name: Upload portable package
         uses: actions/upload-artifact@v4
         with:
-          name: DeviceForge-v${{ inputs.version }}-win64
-          path: dist\DeviceForge-v${{ inputs.version }}-win64.zip
+          name: DeviceForge-v${{ env.REQUESTED_VERSION }}-win64
+          path: dist\DeviceForge-v${{ env.REQUESTED_VERSION }}-win64.zip
           if-no-files-found: error
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: DeviceForge-v${{ inputs.version }}-setup
-          path: DeviceForge-v${{ inputs.version }}-setup.exe
+          name: DeviceForge-v${{ env.REQUESTED_VERSION }}-setup
+          path: DeviceForge-v${{ env.REQUESTED_VERSION }}-setup.exe
           if-no-files-found: error

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -42,3 +43,34 @@ class RepositoryGovernanceTest(unittest.TestCase):
         for token in ("version:", "versioncheck.py", "ctest --test-dir",
                       "windeployqt", "smoke.py", "makensis", "upload-artifact@v4"):
             self.assertIn(token, text)
+
+    def test_release_validation_fails_fast_and_uses_validated_inputs(self):
+        text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("${{ inputs.version }}"), 1)
+        self.assertIn("REQUESTED_VERSION: ${{ inputs.version }}", text)
+        self.assertIn("'^[0-9]+\\.[0-9]+\\.[0-9]+$'", text)
+        self.assertIn("${env:ProgramFiles(x86)}\\NSIS\\makensis.exe", text)
+        self.assertIn("Test-Path -LiteralPath $makensisPath", text)
+        self.assertIn(
+            "windeployqt --release --no-translations --plugindir build\\Release\\plugins "
+            "--include-plugins qwindows,qsqlite build\\Release\\DeviceForge.exe",
+            text)
+        for plugin in ("plugins\\platforms\\qwindows.dll", "plugins\\sqldrivers\\qsqlite.dll"):
+            self.assertIn(plugin, text)
+        for command in (
+            "python -m unittest discover -s tools/tests -v",
+            "python tools/devtools/versioncheck.py",
+            "cmake -S . -B build",
+            "cmake --build build --config Release --parallel",
+            "ctest --test-dir build -C Release --output-on-failure",
+            "windeployqt --release --no-translations",
+            "python tools/devtools/smoke.py build\\Release\\DeviceForge.exe",
+            "choco install nsis -y --no-progress",
+            "& $makensisPath",
+        ):
+            self.assertRegex(
+                text,
+                re.escape(command) + r"[^\n]*\n\s*if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}",
+            )
+        self.assertIn("contents: read", text)
+        self.assertEqual(text.count("if-no-files-found: error"), 2)
