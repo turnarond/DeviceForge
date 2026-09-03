@@ -11,7 +11,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 | 特性 | 说明 |
 |------|------|
 | 📁 **FTP 双栏文件管理器** | 本地 ↔ 远程双栏统一表格视图（TC 化交互：双击导航/路径栏跳转、F2 重命名、F5 复制到对面、F6 移动到对面、Tab 切栏、方向指示），拖拽上传、远程文件管理（删除/重命名/新建目录/下载） |
-| 🚀 **多设备批量部署** | 一次操作批量部署到多台设备（逐台执行，失败设备跳过），选择性部署（勾选设备）、部署前清空/部署后重启 |
+| 🚀 **多设备批量部署** | 一次操作批量部署到多台设备（并发度可配 1-8，默认 1；失败设备跳过），选择性部署（勾选设备）、部署前清空/部署后重启 |
 | 🔒 **FTPS 加密传输** | FTP over TLS，防止凭证和文件在网络中被窃听 |
 | 🔌 **SFTP 文件管理 + 批量部署** | SshAdapter SFTP 子系统，双栏 FTP/SFTP 协议一键切换，SFTP 批量部署/拖拽上传（与 FTP 同一部署逻辑） |
 | 🎨 **工业仪表盘主题（暗/亮可切换）** | 「琴色是动词」主题体系——琴色仅标记可操作/活跃状态，结构一律中性，暗/亮双主题设置中即时切换 |
@@ -115,11 +115,11 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ```bash
 mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
+cmake .. -DCMAKE_PREFIX_PATH="D:\Qt\6.11.1\msvc2022_64"
 cmake --build . --config Release
 ```
 
-或使用一键脚本 `build.bat`（自动清理缓存 + 配置 + 编译）。
+示例路径可替换为本机实际 Qt 6.11.1 `msvc2022_64` 目录；或在调用一键脚本前设置 `QT_PREFIX`（例如 `set QT_PREFIX=D:\Qt\6.11.1\msvc2022_64`）。`build.bat` 会自动清理缓存、配置并编译；未显式设置时按 `D:\Qt`、`C:\Qt` 顺序探测。
 
 ### Visual Studio
 
@@ -127,7 +127,8 @@ cmake --build . --config Release
 
 ### CI
 
-GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"）：push/PR 到 `main` 时触发，Windows 环境，Qt 6.9.2，CMake + CTest。
+- 日常 CI：`.github/workflows/ci.yml`，push/PR 到 `main` 时在 Windows + Qt 6.9.2 下分别构建 Debug/Release，并运行全部 CTest、Python 工具测试和版本一致性检查。
+- 手动发布验收：`.github/workflows/release-validation.yml`，仅由 `workflow_dispatch` 启动 Release 构建、CTest、`windeployqt`、UI 冒烟与 NSIS 打包并上传 artifacts；它不会自动创建 GitHub Release 或 Tag。
 
 ---
 

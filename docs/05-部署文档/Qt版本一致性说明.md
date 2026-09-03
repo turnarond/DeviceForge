@@ -2,11 +2,11 @@
 
 ## Qt 版本统一
 
-**当前版本：Qt 6.11.1**（系统实际安装版本）
+**本地开发基线：Qt 6.11.1**；**CI 兼容基线：Qt 6.9.2**
 
 ### 为什么是 6.11.1？
 
-- 系统实际安装的 Qt 版本是 **6.11.1**（`C:\Qt\6.11.1\msvc2022_64`）
+- 当前验收机实际安装的 Qt 版本是 **6.11.1**（`D:\Qt\6.11.1\msvc2022_64`）
 - Qt 6.10.1 并未安装
 - CI 使用 Qt 6.9.2（GitHub Actions）
 
@@ -15,7 +15,7 @@
 | 时期 | Qt 版本 | 说明 |
 |------|---------|------|
 | 早期开发 | 6.10.1 | 文档指定，但实际未安装 |
-| 当前 | **6.11.1** | 系统实际安装版本 |
+| 当前 | **6.11.1** | 本地开发基线；路径可配置，当前验收机位于 `D:\Qt` |
 | CI | 6.9.2 | GitHub Actions（jurplel/install-qt-action@v4） |
 
 ### 文档更新记录
@@ -44,6 +44,12 @@
 - CI 自动测试使用 Qt 6.9.2
 - 提交前确保两版本均能编译通过
 
+### 本地工具发现
+
+- `build.bat` 优先使用调用方显式设置的 `QT_PREFIX`；未设置时按 `D:\Qt`、`C:\Qt` 顺序探测 Qt 6.11.1。盘符和安装位置不是工程约束。
+- Python 工具可使用 PATH 中可实际启动的 Python 3；PATH 被 WindowsApps 占位时，当前验收机可使用 `D:\Qt\Tools\mingw1310_64\opt\bin\python3.exe`。
+- 本地 CTest 的 `tst_dpapi_crypto` 需要正常 Windows 用户 profile。CI/服务账户若失败，应保留 Windows 错误码，并在正常用户账户复测。
+
 ## CI Qt 版本差异处理
 
 CI 使用的 Qt 版本（6.9.2）与本地开发版本（6.11.1）不同，注意避免使用仅新版才有的 API。
@@ -63,3 +69,9 @@ CI 使用的 Qt 版本（6.9.2）与本地开发版本（6.11.1）不同，注�
 解决：
 - 回退到 Qt 6.9.2 兼容的 API
 - 或在 GitHub Actions workflow 中升级 Qt 版本
+
+## CI 与发布验收边界
+
+- `.github/workflows/ci.yml` 是日常入口，在 Qt 6.9.2 下分别验证 Debug/Release。
+- `.github/workflows/release-validation.yml` 仅手动触发，执行 Release 构建、CTest、`windeployqt`、UI 冒烟和 NSIS 打包，上传 zip/setup artifacts。
+- 该手动工作流不自动创建 GitHub Release 或 Tag；正式发布仍需人工确认验收证据。
