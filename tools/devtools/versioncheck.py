@@ -2,7 +2,8 @@
 """版本一致性校验工具（开发规范第 2、10 条）。
 
 以 CMakeLists.txt 的 ``project(DeviceForge VERSION x.y.z ...)`` 为唯一权威，
-校验 rc / README / CHANGELOG / CLAUDE / 白皮书 的版本号是否全仓一致。
+强制校验 RC、README、CHANGELOG、CLAUDE、白皮书、Release Notes、根 Roadmap
+与产品 Roadmap 共九个来源的版本号是否全仓一致；缺失、无法解析或不一致均失败。
 发布前必须通过（退出码 0），见 ``docs/01-白皮书/版本发布与Tag规范.md``。
 """
 import argparse

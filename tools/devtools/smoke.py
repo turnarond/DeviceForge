@@ -124,7 +124,7 @@ class SmokeRunner:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"用法: python {sys.argv[0]} <exe路径> [--timeout 秒] [--title 标题]")
+        print("用法: python smoke.py <exe路径>")
         sys.exit(2)
     result = SmokeRunner(sys.argv[1]).run()
     print(result.message)

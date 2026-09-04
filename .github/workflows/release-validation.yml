@@ -102,48 +102,55 @@ jobs:
             }
           }
 
-      - name: Run release smoke test
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          python tools/devtools/smoke.py build\Release\DeviceForge.exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Install NSIS
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          choco install nsis -y --no-progress
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $makensisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          if (-not (Test-Path -LiteralPath $makensisPath)) {
-            throw "NSIS compiler was not installed at $makensisPath"
-          }
-          & $makensisPath "/DVERSION=$env:REQUESTED_VERSION" "/DSTAGING_DIR=$env:GITHUB_WORKSPACE\build\Release" packaging\deviceforge.nsi
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Create portable package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build\Release\* -DestinationPath "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip" -Force
+          $portableZip = "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip"
+          Compress-Archive -Path build\Release\* -DestinationPath $portableZip -Force
+
+      - name: Smoke portable package in a hermetic Qt environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pythonPath = (Get-Command python -ErrorAction Stop).Source
+          $portableZip = "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "deviceforge-portable-smoke-$([guid]::NewGuid().ToString('N'))"
+          New-Item -ItemType Directory -Path $smokeRoot | Out-Null
+          Expand-Archive -LiteralPath $portableZip -DestinationPath $smokeRoot
+          $smokeExe = Join-Path $smokeRoot 'DeviceForge.exe'
+          if (-not (Test-Path -LiteralPath $smokeExe)) {
+            throw "Portable executable is missing after extraction: $smokeExe"
+          }
+
+          $qtRoot = [IO.Path]::GetFullPath($env:QT_ROOT_DIR).TrimEnd('\')
+          $sanitizedPathEntries = @(
+            $env:PATH -split [IO.Path]::PathSeparator |
+              Where-Object {
+                $pathEntry = $_.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($pathEntry)) {
+                  return $false
+                }
+                $candidatePath = [IO.Path]::GetFullPath($pathEntry).TrimEnd('\')
+                return -not (
+                  $candidatePath.Equals($qtRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                  $candidatePath.StartsWith("$qtRoot\", [StringComparison]::OrdinalIgnoreCase)
+                )
+              }
+          )
+          $env:PATH = (@($smokeRoot) + $sanitizedPathEntries) -join [IO.Path]::PathSeparator
+          $env:QT_PLUGIN_PATH = $null
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = $null
+          $env:QML2_IMPORT_PATH = $null
+          $env:QML_IMPORT_PATH = $null
+
+          & $pythonPath tools/devtools/smoke.py $smokeExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload portable package
         uses: actions/upload-artifact@v4
         with:
           name: DeviceForge-v${{ env.REQUESTED_VERSION }}-win64
           path: dist\DeviceForge-v${{ env.REQUESTED_VERSION }}-win64.zip
-          if-no-files-found: error
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: DeviceForge-v${{ env.REQUESTED_VERSION }}-setup
-          path: DeviceForge-v${{ env.REQUESTED_VERSION }}-setup.exe
           if-no-files-found: error

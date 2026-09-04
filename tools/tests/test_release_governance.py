@@ -36,21 +36,34 @@ class RepositoryGovernanceTest(unittest.TestCase):
 
     def test_发布验收只允许手动触发且不发布Release(self):
         text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+        lower_text = text.lower()
         self.assertIn("workflow_dispatch:", text)
         self.assertNotIn("push:", text)
         self.assertNotIn("pull_request:", text)
-        self.assertNotIn("gh release", text.lower())
+        for forbidden in (
+            "gh release",
+            "git tag",
+            "actions/create-release",
+            "softprops/action-gh-release",
+            "contents: write",
+        ):
+            self.assertNotIn(forbidden, lower_text)
         for token in ("version:", "versioncheck.py", "ctest --test-dir",
-                      "windeployqt", "smoke.py", "makensis", "upload-artifact@v4"):
+                      "windeployqt", "Compress-Archive", "Expand-Archive",
+                      "smoke.py", "upload-artifact@v4"):
             self.assertIn(token, text)
 
     def test_release_validation_fails_fast_and_uses_validated_inputs(self):
         text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+        lower_text = text.lower()
         self.assertEqual(text.count("${{ inputs.version }}"), 1)
         self.assertIn("REQUESTED_VERSION: ${{ inputs.version }}", text)
         self.assertIn("'^[0-9]+\\.[0-9]+\\.[0-9]+$'", text)
-        self.assertIn("${env:ProgramFiles(x86)}\\NSIS\\makensis.exe", text)
-        self.assertIn("Test-Path -LiteralPath $makensisPath", text)
+        self.assertEqual(
+            text.count("run: |"),
+            text.count("$ErrorActionPreference = 'Stop'"),
+        )
+        self.assertNotIn("continue-on-error", lower_text)
         self.assertIn(
             "windeployqt --release --no-translations --plugindir build\\Release\\plugins "
             "--include-plugins qwindows,qsqlite build\\Release\\DeviceForge.exe",
@@ -64,13 +77,63 @@ class RepositoryGovernanceTest(unittest.TestCase):
             "cmake --build build --config Release --parallel",
             "ctest --test-dir build -C Release --output-on-failure",
             "windeployqt --release --no-translations",
-            "python tools/devtools/smoke.py build\\Release\\DeviceForge.exe",
-            "choco install nsis -y --no-progress",
-            "& $makensisPath",
+            "& $pythonPath tools/devtools/smoke.py $smokeExe",
         ):
             self.assertRegex(
                 text,
                 re.escape(command) + r"[^\n]*\n\s*if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}",
             )
         self.assertIn("contents: read", text)
-        self.assertEqual(text.count("if-no-files-found: error"), 2)
+        self.assertEqual(text.count("if-no-files-found: error"), 1)
+
+    def test_release_validation_only_builds_and_uploads_portable_zip(self):
+        text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+        lower_text = text.lower()
+
+        for forbidden in (
+            "choco install nsis",
+            "makensis",
+            "setup.exe",
+            "upload installer",
+            "-setup",
+        ):
+            self.assertNotIn(forbidden, lower_text)
+
+        self.assertEqual(text.count("actions/upload-artifact@v4"), 1)
+        self.assertEqual(text.count("if-no-files-found: error"), 1)
+        self.assertIn(
+            'Compress-Archive -Path build\\Release\\* -DestinationPath $portableZip -Force',
+            text,
+        )
+        self.assertIn(
+            "path: dist\\DeviceForge-v${{ env.REQUESTED_VERSION }}-win64.zip",
+            text,
+        )
+
+    def test_release_validation_smokes_extracted_zip_with_hermetic_qt_environment(self):
+        text = (ROOT / ".github/workflows/release-validation.yml").read_text(encoding="utf-8")
+
+        expected_tokens = (
+            "$pythonPath = (Get-Command python -ErrorAction Stop).Source",
+            '$smokeRoot = Join-Path $env:RUNNER_TEMP "deviceforge-portable-smoke-$([guid]::NewGuid().ToString(\'N\'))"',
+            "New-Item -ItemType Directory -Path $smokeRoot",
+            "Expand-Archive -LiteralPath $portableZip -DestinationPath $smokeRoot",
+            "$smokeExe = Join-Path $smokeRoot 'DeviceForge.exe'",
+            "Test-Path -LiteralPath $smokeExe",
+            "$qtRoot = [IO.Path]::GetFullPath($env:QT_ROOT_DIR).TrimEnd('\\')",
+            "$candidatePath.Equals($qtRoot, [StringComparison]::OrdinalIgnoreCase)",
+            '$candidatePath.StartsWith("$qtRoot\\", [StringComparison]::OrdinalIgnoreCase)',
+            "$env:PATH = (@($smokeRoot) + $sanitizedPathEntries) -join [IO.Path]::PathSeparator",
+            "$env:QT_PLUGIN_PATH = $null",
+            "$env:QT_QPA_PLATFORM_PLUGIN_PATH = $null",
+            "$env:QML2_IMPORT_PATH = $null",
+            "$env:QML_IMPORT_PATH = $null",
+            "& $pythonPath tools/devtools/smoke.py $smokeExe",
+        )
+        for token in expected_tokens:
+            self.assertIn(token, text)
+
+        self.assertLess(text.index("Compress-Archive"), text.index("Expand-Archive"))
+        self.assertLess(text.index("Get-Command python"), text.index("$env:PATH ="))
+        self.assertLess(text.index("Expand-Archive"), text.index("smoke.py $smokeExe"))
+        self.assertNotIn("smoke.py build\\Release\\DeviceForge.exe", text)

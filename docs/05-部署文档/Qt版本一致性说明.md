@@ -73,5 +73,5 @@ CI 使用的 Qt 版本（6.9.2）与本地开发版本（6.11.1）不同，注�
 ## CI 与发布验收边界
 
 - `.github/workflows/ci.yml` 是日常入口，在 Qt 6.9.2 下分别验证 Debug/Release。
-- `.github/workflows/release-validation.yml` 仅手动触发，执行 Release 构建、CTest、`windeployqt`、UI 冒烟和 NSIS 打包，上传 zip/setup artifacts。
-- 该手动工作流不自动创建 GitHub Release 或 Tag；正式发布仍需人工确认验收证据。
+- `.github/workflows/release-validation.yml` 仅手动触发，执行 Release 构建、CTest 与 `windeployqt`，生成绿色 zip 后解压到全新目录；它先解析 Python 路径，再从 Smoke 子进程的 PATH 移除 `QT_ROOT_DIR` 下的条目并清空 Qt/QML 插件变量，最后只上传 portable zip artifact。
+- 该手动工作流不创建 GitHub Release 或 Tag，既有 `v2.8.0` Tag 不变。NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后恢复。

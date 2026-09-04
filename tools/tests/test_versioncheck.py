@@ -117,7 +117,7 @@ class CheckVersionsTest(unittest.TestCase):
         self.assertIn("readme", result.mismatches)
         self.assertEqual(result.reports["readme"].found, "2.6.0")
 
-    def test_缺失来源不阻断但报告(self):
+    def test_缺失来源会阻断并报告(self):
         result = vc.check_versions(_build_tree(omit="README.md"))
         self.assertFalse(result.consistent)
         self.assertIsNone(result.reports["readme"].found)

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 完整 16 条规范见 **`docs/00-开发规范/开发规范.md`**（强制行为准则，本处为摘要）。
 
 1. **中文优先**：对话与文档一律使用中文，专业术语（MVP、EventBus、FTP、Modbus、TDD、SDD、ABI 等）与论文引述除外
-2. **文档是唯一对外标准，必须保持最新、不得腐败**：文档（`docs/`，索引见 `docs/README.md`）是交互接口与对齐标准。修改代码若涉及需求、接口、设计、架构、手册、版本号等内容，必须**同一提交内**同步更新对应文档，且文档中不得出现与代码不一致的事实性信息；发现重复/英文残留/失效引用立即合并清理。改版本号时必须全仓同步（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / `docs/01-白皮书/白皮书.md` / CLAUDE.md 等），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准，并用 `tools/devtools/versioncheck.py` 校验
+2. **文档是唯一对外标准，必须保持最新、不得腐败**：文档（`docs/`，索引见 `docs/README.md`）是交互接口与对齐标准。修改代码若涉及需求、接口、设计、架构、手册、版本号等内容，必须**同一提交内**同步更新对应文档，且文档中不得出现与代码不一致的事实性信息；发现重复/英文残留/失效引用立即合并清理。改版本号时必须同步九个强制来源（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / CLAUDE.md / `docs/01-白皮书/白皮书.md` / RELEASE_NOTES.md / ROADMAP.md / `docs/01-白皮书/产品路线图.md`），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准，并用 `tools/devtools/versioncheck.py` 校验；任一来源缺失、无法解析或不一致均阻断
 3. **分支规范**：需求开发、变更、修复 issue 一律从 `main` 新建分支（`feature/xxx`、`fix/xxx`、`docs/xxx`、`refactor/xxx`、`chore/xxx`）开发，验证后 `--no-ff` 合并回 `main`；不在 `main` 堆叠未提交改动，一个分支只做一件事
 4. **TDD**：永远遵循红-绿-重构循环；每次请求实现必须附带对应测试代码或指明要变绿的测试用例；红灯代码不提交
 5. **SDD 工程化流程**：需求 → 方案设计 → 任务规划 → 实施 → 交付，关键阶段专家评审（**尤其方案设计**）；见 `docs/00-开发规范/SDD-工程化流程.md`
@@ -25,9 +25,9 @@ DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的**工业级�
 
 根目录 `build.bat` 一键完成"清理旧缓存 → CMake 配置（VS2022 生成器）→ Release 编译"：
 
-```bash
-# 可先 set QT_PREFIX=D:\Qt\6.11.1\msvc2022_64；未设置时按 D:\Qt、C:\Qt 顺序探测
-./build.bat
+```cmd
+set "QT_PREFIX=D:\Qt\6.11.1\msvc2022_64"
+build.bat
 ```
 
 脚本会先清理 `build/` 内的 `CMakeCache.txt`/`CMakeFiles`/`.vs` 等旧产物（避免平台/生成器不匹配），产物为 `build/Release/DeviceForge.exe`，并生成 `build/DeviceForge.sln` 供 VS 打开。
@@ -91,7 +91,7 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 GitHub Actions 分为两个入口：
 
 - `.github/workflows/ci.yml`：push/PR 到 `main` 时触发；在 `windows-latest` 上安装 Qt 6.9.2（含 `qtserialport qtserialbus qtwebsockets`），运行 Python 工具测试与版本检查，并用 CMake + CTest 分别验证 Debug、Release。
-- `.github/workflows/release-validation.yml`：仅手动 `workflow_dispatch` 触发；校验版本后执行 Release 构建、全部 CTest、`windeployqt`、UI 冒烟和 NSIS 打包，上传绿色包与安装包 artifacts。该工作流只做可重复验收，不自动创建 GitHub Release 或 Tag。
+- `.github/workflows/release-validation.yml`：仅手动 `workflow_dispatch` 触发；校验版本后执行 Release 构建、全部 CTest 与 `windeployqt`，生成绿色 zip 后从全新解压目录在清除 Qt SDK 污染的环境中执行 UI 冒烟，并且只上传 portable zip artifact。该工作流不创建 GitHub Release 或 Tag；NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后恢复，既有 `v2.8.0` Tag 不变。
 
 > CI 使用的 Qt 版本（6.9.2）与本地开发版本（6.11.1）不同，注意避免使用仅新版才有的 API。
 

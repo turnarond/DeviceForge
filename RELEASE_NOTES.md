@@ -61,8 +61,8 @@ ctest --test-dir build -C Release --output-on-failure
 ## 构建与验收入口
 
 - 日常质量门禁：`.github/workflows/ci.yml`。
-- 手动发布验收：`.github/workflows/release-validation.yml`，校验输入版本后执行 Release 构建、20 个 CTest、`windeployqt`、UI 冒烟、NSIS 打包并上传 zip/setup artifacts。
-- 手动工作流不创建 GitHub Release，也不创建或移动 Git Tag；正式发布仍需人工核对验收证据。
+- 手动发布验收：`.github/workflows/release-validation.yml`，校验输入版本后执行 Release 构建、20 个 CTest 与 `windeployqt`，生成绿色 zip 后从全新解压目录在隔离 Qt SDK 的环境中执行 UI 冒烟，并且只上传 portable zip artifact。
+- 手动工作流不创建 GitHub Release，也不创建或移动 Git Tag；既有 `v2.8.0` Tag 保持不变。NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后才能恢复。
 
 ## 已知限制
 
@@ -77,4 +77,4 @@ ctest --test-dir build -C Release --output-on-failure
 1. 升级前备份 `%APPDATA%\DeviceForge\config.db`。
 2. v2.8 新增 `deploy.concurrency` 配置，未设置时默认 1；原有设备、凭证和 Tool 配置继续由 ConfigStore 加载。
 3. 首次批量部署建议保持并发度 1，确认目标设备承载能力后再逐步调整；部署结束后保存 CSV/HTML 报告。
-4. 使用绿色包时应整体替换程序目录，避免混用旧 Qt DLL 或插件；安装包/绿色包以发布验收 artifacts 为准。
+4. 使用绿色包时应整体替换程序目录，避免混用旧 Qt DLL 或插件；当前只接受发布验收生成的 portable zip artifact，NSIS 安装包不得分发。

@@ -128,7 +128,7 @@ cmake --build . --config Release
 ### CI
 
 - 日常 CI：`.github/workflows/ci.yml`，push/PR 到 `main` 时在 Windows + Qt 6.9.2 下分别构建 Debug/Release，并运行全部 CTest、Python 工具测试和版本一致性检查。
-- 手动发布验收：`.github/workflows/release-validation.yml`，仅由 `workflow_dispatch` 启动 Release 构建、CTest、`windeployqt`、UI 冒烟与 NSIS 打包并上传 artifacts；它不会自动创建 GitHub Release 或 Tag。
+- 手动发布验收：`.github/workflows/release-validation.yml`，仅由 `workflow_dispatch` 启动 Release 构建、CTest 与 `windeployqt`，生成绿色 zip 后从全新解压目录在隔离 Qt SDK 的环境中执行 UI 冒烟，并且只上传 portable zip artifact；它不会创建 GitHub Release 或 Tag。NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后恢复；既有 `v2.8.0` Tag 不变。
 
 ---
 
