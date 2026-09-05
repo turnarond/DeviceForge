@@ -1,8 +1,8 @@
 # v2.8 Task 4 最终证据链与文档一致性检查报告
 
-**检查时间**：2026-09-05 14:45（Asia/Shanghai）  
-**工作树**：`D:\work\project\DeviceForge\.worktrees\v28-release-closure`  
-**分支 / 基线**：`chore/v28-release-closure` / `53cd6c57f3c9cd91fdc81007b09e29f9b492db9a`  
+**检查时间**：2026-09-05 14:45（Asia/Shanghai）
+**工作树**：`D:\work\project\DeviceForge\.worktrees\v28-release-closure`
+**分支 / 基线**：`chore/v28-release-closure` / `53cd6c57f3c9cd91fdc81007b09e29f9b492db9a`
 **范围**：发布治理、证据和文档；未修改 `src/`、运行时功能、ABI 或 NSIS 安装/卸载逻辑。
 
 ## 本次本地门禁
