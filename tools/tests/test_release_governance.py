@@ -94,10 +94,12 @@ class RepositoryGovernanceTest(unittest.TestCase):
             "choco install nsis",
             "makensis",
             "setup.exe",
+            "installer",
             "upload installer",
             "-setup",
         ):
             self.assertNotIn(forbidden, lower_text)
+        self.assertNotRegex(lower_text, r"\bnsis\b")
 
         self.assertEqual(text.count("actions/upload-artifact@v4"), 1)
         self.assertEqual(text.count("if-no-files-found: error"), 1)

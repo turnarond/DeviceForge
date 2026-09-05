@@ -103,6 +103,30 @@ def _build_tree(version: str = "2.7.0", omit=None) -> Path:
 class CheckVersionsTest(unittest.TestCase):
     """全仓一致性校验测试。"""
 
+    def test_all_nine_mandatory_sources_block_when_each_one_is_missing(self):
+        expected_sources = {
+            "release_notes",
+            "roadmap",
+            "product_roadmap",
+            "cmake",
+            "rc",
+            "readme",
+            "changelog",
+            "claude",
+            "白皮书",
+        }
+        actual_sources = {name for name, *_ in vc.DEFAULT_SOURCES}
+        self.assertSetEqual(actual_sources, expected_sources)
+
+        for name, rel, *_ in vc.DEFAULT_SOURCES:
+            with self.subTest(source=name):
+                result = vc.check_versions(_build_tree(omit=rel))
+                self.assertFalse(result.consistent)
+                if name == "cmake":
+                    self.assertIsNone(result.authority)
+                else:
+                    self.assertIn(name, result.missing)
+
     def test_全部一致通过(self):
         result = vc.check_versions(_build_tree())
         self.assertTrue(result.consistent)

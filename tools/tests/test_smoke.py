@@ -104,6 +104,19 @@ class SmokeCliTest(unittest.TestCase):
         self.assertEqual(completed.stdout.strip(), "用法: python smoke.py <exe路径>")
         self.assertEqual(completed.stderr, "")
 
+    def test_cli_rejects_extra_arguments_instead_of_ignoring_them(self):
+        script = Path(sm.__file__).resolve()
+        completed = subprocess.run(
+            [sys.executable, str(script), "DeviceForge.exe", "unexpected"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout.strip(), "用法: python smoke.py <exe路径>")
+        self.assertEqual(completed.stderr, "")
+
 
 if __name__ == "__main__":
     unittest.main()
