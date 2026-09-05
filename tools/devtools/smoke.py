@@ -122,10 +122,15 @@ class SmokeRunner:
                 proc.wait()
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f"用法: python {sys.argv[0]} <exe路径> [--timeout 秒] [--title 标题]")
-        sys.exit(2)
-    result = SmokeRunner(sys.argv[1]).run()
+def main(argv: Optional[list[str]] = None) -> int:
+    arguments = sys.argv[1:] if argv is None else argv
+    if len(arguments) != 1:
+        print("用法: python smoke.py <exe路径>")
+        return 2
+    result = SmokeRunner(arguments[0]).run()
     print(result.message)
-    sys.exit(0 if result.ok else 1)
+    return 0 if result.ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

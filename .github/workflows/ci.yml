@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tools/tests -v
+      - run: python tools/devtools/versioncheck.py
+
+  cpp:
+    name: Qt 6.9.2 / ${{ matrix.configuration }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.2'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtserialport qtserialbus qtwebsockets'
+          cache: true
+      - run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+      - run: cmake --build build --config ${{ matrix.configuration }} --parallel
+      - run: ctest --test-dir build -C ${{ matrix.configuration }} --output-on-failure

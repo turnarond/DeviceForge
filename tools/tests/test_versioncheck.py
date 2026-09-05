@@ -68,11 +68,25 @@ class ExtractTest(unittest.TestCase):
         self.assertIsNone(vc.extract_cmake(_make_tmp() / "nope.txt"))
 
 
+    def test_release_notes_version_parsing(self):
+        p = _write(_make_tmp(), "RELEASE_NOTES.md",
+                   "# DeviceForge v2.8.0 Release Notes\n")
+        self.assertEqual(vc.extract_release_notes(p), "2.8.0")
+
+    def test_roadmap_current_version_parsing(self):
+        p = _write(_make_tmp(), "ROADMAP.md",
+                   "**当前版本**：v2.8.0 ｜ **平台**：Windows\n")
+        self.assertEqual(vc.extract_roadmap(p), "2.8.0")
+
+
 def _build_tree(version: str = "2.7.0", omit=None) -> Path:
     """构造一个全仓版本一致的假仓库（可指定缺省文件）。"""
     tmp = _make_tmp()
     files = {
         "CMakeLists.txt": f"project(DeviceForge VERSION {version} LANGUAGES C CXX)\n",
+        "RELEASE_NOTES.md": f"# DeviceForge v{version} Release Notes\n",
+        "ROADMAP.md": f"**当前版本**：v{version} ｜ **平台**：Windows\n",
+        "docs/01-白皮书/产品路线图.md": f"**当前版本**：v{version} ｜ **平台**：Windows\n",
         "src/app/DeviceForge.rc": f'FILEVERSION {version.replace(".", ",")},0\n',
         "README.md": f"**版本**：{version} | **许可**：MIT License\n",
         "CHANGELOG.md": f"# Changelog\n\n## [{version}] — 2026-08-19\n",
@@ -89,6 +103,57 @@ def _build_tree(version: str = "2.7.0", omit=None) -> Path:
 class CheckVersionsTest(unittest.TestCase):
     """全仓一致性校验测试。"""
 
+    def test_all_nine_mandatory_sources_block_when_each_one_is_missing(self):
+        expected_sources = {
+            "release_notes",
+            "roadmap",
+            "product_roadmap",
+            "cmake",
+            "rc",
+            "readme",
+            "changelog",
+            "claude",
+            "白皮书",
+        }
+        actual_sources = {name for name, *_ in vc.DEFAULT_SOURCES}
+        self.assertSetEqual(actual_sources, expected_sources)
+
+        for name, rel, *_ in vc.DEFAULT_SOURCES:
+            with self.subTest(source=name):
+                result = vc.check_versions(_build_tree(omit=rel))
+                self.assertFalse(result.consistent)
+                if name == "cmake":
+                    self.assertIsNone(result.authority)
+                else:
+                    self.assertIn(name, result.missing)
+
+    def test_all_eight_non_authority_sources_block_when_content_is_unparseable(self):
+        non_authority_sources = {
+            "release_notes",
+            "roadmap",
+            "product_roadmap",
+            "rc",
+            "readme",
+            "changelog",
+            "claude",
+            "白皮书",
+        }
+
+        for name, rel, _, is_authority in vc.DEFAULT_SOURCES:
+            if is_authority:
+                continue
+            with self.subTest(source=name):
+                tmp = _build_tree()
+                _write(tmp, rel, "not a version declaration\n")
+                result = vc.check_versions(tmp)
+                self.assertFalse(result.consistent)
+                self.assertIn(name, result.missing)
+
+        self.assertSetEqual(
+            {name for name, _, _, is_authority in vc.DEFAULT_SOURCES if not is_authority},
+            non_authority_sources,
+        )
+
     def test_全部一致通过(self):
         result = vc.check_versions(_build_tree())
         self.assertTrue(result.consistent)
@@ -103,19 +168,41 @@ class CheckVersionsTest(unittest.TestCase):
         self.assertIn("readme", result.mismatches)
         self.assertEqual(result.reports["readme"].found, "2.6.0")
 
-    def test_缺失来源不阻断但报告(self):
+    def test_缺失来源会阻断并报告(self):
         result = vc.check_versions(_build_tree(omit="README.md"))
-        self.assertTrue(result.consistent)
+        self.assertFalse(result.consistent)
         self.assertIsNone(result.reports["readme"].found)
         self.assertIn("readme", result.missing)
 
     def test_权威缺失视为不一致(self):
+        for rel, name, content in (
+            ("RELEASE_NOTES.md", "release_notes", "# DeviceForge v2.6.0 Release Notes\n"),
+            ("ROADMAP.md", "roadmap", "**当前版本**：v2.6.0\n"),
+            ("docs/01-白皮书/产品路线图.md", "product_roadmap", "**当前版本**：v2.6.0\n"),
+        ):
+            with self.subTest(source=name):
+                tmp = _build_tree()
+                _write(tmp, rel, content)
+                result = vc.check_versions(tmp)
+                self.assertFalse(result.consistent)
+                self.assertIn(name, result.mismatches)
+
         tmp = _build_tree(omit="CMakeLists.txt")
         result = vc.check_versions(tmp)
         self.assertFalse(result.consistent)
 
 
 class CliTest(unittest.TestCase):
+    def test_new_required_source_missing_cli_nonzero(self):
+        for rel in (
+            "RELEASE_NOTES.md",
+            "ROADMAP.md",
+            "docs/01-白皮书/产品路线图.md",
+        ):
+            with self.subTest(source=rel):
+                tmp = _build_tree(omit=rel)
+                self.assertNotEqual(vc.main(["--root", str(tmp)]), 0)
+
     def test_不一致时退出码非零(self):
         tmp = _build_tree()
         _write(tmp, "README.md", "**版本**：9.9.9\n")

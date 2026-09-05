@@ -362,6 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 .superpowers/
+.worktrees/
 .omc/
 build/
 build_release/
@@ -375,7 +376,6 @@ docs/06-运营与文章/运营流程.md
 
 # 本地/内部工具与 CI/设计草稿（不随代码发布）
 .codegraph/
-.github/
 # docs/superpowers/ 已随 2026-08-21 目录重整移除（历史归档于 docs/03-设计/）
 
 # Python 工具集测试临时目录

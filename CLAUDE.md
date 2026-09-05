@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 完整 16 条规范见 **`docs/00-开发规范/开发规范.md`**（强制行为准则，本处为摘要）。
 
 1. **中文优先**：对话与文档一律使用中文，专业术语（MVP、EventBus、FTP、Modbus、TDD、SDD、ABI 等）与论文引述除外
-2. **文档是唯一对外标准，必须保持最新、不得腐败**：文档（`docs/`，索引见 `docs/README.md`）是交互接口与对齐标准。修改代码若涉及需求、接口、设计、架构、手册、版本号等内容，必须**同一提交内**同步更新对应文档，且文档中不得出现与代码不一致的事实性信息；发现重复/英文残留/失效引用立即合并清理。改版本号时必须全仓同步（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / `docs/01-白皮书/白皮书.md` / CLAUDE.md 等），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准，并用 `tools/devtools/versioncheck.py` 校验
+2. **文档是唯一对外标准，必须保持最新、不得腐败**：文档（`docs/`，索引见 `docs/README.md`）是交互接口与对齐标准。修改代码若涉及需求、接口、设计、架构、手册、版本号等内容，必须**同一提交内**同步更新对应文档，且文档中不得出现与代码不一致的事实性信息；发现重复/英文残留/失效引用立即合并清理。改版本号时必须同步九个强制来源（CMakeLists.txt / DeviceForge.rc / README.md / CHANGELOG.md / CLAUDE.md / `docs/01-白皮书/白皮书.md` / RELEASE_NOTES.md / ROADMAP.md / `docs/01-白皮书/产品路线图.md`），以 CMakeLists.txt 的 `project(... VERSION ...)` 为准，并用 `tools/devtools/versioncheck.py` 校验；任一来源缺失、无法解析或不一致均阻断
 3. **分支规范**：需求开发、变更、修复 issue 一律从 `main` 新建分支（`feature/xxx`、`fix/xxx`、`docs/xxx`、`refactor/xxx`、`chore/xxx`）开发，验证后 `--no-ff` 合并回 `main`；不在 `main` 堆叠未提交改动，一个分支只做一件事
 4. **TDD**：永远遵循红-绿-重构循环；每次请求实现必须附带对应测试代码或指明要变绿的测试用例；红灯代码不提交
 5. **SDD 工程化流程**：需求 → 方案设计 → 任务规划 → 实施 → 交付，关键阶段专家评审（**尤其方案设计**）；见 `docs/00-开发规范/SDD-工程化流程.md`
@@ -25,9 +25,9 @@ DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的**工业级�
 
 根目录 `build.bat` 一键完成"清理旧缓存 → CMake 配置（VS2022 生成器）→ Release 编译"：
 
-```bash
-# 默认 Qt 路径 c:\Qt\6.11.1\msvc2022_64（如不同需编辑脚本顶部 QT_PREFIX）
-./build.bat
+```cmd
+set "QT_PREFIX=D:\Qt\6.11.1\msvc2022_64"
+build.bat
 ```
 
 脚本会先清理 `build/` 内的 `CMakeCache.txt`/`CMakeFiles`/`.vs` 等旧产物（避免平台/生成器不匹配），产物为 `build/Release/DeviceForge.exe`，并生成 `build/DeviceForge.sln` 供 VS 打开。
@@ -37,7 +37,7 @@ DeviceForge（原名 DeployMaster）是基于 Qt 6.11.1 + C++17 的**工业级�
 ```bash
 # 配置（Windows MSVC，需提前安装 Qt 6.11.1）
 mkdir build && cd build
-cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\msvc2022_64"
+cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="D:\Qt\6.11.1\msvc2022_64"
 
 # 编译 Release
 cmake --build . --config Release
@@ -67,6 +67,18 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_deploy_loop`：部署循环 mock 测试（源在 `tests/deploy/tst_deploy_loop.cpp`）
 - `tst_remote_model`：RemoteFileModel 排序语义（`.`/`..` 置顶 + 目录优先 + 名称序，源在 `tests/remote_model/tst_remote_model.cpp`）
 - `tst_theme`：ThemeUtils 主题路径映射 + 亮色 QSS 资源存在性（编译 QRC，源在 `tests/theme/tst_theme.cpp`）
+- `tst_relay_addr`：NetRelay 组播/转发地址校验
+- `tst_qss_pixels`：暗/亮主题关键控件像素与 QSS 规则
+- `tst_file_source`：本地文件源抽象
+- `tst_panel_async`：面板异步加载、竞态、重连与源选择器
+- `tst_modbus_mapping`：Modbus 类型映射与数量上限
+- `tst_telnet_timeout`：Telnet 空响应超时失败路径
+- `tst_updater_fileops`：Updater 文件替换、备份与回滚
+- `tst_ftplist_parser`：FTP LIST 格式矩阵解析
+- `tst_deploy_report`：部署报告数据与 CSV/HTML 渲染
+- `tst_deploy_runner`：并发调度、进度、取消与结果聚合
+
+当前共 20 个 QtTest/CTest 目标，以 `tests/CMakeLists.txt` 中的 `add_test()` 为准。
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -76,7 +88,10 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 
 ## CI/CD
 
-GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"）：push/PR 到 `main` 分支时触发，在 `windows-latest` 上通过 `jurplel/install-qt-action@v4` 安装 Qt 6.9.2（含 `qtserialport qtserialbus qtwebsockets` 模块），使用 **CMake + CTest** 编译并测试 Debug 配置（非 MSBuild，文件名 `msbuild.yml` 为历史遗留）。
+GitHub Actions 分为两个入口：
+
+- `.github/workflows/ci.yml`：push/PR 到 `main` 时触发；在 `windows-latest` 上安装 Qt 6.9.2（含 `qtserialport qtserialbus qtwebsockets`），运行 Python 工具测试与版本检查，并用 CMake + CTest 分别验证 Debug、Release。
+- `.github/workflows/release-validation.yml`：仅手动 `workflow_dispatch` 触发；校验版本后执行 Release 构建、全部 CTest 与 `windeployqt`，生成绿色 zip 后从全新解压目录在清除 Qt SDK 污染的环境中执行 UI 冒烟，并且只上传 portable zip artifact。该工作流不创建 GitHub Release 或 Tag；NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后恢复，既有 `v2.8.0` Tag 不变。
 
 > CI 使用的 Qt 版本（6.9.2）与本地开发版本（6.11.1）不同，注意避免使用仅新版才有的 API。
 
@@ -102,7 +117,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.8.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）+ v2.8 并行批量部署（并发度 1-8、设备级进度、CSV/HTML 报告、失败设备重试）。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -141,6 +156,12 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 - **NetRelay**：TCP 写背压（64KB 读缓冲 / 1MB 暂停 / 512KB 滞回恢复）、会话树 O(1) 索引
 - **Ssh**：静态 known-hosts QSet 加互斥锁（并发数据竞争）
 - 测试：新增 tst_modbus_mapping + tst_telnet_timeout；回归 15 目标全过
+
+**v2.8 并行批量部署（2026-08-22，feature/v28-parallel-deploy）**：
+- `DeployJob` 封装单台 FTP/SFTP 部署事务，`DeploymentRunner` 使用私有 QThreadPool 按上限并发调度；并发度由 ConfigStore `deploy.concurrency` 配置，钳制到 1-8，默认 1
+- `MultiProgressWidget` 展示总进度与每设备进度/终态；设备键为 `ip:port`，池线程回调通过 QueuedConnection 回到 GUI 线程，总进度按 100ms 节流并在完成时强制收口
+- `DeployReport` 聚合逐设备状态、失败文件、错误摘要与耗时，支持 CSV/HTML 导出；Widget 缓存上一轮真实参数，可对失败设备集合一键重试
+- 测试：新增 tst_updater_fileops / tst_ftplist_parser / tst_deploy_report / tst_deploy_runner，当前共 20 个 CTest 目标
 
 **SylixOS FTP 适配经验（重要，勿回退）**：
 - **EPSV 不支持**：`CURLOPT_FTP_USE_EPSV=0` 强制 PASV（uploadFile 和 setupCommonOpts）
@@ -182,7 +203,7 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 **待完成**：
 - QPluginLoader DLL 加载
-- SCP 支持（实现 IDeployable + 复用 ssh 协议键，集成到 FTP 双栏远程面板中，v2.8 候选）
+- SCP 支持（仅在真实设备需求驱动时评估；SCP 无目录列表，不属于 v2.8 已交付范围）
 - ToolHost 多 Tool 并发支持（当前 Tool 通过 DeviceForge 主窗口直接创建）
 - NetRelayTool 非阻塞增强项（Phase 4 审查记录，非 ship-blocker）：非回环绑定改为模态确认弹窗、客户端来源 allowlist（暴露到不可信网段时必需）
 - FtpDeployWidget 远程表头排序指示器刷新后失配（cosmetic，低优先）
@@ -239,7 +260,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`，批量部署链路保留（部署目标目录 = 右侧面板当前路径，先右侧导航再部署；左面板为远程浏览源时部署被守卫拦截）；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪，底色代码动态设置；部署组：清空/重启/「⟳ 刷新」/「▶ 部署到 N 台设备」，组间 QFrame VLine 分隔），设备总线添加/删除设备后自动连接刷新（deviceSelectionChanged → onRefreshRemote）；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration 防陈旧回调 + QPointer 守卫，断网超时不再冻结 UI）；面板源选择器与工具栏双向联动（blockSignals 防循环，右面板源变化回写协议/设备并自动重建）
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；v2.8 由 DeployJob/DeploymentRunner 提供并发度 1-8 的调度、每设备进度、CSV/HTML 报告和失败设备重试；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪；部署组：清空/重启/刷新/部署），设备总线添加/删除设备后自动连接刷新；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration + QPointer 守卫）；面板源选择器与工具栏双向联动
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器（读：0x01-0x04 按类型正确映射 + 异常码中文展示；写：0x06 寄存器 / 0x05 线圈对话框），QTimer 自动刷新
@@ -317,6 +338,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 ### 并发模型
 
 - `QtConcurrent::run` 用于异步执行网络 IO 和重计算
+- `DeploymentRunner` 使用私有 QThreadPool 执行 1-8 路设备部署，设备进度回调可由池线程并发触发
 - libcurl FTP 操作自带进度回调
 - `std::async` 用于 TelnetAdapter 异步请求
 - 部分模块使用 `QTimer` 定时刷新（Modbus 自动刷新）
@@ -392,7 +414,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 16 个 QtTest/CTest 目标（tst_nrec / tst_relay_addr / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels / tst_modbus_mapping / tst_telnet_timeout），覆盖 NetRelay 录制回放与组播/转发地址校验、OTA 更新检查、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、部署循环、远程列表排序、主题映射、文件源抽象、面板异步加载（竞态/重连/源选择器/UAF 定向回归）、双主题像素验证、Modbus 寄存器映射与上限、Telnet 空超时失败断言。Phase 0-1 设计规划的单元测试（FtpAdapter/TelnetAdapter/ToolRegistry/DeviceBusWidget）尚未补充，计划在后续迁移时同步完善
+- **测试现状**：已有 20 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 的 `add_test()` 为准），覆盖 NetRelay 录制回放与组播/转发地址校验、OTA 更新检查与文件替换回滚、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、FTP LIST 解析、部署循环与并发调度、CSV/HTML 部署报告、远程列表排序、主题映射、文件源抽象、面板异步加载、双主题像素验证、Modbus 映射及 Telnet 超时。Phase 0-1 设计规划的 FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充，计划在后续迁移时同步完善
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
