@@ -127,6 +127,33 @@ class CheckVersionsTest(unittest.TestCase):
                 else:
                     self.assertIn(name, result.missing)
 
+    def test_all_eight_non_authority_sources_block_when_content_is_unparseable(self):
+        non_authority_sources = {
+            "release_notes",
+            "roadmap",
+            "product_roadmap",
+            "rc",
+            "readme",
+            "changelog",
+            "claude",
+            "白皮书",
+        }
+
+        for name, rel, _, is_authority in vc.DEFAULT_SOURCES:
+            if is_authority:
+                continue
+            with self.subTest(source=name):
+                tmp = _build_tree()
+                _write(tmp, rel, "not a version declaration\n")
+                result = vc.check_versions(tmp)
+                self.assertFalse(result.consistent)
+                self.assertIn(name, result.missing)
+
+        self.assertSetEqual(
+            {name for name, _, _, is_authority in vc.DEFAULT_SOURCES if not is_authority},
+            non_authority_sources,
+        )
+
     def test_全部一致通过(self):
         result = vc.check_versions(_build_tree())
         self.assertTrue(result.consistent)
