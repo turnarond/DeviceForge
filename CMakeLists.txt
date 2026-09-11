@@ -199,6 +199,10 @@ set(SOURCES
     src/adapter/OpcUaAdapter.cpp
     src/adapter/ProtocolRegistry.cpp
 
+    # 可靠传输内核
+    src/transfer/TransferTypes.cpp
+    src/transfer/AdapterTransferChannel.cpp
+
     # 新框架文件
     src/framework/AppState.cpp
     src/framework/ManifestParser.cpp

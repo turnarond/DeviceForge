@@ -15,6 +15,31 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- FTP/SFTP 可靠传输通道包装契约测试（Mock Adapter，不连接服务器）---
+add_executable(tst_transfer_channel
+    transfer/tst_transfer_channel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+)
+target_include_directories(tst_transfer_channel PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_channel PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_transfer_channel COMMAND tst_transfer_channel)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_channel PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
+
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
 add_executable(tst_nrec

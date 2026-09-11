@@ -1,0 +1,226 @@
+#include <QtTest>
+
+#include <atomic>
+#include <future>
+#include <memory>
+
+#include "adapter/IProtocolAdapter.h"
+#include "transfer/AdapterTransferChannel.h"
+
+class MockAdapter final : public IProtocolAdapter
+{
+public:
+    std::string protocolId() const override { return "mock"; }
+
+    bool connect(const DeviceInfo& device, const AuthInfo& auth) override
+    {
+        ++connectCalls;
+        lastDevice = device;
+        lastAuth = auth;
+        return connectResult;
+    }
+
+    void disconnect() override { ++disconnectCalls; }
+    bool isConnected() const override { return connectResult; }
+    std::string lastError() const override { return error; }
+    std::future<Response> request(const Request&) override
+    {
+        return std::async(std::launch::deferred, [] { return Response{}; });
+    }
+    void subscribe(const Request&, StreamCallback) override {}
+    void unsubscribe() override {}
+    ProtocolCapability capability() const override { return {}; }
+
+    bool connectResult = true;
+    int connectCalls = 0;
+    int disconnectCalls = 0;
+    DeviceInfo lastDevice;
+    AuthInfo lastAuth;
+    std::string error;
+};
+
+struct OpsProbe
+{
+    QString uploadLocal;
+    QString uploadRemote;
+    QString downloadRemote;
+    QString downloadLocal;
+    QString renameFrom;
+    QString renameTo;
+    QString removedPath;
+    QString listedPath;
+    QVector<TransferChannelEntry> entries;
+    bool listResult = true;
+    int progressValue = -1;
+    std::atomic_bool* cancelFlag = nullptr;
+};
+
+static TransferChannelOps makeOps(const std::shared_ptr<OpsProbe>& probe)
+{
+    TransferChannelOps ops;
+    ops.upload = [probe](const QString& local, const QString& remote) {
+        probe->uploadLocal = local;
+        probe->uploadRemote = remote;
+        return true;
+    };
+    ops.download = [probe](const QString& remote, const QString& local) {
+        probe->downloadRemote = remote;
+        probe->downloadLocal = local;
+        return true;
+    };
+    ops.rename = [probe](const QString& from, const QString& to) {
+        probe->renameFrom = from;
+        probe->renameTo = to;
+        return true;
+    };
+    ops.remove = [probe](const QString& path) {
+        probe->removedPath = path;
+        return true;
+    };
+    ops.list = [probe](const QString& path, QVector<TransferChannelEntry>& entries) {
+        probe->listedPath = path;
+        entries = probe->entries;
+        return probe->listResult;
+    };
+    ops.setProgressCallback = [probe](std::function<void(int)> callback) {
+        if (callback)
+            callback(37);
+        probe->progressValue = 37;
+    };
+    ops.setCancelFlag = [probe](std::atomic_bool* flag) { probe->cancelFlag = flag; };
+    return ops;
+}
+
+class TstTransferChannel : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void ftpCapabilities()
+    {
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>());
+
+        const auto cap = channel.capabilities();
+
+        QVERIFY(cap.upload);
+        QVERIFY(cap.download);
+        QVERIFY(cap.rename);
+        QVERIFY(cap.remove);
+        QVERIFY(cap.stat);
+    }
+
+    void sftpCapabilitiesAndUnknownProtocol()
+    {
+        AdapterTransferChannel sftp("sftp", std::make_shared<MockAdapter>());
+        const auto sftpCap = sftp.capabilities();
+        QVERIFY(sftpCap.upload && sftpCap.download && sftpCap.rename && sftpCap.remove
+                && sftpCap.stat);
+
+        AdapterTransferChannel unknown("telnet", std::make_shared<MockAdapter>());
+        const auto unknownCap = unknown.capabilities();
+        QVERIFY(!unknownCap.upload && !unknownCap.download && !unknownCap.rename
+                && !unknownCap.remove && !unknownCap.stat);
+    }
+
+    void reconnectUsesStoredConnectionParameters()
+    {
+        auto adapter = std::make_shared<MockAdapter>();
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("ftp", adapter, makeOps(probe));
+        const DeviceInfo device{"10.0.0.8", 21, "ftp", "PLC-8", ""};
+        const AuthInfo auth{"operator", "secret"};
+        QVERIFY(channel.connect(device, auth));
+
+        adapter->connectResult = false;
+        adapter->error = "connection timed out";
+        QVERIFY(!channel.reconnect());
+
+        QCOMPARE(adapter->disconnectCalls, 1);
+        QCOMPARE(adapter->connectCalls, 2);
+        QCOMPARE(adapter->lastDevice.ip, device.ip);
+        QCOMPARE(adapter->lastDevice.port, device.port);
+        QCOMPARE(adapter->lastAuth.user, auth.user);
+        QCOMPARE(adapter->lastAuth.password, auth.password);
+        QCOMPARE(channel.lastError().code, TransferErrorCode::Timeout);
+        QVERIFY(channel.lastError().retryable);
+    }
+
+    void forwardsFileOperationsAndHooks()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("sftp", std::make_shared<MockAdapter>(), makeOps(probe));
+
+        QVERIFY(channel.upload("C:/images/a.bin", "/opt/a.bin.part"));
+        QVERIFY(channel.download("/opt/a.bin", "C:/downloads/a.bin.part"));
+        QVERIFY(channel.rename("/opt/a.bin.part", "/opt/a.bin"));
+        QVERIFY(channel.remove("/opt/stale.bin"));
+
+        QCOMPARE(probe->uploadLocal, QStringLiteral("C:/images/a.bin"));
+        QCOMPARE(probe->uploadRemote, QStringLiteral("/opt/a.bin.part"));
+        QCOMPARE(probe->downloadRemote, QStringLiteral("/opt/a.bin"));
+        QCOMPARE(probe->downloadLocal, QStringLiteral("C:/downloads/a.bin.part"));
+        QCOMPARE(probe->renameFrom, QStringLiteral("/opt/a.bin.part"));
+        QCOMPARE(probe->renameTo, QStringLiteral("/opt/a.bin"));
+        QCOMPARE(probe->removedPath, QStringLiteral("/opt/stale.bin"));
+
+        int progress = -1;
+        channel.setProgressCallback([&progress](int value) { progress = value; });
+        QCOMPARE(progress, 37);
+        QCOMPARE(probe->progressValue, 37);
+
+        std::atomic_bool cancelled{false};
+        channel.setCancelFlag(&cancelled);
+        QCOMPARE(probe->cancelFlag, &cancelled);
+    }
+
+    void statMatchesExactBasename()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {
+            {"firmware.bin.old", 3, "2026-09-10 08:00:00"},
+            {"firmware.bin", 4096, "2026-09-11 09:30:00"},
+        };
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(channel.stat("/opt/images/firmware.bin", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("/opt/images"));
+        QVERIFY(result.exists);
+        QCOMPARE(result.size, quint64(4096));
+        QCOMPARE(result.modifiedText, QStringLiteral("2026-09-11 09:30:00"));
+    }
+
+    void statMissingFileIsSuccessfulAbsence()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {{"other.bin", 17, "2026-09-09 07:00:00"}};
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result{true, 99, "stale"};
+
+        QVERIFY(channel.stat("/target.bin", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("/"));
+        QVERIFY(!result.exists);
+        QCOMPARE(result.size, quint64(0));
+        QVERIFY(result.modifiedText.isEmpty());
+    }
+
+    void statListFailurePreservesAdapterError()
+    {
+        auto adapter = std::make_shared<MockAdapter>();
+        adapter->error = "permission denied while listing directory";
+        auto probe = std::make_shared<OpsProbe>();
+        probe->listResult = false;
+        AdapterTransferChannel channel("sftp", adapter, makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(!channel.stat("/secure/firmware.bin", result));
+
+        QCOMPARE(channel.lastError().code, TransferErrorCode::Permission);
+        QVERIFY(!channel.lastError().retryable);
+    }
+};
+
+QTEST_MAIN(TstTransferChannel)
+#include "tst_transfer_channel.moc"
