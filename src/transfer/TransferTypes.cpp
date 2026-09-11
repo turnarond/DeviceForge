@@ -24,10 +24,17 @@ TransferError makeError(TransferErrorCode code, const QString& message, bool ret
 
 TransferError classifyTransferError(QString message, int nativeCode)
 {
-    if (nativeCode == 28 || containsAny(message, {"timed out", "timeout"}))
+    // native code 是适配器给出的明确语义，必须压过可能同时出现的错误摘要关键词。
+    if (nativeCode == 67)
+        return makeError(TransferErrorCode::Authentication, message, false);
+
+    if (nativeCode == 28)
         return makeError(TransferErrorCode::Timeout, message, true);
 
-    if (nativeCode == 67 || containsAny(message, {"authentication", "login denied"}))
+    if (containsAny(message, {"unsupported", "not supported"}))
+        return makeError(TransferErrorCode::Unsupported, message, false);
+
+    if (containsAny(message, {"authentication", "login denied"}))
         return makeError(TransferErrorCode::Authentication, message, false);
 
     if (containsAny(message, {"permission denied", "access denied"}))
@@ -36,7 +43,12 @@ TransferError classifyTransferError(QString message, int nativeCode)
     if (containsAny(message, {"invalid path", "no such file", "not found"}))
         return makeError(TransferErrorCode::InvalidPath, message, false);
 
-    if (containsAny(message, {"connection", "network", "resolve host", "couldn't connect"}))
+    if (containsAny(message, {"timed out", "timeout"}))
+        return makeError(TransferErrorCode::Timeout, message, true);
+
+    if (containsAny(message, {"connection reset", "connection refused", "connection closed",
+                              "network is unreachable", "network unreachable", "resolve host",
+                              "couldn't connect"}))
         return makeError(TransferErrorCode::ConnectionLost, message, true);
 
     return makeError(TransferErrorCode::RemoteIo, message, false);
