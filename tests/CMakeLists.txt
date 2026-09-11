@@ -1,5 +1,20 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql SerialBus)
 
+# --- 可靠传输基础类型测试（状态机、退避与错误分类）---
+add_executable(tst_transfer_types
+    transfer/tst_transfer_types.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_types PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_types PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_types COMMAND tst_transfer_types)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_types PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
 add_executable(tst_nrec
