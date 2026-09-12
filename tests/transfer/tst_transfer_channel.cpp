@@ -391,6 +391,26 @@ private slots:
         QVERIFY(result.exists);
     }
 
+    void productionFtpUrlBuilderEncodesRemotePathOnce()
+    {
+        QCOMPARE(QString::fromStdString(adapter_internal::buildFtpUrl(
+                     false, "10.0.0.8", 21, "")),
+                 QStringLiteral("ftp://10.0.0.8:21/"));
+        QCOMPARE(QString::fromStdString(adapter_internal::buildFtpUrl(
+                     false, "10.0.0.8", 21, "/")),
+                 QStringLiteral("ftp://10.0.0.8:21/"));
+        QCOMPARE(QString::fromStdString(adapter_internal::buildFtpUrl(
+                     true, "10.0.0.8", 990, "/plain/firmware.bin")),
+                 QStringLiteral("ftps://10.0.0.8:990/plain/firmware.bin"));
+
+        const std::string specialPath = QStringLiteral("/dir /固件%20#?.bin")
+                                            .toUtf8().toStdString();
+        QCOMPARE(QString::fromStdString(adapter_internal::buildFtpUrl(
+                     false, "10.0.0.8", 21, specialPath)),
+                 QStringLiteral("ftp://10.0.0.8:21/dir%20/"
+                                "%E5%9B%BA%E4%BB%B6%2520%23%3F.bin"));
+    }
+
     void statDoesNotTreatBackslashAsRemoteSeparator()
     {
         auto probe = std::make_shared<OpsProbe>();

@@ -39,14 +39,7 @@ struct FtpAdapter::Impl {
 
     // --- URL 拼接 ---
     std::string buildUrl(const std::string& path) const {
-        std::ostringstream oss;
-        oss << (m_useFtps ? "ftps://" : "ftp://") << m_ip << ":" << m_port << "/";
-        if (!path.empty() && path[0] == '/') {
-            oss << path.substr(1);
-        } else {
-            oss << path;
-        }
-        return oss.str();
+        return adapter_internal::buildFtpUrl(m_useFtps, m_ip, m_port, path);
     }
 
     // --- 构造 user:password 凭据字符串 ---
