@@ -1,4 +1,5 @@
 #include "FtpAdapter.h"
+#include "adapter/LocalFileOpen.h"
 #include <curl/curl.h>
 #include <atomic>
 #include <sstream>
@@ -269,7 +270,8 @@ ProtocolCapability FtpAdapter::capability() const {
 // ============================================================
 
 bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& remotePath) {
-    FILE* file = fopen(localPath.c_str(), "rb");
+    FILE* file = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Read);
     if (!file) {
         m_impl->m_lastError = "无法打开本地文件: " + localPath;
         return false;
@@ -399,7 +401,8 @@ bool FtpAdapter::uploadFolder(const std::string& localPath, const std::string& r
 }
 
 bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& localPath) {
-    FILE* file = fopen(localPath.c_str(), "wb");
+    FILE* file = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Write);
     if (!file) {
         m_impl->m_lastError = "无法创建本地文件: " + localPath;
         return false;

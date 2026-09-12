@@ -28,6 +28,7 @@ struct TransferChannelOps
     std::function<bool(const QString&, QVector<TransferChannelEntry>&)> list;
     std::function<void(std::function<void(int)>)> setProgressCallback;
     std::function<void(std::atomic_bool*)> setCancelFlag;
+    std::function<bool()> isReady;
 };
 
 class AdapterTransferChannel final : public ITransferChannel
@@ -57,6 +58,7 @@ public:
 private:
     static TransferChannelOps bindOperations(const QString& protocol,
                                              const std::shared_ptr<IProtocolAdapter>& adapter);
+    bool finishConnect(bool connected, const QString& fallbackError);
     bool finishOperation(bool success, const QString& fallbackError);
     bool failUnsupported(const QString& operation);
 

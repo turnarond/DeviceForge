@@ -30,6 +30,7 @@ public:
     ProtocolCapability capability() const override;
 
     // --- FTP 特有操作（直接调用,不通过 request 抽象） ---
+    // 本地路径参数统一按 UTF-8 编码解释。
     bool uploadFile(const std::string& localPath, const std::string& remotePath);
     bool uploadFolder(const std::string& localPath, const std::string& remotePath);
     bool downloadFile(const std::string& remotePath, const std::string& localPath);

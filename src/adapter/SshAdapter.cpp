@@ -1,4 +1,5 @@
 #include "SshAdapter.h"
+#include "adapter/LocalFileOpen.h"
 #include <lwlog/lwlog.h>
 #include <filesystem>  // planFolderUpload 递归遍历（std::filesystem）
 
@@ -345,7 +346,8 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
 
     // 打开本地文件读取
-    FILE* localFile = fopen(localPath.c_str(), "rb");
+    FILE* localFile = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Read);
     if (!localFile) { m_lastError = "无法打开本地文件: " + localPath; return false; }
     _fseeki64(localFile, 0, SEEK_END);
     uint64_t fileSize = static_cast<uint64_t>(_ftelli64(localFile));
@@ -403,7 +405,8 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
     libssh2_sftp_fstat(remoteFile, &attrs);
     uint64_t fileSize = attrs.filesize;
 
-    FILE* localFile = fopen(localPath.c_str(), "wb");
+    FILE* localFile = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Write);
     if (!localFile) { libssh2_sftp_close(remoteFile); m_lastError = "无法创建本地文件"; return false; }
 
     char buf[8192];

@@ -34,16 +34,13 @@ void copyEntries(const std::vector<FtpFileInfo>& source, QVector<TransferChannel
 
 QString parentPath(const QString& path, QString& basename)
 {
-    QString clean = path.trimmed();
-    clean.replace(u'\\', u'/');
-    while (clean.size() > 1 && clean.endsWith(u'/'))
-        clean.chop(1);
-
-    const qsizetype separator = clean.lastIndexOf(u'/');
-    basename = separator >= 0 ? clean.mid(separator + 1) : clean;
-    if (separator <= 0)
+    const qsizetype separator = path.lastIndexOf(u'/');
+    basename = separator >= 0 ? path.mid(separator + 1) : path;
+    if (separator < 0)
+        return QStringLiteral(".");
+    if (separator == 0)
         return QStringLiteral("/");
-    return clean.left(separator);
+    return path.left(separator);
 }
 
 } // namespace
@@ -76,7 +73,7 @@ bool AdapterTransferChannel::connect(const DeviceInfo& device, const AuthInfo& a
     m_hasConnectionParameters = true;
     if (!m_adapter)
         return failUnsupported(QStringLiteral("connect"));
-    return finishOperation(m_adapter->connect(device, auth), QStringLiteral("连接失败"));
+    return finishConnect(m_adapter->connect(device, auth), QStringLiteral("连接失败"));
 }
 
 bool AdapterTransferChannel::reconnect()
@@ -85,7 +82,7 @@ bool AdapterTransferChannel::reconnect()
         return failUnsupported(QStringLiteral("reconnect"));
 
     m_adapter->disconnect();
-    return finishOperation(m_adapter->connect(m_device, m_auth), QStringLiteral("重连失败"));
+    return finishConnect(m_adapter->connect(m_device, m_auth), QStringLiteral("重连失败"));
 }
 
 bool AdapterTransferChannel::upload(const QString& localPath, const QString& remotePath)
@@ -161,9 +158,14 @@ void AdapterTransferChannel::setCancelFlag(std::atomic_bool* flag)
 
 TransferCapabilities AdapterTransferChannel::capabilities() const
 {
-    if (m_protocol == QStringLiteral("ftp") || m_protocol == QStringLiteral("sftp"))
-        return {true, true, true, true, true};
-    return {};
+    if (m_protocol != QStringLiteral("ftp") && m_protocol != QStringLiteral("sftp"))
+        return {};
+
+    return {static_cast<bool>(m_operations.upload),
+            static_cast<bool>(m_operations.download),
+            static_cast<bool>(m_operations.rename),
+            static_cast<bool>(m_operations.remove),
+            static_cast<bool>(m_operations.list)};
 }
 
 TransferError AdapterTransferChannel::lastError() const
@@ -236,9 +238,23 @@ TransferChannelOps AdapterTransferChannel::bindOperations(
         operations.setCancelFlag = [ssh](std::atomic_bool* flag) {
             ssh->sftpSetCancelFlag(flag);
         };
+        operations.isReady = [ssh] { return ssh->isSftpReady(); };
     }
 
     return operations;
+}
+
+bool AdapterTransferChannel::finishConnect(bool connected, const QString& fallbackError)
+{
+    if (!connected)
+        return finishOperation(false, fallbackError);
+
+    if (m_operations.isReady && !m_operations.isReady()) {
+        m_adapter->disconnect();
+        return finishOperation(false, QStringLiteral("SFTP 子系统未就绪"));
+    }
+
+    return finishOperation(true, fallbackError);
 }
 
 bool AdapterTransferChannel::finishOperation(bool success, const QString& fallbackError)

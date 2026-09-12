@@ -4,7 +4,9 @@
 #include <future>
 #include <memory>
 
+#include "adapter/FtpAdapter.h"
 #include "adapter/IProtocolAdapter.h"
+#include "adapter/SshAdapter.h"
 #include "transfer/AdapterTransferChannel.h"
 
 class MockAdapter final : public IProtocolAdapter
@@ -37,6 +39,23 @@ public:
     DeviceInfo lastDevice;
     AuthInfo lastAuth;
     std::string error;
+};
+
+class SshWithoutSftpAdapter final : public SshAdapter
+{
+public:
+    bool connect(const DeviceInfo&, const AuthInfo&) override
+    {
+        ++connectCalls;
+        return true;
+    }
+
+    void disconnect() override { ++disconnectCalls; }
+    bool isConnected() const override { return true; }
+    std::string lastError() const override { return "SFTP subsystem initialization failed"; }
+
+    int connectCalls = 0;
+    int disconnectCalls = 0;
 };
 
 struct OpsProbe
@@ -98,7 +117,8 @@ class TstTransferChannel : public QObject
 private slots:
     void ftpCapabilities()
     {
-        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>());
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
 
         const auto cap = channel.capabilities();
 
@@ -111,7 +131,8 @@ private slots:
 
     void sftpCapabilitiesAndUnknownProtocol()
     {
-        AdapterTransferChannel sftp("sftp", std::make_shared<MockAdapter>());
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel sftp("sftp", std::make_shared<MockAdapter>(), makeOps(probe));
         const auto sftpCap = sftp.capabilities();
         QVERIFY(sftpCap.upload && sftpCap.download && sftpCap.rename && sftpCap.remove
                 && sftpCap.stat);
@@ -120,6 +141,27 @@ private slots:
         const auto unknownCap = unknown.capabilities();
         QVERIFY(!unknownCap.upload && !unknownCap.download && !unknownCap.rename
                 && !unknownCap.remove && !unknownCap.stat);
+    }
+
+    void productionBindingsExposeOnlyCallableCapabilities()
+    {
+        AdapterTransferChannel ftp("ftp", std::make_shared<FtpAdapter>());
+        const auto ftpCap = ftp.capabilities();
+        QVERIFY(ftpCap.upload && ftpCap.download && ftpCap.rename && ftpCap.remove && ftpCap.stat);
+
+        AdapterTransferChannel sftp("sftp", std::make_shared<SshAdapter>());
+        const auto sftpCap = sftp.capabilities();
+        QVERIFY(sftpCap.upload && sftpCap.download && sftpCap.rename && sftpCap.remove
+                && sftpCap.stat);
+        QVERIFY(!sftp.upload(QStringLiteral("missing.bin"), QStringLiteral("/missing.bin")));
+        QVERIFY(sftp.lastError().code != TransferErrorCode::Unsupported);
+
+        AdapterTransferChannel mismatched("ftp", std::make_shared<MockAdapter>());
+        const auto mismatchedCap = mismatched.capabilities();
+        QVERIFY(!mismatchedCap.upload && !mismatchedCap.download && !mismatchedCap.rename
+                && !mismatchedCap.remove && !mismatchedCap.stat);
+        QVERIFY(!mismatched.upload(QStringLiteral("a.bin"), QStringLiteral("/a.bin")));
+        QCOMPARE(mismatched.lastError().code, TransferErrorCode::Unsupported);
     }
 
     void reconnectUsesStoredConnectionParameters()
@@ -143,6 +185,21 @@ private slots:
         QCOMPARE(adapter->lastAuth.password, auth.password);
         QCOMPARE(channel.lastError().code, TransferErrorCode::Timeout);
         QVERIFY(channel.lastError().retryable);
+    }
+
+    void sftpConnectFailsWhenSubsystemIsNotReady()
+    {
+        auto adapter = std::make_shared<SshWithoutSftpAdapter>();
+        AdapterTransferChannel channel("sftp", adapter);
+        const DeviceInfo device{"10.0.0.9", 22, "ssh", "PLC-9", ""};
+        const AuthInfo auth{"operator", "secret"};
+
+        QVERIFY(!channel.connect(device, auth));
+
+        QCOMPARE(adapter->connectCalls, 1);
+        QCOMPARE(adapter->disconnectCalls, 1);
+        QCOMPARE(channel.lastError().code, TransferErrorCode::RemoteIo);
+        QVERIFY(channel.lastError().message.contains(QStringLiteral("SFTP")));
     }
 
     void forwardsFileOperationsAndHooks()
@@ -171,6 +228,42 @@ private slots:
         std::atomic_bool cancelled{false};
         channel.setCancelFlag(&cancelled);
         QCOMPARE(probe->cancelFlag, &cancelled);
+    }
+
+    void productionFtpBindingOpensUtf8LocalPath()
+    {
+        QTemporaryDir temporaryDirectory;
+        QVERIFY(temporaryDirectory.isValid());
+        const QString localPath = temporaryDirectory.filePath(QStringLiteral("设备 固件.bin"));
+        QFile localFile(localPath);
+        QVERIFY(localFile.open(QIODevice::WriteOnly));
+        QCOMPARE(localFile.write("firmware"), qint64(8));
+        localFile.close();
+
+        auto adapter = std::make_shared<FtpAdapter>();
+        AdapterTransferChannel channel("ftp", adapter);
+        const auto cap = channel.capabilities();
+        QVERIFY(cap.upload && cap.download && cap.rename && cap.remove && cap.stat);
+
+        QVERIFY(!channel.upload(localPath, QStringLiteral("/firmware.bin")));
+
+        QVERIFY2(!channel.lastError().message.contains(QStringLiteral("无法打开本地文件")),
+                 qPrintable(channel.lastError().message));
+        QCOMPARE(channel.lastError().code, TransferErrorCode::RemoteIo);
+    }
+
+    void productionFtpDownloadCreatesUtf8LocalPath()
+    {
+        QTemporaryDir temporaryDirectory;
+        QVERIFY(temporaryDirectory.isValid());
+        const QString localPath = temporaryDirectory.filePath(QStringLiteral("下载 固件.bin"));
+        QVERIFY(!QFileInfo::exists(localPath));
+
+        AdapterTransferChannel channel("ftp", std::make_shared<FtpAdapter>());
+        QVERIFY(!channel.download(QStringLiteral("/firmware.bin"), localPath));
+
+        QVERIFY2(QFileInfo::exists(localPath), "FTP 下载未以 UTF-8 契约创建本地文件");
+        QVERIFY(!channel.lastError().message.contains(QStringLiteral("无法创建本地文件")));
     }
 
     void statMatchesExactBasename()
@@ -204,6 +297,48 @@ private slots:
         QVERIFY(!result.exists);
         QCOMPARE(result.size, quint64(0));
         QVERIFY(result.modifiedText.isEmpty());
+    }
+
+    void statRelativeBasenameUsesAdapterCurrentDirectory()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {{"firmware.bin", 23, ""}};
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(channel.stat("firmware.bin", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("."));
+        QVERIFY(result.exists);
+        QCOMPARE(result.size, quint64(23));
+    }
+
+    void statPreservesTrailingSpaceInFilename()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {{"firmware.bin ", 29, ""}};
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(channel.stat("/opt/firmware.bin ", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("/opt"));
+        QVERIFY(result.exists);
+        QCOMPARE(result.size, quint64(29));
+    }
+
+    void statDoesNotTreatBackslashAsRemoteSeparator()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {{"folder\\firmware.bin", 31, ""}};
+        AdapterTransferChannel channel("sftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(channel.stat("folder\\firmware.bin", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("."));
+        QVERIFY(result.exists);
+        QCOMPARE(result.size, quint64(31));
     }
 
     void statListFailurePreservesAdapterError()
