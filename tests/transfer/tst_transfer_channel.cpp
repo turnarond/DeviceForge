@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "adapter/FtpAdapter.h"
+#include "adapter/FtpPathUtils.h"
 #include "adapter/IProtocolAdapter.h"
 #include "adapter/SshAdapter.h"
 #include "transfer/AdapterTransferChannel.h"
@@ -47,15 +48,21 @@ public:
     bool connect(const DeviceInfo&, const AuthInfo&) override
     {
         ++connectCalls;
+        connected = true;
         return true;
     }
 
-    void disconnect() override { ++disconnectCalls; }
-    bool isConnected() const override { return true; }
+    void disconnect() override
+    {
+        ++disconnectCalls;
+        connected = false;
+    }
+    bool isConnected() const override { return connected; }
     std::string lastError() const override { return "SFTP subsystem initialization failed"; }
 
     int connectCalls = 0;
     int disconnectCalls = 0;
+    bool connected = false;
 };
 
 struct OpsProbe
@@ -202,6 +209,24 @@ private slots:
         QVERIFY(channel.lastError().message.contains(QStringLiteral("SFTP")));
     }
 
+    void sftpReconnectFailsWhenSubsystemRemainsNotReady()
+    {
+        auto adapter = std::make_shared<SshWithoutSftpAdapter>();
+        AdapterTransferChannel channel("sftp", adapter);
+        const DeviceInfo device{"10.0.0.10", 22, "ssh", "PLC-10", ""};
+        const AuthInfo auth{"operator", "secret"};
+        QVERIFY(!channel.connect(device, auth));
+
+        QVERIFY(!channel.reconnect());
+
+        QCOMPARE(adapter->connectCalls, 2);
+        QCOMPARE(adapter->disconnectCalls, 3);
+        QVERIFY(!adapter->isConnected());
+        QCOMPARE(channel.lastError().code, TransferErrorCode::RemoteIo);
+        QCOMPARE(channel.lastError().message,
+                 QStringLiteral("SFTP subsystem initialization failed"));
+    }
+
     void forwardsFileOperationsAndHooks()
     {
         auto probe = std::make_shared<OpsProbe>();
@@ -266,6 +291,25 @@ private slots:
         QVERIFY(!channel.lastError().message.contains(QStringLiteral("无法创建本地文件")));
     }
 
+    void productionFtpFolderUploadEnumeratesUtf8Names()
+    {
+        QTemporaryDir temporaryDirectory;
+        QVERIFY(temporaryDirectory.isValid());
+        const QString subdirectory = temporaryDirectory.filePath(QStringLiteral("子目录"));
+        QVERIFY(QDir().mkpath(subdirectory));
+        const QString localPath = QDir(subdirectory).filePath(QStringLiteral("固件.bin"));
+        QFile localFile(localPath);
+        QVERIFY(localFile.open(QIODevice::WriteOnly));
+        QCOMPARE(localFile.write("firmware"), qint64(8));
+        localFile.close();
+
+        FtpAdapter adapter;
+        QVERIFY(!adapter.uploadFolder(temporaryDirectory.path().toUtf8().toStdString(), "/apps"));
+
+        const QString error = QString::fromUtf8(adapter.lastError());
+        QVERIFY2(!error.contains(QStringLiteral("无法打开本地文件")), qPrintable(error));
+    }
+
     void statMatchesExactBasename()
     {
         auto probe = std::make_shared<OpsProbe>();
@@ -325,6 +369,26 @@ private slots:
         QCOMPARE(probe->listedPath, QStringLiteral("/opt"));
         QVERIFY(result.exists);
         QCOMPARE(result.size, quint64(29));
+    }
+
+    void productionFtpStatPreservesSpaceInParentPath()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        probe->entries = {{"firmware.bin", 41, ""}};
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        TransferFileStat result;
+
+        QVERIFY(channel.stat("/dir /firmware.bin", result));
+
+        QCOMPARE(probe->listedPath, QStringLiteral("/dir "));
+        const std::string requestPath = adapter_internal::ftpDirectoryPathForListing(
+            probe->listedPath.toUtf8().toStdString());
+        QCOMPARE(QString::fromUtf8(requestPath), QStringLiteral("/dir /"));
+        QCOMPARE(QString::fromUtf8(adapter_internal::ftpDirectoryPathForListing("")),
+                 QStringLiteral("/"));
+        QCOMPARE(QString::fromUtf8(adapter_internal::ftpDirectoryPathForListing("/")),
+                 QStringLiteral("/"));
+        QVERIFY(result.exists);
     }
 
     void statDoesNotTreatBackslashAsRemoteSeparator()

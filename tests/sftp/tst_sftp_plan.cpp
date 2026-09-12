@@ -41,6 +41,29 @@ private slots:
         auto items = SshAdapter::planFolderUpload(dir.path().toStdString(), "/apps");
         QCOMPARE(items.size(), 0);  // 空目录：无传输项
     }
+    void plan_unicodeNestedNamesUseUtf8() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString subdirectory = dir.filePath(QStringLiteral("子目录"));
+        QVERIFY(QDir().mkpath(subdirectory));
+        const QString filePath = QDir(subdirectory).filePath(QStringLiteral("固件.bin"));
+        QFile file(filePath);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("z"), qint64(1));
+        file.close();
+
+        const auto items = SshAdapter::planFolderUpload(
+            dir.path().toUtf8().toStdString(), "/apps");
+
+        QCOMPARE(items.size(), 2);
+        QVERIFY(items[0].isDirectory);
+        QCOMPARE(QString::fromUtf8(items[0].remotePath), QStringLiteral("/apps/子目录"));
+        QVERIFY(!items[1].isDirectory);
+        QCOMPARE(QDir::fromNativeSeparators(QString::fromUtf8(items[1].localPath)),
+                 QDir::fromNativeSeparators(filePath));
+        QCOMPARE(QString::fromUtf8(items[1].remotePath),
+                 QStringLiteral("/apps/子目录/固件.bin"));
+    }
 };
 QTEST_MAIN(TstSftpPlan)
 #include "tst_sftp_plan.moc"

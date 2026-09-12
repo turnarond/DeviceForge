@@ -509,17 +509,18 @@ std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localR
     std::vector<SftpPlanItem> dirs, files;
     // 非抛异常迭代：遍历中途出错（权限/悬空链接等）时 MSVC 将迭代器置为 end 且
     // increment(ec) 仅置 ec 不抛异常 → 已展开条目保留，不会整体失败/跳过该条
-    fs::recursive_directory_iterator it(localRoot, ec);
+    const fs::path localRootPath = fs::u8path(localRoot);
+    fs::recursive_directory_iterator it(localRootPath, ec);
     const fs::recursive_directory_iterator end;
     for (; it != end; it.increment(ec)) {
-        std::string rel = it->path().lexically_relative(localRoot).generic_string();
+        std::string rel = it->path().lexically_relative(localRootPath).generic_u8string();
         std::string remote = remoteRoot;
         if (!remote.empty() && remote.back() != '/') remote += '/';
         remote += rel;
         if (it->is_directory(ec)) {
-            dirs.push_back({it->path().string(), remote, true});
+            dirs.push_back({it->path().u8string(), remote, true});
         } else if (!ec) {
-            files.push_back({it->path().string(), remote, false});
+            files.push_back({it->path().u8string(), remote, false});
         }
     }
     // 遍历异常终止（MSVC 出错即置 end）：已展开条目保留，但计划可能不完整 → 告警
@@ -536,7 +537,7 @@ bool SshAdapter::sftpUploadFolder(const std::string& localPath, const std::strin
 {
     auto items = planFolderUpload(localPath, remotePath);
     // localRoot 不存在/不可读：planFolderUpload 返回空 → 显式报错而非静默成功
-    if (items.empty() && !std::filesystem::exists(localPath)) {
+    if (items.empty() && !std::filesystem::exists(std::filesystem::u8path(localPath))) {
         m_lastError = "本地目录不存在或不可读: " + localPath;
         return false;
     }

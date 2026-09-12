@@ -1,12 +1,12 @@
 #include "FtpAdapter.h"
 #include "adapter/LocalFileOpen.h"
+#include "adapter/FtpPathUtils.h"
 #include <curl/curl.h>
 #include <atomic>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
-#include <algorithm>
 #include <vector>
 #include <future>
 
@@ -337,18 +337,19 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
 bool FtpAdapter::uploadFolder(const std::string& localPath, const std::string& remotePath) {
     namespace fs = std::filesystem;
 
-    std::error_code ec;
-    if (!fs::exists(localPath, ec) || !fs::is_directory(localPath, ec)) {
-        m_impl->m_lastError = "本地文件夹不存在: " + localPath;
-        return false;
-    }
-
-    // 提取文件夹名（去掉末尾 / 或 \）
     std::string cleanLocal = localPath;
     while (!cleanLocal.empty() && (cleanLocal.back() == '/' || cleanLocal.back() == '\\')) {
         cleanLocal.pop_back();
     }
-    std::string folderName = fs::path(cleanLocal).filename().string();
+    const fs::path localRoot = fs::u8path(cleanLocal);
+
+    std::error_code ec;
+    if (!fs::exists(localRoot, ec) || !fs::is_directory(localRoot, ec)) {
+        m_impl->m_lastError = "本地文件夹不存在: " + localPath;
+        return false;
+    }
+
+    const std::string folderName = localRoot.filename().u8string();
 
     // 构造远程基础路径
     std::string remoteBase = remotePath;
@@ -360,30 +361,14 @@ bool FtpAdapter::uploadFolder(const std::string& localPath, const std::string& r
     bool allOk = true;
 
     // 遍历文件夹中的所有文件
-    for (const auto& entry : fs::recursive_directory_iterator(cleanLocal, ec)) {
+    for (const auto& entry : fs::recursive_directory_iterator(localRoot, ec)) {
         if (ec) break;
 
         if (!entry.is_regular_file(ec)) continue;
         if (ec) continue;
 
-        std::string filePath = entry.path().string();
-        // 使用正斜杠统一路径分隔符
-        std::replace(filePath.begin(), filePath.end(), '\\', '/');
-
-        // 计算相对路径
-        std::string cleanBase = cleanLocal;
-        std::replace(cleanBase.begin(), cleanBase.end(), '\\', '/');
-
-        std::string relPath;
-        size_t pos = filePath.find(cleanBase);
-        if (pos != std::string::npos) {
-            relPath = filePath.substr(pos + cleanBase.size());
-            if (!relPath.empty() && relPath[0] == '/') {
-                relPath = relPath.substr(1);
-            }
-        } else {
-            relPath = entry.path().filename().string();
-        }
+        const std::string filePath = entry.path().u8string();
+        const std::string relPath = entry.path().lexically_relative(localRoot).generic_u8string();
 
         std::string remoteFile = remoteBase;
         if (!remoteFile.empty() && remoteFile.back() != '/') {
@@ -455,7 +440,8 @@ bool FtpAdapter::listDirectory(const std::string& remotePath, std::string& outJs
     }
 
     std::string buffer;
-    std::string url = m_impl->buildUrl(remotePath);
+    std::string url = m_impl->buildUrl(
+        adapter_internal::ftpDirectoryPathForListing(remotePath));
     m_impl->setupCommonOpts(curl, url);
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
@@ -504,14 +490,9 @@ std::vector<FtpFileInfo> FtpAdapter::listDirectoryParsed(const std::string& remo
     }
 
     std::string buffer;
-    // 确保目录 URL 指向正确路径（"/" 或空 → 根目录 URL 已自带 /）
-    std::string pathForUrl = remotePath;
-    // 清理路径中可能混入的换行符等空白字符
-    while (!pathForUrl.empty() && (pathForUrl.back() == '\n' || pathForUrl.back() == '\r' || pathForUrl.back() == ' '))
-        pathForUrl.pop_back();
-    if (pathForUrl.empty()) pathForUrl = "/";
-    if (pathForUrl.back() != '/') pathForUrl += '/';
-    std::string url = m_impl->buildUrl(pathForUrl);
+    // 只补目录结尾的 '/'；文件名中的空格、反斜杠等字符必须原样保留。
+    std::string url = m_impl->buildUrl(
+        adapter_internal::ftpDirectoryPathForListing(remotePath));
     m_impl->setupCommonOpts(curl, url);
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
