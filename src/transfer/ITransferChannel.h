@@ -46,4 +46,8 @@ public:
 
     virtual TransferCapabilities capabilities() const = 0;
     virtual TransferError lastError() const = 0;
+
+    // 清除通道为重连缓存的认证副本。默认实现保持测试/其他内部通道兼容；
+    // AdapterTransferChannel 会覆盖并安全擦除实际缓存。
+    virtual void clearCredentials() {}
 };

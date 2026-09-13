@@ -54,6 +54,7 @@ public:
 
     TransferCapabilities capabilities() const override;
     TransferError lastError() const override;
+    void clearCredentials() override;
 
 private:
     static TransferChannelOps bindOperations(const QString& protocol,

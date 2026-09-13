@@ -40,6 +40,22 @@ if(_qt_bin_dir)
             "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()
 
+# --- 单文件可靠传输执行器（重试、取消、目标变更与原子提交）---
+add_executable(tst_transfer_executor
+    transfer/tst_transfer_executor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_executor PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_executor PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_executor COMMAND tst_transfer_executor)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_executor PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
 add_executable(tst_nrec

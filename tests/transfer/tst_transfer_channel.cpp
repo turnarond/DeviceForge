@@ -194,6 +194,22 @@ private slots:
         QVERIFY(channel.lastError().retryable);
     }
 
+    void clearCredentialsDropsReconnectSnapshot()
+    {
+        auto adapter = std::make_shared<MockAdapter>();
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("ftp", adapter, makeOps(probe));
+        const DeviceInfo device{"10.0.0.8", 21, "ftp", "PLC-8", ""};
+        const AuthInfo auth{"operator", "secret"};
+        QVERIFY(channel.connect(device, auth));
+
+        channel.clearCredentials();
+
+        QVERIFY(!channel.reconnect());
+        QCOMPARE(adapter->connectCalls, 1);
+        QCOMPARE(channel.lastError().code, TransferErrorCode::Unsupported);
+    }
+
     void sftpConnectFailsWhenSubsystemIsNotReady()
     {
         auto adapter = std::make_shared<SshWithoutSftpAdapter>();

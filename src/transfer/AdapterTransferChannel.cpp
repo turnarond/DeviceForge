@@ -173,6 +173,12 @@ TransferError AdapterTransferChannel::lastError() const
     return m_lastError;
 }
 
+void AdapterTransferChannel::clearCredentials()
+{
+    m_auth.clear();
+    m_hasConnectionParameters = false;
+}
+
 TransferChannelOps AdapterTransferChannel::bindOperations(
     const QString& protocol, const std::shared_ptr<IProtocolAdapter>& adapter)
 {

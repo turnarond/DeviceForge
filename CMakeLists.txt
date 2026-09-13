@@ -202,6 +202,7 @@ set(SOURCES
     # 可靠传输内核
     src/transfer/TransferTypes.cpp
     src/transfer/AdapterTransferChannel.cpp
+    src/transfer/TransferExecutor.cpp
 
     # 新框架文件
     src/framework/AppState.cpp
