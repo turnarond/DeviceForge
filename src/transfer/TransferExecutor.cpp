@@ -2,7 +2,7 @@
 
 #include "transfer/TransferExecutor.h"
 
-#include <QDateTime>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QThread>
@@ -20,6 +20,15 @@
 namespace {
 
 constexpr int kCancellationPollMs = 50;
+constexpr qint64 kHashBlockSize = 64 * 1024;
+
+#ifdef Q_OS_WIN
+constexpr bool kLocalCommitNonAtomic = false;
+#else
+// POSIX rename 本身具备同文件系统原子替换语义，但当前实现没有 Windows
+// MOVEFILE_WRITE_THROUGH 对应的持久化保证，因此按现有结果契约显式标记降级。
+constexpr bool kLocalCommitNonAtomic = true;
+#endif
 
 class ExecutionCleanup
 {
@@ -42,6 +51,15 @@ private:
     AuthInfo* m_credentials;
 };
 
+struct LocalFileSnapshot
+{
+    bool exists = false;
+    bool readable = true;
+    quint64 size = 0;
+    qint64 modifiedMs = 0;
+    QByteArray sha256;
+};
+
 QString temporaryPathFor(const QString& targetPath)
 {
     return targetPath + QStringLiteral(".deviceforge-part-")
@@ -58,36 +76,81 @@ TransferItemResult failedResult(TransferError error, int attempts, bool nonAtomi
     return {TransferState::Failed, std::move(error), attempts, nonAtomic, 0};
 }
 
+TransferItemResult cancelledResult(TransferError error,
+                                   int attempts,
+                                   bool nonAtomic = false)
+{
+    return {TransferState::Cancelled, std::move(error), attempts, nonAtomic, 0};
+}
+
 TransferItemResult cancelledResult(int attempts, bool nonAtomic = false)
 {
-    return {TransferState::Cancelled,
-            makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消")),
-            attempts,
-            nonAtomic,
-            0};
+    return cancelledResult(
+        makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消")),
+        attempts,
+        nonAtomic);
 }
 
-TransferItemResult targetChangedResult(int attempts, bool nonAtomic = false)
+TransferItemResult needsAttentionResult(TransferError error,
+                                        int attempts,
+                                        bool nonAtomic = false)
 {
-    return {TransferState::NeedsAttention,
-            makeError(TransferErrorCode::TargetChanged,
-                      QStringLiteral("目标在传输期间发生变化，已停止提交")),
-            attempts,
-            nonAtomic,
-            0};
+    return {TransferState::NeedsAttention, std::move(error), attempts, nonAtomic, 0};
 }
 
-TransferFileStat localStat(const QString& path)
+TransferError targetChangedError(const QString& subject)
 {
-    const QFileInfo info(path);
-    if (!info.exists())
+    return makeError(TransferErrorCode::TargetChanged,
+                     QStringLiteral("%1在传输期间发生变化，已停止提交").arg(subject));
+}
+
+LocalFileSnapshot localSnapshot(const QString& path)
+{
+    const QFileInfo before(path);
+    if (!before.exists())
         return {};
+    if (!before.isFile())
+        return {true, false, static_cast<quint64>(before.size()),
+                before.lastModified().toMSecsSinceEpoch(), {}};
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {true, false, static_cast<quint64>(before.size()),
+                before.lastModified().toMSecsSinceEpoch(), {}};
+
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (!file.atEnd()) {
+        const QByteArray block = file.read(kHashBlockSize);
+        if (block.isEmpty() && file.error() != QFileDevice::NoError)
+            return {true, false, static_cast<quint64>(before.size()),
+                    before.lastModified().toMSecsSinceEpoch(), {}};
+        hash.addData(block);
+    }
+
+    const QFileInfo after(path);
+    if (!after.exists() || !after.isFile() || after.size() != before.size()
+        || after.lastModified() != before.lastModified())
+        return {after.exists(), false, static_cast<quint64>(std::max<qint64>(after.size(), 0)),
+                after.lastModified().toMSecsSinceEpoch(), {}};
+
     return {true,
-            static_cast<quint64>(info.size()),
-            QString::number(info.lastModified().toMSecsSinceEpoch())};
+            true,
+            static_cast<quint64>(after.size()),
+            after.lastModified().toMSecsSinceEpoch(),
+            hash.result()};
 }
 
-bool sameTarget(const TransferFileStat& baseline, const TransferFileStat& current)
+bool sameLocalFile(const LocalFileSnapshot& baseline, const LocalFileSnapshot& current)
+{
+    if (baseline.exists != current.exists)
+        return false;
+    if (!baseline.exists)
+        return true;
+    return baseline.readable && current.readable && baseline.size == current.size
+        && baseline.modifiedMs == current.modifiedMs && baseline.sha256 == current.sha256;
+}
+
+bool sameRemoteTarget(const TransferFileStat& baseline, const TransferFileStat& current)
 {
     if (baseline.exists != current.exists)
         return false;
@@ -108,29 +171,55 @@ void appendCleanupFailure(TransferError& rootError, const QString& cleanupDetail
     rootError.detail += QStringLiteral("临时文件清理失败：") + cleanupDetail;
 }
 
-void cleanupRemoteTemporary(ITransferChannel& channel,
+bool cleanupRemoteTemporary(ITransferChannel& channel,
                             const TransferCapabilities& capabilities,
                             const QString& temporaryPath,
                             TransferError& rootError)
 {
     if (!capabilities.remove) {
         appendCleanupFailure(rootError, QStringLiteral("通道不支持删除"));
-        return;
+        return false;
     }
     if (!channel.remove(temporaryPath)) {
         const TransferError cleanupError = channel.lastError();
         appendCleanupFailure(rootError,
                              cleanupError.detail.isEmpty() ? cleanupError.message
                                                            : cleanupError.detail);
+        return false;
     }
+    return true;
 }
 
-void cleanupLocalTemporary(const QString& temporaryPath, TransferError& rootError)
+bool cleanupLocalTemporary(const QString& temporaryPath, TransferError& rootError)
 {
     if (!QFileInfo::exists(temporaryPath))
-        return;
-    if (!QFile::remove(temporaryPath))
+        return true;
+    if (!QFile::remove(temporaryPath)) {
         appendCleanupFailure(rootError, QStringLiteral("无法删除本地临时文件"));
+        return false;
+    }
+    return true;
+}
+
+TransferItemResult cancelWithRemoteCleanup(ITransferChannel& channel,
+                                           const TransferCapabilities& capabilities,
+                                           const QString& temporaryPath,
+                                           int attempts,
+                                           bool atomicCommit)
+{
+    TransferError error =
+        makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
+    if (atomicCommit)
+        cleanupRemoteTemporary(channel, capabilities, temporaryPath, error);
+    return cancelledResult(std::move(error), attempts, !atomicCommit);
+}
+
+TransferItemResult cancelWithLocalCleanup(const QString& temporaryPath, int attempts)
+{
+    TransferError error =
+        makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
+    cleanupLocalTemporary(temporaryPath, error);
+    return cancelledResult(std::move(error), attempts);
 }
 
 bool replaceLocalFile(const QString& temporaryPath, const QString& targetPath)
@@ -194,10 +283,14 @@ TransferItemResult TransferExecutor::execute(const TransferItemRequest& request,
             if (attemptIndex > 0
                 && !waitBeforeRetry(delays.at(attemptIndex - 1), cancel))
                 return cancelledResult(attemptIndex);
+            if (cancel.load())
+                return cancelledResult(attemptIndex);
 
             const bool connectionReady = attemptIndex == 0
                 ? m_channel.connect(m_device, *m_credentials)
                 : m_channel.reconnect();
+            if (cancel.load())
+                return cancelledResult(attemptIndex + 1);
             if (connectionReady) {
                 firstAttemptIndex = attemptIndex;
                 connected = true;
@@ -206,8 +299,6 @@ TransferItemResult TransferExecutor::execute(const TransferItemRequest& request,
 
             TransferError connectionError =
                 channelErrorOrFallback(m_channel, QStringLiteral("连接失败"));
-            if (cancel.load())
-                return cancelledResult(attemptIndex + 1);
             if (!connectionError.retryable || attemptIndex == delays.size())
                 return failedResult(std::move(connectionError), attemptIndex + 1);
         }
@@ -218,12 +309,77 @@ TransferItemResult TransferExecutor::execute(const TransferItemRequest& request,
     }
 
     if (cancel.load())
-        return cancelledResult(0);
+        return cancelledResult(firstAttemptIndex + (m_credentials ? 1 : 0));
 
     const TransferCapabilities capabilities = m_channel.capabilities();
     return request.direction == TransferDirection::Upload
         ? executeUpload(request, capabilities, cancel, firstAttemptIndex)
         : executeDownload(request, capabilities, cancel, firstAttemptIndex);
+}
+
+bool TransferExecutor::prepareRemoteStat(const QString& path,
+                                         TransferFileStat& stat,
+                                         std::atomic_bool& cancel,
+                                         int& attemptIndex,
+                                         TransferItemResult& terminalResult)
+{
+    const QVector<int> delays = retryDelaysMs();
+    const int firstAttemptIndex = attemptIndex;
+
+    for (int currentAttempt = firstAttemptIndex; currentAttempt <= delays.size();
+         ++currentAttempt) {
+        if (currentAttempt > firstAttemptIndex) {
+            if (!waitBeforeRetry(delays.at(currentAttempt - 1), cancel)) {
+                terminalResult = cancelledResult(currentAttempt);
+                return false;
+            }
+            if (cancel.load()) {
+                terminalResult = cancelledResult(currentAttempt);
+                return false;
+            }
+            const bool reconnected = m_channel.reconnect();
+            if (cancel.load()) {
+                terminalResult = cancelledResult(currentAttempt + 1);
+                return false;
+            }
+            if (!reconnected) {
+                TransferError reconnectError =
+                    channelErrorOrFallback(m_channel, QStringLiteral("重连失败"));
+                if (!reconnectError.retryable || currentAttempt == delays.size()) {
+                    terminalResult = failedResult(std::move(reconnectError),
+                                                  currentAttempt + 1);
+                    return false;
+                }
+                continue;
+            }
+        }
+
+        if (cancel.load()) {
+            terminalResult = cancelledResult(currentAttempt);
+            return false;
+        }
+        const bool statSucceeded = m_channel.stat(path, stat);
+        TransferError statError;
+        if (!statSucceeded)
+            statError = channelErrorOrFallback(m_channel, QStringLiteral("读取远端元数据失败"));
+        if (cancel.load()) {
+            terminalResult = cancelledResult(currentAttempt + 1);
+            return false;
+        }
+        if (statSucceeded) {
+            attemptIndex = currentAttempt;
+            return true;
+        }
+        if (!statError.retryable || currentAttempt == delays.size()) {
+            terminalResult = failedResult(std::move(statError), currentAttempt + 1);
+            return false;
+        }
+    }
+
+    terminalResult = failedResult(makeError(TransferErrorCode::RemoteIo,
+                                            QStringLiteral("远端元数据重试次数已耗尽")),
+                                  delays.size() + 1);
+    return false;
 }
 
 TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& request,
@@ -238,133 +394,190 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
         return failedResult(makeError(TransferErrorCode::Unsupported,
                                       QStringLiteral("通道不支持上传校验")), 0);
 
-    const QFileInfo sourceInfo(request.localPath);
-    if (!sourceInfo.exists() || !sourceInfo.isFile())
+    if (cancel.load())
+        return cancelledResult(firstAttemptIndex);
+    const LocalFileSnapshot sourceBaseline = localSnapshot(request.localPath);
+    if (cancel.load())
+        return cancelledResult(firstAttemptIndex);
+    if (!sourceBaseline.exists || !sourceBaseline.readable)
         return failedResult(makeError(TransferErrorCode::LocalIo,
-                                      QStringLiteral("本地源文件不存在或不是普通文件")), 0);
-    const qint64 sourceSize = sourceInfo.size();
+                                      QStringLiteral("本地源文件不存在、不是普通文件或无法读取")),
+                            firstAttemptIndex);
 
+    int preparedAttemptIndex = firstAttemptIndex;
     TransferFileStat targetBaseline;
-    if (!m_channel.stat(request.remotePath, targetBaseline))
-        return failedResult(channelErrorOrFallback(m_channel, QStringLiteral("读取目标元数据失败")),
-                            m_credentials ? firstAttemptIndex + 1 : 0);
+    TransferItemResult prepareFailure;
+    if (!prepareRemoteStat(request.remotePath,
+                           targetBaseline,
+                           cancel,
+                           preparedAttemptIndex,
+                           prepareFailure))
+        return prepareFailure;
     if (request.overwrite == OverwritePolicy::Skip && targetBaseline.exists)
         return {TransferState::Succeeded, {}, 0, false, 0};
 
     const bool atomicCommit = capabilities.rename;
     const QString transferPath = atomicCommit ? temporaryPathFor(request.remotePath)
                                               : request.remotePath;
-    const QVector<int> delays = retryDelaysMs();
 
-    for (int attemptIndex = firstAttemptIndex; attemptIndex <= delays.size(); ++attemptIndex) {
-        if (attemptIndex > firstAttemptIndex) {
-            if (!waitBeforeRetry(delays.at(attemptIndex - 1), cancel)) {
-                TransferError cancellation =
-                    makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-                if (atomicCommit)
-                    cleanupRemoteTemporary(m_channel, capabilities, transferPath, cancellation);
+    if (!atomicCommit) {
+        TransferFileStat currentTarget;
+        if (!prepareRemoteStat(request.remotePath,
+                               currentTarget,
+                               cancel,
+                               preparedAttemptIndex,
+                               prepareFailure))
+            return prepareFailure;
+        if (!sameRemoteTarget(targetBaseline, currentTarget))
+            return needsAttentionResult(targetChangedError(QStringLiteral("远端目标")),
+                                        preparedAttemptIndex,
+                                        true);
+    }
+
+    const QVector<int> delays = retryDelaysMs();
+    const int firstTransferAttempt = preparedAttemptIndex;
+    for (int attemptIndex = firstTransferAttempt; attemptIndex <= delays.size(); ++attemptIndex) {
+        if (attemptIndex > firstTransferAttempt) {
+            if (!waitBeforeRetry(delays.at(attemptIndex - 1), cancel))
                 return cancelledResult(attemptIndex, !atomicCommit);
-            }
-            if (!m_channel.reconnect()) {
-                TransferError reconnectError =
-                    channelErrorOrFallback(m_channel, QStringLiteral("重连失败"));
+            if (cancel.load())
+                return cancelledResult(attemptIndex, !atomicCommit);
+            const bool reconnected = m_channel.reconnect();
+            TransferError reconnectError;
+            if (!reconnected)
+                reconnectError = channelErrorOrFallback(m_channel, QStringLiteral("重连失败"));
+            if (cancel.load())
+                return cancelledResult(attemptIndex + 1, !atomicCommit);
+            if (!reconnected) {
                 if (!reconnectError.retryable || attemptIndex == delays.size())
-                    return failedResult(std::move(reconnectError), attemptIndex, !atomicCommit);
+                    return failedResult(std::move(reconnectError), attemptIndex + 1,
+                                        !atomicCommit);
                 continue;
             }
         }
 
-        if (cancel.load()) {
-            TransferError cancellation =
-                makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-            if (atomicCommit)
-                cleanupRemoteTemporary(m_channel, capabilities, transferPath, cancellation);
+        if (cancel.load())
             return cancelledResult(attemptIndex, !atomicCommit);
-        }
-
-        if (!atomicCommit && attemptIndex == 0) {
-            TransferFileStat currentTarget;
-            if (!m_channel.stat(request.remotePath, currentTarget))
-                return failedResult(
-                    channelErrorOrFallback(m_channel, QStringLiteral("复核目标元数据失败")),
-                    0,
-                    true);
-            if (!sameTarget(targetBaseline, currentTarget))
-                return targetChangedResult(0, true);
-        }
 
         const int attempts = attemptIndex + 1;
-        if (!m_channel.upload(request.localPath, transferPath)) {
-            TransferError transferError =
-                channelErrorOrFallback(m_channel, QStringLiteral("上传失败"));
+        const bool uploadSucceeded = m_channel.upload(request.localPath, transferPath);
+        TransferError uploadError;
+        if (!uploadSucceeded)
+            uploadError = channelErrorOrFallback(m_channel, QStringLiteral("上传失败"));
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, atomicCommit);
+        if (!uploadSucceeded) {
+            bool cleanupSucceeded = true;
             if (atomicCommit)
-                cleanupRemoteTemporary(m_channel, capabilities, transferPath, transferError);
-            if (cancel.load())
-                return cancelledResult(attempts, !atomicCommit);
-            if (transferError.retryable && attemptIndex < delays.size())
+                cleanupSucceeded = cleanupRemoteTemporary(
+                    m_channel, capabilities, transferPath, uploadError);
+            if (!cleanupSucceeded)
+                return failedResult(std::move(uploadError), attempts, !atomicCommit);
+            if (uploadError.retryable && attemptIndex < delays.size())
                 continue;
-            return failedResult(std::move(transferError), attempts, !atomicCommit);
+            return failedResult(std::move(uploadError), attempts, !atomicCommit);
         }
 
-        if (cancel.load()) {
-            TransferError cancellation =
-                makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-            if (atomicCommit)
-                cleanupRemoteTemporary(m_channel, capabilities, transferPath, cancellation);
-            return cancelledResult(attempts, !atomicCommit);
-        }
-
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, atomicCommit);
         TransferFileStat transferred;
-        if (!m_channel.stat(transferPath, transferred)) {
-            TransferError verifyError =
-                channelErrorOrFallback(m_channel, QStringLiteral("读取上传结果失败"));
+        const bool transferStatSucceeded = m_channel.stat(transferPath, transferred);
+        TransferError verifyError;
+        if (!transferStatSucceeded)
+            verifyError = channelErrorOrFallback(m_channel, QStringLiteral("读取上传结果失败"));
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, atomicCommit);
+        if (!transferStatSucceeded) {
+            bool cleanupSucceeded = true;
             if (atomicCommit)
-                cleanupRemoteTemporary(m_channel, capabilities, transferPath, verifyError);
+                cleanupSucceeded = cleanupRemoteTemporary(
+                    m_channel, capabilities, transferPath, verifyError);
+            if (!cleanupSucceeded)
+                return failedResult(std::move(verifyError), attempts, !atomicCommit);
             if (verifyError.retryable && attemptIndex < delays.size())
                 continue;
             return failedResult(std::move(verifyError), attempts, !atomicCommit);
         }
-        if (!transferred.exists || transferred.size != static_cast<quint64>(sourceSize)) {
-            TransferError verifyError = makeError(TransferErrorCode::RemoteIo,
-                                                  QStringLiteral("上传字节数校验失败"));
+        if (!transferred.exists || transferred.size != sourceBaseline.size) {
+            verifyError = makeError(TransferErrorCode::RemoteIo,
+                                    QStringLiteral("上传字节数校验失败"));
             if (atomicCommit)
                 cleanupRemoteTemporary(m_channel, capabilities, transferPath, verifyError);
             return failedResult(std::move(verifyError), attempts, !atomicCommit);
+        }
+
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, atomicCommit);
+        const LocalFileSnapshot currentSource = localSnapshot(request.localPath);
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, atomicCommit);
+        if (!sameLocalFile(sourceBaseline, currentSource)) {
+            TransferError changed = targetChangedError(QStringLiteral("本地源文件"));
+            if (atomicCommit)
+                cleanupRemoteTemporary(m_channel, capabilities, transferPath, changed);
+            return needsAttentionResult(std::move(changed), attempts, !atomicCommit);
         }
 
         if (!atomicCommit)
-            return {TransferState::Succeeded, {}, attempts, true, sourceSize};
+            return {TransferState::Succeeded, {}, attempts, true,
+                    static_cast<qint64>(sourceBaseline.size)};
 
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
         TransferFileStat currentTarget;
-        if (!m_channel.stat(request.remotePath, currentTarget)) {
-            TransferError verifyError =
+        const bool targetStatSucceeded = m_channel.stat(request.remotePath, currentTarget);
+        TransferError targetStatError;
+        if (!targetStatSucceeded)
+            targetStatError =
                 channelErrorOrFallback(m_channel, QStringLiteral("复核目标元数据失败"));
-            cleanupRemoteTemporary(m_channel, capabilities, transferPath, verifyError);
-            if (verifyError.retryable && attemptIndex < delays.size())
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
+        if (!targetStatSucceeded) {
+            const bool cleanupSucceeded = cleanupRemoteTemporary(
+                m_channel, capabilities, transferPath, targetStatError);
+            if (!cleanupSucceeded)
+                return failedResult(std::move(targetStatError), attempts);
+            if (targetStatError.retryable && attemptIndex < delays.size())
                 continue;
-            return failedResult(std::move(verifyError), attempts);
+            return failedResult(std::move(targetStatError), attempts);
         }
-        if (!sameTarget(targetBaseline, currentTarget)) {
-            TransferError changed = makeError(TransferErrorCode::TargetChanged,
-                                              QStringLiteral("目标在传输期间发生变化"));
+        if (!sameRemoteTarget(targetBaseline, currentTarget)) {
+            TransferError changed = targetChangedError(QStringLiteral("远端目标"));
             cleanupRemoteTemporary(m_channel, capabilities, transferPath, changed);
-            TransferItemResult result = targetChangedResult(attempts);
-            result.error.detail = changed.detail;
-            return result;
+            return needsAttentionResult(std::move(changed), attempts);
         }
 
-        if (!m_channel.rename(transferPath, request.remotePath)) {
-            TransferError commitError =
-                channelErrorOrFallback(m_channel, QStringLiteral("原子提交失败"));
-            cleanupRemoteTemporary(m_channel, capabilities, transferPath, commitError);
-            if (cancel.load())
-                return cancelledResult(attempts);
-            if (commitError.retryable && attemptIndex < delays.size())
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
+        const bool renameSucceeded = m_channel.rename(transferPath, request.remotePath);
+        TransferError renameError;
+        if (!renameSucceeded)
+            renameError = channelErrorOrFallback(m_channel, QStringLiteral("原子提交失败"));
+        if (!renameSucceeded && cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
+        if (!renameSucceeded) {
+            const bool cleanupSucceeded = cleanupRemoteTemporary(
+                m_channel, capabilities, transferPath, renameError);
+            if (!cleanupSucceeded)
+                return failedResult(std::move(renameError), attempts);
+            if (renameError.retryable && attemptIndex < delays.size())
                 continue;
-            return failedResult(std::move(commitError), attempts);
+            return failedResult(std::move(renameError), attempts);
         }
 
-        return {TransferState::Succeeded, {}, attempts, false, sourceSize};
+        // rename 已成功时提交不可回退；即使此检查点刚观察到取消，也必须如实返回成功。
+        (void)cancel.load();
+        return {TransferState::Succeeded, {}, attempts, false,
+                static_cast<qint64>(sourceBaseline.size)};
     }
 
     return failedResult(makeError(TransferErrorCode::RemoteIo,
@@ -385,65 +598,84 @@ TransferItemResult TransferExecutor::executeDownload(const TransferItemRequest& 
         return failedResult(makeError(TransferErrorCode::Unsupported,
                                       QStringLiteral("通道不支持下载校验")), 0);
 
+    int preparedAttemptIndex = firstAttemptIndex;
     TransferFileStat sourceStat;
-    if (!m_channel.stat(request.remotePath, sourceStat))
-        return failedResult(channelErrorOrFallback(m_channel, QStringLiteral("读取远端源元数据失败")),
-                            m_credentials ? firstAttemptIndex + 1 : 0);
+    TransferItemResult prepareFailure;
+    if (!prepareRemoteStat(request.remotePath,
+                           sourceStat,
+                           cancel,
+                           preparedAttemptIndex,
+                           prepareFailure))
+        return prepareFailure;
     if (!sourceStat.exists)
         return failedResult(makeError(TransferErrorCode::InvalidPath,
-                                      QStringLiteral("远端源文件不存在")), 0);
+                                      QStringLiteral("远端源文件不存在")),
+                            preparedAttemptIndex + 1);
 
-    const TransferFileStat targetBaseline = localStat(request.localPath);
+    if (cancel.load())
+        return cancelledResult(preparedAttemptIndex + 1);
+    const LocalFileSnapshot targetBaseline = localSnapshot(request.localPath);
+    if (cancel.load())
+        return cancelledResult(preparedAttemptIndex + 1);
+    if (targetBaseline.exists && !targetBaseline.readable)
+        return failedResult(makeError(TransferErrorCode::LocalIo,
+                                      QStringLiteral("本地目标不是普通文件或无法读取")),
+                            preparedAttemptIndex + 1);
     if (request.overwrite == OverwritePolicy::Skip && targetBaseline.exists)
         return {TransferState::Succeeded, {}, 0, false, 0};
 
     const QString temporaryPath = temporaryPathFor(request.localPath);
     const QVector<int> delays = retryDelaysMs();
+    const int firstTransferAttempt = preparedAttemptIndex;
 
-    for (int attemptIndex = firstAttemptIndex; attemptIndex <= delays.size(); ++attemptIndex) {
-        if (attemptIndex > firstAttemptIndex) {
-            if (!waitBeforeRetry(delays.at(attemptIndex - 1), cancel)) {
-                TransferError cancellation =
-                    makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-                cleanupLocalTemporary(temporaryPath, cancellation);
+    for (int attemptIndex = firstTransferAttempt; attemptIndex <= delays.size();
+         ++attemptIndex) {
+        if (attemptIndex > firstTransferAttempt) {
+            if (!waitBeforeRetry(delays.at(attemptIndex - 1), cancel))
                 return cancelledResult(attemptIndex);
-            }
-            if (!m_channel.reconnect()) {
-                TransferError reconnectError =
-                    channelErrorOrFallback(m_channel, QStringLiteral("重连失败"));
-                if (!reconnectError.retryable || attemptIndex == delays.size())
-                    return failedResult(std::move(reconnectError), attemptIndex);
-                continue;
-            }
-        }
-
-        if (cancel.load()) {
-            TransferError cancellation =
-                makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-            cleanupLocalTemporary(temporaryPath, cancellation);
-            return cancelledResult(attemptIndex);
-        }
-
-        QFile::remove(temporaryPath);
-        const int attempts = attemptIndex + 1;
-        if (!m_channel.download(request.remotePath, temporaryPath)) {
-            TransferError transferError =
-                channelErrorOrFallback(m_channel, QStringLiteral("下载失败"));
-            cleanupLocalTemporary(temporaryPath, transferError);
             if (cancel.load())
-                return cancelledResult(attempts);
-            if (transferError.retryable && attemptIndex < delays.size())
+                return cancelledResult(attemptIndex);
+            const bool reconnected = m_channel.reconnect();
+            TransferError reconnectError;
+            if (!reconnected)
+                reconnectError = channelErrorOrFallback(m_channel, QStringLiteral("重连失败"));
+            if (cancel.load())
+                return cancelledResult(attemptIndex + 1);
+            if (!reconnected) {
+                if (!reconnectError.retryable || attemptIndex == delays.size())
+                    return failedResult(std::move(reconnectError), attemptIndex + 1);
                 continue;
-            return failedResult(std::move(transferError), attempts);
+            }
         }
 
-        if (cancel.load()) {
-            TransferError cancellation =
-                makeError(TransferErrorCode::Cancelled, QStringLiteral("传输已取消"));
-            cleanupLocalTemporary(temporaryPath, cancellation);
-            return cancelledResult(attempts);
+        if (cancel.load())
+            return cancelledResult(attemptIndex);
+
+        if (QFileInfo::exists(temporaryPath) && !QFile::remove(temporaryPath)) {
+            TransferError cleanupError = makeError(TransferErrorCode::LocalIo,
+                                                   QStringLiteral("无法清理旧的本地临时文件"));
+            appendCleanupFailure(cleanupError, QStringLiteral("临时路径仍被占用"));
+            return failedResult(std::move(cleanupError), attemptIndex);
         }
 
+        const int attempts = attemptIndex + 1;
+        const bool downloadSucceeded = m_channel.download(request.remotePath, temporaryPath);
+        TransferError downloadError;
+        if (!downloadSucceeded)
+            downloadError = channelErrorOrFallback(m_channel, QStringLiteral("下载失败"));
+        if (cancel.load())
+            return cancelWithLocalCleanup(temporaryPath, attempts);
+        if (!downloadSucceeded) {
+            const bool cleanupSucceeded = cleanupLocalTemporary(temporaryPath, downloadError);
+            if (!cleanupSucceeded)
+                return failedResult(std::move(downloadError), attempts);
+            if (downloadError.retryable && attemptIndex < delays.size())
+                continue;
+            return failedResult(std::move(downloadError), attempts);
+        }
+
+        if (cancel.load())
+            return cancelWithLocalCleanup(temporaryPath, attempts);
         const QFileInfo downloaded(temporaryPath);
         if (!downloaded.exists()
             || static_cast<quint64>(downloaded.size()) != sourceStat.size) {
@@ -453,26 +685,33 @@ TransferItemResult TransferExecutor::executeDownload(const TransferItemRequest& 
             return failedResult(std::move(verifyError), attempts);
         }
 
-        if (!sameTarget(targetBaseline, localStat(request.localPath))) {
-            TransferError changed = makeError(TransferErrorCode::TargetChanged,
-                                              QStringLiteral("目标在传输期间发生变化"));
+        if (cancel.load())
+            return cancelWithLocalCleanup(temporaryPath, attempts);
+        const LocalFileSnapshot currentTarget = localSnapshot(request.localPath);
+        if (cancel.load())
+            return cancelWithLocalCleanup(temporaryPath, attempts);
+        if (!sameLocalFile(targetBaseline, currentTarget)) {
+            TransferError changed = targetChangedError(QStringLiteral("本地目标"));
             cleanupLocalTemporary(temporaryPath, changed);
-            TransferItemResult result = targetChangedResult(attempts);
-            result.error.detail = changed.detail;
-            return result;
+            return needsAttentionResult(std::move(changed), attempts);
         }
 
-        if (!replaceLocalFile(temporaryPath, request.localPath)) {
+        if (cancel.load())
+            return cancelWithLocalCleanup(temporaryPath, attempts);
+        const bool commitSucceeded = replaceLocalFile(temporaryPath, request.localPath);
+        if (!commitSucceeded) {
             TransferError commitError = makeError(TransferErrorCode::LocalIo,
                                                   QStringLiteral("本地原子提交失败"));
             cleanupLocalTemporary(temporaryPath, commitError);
-            return failedResult(std::move(commitError), attempts);
+            return failedResult(std::move(commitError), attempts, kLocalCommitNonAtomic);
         }
 
+        // 提交成功后不可回退；检查取消只作为协议检查点，结果仍必须如实为成功。
+        (void)cancel.load();
         return {TransferState::Succeeded,
                 {},
                 attempts,
-                false,
+                kLocalCommitNonAtomic,
                 static_cast<qint64>(sourceStat.size)};
     }
 

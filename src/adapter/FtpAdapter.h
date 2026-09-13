@@ -12,6 +12,12 @@
 // 使用 Pimpl 模式隐藏 libcurl 实现细节
 
 struct FtpFileInfo;  // 前向声明（定义在 src/tools/FtpDeployTool/FtpFileInfo.h）
+class FtpAdapter;
+
+namespace adapter_internal {
+// 只暴露“是否已擦除”的内部诊断，不返回用户名或密码内容。
+bool ftpCredentialsCleared(const FtpAdapter& adapter);
+}
 
 class FtpAdapter : public IProtocolAdapter, public IDeployable {
 public:
@@ -51,6 +57,8 @@ public:
     void setCancelFlag(std::atomic<bool>* flag);
 
 private:
+    friend bool adapter_internal::ftpCredentialsCleared(const FtpAdapter& adapter);
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

@@ -175,6 +175,8 @@ TransferError AdapterTransferChannel::lastError() const
 
 void AdapterTransferChannel::clearCredentials()
 {
+    if (m_adapter)
+        m_adapter->disconnect();
     m_auth.clear();
     m_hasConnectionParameters = false;
 }

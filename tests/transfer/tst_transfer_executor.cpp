@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QDir>
 
 #include <atomic>
 #include <deque>
@@ -54,6 +55,13 @@ QByteArray readFile(const QString& path)
     return file.readAll();
 }
 
+bool setModifiedTime(const QString& path, const QDateTime& modified)
+{
+    QFile file(path);
+    return file.open(QIODevice::ReadWrite)
+        && file.setFileTime(modified, QFileDevice::FileModificationTime);
+}
+
 class MockChannel final : public ITransferChannel
 {
 public:
@@ -76,7 +84,10 @@ public:
         ++uploadCalls;
         uploadSources.push_back(localPath);
         uploadTargets.push_back(remotePath);
-        return takeResult(uploadResults, true);
+        const bool result = takeResult(uploadResults, true);
+        if (result && onUpload)
+            onUpload();
+        return result;
     }
 
     bool download(const QString& remotePath, const QString& localPath) override
@@ -85,13 +96,17 @@ public:
         downloadSources.push_back(remotePath);
         downloadTargets.push_back(localPath);
         const bool result = takeResult(downloadResults, true);
+        if (!result && !failedDownloadPayload.isNull())
+            writeFile(localPath, failedDownloadPayload);
         if (result && !downloadPayload.isNull() && !writeFile(localPath, downloadPayload)) {
             currentError = {TransferErrorCode::LocalIo, QStringLiteral("测试写入失败"),
                             QStringLiteral("mock local write failed"), false};
             return false;
         }
+        if (onDownloadAttempt)
+            onDownloadAttempt(localPath, result);
         if (result && onDownload)
-            onDownload();
+            onDownload(localPath);
         return result;
     }
 
@@ -162,8 +177,11 @@ public:
     std::deque<bool> removeResults;
     std::deque<TransferError> operationErrors;
     std::function<bool(const QString&, TransferFileStat&)> statHandler;
-    std::function<void()> onDownload;
+    std::function<void()> onUpload;
+    std::function<void(const QString&)> onDownload;
+    std::function<void(const QString&, bool)> onDownloadAttempt;
     QByteArray downloadPayload;
+    QByteArray failedDownloadPayload;
     TransferError currentError;
     std::function<void(int)> progressCallback;
     std::atomic_bool* cancelFlag = nullptr;
@@ -280,6 +298,8 @@ private slots:
         QCOMPARE(channel.removeCalls, 1);
         QCOMPARE(channel.renameCalls, 0);
         QCOMPARE(channel.clearCredentialsCalls, 1);
+        QVERIFY(QFileInfo::exists(localPath));
+        QCOMPARE(readFile(localPath), QByteArray("blocked"));
     }
 
     void cancellationBeforeTransferHasOneTerminalResult()
@@ -355,6 +375,242 @@ private slots:
         QCOMPARE(channel.renameCalls, 0);
         QCOMPARE(channel.removeCalls, 0);
         QCOMPARE(channel.clearCredentialsCalls, 1);
+#ifdef Q_OS_WIN
+        QVERIFY(!result.nonAtomic);
+#else
+        QVERIFY(result.nonAtomic);
+#endif
+    }
+
+    void transientPrepareStatRetriesWithinTotalAttemptBudget()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("stat-retry.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("stat")));
+
+        MockChannel channel;
+        int statAttempt = 0;
+        channel.statHandler = [&channel, &statAttempt](const QString& path,
+                                                       TransferFileStat& out) {
+            if (statAttempt++ == 0) {
+                channel.currentError = timeoutError();
+                return false;
+            }
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 4, QStringLiteral("temporary")};
+            else
+                out = {};
+            channel.currentError = {};
+            return true;
+        };
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/stat-retry.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(result.attempts, 2);
+        QCOMPARE(channel.reconnectCalls, 1);
+        QCOMPARE(channel.uploadCalls, 1);
+        QCOMPARE(channel.renameCalls, 1);
+        QCOMPARE(delays, QVector<int>({1000}));
+    }
+
+    void cancellationAfterTargetStatNeverRenames()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("cancel-commit.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("data")));
+
+        MockChannel channel;
+        int targetStats = 0;
+        channel.statHandler = [this, &targetStats](const QString& path,
+                                                   TransferFileStat& out) {
+            if (path.contains(QStringLiteral(".deviceforge-part-"))) {
+                out = {true, 4, QStringLiteral("temporary")};
+            } else {
+                out = {};
+                if (targetStats++ == 1)
+                    m_cancel.store(true);
+            }
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/cancel-commit.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Cancelled);
+        QCOMPARE(result.error.code, TransferErrorCode::Cancelled);
+        QCOMPARE(channel.renameCalls, 0);
+        QCOMPARE(channel.removeCalls, 1);
+    }
+
+    void renameFailureAndCleanupFailureBothRemainVisible()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("rename-fail.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("data")));
+
+        MockChannel channel;
+        channel.renameResults = {false};
+        channel.removeResults = {false};
+        channel.operationErrors = {remoteIoError(), permissionError()};
+        makeAtomicUploadStat(channel, 4);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/rename-fail.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::RemoteIo);
+        QVERIFY(result.error.detail.contains(QStringLiteral("remote write failed")));
+        QVERIFY(result.error.detail.contains(QStringLiteral("permission denied")));
+        QCOMPARE(channel.renameCalls, 1);
+        QCOMPARE(channel.removeCalls, 1);
+        QVERIFY(QFileInfo::exists(localPath));
+    }
+
+    void cleanupFailureStopsRetrySoRemoteResidualIsVisible()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("residual.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("data")));
+
+        MockChannel channel;
+        channel.renameResults = {false};
+        channel.removeResults = {false};
+        channel.operationErrors = {timeoutError(), permissionError()};
+        makeAtomicUploadStat(channel, 4);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/residual.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::Timeout);
+        QVERIFY(result.error.detail.contains(QStringLiteral("清理")));
+        QCOMPARE(result.attempts, 1);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QCOMPARE(channel.uploadCalls, 1);
+        QCOMPARE(channel.renameCalls, 1);
+        QCOMPARE(channel.removeCalls, 1);
+    }
+
+    void uploadSourceSameSizeSameMtimeChangeBlocksCommit()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("source-hash.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("AAAA")));
+        const QDateTime baselineTime = QFileInfo(localPath).lastModified();
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 4);
+        channel.onUpload = [localPath, baselineTime] {
+            QVERIFY(writeFile(localPath, QByteArray("BBBB")));
+            QVERIFY(setModifiedTime(localPath, baselineTime));
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/source-hash.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::NeedsAttention);
+        QCOMPARE(result.error.code, TransferErrorCode::TargetChanged);
+        QCOMPARE(channel.renameCalls, 0);
+        QCOMPARE(channel.removeCalls, 1);
+        QCOMPARE(readFile(localPath), QByteArray("BBBB"));
+    }
+
+    void downloadTargetSameSizeSameMtimeChangeBlocksCommit()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("target-hash.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("AAAA")));
+        const QDateTime baselineTime = QFileInfo(localPath).lastModified();
+
+        MockChannel channel;
+        channel.downloadPayload = QByteArray("DOWN");
+        channel.statHandler = [](const QString&, TransferFileStat& out) {
+            out = {true, 4, QStringLiteral("remote")};
+            return true;
+        };
+        channel.onDownload = [localPath, baselineTime](const QString&) {
+            QVERIFY(writeFile(localPath, QByteArray("BBBB")));
+            QVERIFY(setModifiedTime(localPath, baselineTime));
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            downloadRequest(QStringLiteral("/target-hash.bin"), localPath), m_cancel);
+
+        QCOMPARE(result.state, TransferState::NeedsAttention);
+        QCOMPARE(result.error.code, TransferErrorCode::TargetChanged);
+        QCOMPARE(readFile(localPath), QByteArray("BBBB"));
+        QVERIFY(!QFileInfo::exists(channel.downloadTargets.front()));
+    }
+
+    void failedDownloadRemovesPartialTemporaryFile()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("partial.bin"));
+
+        MockChannel channel;
+        channel.downloadResults = {false};
+        channel.failedDownloadPayload = QByteArray("partial");
+        channel.operationErrors = {remoteIoError()};
+        channel.statHandler = [](const QString&, TransferFileStat& out) {
+            out = {true, 10, QStringLiteral("remote")};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            downloadRequest(QStringLiteral("/partial.bin"), localPath), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::RemoteIo);
+        QCOMPARE(channel.downloadCalls, 1);
+        QVERIFY(!QFileInfo::exists(channel.downloadTargets.front()));
+        QVERIFY(!QFileInfo::exists(localPath));
+    }
+
+    void cancelledDownloadReportsLocalTemporaryCleanupFailure()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("cancel-cleanup.bin"));
+
+        MockChannel channel;
+        channel.statHandler = [](const QString&, TransferFileStat& out) {
+            out = {true, 1, QStringLiteral("remote")};
+            return true;
+        };
+        channel.onDownload = [this](const QString& temporaryPath) {
+            QVERIFY(QDir().mkpath(temporaryPath));
+            m_cancel.store(true);
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            downloadRequest(QStringLiteral("/cancel-cleanup.bin"), localPath), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Cancelled);
+        QCOMPARE(result.error.code, TransferErrorCode::Cancelled);
+        QVERIFY(result.error.detail.contains(QStringLiteral("清理")));
+        const QString temporaryPath = channel.downloadTargets.front();
+        QVERIFY(QFileInfo(temporaryPath).isDir());
+        QVERIFY(QDir().rmdir(temporaryPath));
     }
 
     void uploadRefusesCommitWhenRemoteTargetChanged()
@@ -402,7 +658,9 @@ private slots:
             out = {true, 12, QStringLiteral("remote")};
             return true;
         };
-        channel.onDownload = [localPath] { QVERIFY(writeFile(localPath, QByteArray("changed"))); };
+        channel.onDownload = [localPath](const QString&) {
+            QVERIFY(writeFile(localPath, QByteArray("changed")));
+        };
         TransferExecutor executor(channel, [](int) {});
 
         const auto result = executor.execute(

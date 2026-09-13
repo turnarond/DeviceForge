@@ -59,6 +59,11 @@ private:
                                        const TransferCapabilities& capabilities,
                                        std::atomic_bool& cancel,
                                        int firstAttemptIndex);
+    bool prepareRemoteStat(const QString& path,
+                           TransferFileStat& stat,
+                           std::atomic_bool& cancel,
+                           int& attemptIndex,
+                           TransferItemResult& terminalResult);
     bool waitBeforeRetry(int milliseconds, std::atomic_bool& cancel) const;
 
     ITransferChannel& m_channel;

@@ -14,6 +14,13 @@
 
 // libcurl 全局初始化 RAII 守卫 — 整个进程生命周期仅构造/析构一次
 namespace {
+    void secureClear(std::string& value) {
+        volatile char* bytes = reinterpret_cast<volatile char*>(value.data());
+        for (size_t index = 0; index < value.size(); ++index)
+            bytes[index] = '\0';
+        value.clear();
+    }
+
     struct CurlGlobalGuard {
         CurlGlobalGuard()  { curl_global_init(CURL_GLOBAL_DEFAULT); }
         ~CurlGlobalGuard() { curl_global_cleanup(); }
@@ -173,9 +180,8 @@ bool FtpAdapter::connect(const DeviceInfo& device, const AuthInfo& auth) {
 }
 
 void FtpAdapter::disconnect() {
-    volatile char* p = const_cast<volatile char*>(m_impl->m_password.data());
-    for (size_t i = 0; i < m_impl->m_password.size(); ++i) p[i] = '\0';
-    m_impl->m_password.clear();
+    secureClear(m_impl->m_user);
+    secureClear(m_impl->m_password);
     m_impl->m_connected = false;
 }
 
@@ -185,6 +191,11 @@ bool FtpAdapter::isConnected() const {
 
 std::string FtpAdapter::lastError() const {
     return m_impl->m_lastError;
+}
+
+bool adapter_internal::ftpCredentialsCleared(const FtpAdapter& adapter)
+{
+    return adapter.m_impl->m_user.empty() && adapter.m_impl->m_password.empty();
 }
 
 // ============================================================

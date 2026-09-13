@@ -207,7 +207,41 @@ private slots:
 
         QVERIFY(!channel.reconnect());
         QCOMPARE(adapter->connectCalls, 1);
+        QCOMPARE(adapter->disconnectCalls, 1);
         QCOMPARE(channel.lastError().code, TransferErrorCode::Unsupported);
+    }
+
+    void clearCredentialsErasesRealFtpAdapterStorage()
+    {
+        auto adapter = std::make_shared<FtpAdapter>();
+        AdapterTransferChannel channel("ftp", adapter);
+        const DeviceInfo device{"127.0.0.1", 1, "ftp", "credential-probe", ""};
+        const AuthInfo auth{"operator", "secret-password"};
+
+        QVERIFY(!channel.connect(device, auth));
+        QVERIFY(!adapter_internal::ftpCredentialsCleared(*adapter));
+
+        channel.clearCredentials();
+
+        QVERIFY(adapter_internal::ftpCredentialsCleared(*adapter));
+        QVERIFY(!adapter->isConnected());
+    }
+
+    void clearCredentialsDisconnectsObservableSshAdapter()
+    {
+        auto adapter = std::make_shared<SshWithoutSftpAdapter>();
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("sftp", adapter, makeOps(probe));
+        const DeviceInfo device{"10.0.0.9", 22, "ssh", "PLC-9", ""};
+        const AuthInfo auth{"operator", "secret"};
+        QVERIFY(channel.connect(device, auth));
+        QVERIFY(adapter->isConnected());
+
+        channel.clearCredentials();
+
+        QCOMPARE(adapter->disconnectCalls, 1);
+        QVERIFY(!adapter->isConnected());
+        QVERIFY(!channel.reconnect());
     }
 
     void sftpConnectFailsWhenSubsystemIsNotReady()
