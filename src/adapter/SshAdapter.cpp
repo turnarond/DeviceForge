@@ -16,6 +16,12 @@
 QSet<QString> SshAdapter::s_knownHosts;
 QMutex        SshAdapter::s_knownHostsMutex;
 
+bool adapter_internal::sftpTransferCancellationRequested(
+    const std::atomic<bool>* cancelFlag)
+{
+    return cancelFlag && cancelFlag->load();
+}
+
 // ============================================================
 // 构造 / 析构
 // ============================================================
@@ -365,7 +371,11 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     uint64_t sent = 0;
     bool ok = true;
     while (sent < fileSize) {
-        if (m_sftpCancelFlag && *m_sftpCancelFlag) { ok = false; m_lastError = "上传已取消"; break; }
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "上传已取消";
+            break;
+        }
         size_t n = fread(buf, 1, sizeof(buf), localFile);
         if (n == 0) {
             if (ferror(localFile)) { ok = false; m_lastError = "SFTP 上传读取本地文件失败"; }
@@ -395,6 +405,7 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
 bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::string& localPath)
 {
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    m_lastError.clear();
 
     LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
         LIBSSH2_FXF_READ, 0);
@@ -413,9 +424,23 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
     uint64_t received = 0;
     bool ok = true;
     while (true) {
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "下载已取消";
+            break;
+        }
         ssize_t n = libssh2_sftp_read(remoteFile, buf, sizeof(buf));
-        if (n < 0) { ok = false; break; }
+        if (n < 0) {
+            ok = false;
+            m_lastError = "SFTP 下载读取失败";
+            break;
+        }
         if (n == 0) break;
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "下载已取消";
+            break;
+        }
         if (fwrite(buf, 1, n, localFile) != static_cast<size_t>(n)) {
             ok = false;
             m_lastError = "SFTP 下载写入失败（磁盘空间不足？）";
@@ -430,7 +455,7 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
 
     fclose(localFile);
     libssh2_sftp_close(remoteFile);
-    if (!ok) m_lastError = "SFTP 下载读取失败";
+    if (!ok && m_lastError.empty()) m_lastError = "SFTP 下载读取失败";
     return ok;
 }
 

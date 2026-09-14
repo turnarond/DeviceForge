@@ -530,6 +530,46 @@ private slots:
         QCOMPARE(readFile(localPath), QByteArray("BBBB"));
     }
 
+    void uploadSourceChangeDuringFinalTargetStatBlocksCommit()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("source-last-check.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("AAAA")));
+        const QDateTime baselineTime = QFileInfo(localPath).lastModified();
+
+        MockChannel channel;
+        int targetStatCalls = 0;
+        bool mutationSucceeded = false;
+        channel.statHandler = [localPath, baselineTime, &targetStatCalls,
+                               &mutationSucceeded](
+                                  const QString& path, TransferFileStat& out) {
+            if (path.contains(QStringLiteral(".deviceforge-part-"))) {
+                out = {true, 4, QStringLiteral("temporary")};
+                return true;
+            }
+            ++targetStatCalls;
+            if (targetStatCalls == 2) {
+                mutationSucceeded = writeFile(localPath, QByteArray("BBBB"))
+                    && setModifiedTime(localPath, baselineTime);
+            }
+            out = {};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/source-last-check.bin")), m_cancel);
+
+        QCOMPARE(targetStatCalls, 2);
+        QVERIFY(mutationSucceeded);
+        QCOMPARE(result.state, TransferState::NeedsAttention);
+        QCOMPARE(result.error.code, TransferErrorCode::TargetChanged);
+        QCOMPARE(channel.renameCalls, 0);
+        QCOMPARE(channel.removeCalls, 1);
+        QCOMPARE(readFile(localPath), QByteArray("BBBB"));
+    }
+
     void downloadTargetSameSizeSameMtimeChangeBlocksCommit()
     {
         QTemporaryDir directory;

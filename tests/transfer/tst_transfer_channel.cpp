@@ -227,6 +227,67 @@ private slots:
         QVERIFY(!adapter->isConnected());
     }
 
+    void ftpCredentialBuffersAndDerivedOptionsAreWiped()
+    {
+        FtpAdapter adapter;
+        const DeviceInfo device{"127.0.0.1", 1, "ftp", "credential-probe", ""};
+        const AuthInfo longAuth{
+            "operator-name-longer-than-small-string-storage",
+            "password-value-longer-than-small-string-storage-and-never-logged"};
+        const AuthInfo shortAuth{"u", "p"};
+
+        QVERIFY(!adapter.connect(device, longAuth));
+        QVERIFY(!adapter.connect(device, shortAuth));
+        auto stats = adapter_internal::ftpCredentialWipeStats(adapter);
+        QVERIFY(stats.lastUserWipeBytes >= longAuth.user.size());
+        QVERIFY(stats.lastPasswordWipeBytes >= longAuth.password.size());
+
+        QTemporaryDir temporaryDirectory;
+        QVERIFY(temporaryDirectory.isValid());
+        const QString uploadPath = temporaryDirectory.filePath(QStringLiteral("upload.bin"));
+        QFile uploadFile(uploadPath);
+        QVERIFY(uploadFile.open(QIODevice::WriteOnly));
+        QCOMPARE(uploadFile.write("payload"), qint64(7));
+        uploadFile.close();
+
+        const int beforeUploadWipes = stats.derivedWipes;
+        QVERIFY(!adapter.uploadFile(uploadPath.toUtf8().toStdString(), "/upload.bin"));
+        stats = adapter_internal::ftpCredentialWipeStats(adapter);
+        QCOMPARE(stats.derivedWipes, beforeUploadWipes + 1);
+        QVERIFY(stats.lastDerivedWipeBytes >= shortAuth.user.size() + shortAuth.password.size() + 1);
+
+        const int beforeDownloadWipes = stats.derivedWipes;
+        const QString downloadPath = temporaryDirectory.filePath(QStringLiteral("download.bin"));
+        QVERIFY(!adapter.downloadFile("/download.bin", downloadPath.toUtf8().toStdString()));
+        stats = adapter_internal::ftpCredentialWipeStats(adapter);
+        QCOMPARE(stats.derivedWipes, beforeDownloadWipes + 1);
+        QVERIFY(adapter_internal::ftpDownloadCancelHookConfigured(adapter));
+    }
+
+    void ftpDownloadProgressCallbackObservesCancellation()
+    {
+        FtpAdapter adapter;
+        std::atomic_bool cancelled{true};
+        adapter.setCancelFlag(&cancelled);
+
+        QCOMPARE(adapter_internal::invokeFtpProgressCallback(adapter, 100, 20, 0, 0), 1);
+
+        cancelled = false;
+        int progress = -1;
+        adapter.setProgressCallback([&progress](int value) { progress = value; });
+        QCOMPARE(adapter_internal::invokeFtpProgressCallback(adapter, 100, 40, 0, 0), 0);
+        QCOMPARE(progress, 40);
+    }
+
+    void sftpDownloadCancellationPredicateObservesExternalFlag()
+    {
+        std::atomic_bool cancelled{false};
+        QVERIFY(!adapter_internal::sftpTransferCancellationRequested(&cancelled));
+        cancelled = true;
+        QVERIFY(adapter_internal::sftpTransferCancellationRequested(&cancelled));
+        QVERIFY(!adapter_internal::sftpTransferCancellationRequested(nullptr));
+    }
+
     void clearCredentialsDisconnectsObservableSshAdapter()
     {
         auto adapter = std::make_shared<SshWithoutSftpAdapter>();

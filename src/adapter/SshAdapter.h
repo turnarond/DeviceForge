@@ -18,6 +18,10 @@ struct SftpPlanItem {
     bool isDirectory = false;
 };
 
+namespace adapter_internal {
+bool sftpTransferCancellationRequested(const std::atomic<bool>* cancelFlag);
+}
+
 class AdapterTransferChannel;
 
 // SSH 协议适配器 — 基于 libssh2 实现 IProtocolAdapter

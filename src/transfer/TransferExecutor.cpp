@@ -509,23 +509,21 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
             return failedResult(std::move(verifyError), attempts, !atomicCommit);
         }
 
-        if (cancel.load())
-            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
-                                           attempts, atomicCommit);
-        const LocalFileSnapshot currentSource = localSnapshot(request.localPath);
-        if (cancel.load())
-            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
-                                           attempts, atomicCommit);
-        if (!sameLocalFile(sourceBaseline, currentSource)) {
-            TransferError changed = targetChangedError(QStringLiteral("本地源文件"));
-            if (atomicCommit)
-                cleanupRemoteTemporary(m_channel, capabilities, transferPath, changed);
-            return needsAttentionResult(std::move(changed), attempts, !atomicCommit);
-        }
-
-        if (!atomicCommit)
+        if (!atomicCommit) {
+            if (cancel.load())
+                return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                               attempts, false);
+            const LocalFileSnapshot currentSource = localSnapshot(request.localPath);
+            if (cancel.load())
+                return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                               attempts, false);
+            if (!sameLocalFile(sourceBaseline, currentSource)) {
+                return needsAttentionResult(
+                    targetChangedError(QStringLiteral("本地源文件")), attempts, true);
+            }
             return {TransferState::Succeeded, {}, attempts, true,
                     static_cast<qint64>(sourceBaseline.size)};
+        }
 
         if (cancel.load())
             return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
@@ -550,6 +548,19 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
         }
         if (!sameRemoteTarget(targetBaseline, currentTarget)) {
             TransferError changed = targetChangedError(QStringLiteral("远端目标"));
+            cleanupRemoteTemporary(m_channel, capabilities, transferPath, changed);
+            return needsAttentionResult(std::move(changed), attempts);
+        }
+
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
+        const LocalFileSnapshot currentSource = localSnapshot(request.localPath);
+        if (cancel.load())
+            return cancelWithRemoteCleanup(m_channel, capabilities, transferPath,
+                                           attempts, true);
+        if (!sameLocalFile(sourceBaseline, currentSource)) {
+            TransferError changed = targetChangedError(QStringLiteral("本地源文件"));
             cleanupRemoteTemporary(m_channel, capabilities, transferPath, changed);
             return needsAttentionResult(std::move(changed), attempts);
         }

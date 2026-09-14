@@ -7,6 +7,7 @@
 #include <memory>
 #include <functional>
 #include <vector>
+#include <cstddef>
 
 // FTP 协议适配器 — 封装 libcurl FTP 操作,实现 IProtocolAdapter 统一接口
 // 使用 Pimpl 模式隐藏 libcurl 实现细节
@@ -15,8 +16,22 @@ struct FtpFileInfo;  // 前向声明（定义在 src/tools/FtpDeployTool/FtpFile
 class FtpAdapter;
 
 namespace adapter_internal {
+struct FtpCredentialWipeStats {
+    std::size_t lastUserWipeBytes = 0;
+    std::size_t lastPasswordWipeBytes = 0;
+    std::size_t lastDerivedWipeBytes = 0;
+    int derivedWipes = 0;
+};
+
 // 只暴露“是否已擦除”的内部诊断，不返回用户名或密码内容。
 bool ftpCredentialsCleared(const FtpAdapter& adapter);
+FtpCredentialWipeStats ftpCredentialWipeStats(const FtpAdapter& adapter);
+bool ftpDownloadCancelHookConfigured(const FtpAdapter& adapter);
+int invokeFtpProgressCallback(FtpAdapter& adapter,
+                              long long downloadTotal,
+                              long long downloadNow,
+                              long long uploadTotal,
+                              long long uploadNow);
 }
 
 class FtpAdapter : public IProtocolAdapter, public IDeployable {
@@ -58,6 +73,14 @@ public:
 
 private:
     friend bool adapter_internal::ftpCredentialsCleared(const FtpAdapter& adapter);
+    friend adapter_internal::FtpCredentialWipeStats
+    adapter_internal::ftpCredentialWipeStats(const FtpAdapter& adapter);
+    friend bool adapter_internal::ftpDownloadCancelHookConfigured(const FtpAdapter& adapter);
+    friend int adapter_internal::invokeFtpProgressCallback(FtpAdapter& adapter,
+                                                           long long downloadTotal,
+                                                           long long downloadNow,
+                                                           long long uploadTotal,
+                                                           long long uploadNow);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;

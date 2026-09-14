@@ -14,12 +14,52 @@
 
 // libcurl 全局初始化 RAII 守卫 — 整个进程生命周期仅构造/析构一次
 namespace {
-    void secureClear(std::string& value) {
+    std::size_t secureClear(std::string& value) {
+        const std::size_t bytesToWipe = value.capacity();
+        value.resize(bytesToWipe, '\0');
         volatile char* bytes = reinterpret_cast<volatile char*>(value.data());
         for (size_t index = 0; index < value.size(); ++index)
             bytes[index] = '\0';
         value.clear();
+        return bytesToWipe;
     }
+
+    class SecureString final {
+    public:
+        SecureString(const std::string& user,
+                     const std::string& password,
+                     std::size_t* lastWipeBytes,
+                     int* wipeCount)
+            : m_lastWipeBytes(lastWipeBytes)
+            , m_wipeCount(wipeCount)
+        {
+            m_value.reserve(user.size() + password.size() + 1);
+            m_value.append(user);
+            m_value.push_back(':');
+            m_value.append(password);
+        }
+
+        ~SecureString()
+        {
+            const std::size_t wiped = secureClear(m_value);
+            if (m_lastWipeBytes)
+                *m_lastWipeBytes = wiped;
+            if (m_wipeCount)
+                ++*m_wipeCount;
+        }
+
+        SecureString(const SecureString&) = delete;
+        SecureString& operator=(const SecureString&) = delete;
+        SecureString(SecureString&&) = delete;
+        SecureString& operator=(SecureString&&) = delete;
+
+        const char* c_str() const { return m_value.c_str(); }
+
+    private:
+        std::string m_value;
+        std::size_t* m_lastWipeBytes = nullptr;
+        int* m_wipeCount = nullptr;
+    };
 
     struct CurlGlobalGuard {
         CurlGlobalGuard()  { curl_global_init(CURL_GLOBAL_DEFAULT); }
@@ -41,6 +81,11 @@ struct FtpAdapter::Impl {
     std::function<void(int)> m_progressCb;
     std::atomic<bool> m_cancelled{false};
     std::atomic<bool>* m_extCancelFlag = nullptr; // 外部取消标志（如 Backend 的 m_cancelled）
+    std::size_t m_lastUserWipeBytes = 0;
+    std::size_t m_lastPasswordWipeBytes = 0;
+    std::size_t m_lastDerivedWipeBytes = 0;
+    int m_derivedWipes = 0;
+    bool m_downloadCancelHookConfigured = false;
 
     bool m_useFtps = false;
 
@@ -50,8 +95,9 @@ struct FtpAdapter::Impl {
     }
 
     // --- 构造 user:password 凭据字符串 ---
-    std::string userPwd() const {
-        return m_user + ":" + m_password;
+    SecureString userPwd() {
+        return SecureString(m_user, m_password,
+                            &m_lastDerivedWipeBytes, &m_derivedWipes);
     }
 
     // --- libcurl 写回调（追加到 std::string） ---
@@ -75,13 +121,16 @@ struct FtpAdapter::Impl {
     }
 
     // --- libcurl 进度回调 ---
-    static int progressCallback(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/,
+    static int progressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                                  curl_off_t ultotal, curl_off_t ulnow) {
         auto* self = static_cast<Impl*>(clientp);
         if (self->m_cancelled.load()) return 1; // 返回非零中止传输
         if (self->m_extCancelFlag && self->m_extCancelFlag->load()) return 1;
-        if (self->m_progressCb && ultotal > 0) {
-            int pct = static_cast<int>((ulnow / ultotal) * 100.0);
+        const curl_off_t total = ultotal > 0 ? ultotal : dltotal;
+        const curl_off_t now = ultotal > 0 ? ulnow : dlnow;
+        if (self->m_progressCb && total > 0) {
+            int pct = static_cast<int>((static_cast<double>(now)
+                                        / static_cast<double>(total)) * 100.0);
             self->m_progressCb(pct);
         }
         return 0;
@@ -111,8 +160,9 @@ struct FtpAdapter::Impl {
 
     // --- 配置 CURL 通用选项（URL + 凭据 + 超时 + 安全加固） ---
     void setupCommonOpts(CURL* curl, const std::string& url, long timeoutSec = 30) {
+        SecureString credentials = userPwd();
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd().c_str());
+        curl_easy_setopt(curl, CURLOPT_USERPWD, credentials.c_str());
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeoutSec);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
@@ -146,6 +196,8 @@ FtpAdapter::~FtpAdapter() {
 bool FtpAdapter::connect(const DeviceInfo& device, const AuthInfo& auth) {
     m_impl->m_ip = device.ip;
     m_impl->m_port = device.port > 0 ? device.port : 21;
+    m_impl->m_lastUserWipeBytes = secureClear(m_impl->m_user);
+    m_impl->m_lastPasswordWipeBytes = secureClear(m_impl->m_password);
     m_impl->m_user = auth.user;
     m_impl->m_password = auth.password;
 
@@ -180,8 +232,8 @@ bool FtpAdapter::connect(const DeviceInfo& device, const AuthInfo& auth) {
 }
 
 void FtpAdapter::disconnect() {
-    secureClear(m_impl->m_user);
-    secureClear(m_impl->m_password);
+    m_impl->m_lastUserWipeBytes = secureClear(m_impl->m_user);
+    m_impl->m_lastPasswordWipeBytes = secureClear(m_impl->m_password);
     m_impl->m_connected = false;
 }
 
@@ -196,6 +248,34 @@ std::string FtpAdapter::lastError() const {
 bool adapter_internal::ftpCredentialsCleared(const FtpAdapter& adapter)
 {
     return adapter.m_impl->m_user.empty() && adapter.m_impl->m_password.empty();
+}
+
+adapter_internal::FtpCredentialWipeStats
+adapter_internal::ftpCredentialWipeStats(const FtpAdapter& adapter)
+{
+    return {adapter.m_impl->m_lastUserWipeBytes,
+            adapter.m_impl->m_lastPasswordWipeBytes,
+            adapter.m_impl->m_lastDerivedWipeBytes,
+            adapter.m_impl->m_derivedWipes};
+}
+
+bool adapter_internal::ftpDownloadCancelHookConfigured(const FtpAdapter& adapter)
+{
+    return adapter.m_impl->m_downloadCancelHookConfigured;
+}
+
+int adapter_internal::invokeFtpProgressCallback(FtpAdapter& adapter,
+                                                long long downloadTotal,
+                                                long long downloadNow,
+                                                long long uploadTotal,
+                                                long long uploadNow)
+{
+    return FtpAdapter::Impl::progressCallback(
+        adapter.m_impl.get(),
+        static_cast<curl_off_t>(downloadTotal),
+        static_cast<curl_off_t>(downloadNow),
+        static_cast<curl_off_t>(uploadTotal),
+        static_cast<curl_off_t>(uploadNow));
 }
 
 // ============================================================
@@ -287,7 +367,7 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     fseek(file, 0, SEEK_SET);
 
     std::string url = m_impl->buildUrl(remotePath);
-    std::string userPwd = m_impl->userPwd();
+    SecureString userPwd = m_impl->userPwd();
 
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -405,7 +485,7 @@ bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& 
     }
 
     std::string url = m_impl->buildUrl(remotePath);
-    std::string userPwd = m_impl->userPwd();
+    SecureString userPwd = m_impl->userPwd();
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
@@ -422,6 +502,12 @@ bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& 
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     }
+
+    m_impl->m_cancelled = false;
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
+    m_impl->m_downloadCancelHookConfigured = true;
 
     CURLcode res = curl_easy_perform(curl);
     fclose(file);
