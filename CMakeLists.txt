@@ -203,6 +203,7 @@ set(SOURCES
     src/transfer/TransferTypes.cpp
     src/transfer/AdapterTransferChannel.cpp
     src/transfer/TransferExecutor.cpp
+    src/transfer/TransferScheduler.cpp
 
     # 新框架文件
     src/framework/AppState.cpp

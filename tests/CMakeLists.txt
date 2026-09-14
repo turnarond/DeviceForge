@@ -56,6 +56,22 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 按设备串行传输调度器（FIFO、并发、取消、事件节流与生命周期）---
+add_executable(tst_transfer_scheduler
+    transfer/tst_transfer_scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_scheduler PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_scheduler PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_scheduler COMMAND tst_transfer_scheduler)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_scheduler PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
 add_executable(tst_nrec
