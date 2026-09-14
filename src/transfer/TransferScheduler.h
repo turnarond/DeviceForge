@@ -33,7 +33,13 @@ public:
     TransferScheduler& operator=(const TransferScheduler&) = delete;
 
     QUuid submit(TransferTask task);
+
+    // 取消以 Cancelling 事件为线性化点：若它先于 Executor 终态发布，任务只会
+    // 收口为 Cancelled；若不可逆提交的成功终态已先发布，后续 cancel 为 no-op。
     void cancel(const QUuid& taskId);
+    // 外部线程调用会等待全部 worker 收口；若由本调度器 worker 的 EventSink 同步调用，
+    // 仅发起拒绝提交与取消并立即返回，避免 waitForDone() 等待自身。拥有者随后应从
+    // 非 worker 线程调用 shutdown()（或析构）完成等待。
     void shutdown();
     void setEventSink(EventSink sink);
 

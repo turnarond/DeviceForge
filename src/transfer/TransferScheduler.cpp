@@ -11,6 +11,7 @@
 #include <QQueue>
 #include <QRecursiveMutex>
 #include <QSet>
+#include <QThread>
 #include <QThreadPool>
 
 #include <algorithm>
@@ -113,6 +114,28 @@ QString normalizedLocalPath(const QString& path)
 class TransferScheduler::Impl
 {
 public:
+    class WorkerThreadScope
+    {
+    public:
+        explicit WorkerThreadScope(Impl& impl)
+            : m_impl(impl)
+            , m_threadId(QThread::currentThreadId())
+        {
+            QMutexLocker locker(&m_impl.mutex);
+            m_impl.workerThreadIds.insert(m_threadId);
+        }
+
+        ~WorkerThreadScope()
+        {
+            QMutexLocker locker(&m_impl.mutex);
+            m_impl.workerThreadIds.remove(m_threadId);
+        }
+
+    private:
+        Impl& m_impl;
+        Qt::HANDLE m_threadId;
+    };
+
     struct Record
     {
         QUuid id;
@@ -240,6 +263,8 @@ public:
     QVector<std::shared_ptr<Record>> scheduleEligibleLocked()
     {
         QVector<std::shared_ptr<Record>> starts;
+        if (!accepting)
+            return starts;
         while (activeCount < maxConcurrency) {
             bool scheduled = false;
             const QStringList keys = deviceQueues.keys();
@@ -294,7 +319,8 @@ public:
         TransferEvent event;
         {
             QMutexLocker locker(&mutex);
-            if (record->terminal || !records.contains(record->id))
+            if (record->terminal || record->cancellationRequested
+                || !records.contains(record->id))
                 return;
             record->state = state;
             event = eventLocked(TransferEventType::TaskStateChanged, *record);
@@ -315,7 +341,8 @@ public:
         bool shouldPublish = false;
         {
             QMutexLocker locker(&mutex);
-            if (record->terminal || !records.contains(record->id)
+            if (record->terminal || record->cancellationRequested
+                || !records.contains(record->id)
                 || record->currentItemIndex != itemIndex)
                 return;
 
@@ -361,6 +388,10 @@ public:
             if (record->terminal || !records.contains(record->id))
                 return;
 
+            if (record->cancellationRequested) {
+                state = TransferState::Cancelled;
+                error = cancelledError();
+            }
             record->terminal = true;
             record->state = state;
             record->error = std::move(error);
@@ -379,14 +410,18 @@ public:
             records.remove(record->id);
             starts = scheduleEligibleLocked();
         }
-        deliver(terminalEvent);
-        ordering.unlock();
         start(starts);
+        deliver(terminalEvent);
     }
 
     void run(const std::shared_ptr<Record>& record)
     {
+        WorkerThreadScope workerThread(*this);
         publishState(record, TransferState::Preparing);
+        if (record->cancel.load()) {
+            finish(record, TransferState::Cancelled, cancelledError());
+            return;
+        }
         if (record->task.items.isEmpty()) {
             const TransferError error{TransferErrorCode::InvalidPath,
                                       QStringLiteral("传输任务不包含文件"),
@@ -402,13 +437,21 @@ public:
                 return;
             }
 
+            bool cancellationRequested = false;
             {
                 QMutexLocker locker(&mutex);
                 if (record->terminal || !records.contains(record->id))
                     return;
-                record->currentItemIndex = index;
-                record->progress = 0;
-                record->hasPublishedProgress = false;
+                cancellationRequested = record->cancellationRequested;
+                if (!cancellationRequested) {
+                    record->currentItemIndex = index;
+                    record->progress = 0;
+                    record->hasPublishedProgress = false;
+                }
+            }
+            if (cancellationRequested) {
+                finish(record, TransferState::Cancelled, cancelledError());
+                return;
             }
             publishState(record, TransferState::Transferring);
 
@@ -449,7 +492,30 @@ public:
                 result.state = TransferState::Failed;
                 result.error = invalidExecutorResultError();
             }
+
+            // Executor 返回到终态发布组成一个线性化区间。取消若先取得事件门闸，
+            // 即使底层刚完成不可逆提交，调度任务也只能从 Cancelling 收口为
+            // Cancelled；若本区间先取得门闸，则成功终态先发布，后续取消为 no-op。
+            QMutexLocker completionOrdering(&eventMutex);
+            {
+                QMutexLocker locker(&mutex);
+                if (record->cancellationRequested) {
+                    result.state = TransferState::Cancelled;
+                    result.error = cancelledError();
+                    result.bytes = 0;
+                }
+            }
             publishItemFinished(record, result);
+
+            bool cancellationWon = false;
+            {
+                QMutexLocker locker(&mutex);
+                cancellationWon = record->cancellationRequested;
+            }
+            if (cancellationWon) {
+                finish(record, TransferState::Cancelled, cancelledError());
+                return;
+            }
 
             if (result.state != TransferState::Succeeded) {
                 TransferState taskState = result.state;
@@ -477,6 +543,7 @@ public:
     QHash<QString, QUuid> reservedRemoteTargets;
     QSet<QString> activeDevices;
     QSet<QString> activeLocalTargets;
+    QSet<Qt::HANDLE> workerThreadIds;
     EventSink sink;
     const int maxConcurrency;
     Executor executor;
@@ -546,7 +613,6 @@ QUuid TransferScheduler::submit(TransferTask task)
             starts = m_impl->scheduleEligibleLocked();
         }
     }
-    ordering.unlock();
     m_impl->start(starts);
     return id;
 }
@@ -594,10 +660,9 @@ void TransferScheduler::cancel(const QUuid& taskId)
             starts = m_impl->scheduleEligibleLocked();
         }
     }
+    m_impl->start(starts);
     if (publishTerminal)
         m_impl->deliver(terminalEvent);
-    ordering.unlock();
-    m_impl->start(starts);
 }
 
 void TransferScheduler::shutdown()
@@ -605,11 +670,10 @@ void TransferScheduler::shutdown()
     QMutexLocker ordering(&m_impl->eventMutex);
     QVector<TransferEvent> stateEvents;
     QVector<TransferEvent> terminalEvents;
+    bool calledFromWorker = false;
     {
         QMutexLocker locker(&m_impl->mutex);
-        if (!m_impl->accepting && m_impl->records.isEmpty()) {
-            // waitForDone() 仍在锁外执行，覆盖另一个线程刚进入收口的情况。
-        }
+        calledFromWorker = m_impl->workerThreadIds.contains(QThread::currentThreadId());
         m_impl->accepting = false;
 
         const auto currentRecords = m_impl->records.values();
@@ -651,6 +715,8 @@ void TransferScheduler::shutdown()
     for (const auto& event : terminalEvents)
         m_impl->deliver(event);
     ordering.unlock();
+    if (calledFromWorker)
+        return;
     m_impl->pool.waitForDone();
 }
 

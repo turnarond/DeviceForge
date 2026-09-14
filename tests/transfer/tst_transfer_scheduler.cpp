@@ -13,6 +13,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <thread>
 
 namespace {
 
@@ -334,6 +335,93 @@ private slots:
         QCOMPARE(events.count(TransferEventType::TaskFinished, id), 1);
     }
 
+    void cancellationBeforeFirstWorkerStateIsMonotonic()
+    {
+        std::atomic_int executorCalls{0};
+        auto executor = [&](const TransferTask&,
+                            int,
+                            const TransferItemRequest&,
+                            std::atomic_bool&,
+                            const TransferScheduler::ProgressSink&) {
+            ++executorCalls;
+            return succeededResult();
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&](const TransferEvent& event) {
+            events.append(event);
+            if (event.type == TransferEventType::TaskAdded)
+                scheduler.cancel(event.snapshot.id);
+        });
+
+        const QUuid id = scheduler.submit(
+            uploadTask(QStringLiteral("early-cancel"), QStringLiteral("10.0.0.41"),
+                       QStringLiteral("/early-cancel.bin")));
+
+        QCOMPARE(events.count(TransferEventType::TaskFinished, id), 1);
+        QCOMPARE(events.last(TransferEventType::TaskFinished, id).snapshot.state,
+                 TransferState::Cancelled);
+        QCOMPARE(executorCalls.load(), 0);
+        for (const auto& event : events.events()) {
+            if (event.snapshot.id != id || event.type != TransferEventType::TaskStateChanged)
+                continue;
+            QVERIFY(event.snapshot.state != TransferState::Preparing);
+            QVERIFY(event.snapshot.state != TransferState::Transferring);
+        }
+    }
+
+    void cancellationWinsWhenExecutorReturnsSuccessAfterCancelling()
+    {
+        QSemaphore entered;
+        QSemaphore allowSuccess;
+        auto executor = [&](const TransferTask&,
+                            int,
+                            const TransferItemRequest&,
+                            std::atomic_bool&,
+                            const TransferScheduler::ProgressSink& progress) {
+            entered.release();
+            allowSuccess.acquire();
+            progress(100);
+            return succeededResult();
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&events](const TransferEvent& event) { events.append(event); });
+        const QUuid id = scheduler.submit(
+            uploadTask(QStringLiteral("late-success"), QStringLiteral("10.0.0.42"),
+                       QStringLiteral("/late-success.bin")));
+        QVERIFY(entered.tryAcquire(1, 2000));
+
+        scheduler.cancel(id);
+        allowSuccess.release();
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished, id), 1, 2000);
+
+        const auto copy = events.events();
+        int cancellingIndex = -1;
+        int terminalIndex = -1;
+        for (int i = 0; i < copy.size(); ++i) {
+            const auto& event = copy.at(i);
+            if (event.snapshot.id != id)
+                continue;
+            if (event.type == TransferEventType::TaskStateChanged
+                && event.snapshot.state == TransferState::Cancelling)
+                cancellingIndex = i;
+            if (event.type == TransferEventType::TaskFinished)
+                terminalIndex = i;
+            if (cancellingIndex >= 0) {
+                QVERIFY(event.type != TransferEventType::ItemProgress);
+                QVERIFY(event.snapshot.state != TransferState::Succeeded);
+            }
+        }
+        QVERIFY(cancellingIndex >= 0);
+        QVERIFY(terminalIndex > cancellingIndex);
+        QCOMPARE(copy.at(terminalIndex).snapshot.state, TransferState::Cancelled);
+        for (int i = terminalIndex + 1; i < copy.size(); ++i)
+            QVERIFY(copy.at(i).snapshot.id != id);
+    }
+
     void normalizedRemoteConflictTerminatesOnceAndReservationIsReleased()
     {
         QMutex mutex;
@@ -486,6 +574,146 @@ private slots:
         QVERIFY(stopped.submit(uploadTask(QStringLiteral("rejected"),
                                           QStringLiteral("10.0.0.9"),
                                           QStringLiteral("/rejected.bin")))
+                    .isNull());
+    }
+
+
+    void concurrencyConfigurationIsClampedToSupportedRange_data()
+    {
+        QTest::addColumn<int>("configured");
+        QTest::addColumn<int>("submitted");
+        QTest::addColumn<int>("expectedMaximum");
+
+        QTest::newRow("zero-to-one") << 0 << 2 << 1;
+        QTest::newRow("negative-to-one") << -4 << 2 << 1;
+        QTest::newRow("above-eight-to-eight") << 99 << 9 << 8;
+    }
+
+    void concurrencyConfigurationIsClampedToSupportedRange()
+    {
+        QFETCH(int, configured);
+        QFETCH(int, submitted);
+        QFETCH(int, expectedMaximum);
+
+        QMutex mutex;
+        int active = 0;
+        int maximum = 0;
+        QSemaphore release;
+        auto executor = [&](const TransferTask&,
+                            int,
+                            const TransferItemRequest&,
+                            std::atomic_bool& cancel,
+                            const TransferScheduler::ProgressSink&) {
+            {
+                QMutexLocker locker(&mutex);
+                maximum = qMax(maximum, ++active);
+            }
+            while (!release.tryAcquire(1, 5)) {
+                if (cancel.load())
+                    return cancelledResult();
+            }
+            {
+                QMutexLocker locker(&mutex);
+                --active;
+            }
+            return succeededResult();
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(configured, executor);
+        scheduler.setEventSink([&events](const TransferEvent& event) { events.append(event); });
+        for (int i = 0; i < submitted; ++i) {
+            scheduler.submit(uploadTask(QStringLiteral("limit-%1").arg(i),
+                                        QStringLiteral("10.1.0.%1").arg(i + 1),
+                                        QStringLiteral("/limit-%1.bin").arg(i)));
+        }
+        QTRY_VERIFY_WITH_TIMEOUT([&] {
+            QMutexLocker locker(&mutex);
+            return maximum == expectedMaximum;
+        }(), 3000);
+        release.release(submitted);
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished),
+                                  submitted, 3000);
+        QMutexLocker locker(&mutex);
+        QCOMPARE(maximum, expectedMaximum);
+    }
+
+    void submitAndShutdownRaceNeverStartsWorkAfterShutdownReturns()
+    {
+        for (int round = 0; round < 100; ++round) {
+            std::atomic_bool shutdownReturned{false};
+            std::atomic_bool lateStart{false};
+            auto executor = [&](const TransferTask&,
+                                int,
+                                const TransferItemRequest&,
+                                std::atomic_bool& cancel,
+                                const TransferScheduler::ProgressSink&) {
+                if (shutdownReturned.load())
+                    lateStart.store(true);
+                return cancel.load() ? cancelledResult() : succeededResult();
+            };
+
+            TransferScheduler scheduler(8, executor);
+            QSemaphore go;
+            std::thread submitter([&] {
+                go.acquire();
+                for (int i = 0; i < 16; ++i) {
+                    scheduler.submit(uploadTask(
+                        QStringLiteral("race-%1-%2").arg(round).arg(i),
+                        QStringLiteral("10.2.%1.%2").arg(round % 200).arg(i + 1),
+                        QStringLiteral("/race-%1.bin").arg(i)));
+                }
+            });
+            std::thread stopper([&] {
+                go.acquire();
+                scheduler.shutdown();
+                shutdownReturned.store(true);
+            });
+            go.release(2);
+            submitter.join();
+            stopper.join();
+            QThread::msleep(1);
+
+            QVERIFY(!lateStart.load());
+            QVERIFY(scheduler.submit(uploadTask(QStringLiteral("after-shutdown"),
+                                                 QStringLiteral("10.3.0.1"),
+                                                 QStringLiteral("/after.bin")))
+                        .isNull());
+        }
+    }
+
+    void workerEventSinkCanRequestShutdownWithoutWaitingForItself()
+    {
+        std::atomic_bool shutdownReturned{false};
+        EventLog events;
+        auto executor = [](const TransferTask&,
+                           int,
+                           const TransferItemRequest&,
+                           std::atomic_bool& cancel,
+                           const TransferScheduler::ProgressSink&) {
+            return cancel.load() ? cancelledResult() : succeededResult();
+        };
+
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&](const TransferEvent& event) {
+            events.append(event);
+            if (event.type == TransferEventType::TaskStateChanged
+                && event.snapshot.state == TransferState::Preparing) {
+                scheduler.shutdown();
+                shutdownReturned.store(true);
+            }
+        });
+        const QUuid id = scheduler.submit(
+            uploadTask(QStringLiteral("worker-shutdown"), QStringLiteral("10.0.0.43"),
+                       QStringLiteral("/worker-shutdown.bin")));
+
+        QTRY_VERIFY_WITH_TIMEOUT(shutdownReturned.load(), 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished, id), 1, 2000);
+        QCOMPARE(events.last(TransferEventType::TaskFinished, id).snapshot.state,
+                 TransferState::Cancelled);
+        QVERIFY(scheduler.submit(uploadTask(QStringLiteral("rejected-after-worker-stop"),
+                                             QStringLiteral("10.0.0.44"),
+                                             QStringLiteral("/rejected.bin")))
                     .isNull());
     }
 };
