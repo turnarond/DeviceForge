@@ -65,8 +65,17 @@ TransferItemResult transferFailure(TransferErrorCode code, const QString& messag
 }
 
 TransferItemResult committedWithCleanupFailure(TransferItemResult result,
-                                                TransferErrorCode code,
-                                                const QString& message)
+                                                 TransferErrorCode code,
+                                                 const QString& message)
+{
+    result.state = TransferState::PartiallySucceeded;
+    result.error = {code, message, message, false};
+    return result;
+}
+
+TransferItemResult uncommittedMoveResult(TransferItemResult result,
+                                         TransferErrorCode code,
+                                         const QString& message)
 {
     result.state = TransferState::PartiallySucceeded;
     result.error = {code, message, message, false};
@@ -272,20 +281,23 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     channel.setProgressCallback(progress);
     TransferExecutor executor(channel, task.device, credentials);
     TransferItemResult result = executor.execute(item, cancel);
-    if (!task.removeSourceAfterCommit || !result.atomicCommitSucceeded)
+    if (!task.removeSourceAfterCommit)
         return result;
 
-    // Skip 没有产生新提交；nonAtomic 也不满足 F6 删源前置条件。
     if (result.attempts == 0) {
-        return committedWithCleanupFailure(
+        return uncommittedMoveResult(
             std::move(result), TransferErrorCode::TargetChanged,
             tr("目标同名项已跳过，源文件未删除"));
     }
     if (result.nonAtomic) {
-        return committedWithCleanupFailure(
+        return uncommittedMoveResult(
             std::move(result), TransferErrorCode::Unsupported,
             tr("目标以非原子方式交付，为避免丢失已保留源文件"));
     }
+    if (!result.atomicCommitSucceeded)
+        return result;
+
+    // Skip 与 nonAtomic 已在上面以明确状态收口；以下仅处理原子提交。
     if (cancel.load()) {
         return committedWithCleanupFailure(
             std::move(result), TransferErrorCode::Cancelled,
@@ -316,9 +328,11 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     cleanupCredentials.clear();
     if (removed)
         return result;
-    const QString message = cleanupError.message.isEmpty()
+    QString message = cleanupError.message.isEmpty()
         ? tr("目标已提交，但远程源文件删除失败")
         : tr("目标已提交，但源清理失败：%1").arg(cleanupError.message);
+    if (!cleanupError.detail.isEmpty())
+        message += tr("（详细信息：%1）").arg(cleanupError.detail);
     return committedWithCleanupFailure(std::move(result), TransferErrorCode::RemoteIo,
                                        message);
 }

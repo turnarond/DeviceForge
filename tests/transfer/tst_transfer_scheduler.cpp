@@ -465,6 +465,48 @@ private slots:
         QVERIFY(terminal.snapshot.itemResults.front().atomicCommitSucceeded);
     }
 
+    void cancellationAfterEarlierAtomicCommitIsPartiallySucceeded()
+    {
+        QSemaphore secondItemEntered;
+        QSemaphore releaseSecondItem;
+        auto executor = [&](const TransferTask&,
+                            int itemIndex,
+                            const TransferItemRequest&,
+                            std::atomic_bool&,
+                            const TransferScheduler::ProgressSink&) {
+            if (itemIndex == 0) {
+                return TransferItemResult{
+                    TransferState::Succeeded, {}, 1, false, 10, true};
+            }
+            secondItemEntered.release();
+            releaseSecondItem.acquire();
+            return cancelledResult();
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&events](const TransferEvent& event) { events.append(event); });
+        TransferTask task = uploadTask(QStringLiteral("multi-commit-cancel"),
+                                       QStringLiteral("10.0.0.44"),
+                                       QStringLiteral("/multi-commit-cancel.bin"));
+        task.items.push_back({QStringLiteral("C:/input/second.bin"),
+                              QStringLiteral("/second.bin"),
+                              TransferDirection::Upload,
+                              OverwritePolicy::Overwrite});
+        const QUuid id = scheduler.submit(std::move(task));
+        QVERIFY(secondItemEntered.tryAcquire(1, 2000));
+
+        scheduler.cancel(id);
+        releaseSecondItem.release();
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished, id), 1, 2000);
+
+        const TransferEvent terminal = events.last(TransferEventType::TaskFinished, id);
+        QCOMPARE(terminal.snapshot.state, TransferState::PartiallySucceeded);
+        QCOMPARE(terminal.snapshot.itemResults.size(), 2);
+        QVERIFY(terminal.snapshot.itemResults.at(0).atomicCommitSucceeded);
+        QCOMPARE(terminal.snapshot.itemResults.at(1).state, TransferState::Cancelled);
+    }
+
     void normalizedRemoteConflictTerminatesOnceAndReservationIsReleased()
     {
         QMutex mutex;

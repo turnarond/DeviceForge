@@ -393,9 +393,13 @@ public:
                 [](const TransferItemResult& result) {
                     return result.atomicCommitSucceeded;
                 });
-            if (record->cancellationRequested && !hasAtomicCommit) {
-                state = TransferState::Cancelled;
-                error = cancelledError();
+            if (record->cancellationRequested) {
+                if (!hasAtomicCommit) {
+                    state = TransferState::Cancelled;
+                    error = cancelledError();
+                } else if (state == TransferState::Cancelled) {
+                    state = TransferState::PartiallySucceeded;
+                }
             }
             record->terminal = true;
             record->state = state;
@@ -525,12 +529,18 @@ public:
 
             if (result.state != TransferState::Succeeded) {
                 TransferState taskState = result.state;
-                if (taskState == TransferState::Failed && !record->itemResults.isEmpty()) {
-                    bool hadSuccess = false;
-                    for (int i = 0; i + 1 < record->itemResults.size(); ++i)
-                        hadSuccess = hadSuccess
-                            || record->itemResults.at(i).state == TransferState::Succeeded;
-                    if (hadSuccess)
+                if ((taskState == TransferState::Failed
+                     || taskState == TransferState::Cancelled)
+                    && record->itemResults.size() > 1) {
+                    bool hadCompletedItem = false;
+                    for (int i = 0; i + 1 < record->itemResults.size(); ++i) {
+                        const auto& previous = record->itemResults.at(i);
+                        hadCompletedItem = hadCompletedItem
+                            || previous.atomicCommitSucceeded
+                            || previous.state == TransferState::Succeeded
+                            || previous.state == TransferState::PartiallySucceeded;
+                    }
+                    if (hadCompletedItem)
                         taskState = TransferState::PartiallySucceeded;
                 }
                 finish(record, taskState, result.error);

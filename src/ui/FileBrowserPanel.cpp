@@ -719,10 +719,12 @@ void FileBrowserPanel::resumeLastTransfer()
     TransferTask resumed = m_lastTransfer->task;
     QVector<TransferItemRequest> remaining;
     for (qsizetype index = 0; index < resumed.items.size(); ++index) {
-        if (index >= m_lastTransferSnapshot.itemResults.size()
-            || (!m_lastTransferSnapshot.itemResults.at(index).atomicCommitSucceeded
-                && m_lastTransferSnapshot.itemResults.at(index).state
-                    != TransferState::Succeeded)) {
+        const bool needsResume = index >= m_lastTransferSnapshot.itemResults.size()
+            || (resumed.removeSourceAfterCommit
+                ? !m_lastTransferSnapshot.itemResults.at(index).atomicCommitSucceeded
+                : m_lastTransferSnapshot.itemResults.at(index).state
+                    != TransferState::Succeeded);
+        if (needsResume) {
             remaining.push_back(resumed.items.at(index));
         }
     }
@@ -945,25 +947,31 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
         }
         case QEvent::DragEnter: {
             auto* drag = static_cast<QDragEnterEvent*>(event);
-            if (supportsPanelTransfer(dragSourcePanel(drag), this)
-                || (drag->mimeData()->hasUrls()
-                    && m_source->sourceId() != QStringLiteral("local"))) {
+            const auto sourcePanel = dragSourcePanel(drag);
+            const bool accepted = supportsPanelTransfer(sourcePanel, this)
+                || (!sourcePanel && drag->mimeData()->hasUrls()
+                    && m_source->sourceId() != QStringLiteral("local"));
+            if (accepted) {
                 static_cast<QDragEnterEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragEnterEvent*>(event)->accept();
                 return true;
             }
-            break;
+            drag->ignore();
+            return true;
         }
         case QEvent::DragMove: {
             auto* drag = static_cast<QDragMoveEvent*>(event);
-            if (supportsPanelTransfer(dragSourcePanel(drag), this)
-                || (drag->mimeData()->hasUrls()
-                    && m_source->sourceId() != QStringLiteral("local"))) {
+            const auto sourcePanel = dragSourcePanel(drag);
+            const bool accepted = supportsPanelTransfer(sourcePanel, this)
+                || (!sourcePanel && drag->mimeData()->hasUrls()
+                    && m_source->sourceId() != QStringLiteral("local"));
+            if (accepted) {
                 static_cast<QDragMoveEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragMoveEvent*>(event)->accept();
                 return true;
             }
-            break;
+            drag->ignore();
+            return true;
         }
         case QEvent::Drop: {
             auto* drop = static_cast<QDropEvent*>(event);
@@ -973,7 +981,8 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
                 drop->accept();
                 return true;
             }
-            break;
+            drop->ignore();
+            return true;
         }
         default:
             break;

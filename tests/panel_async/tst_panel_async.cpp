@@ -640,6 +640,46 @@ private slots:
         QCOMPARE(submissions.size(), 1);
     }
 
+    void resumeRetriesUncommittedMoveResult()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.moveSelectedTo(&right);
+
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = TransferState::Succeeded;
+        finished.snapshot.itemResults = {
+            {TransferState::Succeeded, {}, 0, true, 1, false}
+        };
+        left.consumeTransferEvent(finished);
+        left.resumeLastTransfer();
+        QCOMPARE(submissions.size(), 2);
+        QCOMPARE(submissions.back().items.size(), 1);
+        QVERIFY(submissions.back().removeSourceAfterCommit);
+    }
+
     // Scheduler 可从任意线程发布；面板只在 GUI 线程消费值快照。导航后旧代际终态
     // 不得刷新新目录，未导航时成功终态只刷新目标面板。
     void transferEvents_areQueuedAndGenerationSafe()
