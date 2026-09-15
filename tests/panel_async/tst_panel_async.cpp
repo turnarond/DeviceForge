@@ -4,6 +4,12 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QTableView>
+#include <QMenu>
+#include <QMimeData>
+#include <QPushButton>
+#include <QThread>
+#include <QTimer>
+#include <QUrl>
 #include <thread>
 #include <chrono>
 #include <atomic>
@@ -12,6 +18,7 @@
 #include "ui/IFileSource.h"
 #include "ui/FileBrowserPanel.h"
 #include "ui/LocalFileSource.h"
+#include "transfer/TransferEvents.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 
@@ -19,7 +26,7 @@
 //（阻塞自旋模拟慢速/断网目录读取；failNextList 模拟首次失败以触发重连重试）
 class MockDelayedSource : public IFileSource {
 public:
-    QString sourceId() const override { return QStringLiteral("mock"); }
+    QString sourceId() const override { return m_sourceId; }
     QString displayName() const override { return QStringLiteral("mock"); }
 
     std::vector<FtpFileInfo> list(const QString& path) override {
@@ -39,10 +46,10 @@ public:
     }
     bool mkdir(const QString&) override { return true; }
     bool rename(const QString&, const QString&) override { return true; }
-    bool remove(const QString&, bool) override { return true; }
+    bool remove(const QString&, bool) override { ++removeCalls; return true; }
     bool clearDirectory(const QString&) override { return true; }
-    bool upload(const QString&, const QString&) override { return true; }
-    bool download(const QString&, const QString&) override { return true; }
+    bool upload(const QString&, const QString&) override { ++uploadCalls; return true; }
+    bool download(const QString&, const QString&) override { ++downloadCalls; return true; }
     bool connect(const DeviceInfo&, const AuthInfo&) override { return true; }
     bool reconnect() override {
         ++reconnectCalls;
@@ -59,11 +66,21 @@ public:
     std::vector<FtpFileInfo> m_filesA;   // /a 结果
     std::vector<FtpFileInfo> m_filesB;   // /b 结果
     QString m_err;
+    QString m_sourceId = QStringLiteral("mock");
     std::atomic<int> listCalls{0};
     std::atomic<int> reconnectCalls{0};
+    std::atomic<int> uploadCalls{0};
+    std::atomic<int> downloadCalls{0};
+    std::atomic<int> removeCalls{0};
     std::atomic<bool> blockList{false};
     std::atomic<bool> failNextList{false};
     std::atomic<bool> failReconnect{false};
+};
+
+class TestableFileBrowserPanel : public FileBrowserPanel {
+public:
+    using FileBrowserPanel::FileBrowserPanel;
+    using FileBrowserPanel::handleDrop;
 };
 
 static FtpFileInfo makeInfo(const char* name, bool isDir = false)
@@ -85,6 +102,29 @@ static void settleInitialLoad(FileBrowserPanel& panel)
         qobject_cast<RemoteFileModel*>(panel.fileTable()->model()) != nullptr, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         qobject_cast<RemoteFileModel*>(panel.fileTable()->model())->fileCount() >= 1, 5000);
+}
+
+static int rowForName(FileBrowserPanel& panel, const char* name)
+{
+    auto* model = qobject_cast<RemoteFileModel*>(panel.fileTable()->model());
+    if (!model) return -1;
+    for (int row = 0; row < model->rowCount({}); ++row) {
+        if (model->fileAt(row).name == name)
+            return row;
+    }
+    return -1;
+}
+
+static void selectRows(FileBrowserPanel& panel, const QList<int>& rows)
+{
+    auto* selection = panel.fileTable()->selectionModel();
+    QVERIFY(selection);
+    selection->clearSelection();
+    for (int row : rows) {
+        const QModelIndex index = panel.fileTable()->model()->index(row, 0);
+        selection->select(index, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        selection->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+    }
 }
 
 // loadDirectory 是 private——通过 FileBrowserPanel 公开 API（setSource/navigateTo）驱动。
@@ -308,6 +348,284 @@ private slots:
 
         QSignalSpy spy(&panel, &FileBrowserPanel::sourceChooserChanged);
         QCOMPARE(spy.count(), 0);   // setSource 程序化挂载不发射
+    }
+
+    // F5/F6 及拖拽只构造可靠传输任务，旧 IFileSource 同步传输入口不得再被调用。
+    void transferEntrypoints_submitWithoutSynchronousIo()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin"), makeInfo("b.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+
+        TestableFileBrowserPanel left;
+        TestableFileBrowserPanel right;
+        left.setPeerPanel(&right);
+        right.setPeerPanel(&left);
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submitted;
+        const auto submitter = [&submitted](TransferTask task) {
+            submitted.push_back(std::move(task));
+            return QUuid::createUuid();
+        };
+        left.setTransferSubmitter(submitter);
+        right.setTransferSubmitter(submitter);
+
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.copySelectedTo(&right);
+        QCOMPARE(submitted.size(), 1);
+        QCOMPARE(submitted.back().items.size(), 1);
+        QCOMPARE(submitted.back().items.front().direction, TransferDirection::Upload);
+        QVERIFY(!submitted.back().removeSourceAfterCommit);
+
+        left.moveSelectedTo(&right);
+        QCOMPARE(submitted.size(), 2);
+        QVERIFY(submitted.back().removeSourceAfterCommit);
+
+        QCOMPARE(right.handleDrop(&left, {}), FileBrowserPanel::DropRoute::PanelTransfer);
+        QCOMPARE(submitted.size(), 3);
+
+        const QList<QUrl> urls{QUrl::fromLocalFile(QStringLiteral("C:/固件/drop.bin"))};
+        QCOMPARE(right.handleDrop(nullptr, urls), FileBrowserPanel::DropRoute::SystemUpload);
+        QCOMPARE(submitted.size(), 4);
+        QCOMPARE(submitted.back().items.front().remotePath, QStringLiteral("/drop.bin"));
+
+        QCOMPARE(left.handleDrop(nullptr, urls), FileBrowserPanel::DropRoute::Rejected);
+        QCOMPARE(submitted.size(), 4);
+        QCOMPARE(local->uploadCalls.load(), 0);
+        QCOMPARE(local->downloadCalls.load(), 0);
+        QCOMPARE(remote->uploadCalls.load(), 0);
+        QCOMPARE(remote->downloadCalls.load(), 0);
+        QCOMPARE(local->removeCalls.load(), 0);
+    }
+
+    // 远程→本地下载与上传使用同一 TransferTask 提交契约。
+    void downloadEntrypoint_submitsTransferTask()
+    {
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ssh");
+        remote->m_files = {makeInfo("remote.bin")};
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(remote);
+        right.setSource(local);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+        TransferTask submitted;
+        left.setTransferSubmitter([&submitted](TransferTask task) {
+            submitted = std::move(task);
+            return QUuid::createUuid();
+        });
+
+        selectRows(left, {rowForName(left, "remote.bin")});
+        left.copySelectedTo(&right);
+        QCOMPARE(submitted.protocol, QStringLiteral("sftp"));
+        QCOMPARE(submitted.items.size(), 1);
+        QCOMPARE(submitted.items.front().direction, TransferDirection::Download);
+        QCOMPARE(remote->downloadCalls.load(), 0);
+    }
+
+    // 覆盖策略对整个批次只询问一次，并写入每一个文件请求。
+    void overwritePolicy_isChosenOncePerBatch()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin"), makeInfo("b.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        remote->m_files = {makeInfo("a.bin"), makeInfo("b.bin")};
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+        int chooserCalls = 0;
+        int observedConflictCount = 0;
+        left.setOverwritePolicyChooser([&](int conflictCount) {
+            ++chooserCalls;
+            observedConflictCount = conflictCount;
+            return std::optional<OverwritePolicy>(OverwritePolicy::Skip);
+        });
+        TransferTask submitted;
+        left.setTransferSubmitter([&submitted](TransferTask task) {
+            submitted = std::move(task);
+            return QUuid::createUuid();
+        });
+
+        selectRows(left, {rowForName(left, "a.bin"), rowForName(left, "b.bin")});
+        left.copySelectedTo(&right);
+        QCOMPARE(chooserCalls, 1);
+        QCOMPARE(observedConflictCount, 2);
+        QCOMPARE(submitted.items.size(), 2);
+        for (const auto& item : submitted.items)
+            QCOMPARE(item.overwrite, OverwritePolicy::Skip);
+    }
+
+    // Left/Right 负责退出/进入目录；Up/Down 仍由表格原生选择模型处理。
+    void keyboardNavigation_preservesCommanderSemantics()
+    {
+        auto source = std::make_shared<MockDelayedSource>();
+        source->m_sourceId = QStringLiteral("ftp");
+        source->m_files = {makeInfo("dir", true), makeInfo("a.bin"), makeInfo("b.bin")};
+        FileBrowserPanel panel;
+        panel.setSource(source);
+        settleInitialLoad(panel);
+        panel.fileTable()->setFocus();
+
+        const int dirRow = rowForName(panel, "dir");
+        selectRows(panel, {dirRow});
+        QTest::keyClick(panel.fileTable(), Qt::Key_Right);
+        QTRY_COMPARE_WITH_TIMEOUT(panel.currentPath(), QStringLiteral("/dir"), 5000);
+        QTest::keyClick(panel.fileTable(), Qt::Key_Left);
+        QTRY_COMPARE_WITH_TIMEOUT(panel.currentPath(), QStringLiteral("/"), 5000);
+
+        const int firstFile = rowForName(panel, "a.bin");
+        selectRows(panel, {firstFile});
+        QTest::keyClick(panel.fileTable(), Qt::Key_Down);
+        QCOMPARE(panel.fileTable()->currentIndex().row(), firstFile + 1);
+        QTest::keyClick(panel.fileTable(), Qt::Key_Up);
+        QCOMPARE(panel.fileTable()->currentIndex().row(), firstFile);
+    }
+
+    // 在已选中行上打开右键菜单不得把已有多选收缩为单选。
+    void contextMenu_onSelectedRowKeepsSelection()
+    {
+        auto source = std::make_shared<MockDelayedSource>();
+        source->m_sourceId = QStringLiteral("ftp");
+        source->m_files = {makeInfo("a.bin"), makeInfo("b.bin")};
+        FileBrowserPanel panel;
+        panel.resize(640, 480);
+        panel.show();
+        panel.setSource(source);
+        settleInitialLoad(panel);
+        const int a = rowForName(panel, "a.bin");
+        const int b = rowForName(panel, "b.bin");
+        selectRows(panel, {a, b});
+        QCOMPARE(panel.fileTable()->selectionModel()->selectedRows().size(), 2);
+        const QPoint pos = panel.fileTable()->visualRect(
+            panel.fileTable()->model()->index(a, 0)).center();
+        QTimer::singleShot(20, [] {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+        });
+        panel.showContextMenu(pos);
+        QCOMPARE(panel.fileTable()->selectionModel()->selectedRows().size(), 2);
+    }
+
+    // cancel 精确绑定活动任务；失败/部分成功后恢复仅重提未成功项。
+    void cancelAndResume_bindToTaskSnapshots()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin"), makeInfo("b.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        QUuid cancelled;
+        left.setTransferCanceller([&cancelled](const QUuid& id) { cancelled = id; });
+        selectRows(left, {rowForName(left, "a.bin"), rowForName(left, "b.bin")});
+        left.copySelectedTo(&right);
+        left.cancelActiveTransfer();
+        QCOMPARE(cancelled, ids.front());
+
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = TransferState::PartiallySucceeded;
+        finished.snapshot.itemResults = {
+            {TransferState::Succeeded, {}, 1, false, 1},
+            {TransferState::Failed,
+             {TransferErrorCode::Permission, QStringLiteral("拒绝访问"), {}, false},
+             1, false, 0}
+        };
+        left.consumeTransferEvent(finished);
+        QTRY_VERIFY_WITH_TIMEOUT(left.findChild<QPushButton*>("transferRetryButton")->isEnabled(), 5000);
+        left.resumeLastTransfer();
+        QCOMPARE(submissions.size(), 2);
+        QCOMPARE(submissions.back().items.size(), 1);
+        QVERIFY(submissions.back().items.front().localPath.endsWith(QStringLiteral("b.bin")));
+    }
+
+    // Scheduler 可从任意线程发布；面板只在 GUI 线程消费值快照。导航后旧代际终态
+    // 不得刷新新目录，未导航时成功终态只刷新目标面板。
+    void transferEvents_areQueuedAndGenerationSafe()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        QThread* appliedThread = nullptr;
+        QObject::connect(&left, &FileBrowserPanel::transferSnapshotApplied,
+                         &left, [&appliedThread] { appliedThread = QThread::currentThread(); });
+
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.copySelectedTo(&right);
+        const int remoteCallsBeforeNavigation = remote->listCalls.load();
+        right.navigateTo(QStringLiteral("/new"));
+        QTRY_COMPARE_WITH_TIMEOUT(right.currentPath(), QStringLiteral("/new"), 5000);
+        const int remoteCallsAfterNavigation = remote->listCalls.load();
+
+        TransferEvent staleFinished;
+        staleFinished.type = TransferEventType::TaskFinished;
+        staleFinished.snapshot.id = ids.front();
+        staleFinished.snapshot.generation = submissions.front().generation;
+        staleFinished.snapshot.state = TransferState::Succeeded;
+        staleFinished.snapshot.itemResults = {
+            {TransferState::Succeeded, {}, 1, false, 1}
+        };
+        std::thread worker([&] { left.consumeTransferEvent(staleFinished); });
+        worker.join();
+        QTRY_COMPARE_WITH_TIMEOUT(appliedThread, left.thread(), 5000);
+        QTest::qWait(50);
+        QCOMPARE(remote->listCalls.load(), remoteCallsAfterNavigation);
+        QVERIFY(remoteCallsAfterNavigation > remoteCallsBeforeNavigation);
+
+        left.copySelectedTo(&right);
+        const int beforeFreshFinish = remote->listCalls.load();
+        TransferEvent freshFinished = staleFinished;
+        freshFinished.snapshot.id = ids.back();
+        freshFinished.snapshot.generation = submissions.back().generation;
+        left.consumeTransferEvent(freshFinished);
+        QTRY_COMPARE_WITH_TIMEOUT(remote->listCalls.load(), beforeFreshFinish + 1, 5000);
+        QCOMPARE(local->listCalls.load(), 1);
     }
 
     // 用例 9：异步 list 在途时面板析构 — guard UAF 定向回归（guard 必须主线程调度时构造）。

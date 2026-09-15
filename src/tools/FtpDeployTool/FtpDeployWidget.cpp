@@ -23,6 +23,12 @@
 #include "ui/IFileSource.h"
 #include "ui/LocalFileSource.h"
 #include "ui/RemoteFileSource.h"
+#include "adapter/FtpAdapter.h"
+#include "adapter/ProtocolRegistry.h"
+#include "config/ConfigStore.h"
+#include "transfer/AdapterTransferChannel.h"
+#include "transfer/TransferExecutor.h"
+#include "transfer/TransferScheduler.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -37,10 +43,56 @@
 #include <QtConcurrent>
 #include <algorithm>
 
+namespace {
+
+QString registryProtocol(const QString& protocol)
+{
+    return protocol == QStringLiteral("sftp") ? QStringLiteral("ssh") : protocol;
+}
+
+void configureTransferAdapter(const TransferTask& task,
+                              const std::shared_ptr<IProtocolAdapter>& adapter)
+{
+    if (task.protocol == QStringLiteral("ftp")) {
+        if (const auto ftp = std::dynamic_pointer_cast<FtpAdapter>(adapter))
+            ftp->setUseFtps(task.useFtps);
+    }
+}
+
+TransferItemResult transferFailure(TransferErrorCode code, const QString& message)
+{
+    return {TransferState::Failed, {code, message, message, false}, 0, false, 0};
+}
+
+TransferItemResult committedWithCleanupFailure(TransferItemResult result,
+                                                TransferErrorCode code,
+                                                const QString& message)
+{
+    result.state = TransferState::PartiallySucceeded;
+    result.error = {code, message, message, false};
+    return result;
+}
+
+} // namespace
+
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+}
+
+FtpDeployWidget::~FtpDeployWidget()
+{
+    if (m_transferScheduler)
+        m_transferScheduler->shutdown();
+
+    QMutexLocker locker(&m_transferCredentialMutex);
+    for (auto it = m_transferCredentialVault.begin();
+         it != m_transferCredentialVault.end(); ++it) {
+        it.value().clear();
+    }
+    m_transferCredentialVault.clear();
+    m_transferCredentialKeys.clear();
 }
 
 void FtpDeployWidget::setupUi()
@@ -66,6 +118,9 @@ void FtpDeployWidget::setupUi()
     // 面板互指（F5 复制/F6 移动/Tab 切换/拖拽方向语义依赖 peer）
     m_leftPanel->setPeerPanel(m_rightPanel);
     m_rightPanel->setPeerPanel(m_leftPanel);
+
+    // 两个面板共用同一 Scheduler/Executor；面板不知道 worker 和协议对象。
+    setupTransferScheduler();
 
     // 源选择器默认布局：左面板本地（设备下拉隐藏）；右面板=工具栏配置（FTP + 设备，
     // 设备列表在 setDeviceBusWidget 填充）——左面板可再切换远程浏览，右面板恒为部署目标浏览
@@ -98,6 +153,205 @@ void FtpDeployWidget::setupUi()
 
     setupBottomBar(mainLayout);
     connectBackendSignals();
+}
+
+void FtpDeployWidget::setupTransferScheduler()
+{
+    bool concurrencyOk = false;
+    int concurrency = ConfigStore::instance()
+        .load(QStringLiteral("deploy"), QStringLiteral("concurrency"))
+        .value(QStringLiteral("concurrency"), 1)
+        .toInt(&concurrencyOk);
+    if (!concurrencyOk)
+        concurrency = 1;
+    concurrency = std::clamp(concurrency, 1, 8);
+
+    m_transferScheduler = std::make_unique<TransferScheduler>(
+        concurrency,
+        [this](const TransferTask& task,
+               int itemIndex,
+               const TransferItemRequest& item,
+               std::atomic_bool& cancel,
+               const TransferScheduler::ProgressSink& progress) {
+            return executePanelTransfer(task, itemIndex, item, cancel, progress);
+        });
+    m_transferScheduler->setEventSink([this](const TransferEvent& event) {
+        // Scheduler 会从 submit 线程或 worker 线程发布；统一排队后
+        // 才访问 QWidget，同时确保同步冲突终态在 submit 建立 ID 映射之后消费。
+        QMetaObject::invokeMethod(this, [this, event] { handleTransferEvent(event); },
+                                  Qt::QueuedConnection);
+    });
+
+    const auto submitter = [this](TransferTask task) {
+        return submitPanelTransfer(std::move(task));
+    };
+    const auto canceller = [this](const QUuid& taskId) {
+        if (m_transferScheduler)
+            m_transferScheduler->cancel(taskId);
+    };
+    m_leftPanel->setTransferSubmitter(submitter);
+    m_rightPanel->setTransferSubmitter(submitter);
+    m_leftPanel->setTransferCanceller(canceller);
+    m_rightPanel->setTransferCanceller(canceller);
+}
+
+QUuid FtpDeployWidget::submitPanelTransfer(TransferTask task)
+{
+    if (!m_transferScheduler || !m_deviceBus || task.items.isEmpty())
+        return {};
+
+    const QString protocol = registryProtocol(task.protocol.trimmed().toLower());
+    if (protocol != QStringLiteral("ftp") && protocol != QStringLiteral("ssh"))
+        return {};
+
+    const QString deviceIp = !m_remoteSrcDevice.isEmpty()
+        ? m_remoteSrcDevice : m_deviceCombo->currentText();
+    if (deviceIp.isEmpty())
+        return {};
+
+    task.protocol = protocol == QStringLiteral("ssh")
+        ? QStringLiteral("sftp") : protocol;
+    task.device.ip = deviceIp.toStdString();
+    task.device.port = m_remoteSrcPort > 0
+        ? m_remoteSrcPort : (protocol == QStringLiteral("ssh") ? 22 : m_portSpin->value());
+    task.device.protocol = protocol.toStdString();
+    task.userIdentity = m_deviceBus->user();
+    task.useFtps = protocol == QStringLiteral("ftp") && m_remoteSrcUseFtps;
+    task.credentialKey = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
+    {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        m_transferCredentialVault.insert(task.credentialKey, auth);
+    }
+    auth.clear();
+
+    const QString credentialKey = task.credentialKey;
+    const QUuid taskId = m_transferScheduler->submit(std::move(task));
+    if (taskId.isNull()) {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        auto credential = m_transferCredentialVault.find(credentialKey);
+        if (credential != m_transferCredentialVault.end()) {
+            credential.value().clear();
+            m_transferCredentialVault.erase(credential);
+        }
+        return {};
+    }
+    {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        m_transferCredentialKeys.insert(taskId, credentialKey);
+    }
+    return taskId;
+}
+
+AuthInfo FtpDeployWidget::transferCredentials(const QString& key) const
+{
+    QMutexLocker locker(&m_transferCredentialMutex);
+    return m_transferCredentialVault.value(key);
+}
+
+TransferItemResult FtpDeployWidget::executePanelTransfer(
+    const TransferTask& task,
+    int,
+    const TransferItemRequest& item,
+    std::atomic_bool& cancel,
+    const std::function<void(int)>& progress)
+{
+    const QString adapterProtocol = registryProtocol(task.protocol);
+    auto adapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
+    if (!adapter) {
+        return transferFailure(TransferErrorCode::Unsupported,
+                               tr("协议 %1 不可用").arg(task.protocol));
+    }
+    configureTransferAdapter(task, adapter);
+
+    AuthInfo credentials = transferCredentials(task.credentialKey);
+    AdapterTransferChannel channel(task.protocol, adapter);
+    channel.setProgressCallback(progress);
+    TransferExecutor executor(channel, task.device, credentials);
+    TransferItemResult result = executor.execute(item, cancel);
+    if (!task.removeSourceAfterCommit || result.state != TransferState::Succeeded)
+        return result;
+
+    // Skip 没有产生新提交；nonAtomic 也不满足 F6 删源前置条件。
+    if (result.attempts == 0) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::TargetChanged,
+            tr("目标同名项已跳过，源文件未删除"));
+    }
+    if (result.nonAtomic) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Unsupported,
+            tr("目标以非原子方式交付，为避免丢失已保留源文件"));
+    }
+    if (cancel.load()) {
+        result.state = TransferState::Cancelled;
+        result.error = {TransferErrorCode::Cancelled,
+                        tr("传输已取消，已保留源文件"),
+                        QStringLiteral("cancelled before source cleanup"), false};
+        return result;
+    }
+
+    if (item.direction == TransferDirection::Upload) {
+        if (!QFile::exists(item.localPath) || QFile::remove(item.localPath))
+            return result;
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::LocalIo,
+            tr("目标已提交，但本地源文件删除失败"));
+    }
+
+    auto cleanupAdapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
+    if (!cleanupAdapter) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Unsupported,
+            tr("目标已提交，但无法创建源清理通道"));
+    }
+    configureTransferAdapter(task, cleanupAdapter);
+    AuthInfo cleanupCredentials = transferCredentials(task.credentialKey);
+    AdapterTransferChannel cleanupChannel(task.protocol, cleanupAdapter);
+    const bool connected = cleanupChannel.connect(task.device, cleanupCredentials);
+    const bool removed = connected && cleanupChannel.remove(item.remotePath);
+    TransferError cleanupError = cleanupChannel.lastError();
+    cleanupChannel.clearCredentials();
+    cleanupCredentials.clear();
+    if (removed)
+        return result;
+    const QString message = cleanupError.message.isEmpty()
+        ? tr("目标已提交，但远程源文件删除失败")
+        : tr("目标已提交，但源清理失败：%1").arg(cleanupError.message);
+    return committedWithCleanupFailure(std::move(result), TransferErrorCode::RemoteIo,
+                                       message);
+}
+
+void FtpDeployWidget::handleTransferEvent(const TransferEvent& event)
+{
+    // 此方法始终在 GUI 线程；面板只消费值快照。
+    if (m_leftPanel)
+        m_leftPanel->consumeTransferEvent(event);
+    if (m_rightPanel)
+        m_rightPanel->consumeTransferEvent(event);
+
+    if (event.type == TransferEventType::TaskFinished) {
+        clearTransferCredential(event.snapshot.id);
+        const QString detail = event.snapshot.error.message.isEmpty()
+            ? QString() : QStringLiteral("：") + event.snapshot.error.message;
+        appendLog(tr("双栏传输终态 %1%2")
+                      .arg(static_cast<int>(event.snapshot.state))
+                      .arg(detail));
+    }
+}
+
+void FtpDeployWidget::clearTransferCredential(const QUuid& taskId)
+{
+    QMutexLocker locker(&m_transferCredentialMutex);
+    const QString key = m_transferCredentialKeys.take(taskId);
+    auto credential = m_transferCredentialVault.find(key);
+    if (credential == m_transferCredentialVault.end())
+        return;
+    credential.value().clear();
+    m_transferCredentialVault.erase(credential);
 }
 
 void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)

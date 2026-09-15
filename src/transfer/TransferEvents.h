@@ -17,6 +17,10 @@ struct TransferTask
     QString userIdentity;
     QString credentialKey;
     quint64 generation = 0;
+    bool useFtps = false;
+    // F6 业务语义：仅当目标通过原子提交成功后，由 Scheduler 的 Executor 编排
+    // 删除源文件；TransferExecutor 本身仍保持“只交付、不删源”的单一职责。
+    bool removeSourceAfterCommit = false;
     QVector<TransferItemRequest> items;
 };
 
