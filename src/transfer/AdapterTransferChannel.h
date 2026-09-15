@@ -69,5 +69,6 @@ private:
     DeviceInfo m_device;
     AuthInfo m_auth;
     bool m_hasConnectionParameters = false;
+    std::atomic_bool* m_cancelFlag = nullptr;
     TransferError m_lastError;
 };

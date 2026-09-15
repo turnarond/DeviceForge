@@ -507,6 +507,48 @@ private slots:
         QCOMPARE(terminal.snapshot.itemResults.at(1).state, TransferState::Cancelled);
     }
 
+    // 前项已经真实交付时，后项需要人工处理不能抹去已交付事实。
+    void attentionAfterEarlierDeliveryIsPartiallySucceeded()
+    {
+        auto executor = [](const TransferTask&,
+                           int itemIndex,
+                           const TransferItemRequest&,
+                           std::atomic_bool&,
+                           const TransferScheduler::ProgressSink&) {
+            if (itemIndex == 0)
+                return succeededResult();
+            return TransferItemResult{
+                TransferState::NeedsAttention,
+                {TransferErrorCode::TargetChanged,
+                 QStringLiteral("目标在传输期间变化"),
+                 QStringLiteral("target changed"),
+                 false},
+                1,
+                false,
+                0};
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&events](const TransferEvent& event) { events.append(event); });
+        TransferTask task = uploadTask(QStringLiteral("delivery-attention"),
+                                       QStringLiteral("10.0.0.45"),
+                                       QStringLiteral("/first.bin"));
+        task.items.push_back({QStringLiteral("C:/input/second.bin"),
+                              QStringLiteral("/second.bin"),
+                              TransferDirection::Upload,
+                              OverwritePolicy::Overwrite});
+
+        const QUuid id = scheduler.submit(std::move(task));
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished, id), 1, 2000);
+
+        const auto terminal = events.last(TransferEventType::TaskFinished, id);
+        QCOMPARE(terminal.snapshot.state, TransferState::PartiallySucceeded);
+        QCOMPARE(terminal.snapshot.itemResults.size(), 2);
+        QCOMPARE(terminal.snapshot.itemResults.at(0).state, TransferState::Succeeded);
+        QCOMPARE(terminal.snapshot.itemResults.at(1).state, TransferState::NeedsAttention);
+    }
+
     void normalizedRemoteConflictTerminatesOnceAndReservationIsReleased()
     {
         QMutex mutex;

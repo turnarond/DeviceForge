@@ -82,6 +82,16 @@ TransferItemResult uncommittedMoveResult(TransferItemResult result,
     return result;
 }
 
+bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.nonAtomic
+            && (result.state == TransferState::Succeeded
+                || result.state == TransferState::PartiallySucceeded);
+    });
+}
+
 } // namespace
 
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
@@ -310,8 +320,16 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     }
 
     if (item.direction == TransferDirection::Upload) {
-        if (!QFile::exists(item.localPath) || QFile::remove(item.localPath))
+        const bool removed = !QFile::exists(item.localPath) || QFile::remove(item.localPath);
+        if (removed) {
+            result.sourceRemoved = true;
+            if (cancel.load()) {
+                return committedWithCleanupFailure(
+                    std::move(result), TransferErrorCode::Cancelled,
+                    tr("目标已提交，源文件已删除，但取消在清理期间到达，请复核"));
+            }
             return result;
+        }
         return committedWithCleanupFailure(
             std::move(result), TransferErrorCode::LocalIo,
             tr("目标已提交，但本地源文件删除失败"));
@@ -326,13 +344,42 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     configureTransferAdapter(task, cleanupAdapter);
     AuthInfo cleanupCredentials = transferCredentials(task.credentialKey);
     AdapterTransferChannel cleanupChannel(task.protocol, cleanupAdapter);
+    cleanupChannel.setCancelFlag(&cancel);
+    const auto clearCleanupCredentials = [&cleanupChannel, &cleanupCredentials] {
+        cleanupChannel.clearCredentials();
+        cleanupCredentials.clear();
+    };
+    if (cancel.load()) {
+        clearCleanupCredentials();
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
     const bool connected = cleanupChannel.connect(task.device, cleanupCredentials);
+    if (cancel.load()) {
+        clearCleanupCredentials();
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
     const bool removed = connected && cleanupChannel.remove(item.remotePath);
+    const bool cancelledDuringCleanup = cancel.load();
     TransferError cleanupError = cleanupChannel.lastError();
-    cleanupChannel.clearCredentials();
-    cleanupCredentials.clear();
-    if (removed)
+    clearCleanupCredentials();
+    if (removed) {
+        result.sourceRemoved = true;
+        if (cancelledDuringCleanup) {
+            return committedWithCleanupFailure(
+                std::move(result), TransferErrorCode::Cancelled,
+                tr("目标已提交，远程源文件已删除，但取消在清理期间到达，请复核"));
+        }
         return result;
+    }
+    if (cancelledDuringCleanup) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
     QString message = cleanupError.message.isEmpty()
         ? tr("目标已提交，但远程源文件删除失败")
         : tr("目标已提交，但源清理失败：%1").arg(cleanupError.message);
@@ -357,6 +404,9 @@ void FtpDeployWidget::handleTransferEvent(const TransferEvent& event)
         appendLog(tr("双栏传输终态 %1%2")
                       .arg(static_cast<int>(event.snapshot.state))
                       .arg(detail));
+        if (hasNonAtomicSuccess(event.snapshot)) {
+            appendLog(tr("提示：已完成但使用非原子替换，源文件未自动删除，请复核目标文件"));
+        }
     }
 }
 

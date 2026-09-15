@@ -139,6 +139,13 @@ bool AdapterTransferChannel::rename(const QString& from, const QString& to)
 
 bool AdapterTransferChannel::remove(const QString& path)
 {
+    if (m_cancelFlag && m_cancelFlag->load()) {
+        m_lastError = {TransferErrorCode::Cancelled,
+                       QStringLiteral("取消已阻止源文件清理"),
+                       QStringLiteral("cancelled before remove"),
+                       false};
+        return false;
+    }
     if (!m_operations.remove)
         return failUnsupported(QStringLiteral("remove"));
     return finishOperation(m_operations.remove(path), QStringLiteral("删除失败"));
@@ -152,6 +159,7 @@ void AdapterTransferChannel::setProgressCallback(std::function<void(int)> callba
 
 void AdapterTransferChannel::setCancelFlag(std::atomic_bool* flag)
 {
+    m_cancelFlag = flag;
     if (m_operations.setCancelFlag)
         m_operations.setCancelFlag(flag);
 }

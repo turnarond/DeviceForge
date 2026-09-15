@@ -739,6 +739,91 @@ private slots:
 
     // Scheduler 可从任意线程发布；面板只在 GUI 线程消费值快照。导航后旧代际终态
     // 不得刷新新目录，未导航时成功终态只刷新目标面板。
+    // nonAtomic 成功仍保持成功数据，但必须提示操作员复核目标文件。
+    void nonAtomicSuccessShowsVisibleReviewWarning()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.copySelectedTo(&right);
+
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = TransferState::Succeeded;
+        finished.snapshot.itemResults = {
+            {TransferState::Succeeded, {}, 1, true, 1}
+        };
+        left.consumeTransferEvent(finished);
+
+        const auto* status = left.findChild<QLabel*>("panelTransferStatus");
+        QVERIFY(status);
+        QVERIFY(status->text().contains(QStringLiteral("非原子替换")));
+        QVERIFY(status->text().contains(QStringLiteral("请复核")));
+    }
+
+    // Skip 没有提交目标，任务级 Succeeded 不能刷新任一面板。
+    void skippedTransferDoesNotRefreshPanels()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.moveSelectedTo(&right);
+        const int localLists = local->listCalls.load();
+        const int remoteLists = remote->listCalls.load();
+
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = TransferState::Succeeded;
+        finished.snapshot.itemResults = {
+            {TransferState::Succeeded, {}, 0, false, 0, false, true}
+        };
+        left.consumeTransferEvent(finished);
+        QTest::qWait(100);
+
+        QCOMPARE(local->listCalls.load(), localLists);
+        QCOMPARE(remote->listCalls.load(), remoteLists);
+    }
+
     void transferEvents_areQueuedAndGenerationSafe()
     {
         auto local = std::make_shared<MockDelayedSource>();

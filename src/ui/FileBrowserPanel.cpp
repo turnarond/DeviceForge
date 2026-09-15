@@ -68,15 +68,44 @@ QString transferStateText(TransferState state)
 
 bool hasCommittedItem(const TransferTaskSnapshot& snapshot)
 {
-    if (snapshot.state == TransferState::Succeeded
-        || snapshot.state == TransferState::PartiallySucceeded)
-        return true;
     for (const auto& result : snapshot.itemResults) {
-        if (result.state == TransferState::Succeeded
-            || result.state == TransferState::PartiallySucceeded)
+        if (!result.skipped
+            && (result.atomicCommitSucceeded
+                || result.nonAtomic
+                || result.state == TransferState::Succeeded
+                || result.state == TransferState::PartiallySucceeded))
             return true;
     }
     return false;
+}
+
+bool hasSourceRemovedItem(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.sourceRemoved;
+    });
+}
+
+bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.nonAtomic
+            && (result.state == TransferState::Succeeded
+                || result.state == TransferState::PartiallySucceeded);
+    });
+}
+
+QString transferStatusText(const TransferTaskSnapshot& snapshot)
+{
+    QString text = snapshot.error.message.isEmpty()
+        ? transferStateText(snapshot.state)
+        : QStringLiteral("%1：%2").arg(transferStateText(snapshot.state),
+                                         snapshot.error.message);
+    if (hasNonAtomicSuccess(snapshot))
+        text += QStringLiteral("（已完成但使用非原子替换，请复核目标文件）");
+    return text;
 }
 
 bool supportsPanelTransfer(const FileBrowserPanel* source,
@@ -762,10 +791,7 @@ void FileBrowserPanel::applyTransferEvent(const TransferEvent& event)
 
     const bool isActive = event.snapshot.id == m_activeTransferId;
     if (isActive) {
-        m_transferStatus->setText(event.snapshot.error.message.isEmpty()
-            ? transferStateText(event.snapshot.state)
-            : tr("%1：%2").arg(transferStateText(event.snapshot.state),
-                                  event.snapshot.error.message));
+        m_transferStatus->setText(transferStatusText(event.snapshot));
         m_transferProgress->setValue(std::clamp(event.snapshot.progress, 0, 100));
     }
 
@@ -783,7 +809,7 @@ void FileBrowserPanel::applyTransferEvent(const TransferEvent& event)
         completed.targetPanel->refresh();
         completed.targetLoadGeneration = completed.targetPanel->m_loadGeneration;
     }
-    if (committed && completed.task.removeSourceAfterCommit && completed.sourcePanel
+    if (hasSourceRemovedItem(event.snapshot) && completed.sourcePanel
         && completed.sourcePanel->m_loadGeneration == completed.sourceLoadGeneration) {
         completed.sourcePanel->refresh();
         completed.sourceLoadGeneration = completed.sourcePanel->m_loadGeneration;

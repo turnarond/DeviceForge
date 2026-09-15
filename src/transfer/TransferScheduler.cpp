@@ -530,14 +530,16 @@ public:
             if (result.state != TransferState::Succeeded) {
                 TransferState taskState = result.state;
                 if ((taskState == TransferState::Failed
-                     || taskState == TransferState::Cancelled)
+                     || taskState == TransferState::Cancelled
+                     || taskState == TransferState::NeedsAttention)
                     && record->itemResults.size() > 1) {
                     bool hadCompletedItem = false;
                     for (int i = 0; i + 1 < record->itemResults.size(); ++i) {
                         const auto& previous = record->itemResults.at(i);
                         hadCompletedItem = hadCompletedItem
                             || previous.atomicCommitSucceeded
-                            || previous.state == TransferState::Succeeded
+                            || (previous.state == TransferState::Succeeded
+                                && !previous.skipped)
                             || previous.state == TransferState::PartiallySucceeded;
                     }
                     if (hadCompletedItem)

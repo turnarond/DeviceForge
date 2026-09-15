@@ -38,6 +38,8 @@ struct TransferItemResult
     // 仅表示覆盖策略明确跳过了已存在的目标；零次传输尝试不等于跳过。
     // 字段置于聚合末尾，保持既有聚合初始化参数顺序兼容。
     bool skipped = false;
+    // F6 只在源实际删除后置位；目标交付与源清理是两个独立事实。
+    bool sourceRemoved = false;
 };
 
 class TransferExecutor

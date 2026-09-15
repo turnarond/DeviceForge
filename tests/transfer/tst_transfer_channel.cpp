@@ -366,6 +366,19 @@ private slots:
         QCOMPARE(probe->cancelFlag, &cancelled);
     }
 
+    // F6 清理源时，已到达的取消不得再开始不可逆删除。
+    void cancellationBeforeRemovePreventsSourceCleanup()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("sftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        std::atomic_bool cancelled{true};
+        channel.setCancelFlag(&cancelled);
+
+        QVERIFY(!channel.remove(QStringLiteral("/source.bin")));
+        QCOMPARE(channel.lastError().code, TransferErrorCode::Cancelled);
+        QVERIFY(probe->removedPath.isEmpty());
+    }
+
     void productionFtpBindingOpensUtf8LocalPath()
     {
         QTemporaryDir temporaryDirectory;
