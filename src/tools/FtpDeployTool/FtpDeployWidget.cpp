@@ -272,7 +272,7 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     channel.setProgressCallback(progress);
     TransferExecutor executor(channel, task.device, credentials);
     TransferItemResult result = executor.execute(item, cancel);
-    if (!task.removeSourceAfterCommit || result.state != TransferState::Succeeded)
+    if (!task.removeSourceAfterCommit || !result.atomicCommitSucceeded)
         return result;
 
     // Skip 没有产生新提交；nonAtomic 也不满足 F6 删源前置条件。
@@ -287,11 +287,9 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
             tr("目标以非原子方式交付，为避免丢失已保留源文件"));
     }
     if (cancel.load()) {
-        result.state = TransferState::Cancelled;
-        result.error = {TransferErrorCode::Cancelled,
-                        tr("传输已取消，已保留源文件"),
-                        QStringLiteral("cancelled before source cleanup"), false};
-        return result;
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止源文件清理"));
     }
 
     if (item.direction == TransferDirection::Upload) {

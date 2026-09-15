@@ -588,7 +588,7 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
         // rename 已成功时提交不可回退；即使此检查点刚观察到取消，也必须如实返回成功。
         (void)cancel.load();
         return {TransferState::Succeeded, {}, attempts, false,
-                static_cast<qint64>(sourceBaseline.size)};
+                static_cast<qint64>(sourceBaseline.size), true};
     }
 
     return failedResult(makeError(TransferErrorCode::RemoteIo,
@@ -723,7 +723,8 @@ TransferItemResult TransferExecutor::executeDownload(const TransferItemRequest& 
                 {},
                 attempts,
                 kLocalCommitNonAtomic,
-                static_cast<qint64>(sourceStat.size)};
+                static_cast<qint64>(sourceStat.size),
+                !kLocalCommitNonAtomic};
     }
 
     return failedResult(makeError(TransferErrorCode::RemoteIo,

@@ -388,7 +388,12 @@ public:
             if (record->terminal || !records.contains(record->id))
                 return;
 
-            if (record->cancellationRequested) {
+            const bool hasAtomicCommit = std::any_of(record->itemResults.cbegin(),
+                                                      record->itemResults.cend(),
+                [](const TransferItemResult& result) {
+                    return result.atomicCommitSucceeded;
+                });
+            if (record->cancellationRequested && !hasAtomicCommit) {
                 state = TransferState::Cancelled;
                 error = cancelledError();
             }
@@ -499,7 +504,7 @@ public:
             QMutexLocker completionOrdering(&eventMutex);
             {
                 QMutexLocker locker(&mutex);
-                if (record->cancellationRequested) {
+                if (record->cancellationRequested && !result.atomicCommitSucceeded) {
                     result.state = TransferState::Cancelled;
                     result.error = cancelledError();
                     result.bytes = 0;
@@ -510,7 +515,8 @@ public:
             bool cancellationWon = false;
             {
                 QMutexLocker locker(&mutex);
-                cancellationWon = record->cancellationRequested;
+                cancellationWon = record->cancellationRequested
+                    && !result.atomicCommitSucceeded;
             }
             if (cancellationWon) {
                 finish(record, TransferState::Cancelled, cancelledError());

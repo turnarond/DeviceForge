@@ -79,6 +79,15 @@ bool hasCommittedItem(const TransferTaskSnapshot& snapshot)
     return false;
 }
 
+bool supportsPanelTransfer(const FileBrowserPanel* source,
+                           const FileBrowserPanel* target)
+{
+    if (!source || !target || !source->source() || !target->source())
+        return false;
+    return source->source()->sourceId() == QStringLiteral("local")
+        || target->source()->sourceId() == QStringLiteral("local");
+}
+
 } // namespace
 
 FileBrowserPanel::FileBrowserPanel(QWidget* parent) : QWidget(parent)
@@ -711,7 +720,9 @@ void FileBrowserPanel::resumeLastTransfer()
     QVector<TransferItemRequest> remaining;
     for (qsizetype index = 0; index < resumed.items.size(); ++index) {
         if (index >= m_lastTransferSnapshot.itemResults.size()
-            || m_lastTransferSnapshot.itemResults.at(index).state != TransferState::Succeeded) {
+            || (!m_lastTransferSnapshot.itemResults.at(index).atomicCommitSucceeded
+                && m_lastTransferSnapshot.itemResults.at(index).state
+                    != TransferState::Succeeded)) {
             remaining.push_back(resumed.items.at(index));
         }
     }
@@ -934,7 +945,7 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
         }
         case QEvent::DragEnter: {
             auto* drag = static_cast<QDragEnterEvent*>(event);
-            if (dragSourcePanel(drag)
+            if (supportsPanelTransfer(dragSourcePanel(drag), this)
                 || (drag->mimeData()->hasUrls()
                     && m_source->sourceId() != QStringLiteral("local"))) {
                 static_cast<QDragEnterEvent*>(event)->setDropAction(Qt::CopyAction);
@@ -945,7 +956,7 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
         }
         case QEvent::DragMove: {
             auto* drag = static_cast<QDragMoveEvent*>(event);
-            if (dragSourcePanel(drag)
+            if (supportsPanelTransfer(dragSourcePanel(drag), this)
                 || (drag->mimeData()->hasUrls()
                     && m_source->sourceId() != QStringLiteral("local"))) {
                 static_cast<QDragMoveEvent*>(event)->setDropAction(Qt::CopyAction);
@@ -975,10 +986,11 @@ void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 {
     // 非表格区域（路径栏/面包屑等）上的拖入：
     //   面板间拖拽 → 接受（CopyAction）；系统文件拖入 → 接受（dropEvent 按目标源分流）
-    if (dragSourcePanel(event)) {
+    if (supportsPanelTransfer(dragSourcePanel(event), this)) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
-    } else if (event->mimeData()->hasUrls()) {
+    } else if (event->mimeData()->hasUrls() && m_source
+               && m_source->sourceId() != QStringLiteral("local")) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -988,10 +1000,11 @@ void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 
 void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (dragSourcePanel(event)) {
+    if (supportsPanelTransfer(dragSourcePanel(event), this)) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
-    } else if (event->mimeData()->hasUrls()) {
+    } else if (event->mimeData()->hasUrls() && m_source
+               && m_source->sourceId() != QStringLiteral("local")) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -1014,9 +1027,14 @@ FileBrowserPanel::DropRoute FileBrowserPanel::handleDrop(
     FileBrowserPanel* sourcePanel,
     const QList<QUrl>& urls)
 {
-    if (sourcePanel) {
+    if (sourcePanel && supportsPanelTransfer(sourcePanel, this)) {
         sourcePanel->copySelectedTo(this);
         return DropRoute::PanelTransfer;
+    }
+
+    if (sourcePanel) {
+        m_breadcrumb->setText(tr("远程间传输暂不支持"));
+        return DropRoute::Rejected;
     }
 
     if (!m_source || m_source->sourceId() == QStringLiteral("local")) {

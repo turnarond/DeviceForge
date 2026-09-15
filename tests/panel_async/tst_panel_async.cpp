@@ -3,6 +3,8 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
 #include <QTableView>
 #include <QMenu>
 #include <QMimeData>
@@ -80,6 +82,8 @@ public:
 class TestableFileBrowserPanel : public FileBrowserPanel {
 public:
     using FileBrowserPanel::FileBrowserPanel;
+    using FileBrowserPanel::dragEnterEvent;
+    using FileBrowserPanel::dragMoveEvent;
     using FileBrowserPanel::handleDrop;
 };
 
@@ -397,6 +401,29 @@ private slots:
 
         QCOMPARE(left.handleDrop(nullptr, urls), FileBrowserPanel::DropRoute::Rejected);
         QCOMPARE(submitted.size(), 4);
+
+        QMimeData systemMime;
+        systemMime.setUrls(urls);
+        QDragEnterEvent localEnter({1, 1}, Qt::CopyAction, &systemMime,
+                                   Qt::NoButton, Qt::NoModifier);
+        localEnter.setAccepted(false);
+        left.dragEnterEvent(&localEnter);
+        QVERIFY(!localEnter.isAccepted());
+        QDragMoveEvent localMove({1, 1}, Qt::CopyAction, &systemMime,
+                                 Qt::NoButton, Qt::NoModifier);
+        localMove.setAccepted(false);
+        left.dragMoveEvent(&localMove);
+        QVERIFY(!localMove.isAccepted());
+
+        auto otherRemote = std::make_shared<MockDelayedSource>();
+        otherRemote->m_sourceId = QStringLiteral("sftp");
+        otherRemote->m_files = {makeInfo("other.bin")};
+        TestableFileBrowserPanel remoteSource;
+        remoteSource.setSource(otherRemote);
+        settleInitialLoad(remoteSource);
+        selectRows(remoteSource, {rowForName(remoteSource, "other.bin")});
+        QCOMPARE(right.handleDrop(&remoteSource, {}), FileBrowserPanel::DropRoute::Rejected);
+        QCOMPARE(submitted.size(), 4);
         QCOMPARE(local->uploadCalls.load(), 0);
         QCOMPARE(local->downloadCalls.load(), 0);
         QCOMPARE(remote->uploadCalls.load(), 0);
@@ -567,6 +594,50 @@ private slots:
         QCOMPARE(submissions.size(), 2);
         QCOMPARE(submissions.back().items.size(), 1);
         QVERIFY(submissions.back().items.front().localPath.endsWith(QStringLiteral("b.bin")));
+    }
+
+    // F6 目标已经原子提交、但取消阻止源清理时，恢复不得重复已提交的项。
+    void resumeSkipsAtomicallyCommittedCleanupFailure()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.moveSelectedTo(&right);
+
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = TransferState::PartiallySucceeded;
+        finished.snapshot.itemResults = {
+            {TransferState::PartiallySucceeded,
+             {TransferErrorCode::Cancelled,
+              QStringLiteral("目标已提交，源清理已取消"),
+              QStringLiteral("cancelled before source cleanup"), false},
+             1, false, 1, true}
+        };
+        left.consumeTransferEvent(finished);
+        QTRY_VERIFY_WITH_TIMEOUT(left.findChild<QPushButton*>("transferRetryButton")->isEnabled(), 5000);
+        left.resumeLastTransfer();
+        QCOMPARE(submissions.size(), 1);
     }
 
     // Scheduler 可从任意线程发布；面板只在 GUI 线程消费值快照。导航后旧代际终态

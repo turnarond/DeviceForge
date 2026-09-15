@@ -422,6 +422,49 @@ private slots:
             QVERIFY(copy.at(i).snapshot.id != id);
     }
 
+    // 原子提交已完成后，取消只能中止后续清理；不得把已经存在的目标
+    // 回报为 Cancelled，否则恢复会重复传输该文件。
+    void cancellationAfterAtomicCommitPreservesCleanupAttention()
+    {
+        QSemaphore entered;
+        QSemaphore returnCommittedResult;
+        auto executor = [&](const TransferTask&,
+                            int,
+                            const TransferItemRequest&,
+                            std::atomic_bool&,
+                            const TransferScheduler::ProgressSink&) {
+            entered.release();
+            returnCommittedResult.acquire();
+            return TransferItemResult{
+                TransferState::PartiallySucceeded,
+                {TransferErrorCode::Cancelled,
+                 QStringLiteral("目标已提交，源清理已取消"),
+                 QStringLiteral("cancelled before source cleanup"),
+                 false},
+                1,
+                false,
+                10,
+                true};
+        };
+
+        EventLog events;
+        TransferScheduler scheduler(1, executor);
+        scheduler.setEventSink([&events](const TransferEvent& event) { events.append(event); });
+        const QUuid id = scheduler.submit(
+            uploadTask(QStringLiteral("committed-cancel"), QStringLiteral("10.0.0.43"),
+                       QStringLiteral("/committed-cancel.bin")));
+        QVERIFY(entered.tryAcquire(1, 2000));
+
+        scheduler.cancel(id);
+        returnCommittedResult.release();
+        QTRY_COMPARE_WITH_TIMEOUT(events.count(TransferEventType::TaskFinished, id), 1, 2000);
+
+        const TransferEvent terminal = events.last(TransferEventType::TaskFinished, id);
+        QCOMPARE(terminal.snapshot.state, TransferState::PartiallySucceeded);
+        QCOMPARE(terminal.snapshot.itemResults.size(), 1);
+        QVERIFY(terminal.snapshot.itemResults.front().atomicCommitSucceeded);
+    }
+
     void normalizedRemoteConflictTerminatesOnceAndReservationIsReleased()
     {
         QMutex mutex;

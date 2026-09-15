@@ -32,6 +32,9 @@ struct TransferItemResult
     int attempts = 0;
     bool nonAtomic = false;
     qint64 bytes = 0;
+    // 目标已完成不可回退的原子提交。取消只能阻止提交之后的清理，
+    // 调度器必须保留这一事实，恢复也必须跳过该项。
+    bool atomicCommitSucceeded = false;
 };
 
 class TransferExecutor
