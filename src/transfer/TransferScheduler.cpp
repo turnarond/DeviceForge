@@ -388,13 +388,11 @@ public:
             if (record->terminal || !records.contains(record->id))
                 return;
 
-            const bool hasAtomicCommit = std::any_of(record->itemResults.cbegin(),
-                                                      record->itemResults.cend(),
-                [](const TransferItemResult& result) {
-                    return result.atomicCommitSucceeded;
-                });
+            const bool hasDelivery = std::any_of(record->itemResults.cbegin(),
+                                                 record->itemResults.cend(),
+                                                 hasDeliveredTarget);
             if (record->cancellationRequested) {
-                if (!hasAtomicCommit) {
+                if (!hasDelivery) {
                     state = TransferState::Cancelled;
                     error = cancelledError();
                 } else if (state == TransferState::Cancelled) {
@@ -508,7 +506,7 @@ public:
             QMutexLocker completionOrdering(&eventMutex);
             {
                 QMutexLocker locker(&mutex);
-                if (record->cancellationRequested && !result.atomicCommitSucceeded) {
+                if (record->cancellationRequested && !hasDeliveredTarget(result)) {
                     result.state = TransferState::Cancelled;
                     result.error = cancelledError();
                     result.bytes = 0;
@@ -520,7 +518,7 @@ public:
             {
                 QMutexLocker locker(&mutex);
                 cancellationWon = record->cancellationRequested
-                    && !result.atomicCommitSucceeded;
+                    && !hasDeliveredTarget(result);
             }
             if (cancellationWon) {
                 finish(record, TransferState::Cancelled, cancelledError());
@@ -537,10 +535,7 @@ public:
                     for (int i = 0; i + 1 < record->itemResults.size(); ++i) {
                         const auto& previous = record->itemResults.at(i);
                         hadCompletedItem = hadCompletedItem
-                            || previous.atomicCommitSucceeded
-                            || (previous.state == TransferState::Succeeded
-                                && !previous.skipped)
-                            || previous.state == TransferState::PartiallySucceeded;
+                            || hasDeliveredTarget(previous);
                     }
                     if (hadCompletedItem)
                         taskState = TransferState::PartiallySucceeded;

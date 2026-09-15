@@ -515,8 +515,11 @@ private slots:
                            const TransferItemRequest&,
                            std::atomic_bool&,
                            const TransferScheduler::ProgressSink&) {
-            if (itemIndex == 0)
-                return succeededResult();
+            if (itemIndex == 0) {
+                return TransferItemResult{
+                    TransferState::Succeeded, {}, 1, false, 10,
+                    false, false, false, true};
+            }
             return TransferItemResult{
                 TransferState::NeedsAttention,
                 {TransferErrorCode::TargetChanged,

@@ -43,6 +43,7 @@ endif()
 # --- 单文件可靠传输执行器（重试、取消、目标变更与原子提交）---
 add_executable(tst_transfer_executor
     transfer/tst_transfer_executor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
 )

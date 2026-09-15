@@ -68,15 +68,8 @@ QString transferStateText(TransferState state)
 
 bool hasCommittedItem(const TransferTaskSnapshot& snapshot)
 {
-    for (const auto& result : snapshot.itemResults) {
-        if (!result.skipped
-            && (result.atomicCommitSucceeded
-                || result.nonAtomic
-                || result.state == TransferState::Succeeded
-                || result.state == TransferState::PartiallySucceeded))
-            return true;
-    }
-    return false;
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       hasDeliveredTarget);
 }
 
 bool hasSourceRemovedItem(const TransferTaskSnapshot& snapshot)
@@ -91,9 +84,7 @@ bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
 {
     return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
                        [](const TransferItemResult& result) {
-        return result.nonAtomic
-            && (result.state == TransferState::Succeeded
-                || result.state == TransferState::PartiallySucceeded);
+        return result.nonAtomic && hasDeliveredTarget(result);
     });
 }
 
@@ -541,28 +532,13 @@ void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
     if (files.empty()) { m_breadcrumb->setText(tr("未选择文件")); return; }
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
-    const QString dstPath = target->currentPath();
-    int failed = 0;
-    if (srcKind == "local" && dstKind == "local") {
-        // 本地→本地：复制
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            const bool ok = f.isDir ? QDir(srcFull).mkpath(dstFull)   // 简化：目录复制仅建空目录
-                                    : QFile::copy(srcFull, dstFull);
-            if (!ok) ++failed;
-        }
-        refresh(); target->refresh();
-    } else if ((srcKind == "local") != (dstKind == "local")) {
+    if (srcKind == "local" || dstKind == "local") {
         submitSelectedTransfer(target, false);
     } else {
         // 远程→远程：禁用提示
         m_breadcrumb->setText(tr("远程间复制暂不支持"));
         return;
     }
-    if (failed > 0)
-        m_breadcrumb->setText(tr("复制完成，%1 项失败").arg(failed));
 }
 
 void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
@@ -572,21 +548,10 @@ void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
     if (files.empty()) { m_breadcrumb->setText(tr("未选择文件")); return; }
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
-    const QString dstPath = target->currentPath();
     // 目录项统一跳过删源（浅拷贝限制：mkpath 仅建空目录/单文件上传下载不递归，
     // 删源将造成内容丢失）——跳过并提示，文件项仍按移动语义执行
     int dirSkipped = 0;
-    if (srcKind == "local" && dstKind == "local") {
-        // 本地→本地：复制后删源（移动语义）
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            if (f.isDir) { ++dirSkipped; continue; }
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (QFile::copy(srcFull, dstFull)) m_source->remove(srcFull, false);
-        }
-        refresh(); target->refresh();
-    } else if ((srcKind == "local") != (dstKind == "local")) {
+    if (srcKind == "local" || dstKind == "local") {
         submitSelectedTransfer(target, true);
     } else {
         // 远程→远程：禁用提示
@@ -603,7 +568,7 @@ QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool mo
 
     const bool sourceLocal = m_source->sourceId() == QStringLiteral("local");
     const bool targetLocal = target->source()->sourceId() == QStringLiteral("local");
-    if (sourceLocal == targetLocal)
+    if (!sourceLocal && !targetLocal)
         return {};
 
     QVector<TransferItemRequest> items;
@@ -618,11 +583,14 @@ QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool mo
 
         const QString name = QString::fromStdString(file.name);
         TransferItemRequest item;
-        item.direction = sourceLocal ? TransferDirection::Upload
-                                     : TransferDirection::Download;
-        item.localPath = joinedPath(sourceLocal ? m_currentPath : target->m_currentPath,
+        const bool localToLocal = sourceLocal && targetLocal;
+        item.direction = sourceLocal && !localToLocal ? TransferDirection::Upload
+                                                      : TransferDirection::Download;
+        item.localPath = joinedPath(localToLocal || !sourceLocal
+                                        ? target->m_currentPath : m_currentPath,
                                     name);
-        item.remotePath = joinedPath(sourceLocal ? target->m_currentPath : m_currentPath,
+        item.remotePath = joinedPath(localToLocal || !sourceLocal
+                                         ? m_currentPath : target->m_currentPath,
                                      name);
         items.push_back(std::move(item));
     }
@@ -644,8 +612,10 @@ QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool mo
     task.displayName = tr("%1 %2 个文件")
         .arg(sourceLocal ? tr("上传") : tr("下载"))
         .arg(items.size());
-    task.protocol = normalizedTransferProtocol(
-        sourceLocal ? target->source()->sourceId() : m_source->sourceId());
+    task.protocol = sourceLocal && targetLocal
+        ? QStringLiteral("local")
+        : normalizedTransferProtocol(
+              sourceLocal ? target->source()->sourceId() : m_source->sourceId());
     task.generation = ++m_transferGeneration;
     task.removeSourceAfterCommit = move;
     task.items = std::move(items);
@@ -749,10 +719,7 @@ void FileBrowserPanel::resumeLastTransfer()
     QVector<TransferItemRequest> remaining;
     for (qsizetype index = 0; index < resumed.items.size(); ++index) {
         const bool needsResume = index >= m_lastTransferSnapshot.itemResults.size()
-            || (resumed.removeSourceAfterCommit
-                ? !m_lastTransferSnapshot.itemResults.at(index).atomicCommitSucceeded
-                : m_lastTransferSnapshot.itemResults.at(index).state
-                    != TransferState::Succeeded);
+            || !hasDeliveredTarget(m_lastTransferSnapshot.itemResults.at(index));
         if (needsResume) {
             remaining.push_back(resumed.items.at(index));
         }

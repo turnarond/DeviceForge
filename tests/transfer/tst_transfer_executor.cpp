@@ -3,6 +3,7 @@
 #include <QtTest>
 
 #include "transfer/TransferExecutor.h"
+#include "transfer/LocalTransferChannel.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -268,6 +269,36 @@ private slots:
         QCOMPARE(channel.renameTo, QStringLiteral("/opt/a.bin"));
         QCOMPARE(channel.clearCredentialsCalls, 1);
         QVERIFY(channel.cancelFlag == nullptr);
+    }
+
+    void localChannelUsesExecutorForFailureCancellationAndResume()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString sourcePath = directory.filePath(QStringLiteral("missing.bin"));
+        const QString targetPath = directory.filePath(QStringLiteral("target.bin"));
+        TransferItemRequest request =
+            downloadRequest(sourcePath, targetPath);
+        LocalTransferChannel channel;
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto failed = executor.execute(request, m_cancel);
+        QCOMPARE(failed.state, TransferState::Failed);
+        QVERIFY(!failed.deliverySucceeded);
+        QVERIFY(!QFileInfo::exists(targetPath));
+
+        QVERIFY(writeFile(sourcePath, QByteArray("local reliable payload")));
+        m_cancel.store(true);
+        const auto cancelled = executor.execute(request, m_cancel);
+        QCOMPARE(cancelled.state, TransferState::Cancelled);
+        QVERIFY(!cancelled.deliverySucceeded);
+        QVERIFY(!QFileInfo::exists(targetPath));
+
+        m_cancel.store(false);
+        const auto resumed = executor.execute(request, m_cancel);
+        QCOMPARE(resumed.state, TransferState::Succeeded);
+        QVERIFY(resumed.deliverySucceeded);
+        QCOMPARE(readFile(targetPath), QByteArray("local reliable payload"));
     }
 
     void deterministicFailureDoesNotRetryAndPreservesRootError()

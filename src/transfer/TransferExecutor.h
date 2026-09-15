@@ -40,7 +40,18 @@ struct TransferItemResult
     bool skipped = false;
     // F6 只在源实际删除后置位；目标交付与源清理是两个独立事实。
     bool sourceRemoved = false;
+    // 目标内容已校验并完成交付（包含明确降级的非原子交付）。
+    // nonAtomic 只表示提交方式，不得单独作为交付事实。
+    bool deliverySucceeded = false;
 };
+
+inline bool hasDeliveredTarget(const TransferItemResult& result)
+{
+    const bool successfulState = result.state == TransferState::Succeeded
+        || result.state == TransferState::PartiallySucceeded;
+    return !result.skipped && successfulState
+        && (result.atomicCommitSucceeded || result.deliverySucceeded);
+}
 
 class TransferExecutor
 {

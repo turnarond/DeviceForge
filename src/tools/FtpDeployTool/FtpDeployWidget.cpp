@@ -27,6 +27,7 @@
 #include "adapter/ProtocolRegistry.h"
 #include "config/ConfigStore.h"
 #include "transfer/AdapterTransferChannel.h"
+#include "transfer/LocalTransferChannel.h"
 #include "transfer/TransferExecutor.h"
 #include "transfer/TransferScheduler.h"
 #include <QVBoxLayout>
@@ -86,9 +87,7 @@ bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
 {
     return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
                        [](const TransferItemResult& result) {
-        return result.nonAtomic
-            && (result.state == TransferState::Succeeded
-                || result.state == TransferState::PartiallySucceeded);
+        return result.nonAtomic && hasDeliveredTarget(result);
     });
 }
 
@@ -216,11 +215,19 @@ void FtpDeployWidget::setupTransferScheduler()
 
 QUuid FtpDeployWidget::submitPanelTransfer(TransferTask task)
 {
-    if (!m_transferScheduler || !m_deviceBus || task.items.isEmpty())
+    if (!m_transferScheduler || task.items.isEmpty())
         return {};
 
     const QString protocol = registryProtocol(task.protocol.trimmed().toLower());
-    if (protocol != QStringLiteral("ftp") && protocol != QStringLiteral("ssh"))
+    if (protocol == QStringLiteral("local")) {
+        task.protocol = QStringLiteral("local");
+        task.device = {"localhost", 0, "local", "local", ""};
+        task.userIdentity.clear();
+        task.credentialKey.clear();
+        return m_transferScheduler->submit(std::move(task));
+    }
+    if (!m_deviceBus
+        || (protocol != QStringLiteral("ftp") && protocol != QStringLiteral("ssh")))
         return {};
 
     const QString deviceIp = !m_remoteSrcDevice.isEmpty()
@@ -279,18 +286,26 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     const std::function<void(int)>& progress)
 {
     const QString adapterProtocol = registryProtocol(task.protocol);
-    auto adapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
-    if (!adapter) {
-        return transferFailure(TransferErrorCode::Unsupported,
-                               tr("协议 %1 不可用").arg(task.protocol));
-    }
-    configureTransferAdapter(task, adapter);
+    TransferItemResult result;
+    if (adapterProtocol == QStringLiteral("local")) {
+        LocalTransferChannel channel;
+        channel.setProgressCallback(progress);
+        TransferExecutor executor(channel);
+        result = executor.execute(item, cancel);
+    } else {
+        auto adapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
+        if (!adapter) {
+            return transferFailure(TransferErrorCode::Unsupported,
+                                   tr("协议 %1 不可用").arg(task.protocol));
+        }
+        configureTransferAdapter(task, adapter);
 
-    AuthInfo credentials = transferCredentials(task.credentialKey);
-    AdapterTransferChannel channel(task.protocol, adapter);
-    channel.setProgressCallback(progress);
-    TransferExecutor executor(channel, task.device, credentials);
-    TransferItemResult result = executor.execute(item, cancel);
+        AuthInfo credentials = transferCredentials(task.credentialKey);
+        AdapterTransferChannel channel(task.protocol, adapter);
+        channel.setProgressCallback(progress);
+        TransferExecutor executor(channel, task.device, credentials);
+        result = executor.execute(item, cancel);
+    }
     if (!task.removeSourceAfterCommit)
         return result;
 
@@ -309,7 +324,7 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
             std::move(result), TransferErrorCode::Unsupported,
             tr("目标以非原子方式交付，为避免丢失已保留源文件"));
     }
-    if (!result.atomicCommitSucceeded)
+    if (!hasDeliveredTarget(result))
         return result;
 
     // Skip 与 nonAtomic 已在上面以明确状态收口；以下仅处理原子提交。
@@ -319,8 +334,11 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
             tr("目标已提交，取消已阻止源文件清理"));
     }
 
-    if (item.direction == TransferDirection::Upload) {
-        const bool removed = !QFile::exists(item.localPath) || QFile::remove(item.localPath);
+    if (item.direction == TransferDirection::Upload
+        || adapterProtocol == QStringLiteral("local")) {
+        const QString sourcePath = adapterProtocol == QStringLiteral("local")
+            ? item.remotePath : item.localPath;
+        const bool removed = !QFile::exists(sourcePath) || QFile::remove(sourcePath);
         if (removed) {
             result.sourceRemoved = true;
             if (cancel.load()) {

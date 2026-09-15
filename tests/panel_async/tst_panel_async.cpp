@@ -433,6 +433,62 @@ private slots:
         QCOMPARE(local->removeCalls.load(), 0);
     }
 
+    // 本地↔本地与本地↔远程必须共用 TransferTask 提交契约；F5/F6/面板拖拽
+    // 都不能退回 QFile 或 IFileSource 的 GUI 线程同步执行路径。
+    void localToLocalEntrypointsSubmitReliableTasks()
+    {
+        auto source = std::make_shared<MockDelayedSource>();
+        source->m_sourceId = QStringLiteral("local");
+        source->m_files = {makeInfo("firmware.bin")};
+        auto target = std::make_shared<MockDelayedSource>();
+        target->m_sourceId = QStringLiteral("local");
+
+        TestableFileBrowserPanel left;
+        TestableFileBrowserPanel right;
+        left.setSource(source);
+        right.setSource(target);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+        left.navigateTo(QStringLiteral("C:/source"));
+        right.navigateTo(QStringLiteral("D:/target"));
+        QTRY_COMPARE_WITH_TIMEOUT(left.currentPath(), QStringLiteral("C:/source"), 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(right.currentPath(), QStringLiteral("D:/target"), 5000);
+
+        QVector<TransferTask> submissions;
+        left.setTransferSubmitter([&submissions](TransferTask task) {
+            submissions.push_back(std::move(task));
+            return QUuid::createUuid();
+        });
+        selectRows(left, {rowForName(left, "firmware.bin")});
+
+        left.copySelectedTo(&right);
+        QCOMPARE(submissions.size(), 1);
+        QCOMPARE(submissions.back().protocol, QStringLiteral("local"));
+        QCOMPARE(submissions.back().items.size(), 1);
+        QCOMPARE(submissions.back().items.front().direction, TransferDirection::Download);
+        QCOMPARE(submissions.back().items.front().remotePath,
+                 QStringLiteral("C:/source/firmware.bin"));
+        QCOMPARE(submissions.back().items.front().localPath,
+                 QStringLiteral("D:/target/firmware.bin"));
+        QVERIFY(!submissions.back().removeSourceAfterCommit);
+
+        QCOMPARE(right.handleDrop(&left, {}), FileBrowserPanel::DropRoute::PanelTransfer);
+        QCOMPARE(submissions.size(), 2);
+        QCOMPARE(submissions.back().protocol, QStringLiteral("local"));
+
+        left.moveSelectedTo(&right);
+        QCOMPARE(submissions.size(), 3);
+        QCOMPARE(submissions.back().protocol, QStringLiteral("local"));
+        QVERIFY(submissions.back().removeSourceAfterCommit);
+
+        QCOMPARE(source->uploadCalls.load(), 0);
+        QCOMPARE(source->downloadCalls.load(), 0);
+        QCOMPARE(source->removeCalls.load(), 0);
+        QCOMPARE(target->uploadCalls.load(), 0);
+        QCOMPARE(target->downloadCalls.load(), 0);
+        QCOMPARE(target->removeCalls.load(), 0);
+    }
+
     // 表格 viewport 的 eventFilter 与面板级处理必须同步拒绝无法落地的系统→本地；
     // 远程→远程则由带来源面板的真实 drop handler 拒绝，不能进入同步 I/O 分支。
     void dropRejectionIsConsistentAcrossViewportAndPanelHandlers()
@@ -640,7 +696,7 @@ private slots:
         finished.snapshot.generation = submissions.front().generation;
         finished.snapshot.state = TransferState::PartiallySucceeded;
         finished.snapshot.itemResults = {
-            {TransferState::Succeeded, {}, 1, false, 1},
+            {TransferState::Succeeded, {}, 1, false, 1, false, false, false, true},
             {TransferState::Failed,
              {TransferErrorCode::Permission, QStringLiteral("拒绝访问"), {}, false},
              1, false, 0}
@@ -771,7 +827,7 @@ private slots:
         finished.snapshot.generation = submissions.front().generation;
         finished.snapshot.state = TransferState::Succeeded;
         finished.snapshot.itemResults = {
-            {TransferState::Succeeded, {}, 1, true, 1}
+            {TransferState::Succeeded, {}, 1, true, 1, false, false, false, true}
         };
         left.consumeTransferEvent(finished);
 
@@ -779,6 +835,68 @@ private slots:
         QVERIFY(status);
         QVERIFY(status->text().contains(QStringLiteral("非原子替换")));
         QVERIFY(status->text().contains(QStringLiteral("请复核")));
+    }
+
+    // nonAtomic 只描述提交方式；失败/待处理不能因该标志被当作已交付，
+    // 因而不刷新目标，恢复时仍必须重提该项。
+    void nonAtomicFailureDoesNotRefreshAndRemainsResumable_data()
+    {
+        QTest::addColumn<TransferState>("state");
+        QTest::newRow("failed") << TransferState::Failed;
+        QTest::newRow("needs-attention") << TransferState::NeedsAttention;
+    }
+
+    void nonAtomicFailureDoesNotRefreshAndRemainsResumable()
+    {
+        QFETCH(TransferState, state);
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        local->m_files = {makeInfo("a.bin")};
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        FileBrowserPanel left;
+        FileBrowserPanel right;
+        left.setSource(local);
+        right.setSource(remote);
+        settleInitialLoad(left);
+        settleInitialLoad(right);
+
+        QVector<TransferTask> submissions;
+        QVector<QUuid> ids;
+        left.setTransferSubmitter([&](TransferTask task) {
+            submissions.push_back(std::move(task));
+            const QUuid id = QUuid::createUuid();
+            ids.push_back(id);
+            return id;
+        });
+        selectRows(left, {rowForName(left, "a.bin")});
+        left.copySelectedTo(&right);
+        const int localLists = local->listCalls.load();
+        const int remoteLists = remote->listCalls.load();
+
+        TransferItemResult item;
+        item.state = state;
+        item.error = {TransferErrorCode::RemoteIo,
+                      QStringLiteral("未交付"),
+                      QStringLiteral("not delivered"),
+                      false};
+        item.attempts = 1;
+        item.nonAtomic = true;
+        TransferEvent finished;
+        finished.type = TransferEventType::TaskFinished;
+        finished.snapshot.id = ids.front();
+        finished.snapshot.generation = submissions.front().generation;
+        finished.snapshot.state = state;
+        finished.snapshot.itemResults = {item};
+        left.consumeTransferEvent(finished);
+        QTest::qWait(100);
+
+        QCOMPARE(local->listCalls.load(), localLists);
+        QCOMPARE(remote->listCalls.load(), remoteLists);
+        left.resumeLastTransfer();
+        QCOMPARE(submissions.size(), 2);
+        QCOMPARE(submissions.back().items.size(), 1);
+        QVERIFY(submissions.back().items.front().localPath.endsWith(QStringLiteral("a.bin")));
     }
 
     // Skip 没有提交目标，任务级 Succeeded 不能刷新任一面板。
@@ -862,7 +980,7 @@ private slots:
         staleFinished.snapshot.generation = submissions.front().generation;
         staleFinished.snapshot.state = TransferState::Succeeded;
         staleFinished.snapshot.itemResults = {
-            {TransferState::Succeeded, {}, 1, false, 1}
+            {TransferState::Succeeded, {}, 1, false, 1, false, false, false, true}
         };
         std::thread worker([&] { left.consumeTransferEvent(staleFinished); });
         worker.join();
