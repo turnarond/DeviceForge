@@ -414,7 +414,7 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
                            prepareFailure))
         return prepareFailure;
     if (request.overwrite == OverwritePolicy::Skip && targetBaseline.exists)
-        return {TransferState::Succeeded, {}, 0, false, 0};
+        return {TransferState::Succeeded, {}, 0, false, 0, false, true};
 
     const bool atomicCommit = capabilities.rename;
     const QString transferPath = atomicCommit ? temporaryPathFor(request.remotePath)
@@ -633,7 +633,7 @@ TransferItemResult TransferExecutor::executeDownload(const TransferItemRequest& 
                                       QStringLiteral("本地目标不是普通文件或无法读取")),
                             preparedAttemptIndex + 1);
     if (request.overwrite == OverwritePolicy::Skip && targetBaseline.exists)
-        return {TransferState::Succeeded, {}, 0, false, 0};
+        return {TransferState::Succeeded, {}, 0, false, 0, false, true};
 
     const QString temporaryPath = temporaryPathFor(request.localPath);
     const QVector<int> delays = retryDelaysMs();

@@ -78,6 +78,9 @@ protected:
     void dropEvent(QDropEvent* event) override;
     // 把 Qt DnD 的来源识别与业务分支分离，便于覆盖三种拖拽路径。
     DropRoute handleDrop(FileBrowserPanel* sourcePanel, const QList<QUrl>& urls);
+    // viewport 与面板非表格区域共用同一接受判定，避免 drag enter/move
+    // 先展示可落地反馈、最终 drop 却拒绝。
+    bool canAcceptDrag(const FileBrowserPanel* sourcePanel, bool hasUrls) const;
 
 private:
     void setupUi();

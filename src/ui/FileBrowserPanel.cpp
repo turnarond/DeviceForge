@@ -928,6 +928,14 @@ FileBrowserPanel* FileBrowserPanel::dragSourcePanel(const QDropEvent* event) con
     return nullptr;
 }
 
+bool FileBrowserPanel::canAcceptDrag(const FileBrowserPanel* sourcePanel,
+                                     bool hasUrls) const
+{
+    return supportsPanelTransfer(sourcePanel, this)
+        || (!sourcePanel && hasUrls && m_source
+            && m_source->sourceId() != QStringLiteral("local"));
+}
+
 bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 {
     // 拦截表格视口上的面板间拖拽事件（与 FtpDeployWidget 的系统文件拖入同套路）
@@ -948,9 +956,7 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
         case QEvent::DragEnter: {
             auto* drag = static_cast<QDragEnterEvent*>(event);
             const auto sourcePanel = dragSourcePanel(drag);
-            const bool accepted = supportsPanelTransfer(sourcePanel, this)
-                || (!sourcePanel && drag->mimeData()->hasUrls()
-                    && m_source->sourceId() != QStringLiteral("local"));
+            const bool accepted = canAcceptDrag(sourcePanel, drag->mimeData()->hasUrls());
             if (accepted) {
                 static_cast<QDragEnterEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragEnterEvent*>(event)->accept();
@@ -962,9 +968,7 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
         case QEvent::DragMove: {
             auto* drag = static_cast<QDragMoveEvent*>(event);
             const auto sourcePanel = dragSourcePanel(drag);
-            const bool accepted = supportsPanelTransfer(sourcePanel, this)
-                || (!sourcePanel && drag->mimeData()->hasUrls()
-                    && m_source->sourceId() != QStringLiteral("local"));
+            const bool accepted = canAcceptDrag(sourcePanel, drag->mimeData()->hasUrls());
             if (accepted) {
                 static_cast<QDragMoveEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragMoveEvent*>(event)->accept();
@@ -994,12 +998,8 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 {
     // 非表格区域（路径栏/面包屑等）上的拖入：
-    //   面板间拖拽 → 接受（CopyAction）；系统文件拖入 → 接受（dropEvent 按目标源分流）
-    if (supportsPanelTransfer(dragSourcePanel(event), this)) {
-        event->setDropAction(Qt::CopyAction);
-        event->accept();
-    } else if (event->mimeData()->hasUrls() && m_source
-               && m_source->sourceId() != QStringLiteral("local")) {
+    //   仅本地↔远程面板传输，或系统→远程上传可接受。
+    if (canAcceptDrag(dragSourcePanel(event), event->mimeData()->hasUrls())) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -1009,11 +1009,7 @@ void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 
 void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (supportsPanelTransfer(dragSourcePanel(event), this)) {
-        event->setDropAction(Qt::CopyAction);
-        event->accept();
-    } else if (event->mimeData()->hasUrls() && m_source
-               && m_source->sourceId() != QStringLiteral("local")) {
+    if (canAcceptDrag(dragSourcePanel(event), event->mimeData()->hasUrls())) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {

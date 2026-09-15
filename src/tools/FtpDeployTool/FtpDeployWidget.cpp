@@ -284,7 +284,12 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     if (!task.removeSourceAfterCommit)
         return result;
 
-    if (result.attempts == 0) {
+    // 预检失败同样可能 attempts==0；必须原样保留 Failed/NeedsAttention，
+    // 只有成功结果才进入“目标已交付、是否清理源”的移动语义。
+    if (result.state != TransferState::Succeeded)
+        return result;
+
+    if (result.skipped) {
         return uncommittedMoveResult(
             std::move(result), TransferErrorCode::TargetChanged,
             tr("目标同名项已跳过，源文件未删除"));

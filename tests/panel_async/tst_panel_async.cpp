@@ -84,7 +84,9 @@ public:
     using FileBrowserPanel::FileBrowserPanel;
     using FileBrowserPanel::dragEnterEvent;
     using FileBrowserPanel::dragMoveEvent;
+    using FileBrowserPanel::eventFilter;
     using FileBrowserPanel::handleDrop;
+    using FileBrowserPanel::canAcceptDrag;
 };
 
 static FtpFileInfo makeInfo(const char* name, bool isDir = false)
@@ -429,6 +431,61 @@ private slots:
         QCOMPARE(remote->uploadCalls.load(), 0);
         QCOMPARE(remote->downloadCalls.load(), 0);
         QCOMPARE(local->removeCalls.load(), 0);
+    }
+
+    // 表格 viewport 的 eventFilter 与面板级处理必须同步拒绝无法落地的系统→本地；
+    // 远程→远程则由带来源面板的真实 drop handler 拒绝，不能进入同步 I/O 分支。
+    void dropRejectionIsConsistentAcrossViewportAndPanelHandlers()
+    {
+        auto local = std::make_shared<MockDelayedSource>();
+        local->m_sourceId = QStringLiteral("local");
+        auto remote = std::make_shared<MockDelayedSource>();
+        remote->m_sourceId = QStringLiteral("ftp");
+        auto otherRemote = std::make_shared<MockDelayedSource>();
+        otherRemote->m_sourceId = QStringLiteral("sftp");
+
+        TestableFileBrowserPanel localPanel;
+        TestableFileBrowserPanel remotePanel;
+        TestableFileBrowserPanel remoteSource;
+        localPanel.setSource(local);
+        remotePanel.setSource(remote);
+        remoteSource.setSource(otherRemote);
+        settleInitialLoad(localPanel);
+        settleInitialLoad(remotePanel);
+        settleInitialLoad(remoteSource);
+
+        QMimeData systemMime;
+        systemMime.setUrls({QUrl::fromLocalFile(QStringLiteral("C:/firmware/drop.bin"))});
+
+        QDragEnterEvent enter({1, 1}, Qt::CopyAction, &systemMime,
+                              Qt::NoButton, Qt::NoModifier);
+        QVERIFY(localPanel.eventFilter(localPanel.fileTable()->viewport(), &enter));
+        QVERIFY(!enter.isAccepted());
+
+        QDragMoveEvent move({1, 1}, Qt::CopyAction, &systemMime,
+                            Qt::NoButton, Qt::NoModifier);
+        QVERIFY(localPanel.eventFilter(localPanel.fileTable(), &move));
+        QVERIFY(!move.isAccepted());
+
+        QDropEvent drop({1, 1}, Qt::CopyAction, &systemMime,
+                        Qt::NoButton, Qt::NoModifier);
+        QVERIFY(localPanel.eventFilter(localPanel.fileTable()->viewport(), &drop));
+        QVERIFY(!drop.isAccepted());
+
+        QDragEnterEvent panelEnter({1, 1}, Qt::CopyAction, &systemMime,
+                                   Qt::NoButton, Qt::NoModifier);
+        localPanel.dragEnterEvent(&panelEnter);
+        QVERIFY(!panelEnter.isAccepted());
+        QDragMoveEvent panelMove({1, 1}, Qt::CopyAction, &systemMime,
+                                 Qt::NoButton, Qt::NoModifier);
+        localPanel.dragMoveEvent(&panelMove);
+        QVERIFY(!panelMove.isAccepted());
+
+        QVERIFY(!remotePanel.canAcceptDrag(&remoteSource, true));
+        QCOMPARE(remotePanel.handleDrop(&remoteSource, {}),
+                 FileBrowserPanel::DropRoute::Rejected);
+        QCOMPARE(remote->uploadCalls.load(), 0);
+        QCOMPARE(otherRemote->downloadCalls.load(), 0);
     }
 
     // 远程→本地下载与上传使用同一 TransferTask 提交契约。

@@ -35,6 +35,9 @@ struct TransferItemResult
     // 目标已完成不可回退的原子提交。取消只能阻止提交之后的清理，
     // 调度器必须保留这一事实，恢复也必须跳过该项。
     bool atomicCommitSucceeded = false;
+    // 仅表示覆盖策略明确跳过了已存在的目标；零次传输尝试不等于跳过。
+    // 字段置于聚合末尾，保持既有聚合初始化参数顺序兼容。
+    bool skipped = false;
 };
 
 class TransferExecutor

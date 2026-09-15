@@ -809,10 +809,39 @@ private slots:
 
         QCOMPARE(result.state, TransferState::Succeeded);
         QCOMPARE(result.attempts, 0);
+        QVERIFY(result.skipped);
         QCOMPARE(result.bytes, qint64(0));
         QCOMPARE(channel.uploadCalls, 0);
         QCOMPARE(channel.renameCalls, 0);
         QCOMPARE(channel.removeCalls, 0);
+        QCOMPARE(channel.clearCredentialsCalls, 1);
+    }
+
+    void downloadSkipPolicyLeavesExistingLocalTargetUntouched()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("existing.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("existing")));
+
+        MockChannel channel;
+        channel.statHandler = [](const QString&, TransferFileStat& out) {
+            out = {true, 42, QStringLiteral("remote")};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+        TransferItemRequest request =
+            downloadRequest(QStringLiteral("/existing.bin"), localPath);
+        request.overwrite = OverwritePolicy::Skip;
+
+        const auto result = executor.execute(request, m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(result.attempts, 0);
+        QVERIFY(result.skipped);
+        QCOMPARE(result.bytes, qint64(0));
+        QCOMPARE(readFile(localPath), QByteArray("existing"));
+        QCOMPARE(channel.downloadCalls, 0);
         QCOMPARE(channel.clearCredentialsCalls, 1);
     }
 
@@ -831,6 +860,28 @@ private slots:
         QCOMPARE(result.state, TransferState::Failed);
         QCOMPARE(result.error.code, TransferErrorCode::InvalidPath);
         QCOMPARE(result.attempts, 0);
+        QVERIFY(!result.skipped);
+        QCOMPARE(channel.statCalls, 0);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.clearCredentialsCalls, 1);
+    }
+
+    void missingUploadSourceFailsWithoutBeingMarkedSkipped()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString missingPath = directory.filePath(QStringLiteral("missing.bin"));
+
+        MockChannel channel;
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(missingPath, QStringLiteral("/missing.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::LocalIo);
+        QCOMPARE(result.attempts, 0);
+        QVERIFY(!result.skipped);
         QCOMPARE(channel.statCalls, 0);
         QCOMPARE(channel.uploadCalls, 0);
         QCOMPARE(channel.clearCredentialsCalls, 1);
