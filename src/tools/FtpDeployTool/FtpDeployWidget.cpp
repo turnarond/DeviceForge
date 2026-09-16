@@ -27,7 +27,7 @@
 #include "adapter/ProtocolRegistry.h"
 #include "config/ConfigStore.h"
 #include "transfer/AdapterTransferChannel.h"
-#include "transfer/LocalTransferChannel.h"
+#include "transfer/LocalPanelTransfer.h"
 #include "transfer/TransferExecutor.h"
 #include "transfer/TransferScheduler.h"
 #include <QVBoxLayout>
@@ -288,10 +288,7 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
     const QString adapterProtocol = registryProtocol(task.protocol);
     TransferItemResult result;
     if (adapterProtocol == QStringLiteral("local")) {
-        LocalTransferChannel channel;
-        channel.setProgressCallback(progress);
-        TransferExecutor executor(channel);
-        result = executor.execute(item, cancel);
+        result = executeLocalPanelTransfer(item, cancel, progress);
     } else {
         auto adapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
         if (!adapter) {
@@ -338,6 +335,12 @@ TransferItemResult FtpDeployWidget::executePanelTransfer(
         || adapterProtocol == QStringLiteral("local")) {
         const QString sourcePath = adapterProtocol == QStringLiteral("local")
             ? item.remotePath : item.localPath;
+        if (adapterProtocol == QStringLiteral("local")
+            && localPathsEquivalent(sourcePath, item.localPath)) {
+            return committedWithCleanupFailure(
+                std::move(result), TransferErrorCode::TargetChanged,
+                tr("源和目标指向同一个本地文件，已阻止源文件清理，请复核"));
+        }
         const bool removed = !QFile::exists(sourcePath) || QFile::remove(sourcePath);
         if (removed) {
             result.sourceRemoved = true;

@@ -4,6 +4,7 @@
 
 #include "transfer/TransferExecutor.h"
 #include "transfer/LocalTransferChannel.h"
+#include "transfer/LocalPanelTransfer.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -235,6 +236,67 @@ class TstTransferExecutor : public QObject
     Q_OBJECT
 
 private slots:
+    void localPanelRejectsSameFile_data()
+    {
+        QTest::addColumn<QString>("targetName");
+        QTest::newRow("same-path") << QStringLiteral("source.bin");
+        QTest::newRow("dot-alias") << QStringLiteral("./source.bin");
+#ifdef Q_OS_WIN
+        QTest::newRow("case-alias") << QStringLiteral("SOURCE.BIN");
+#endif
+    }
+
+    void localPanelRejectsSameFile()
+    {
+        QFETCH(QString, targetName);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto source = directory.filePath(QStringLiteral("source.bin"));
+        QVERIFY(writeFile(source, QByteArray("only copy")));
+        const auto result = executeLocalPanelTransfer(
+            downloadRequest(source, directory.filePath(targetName)), m_cancel);
+        QCOMPARE(readFile(source), QByteArray("only copy"));
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::InvalidPath);
+        QCOMPARE(result.attempts, 0);
+        QVERIFY(!result.atomicCommitSucceeded);
+        QVERIFY(!result.sourceRemoved);
+    }
+
+    void localPanelCopiesDifferentPaths()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto source = directory.filePath(QStringLiteral("source.bin"));
+        const auto target = directory.filePath(QStringLiteral("target.bin"));
+        QVERIFY(writeFile(source, QByteArray("only copy")));
+        const auto result = executeLocalPanelTransfer(downloadRequest(source, target), m_cancel);
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(readFile(source), QByteArray("only copy"));
+        QCOMPARE(readFile(target), QByteArray("only copy"));
+    }
+
+    void localPanelRejectsHardLinkAndRechecksIdentity()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto source = directory.filePath(QStringLiteral("source.bin"));
+        const auto target = directory.filePath(QStringLiteral("linked.bin"));
+        QVERIFY(writeFile(source, QByteArray("only copy")));
+        QVERIFY(!localPathsEquivalent(source, target));
+        std::error_code error;
+        std::filesystem::create_hard_link(localFilesystemPath(source),
+                                           localFilesystemPath(target), error);
+        QVERIFY2(!error, error.message().c_str());
+        QVERIFY(localPathsEquivalent(source, target));
+        const auto result = executeLocalPanelTransfer(downloadRequest(source, target), m_cancel);
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::InvalidPath);
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(readFile(source), QByteArray("only copy"));
+        QCOMPARE(readFile(target), QByteArray("only copy"));
+    }
+
     void init() { m_cancel.store(false); }
 
     void retriesThenCommits()
