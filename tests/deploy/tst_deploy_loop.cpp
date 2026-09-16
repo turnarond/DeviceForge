@@ -76,6 +76,32 @@ private:
     std::string m_fixtureFile;   // 临时目录中的上传源文件（真实存在的文件）
 
 private slots:
+    void retryAfterInitialConnectionFailure_stillClearsDirectory() {
+        auto mock = std::make_shared<MockDeployable>();
+        mock->m_connectOk = false;
+        mock->releaseGate = true;
+        ProtocolRegistry::instance()->registerFactory("mock_connect_retry", [mock] { return mock; });
+        FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        backend.bindDevices({{"192.168.1.1", 21, "", "", ""}});
+        backend.bindCredentials({"u", "p"});
+        std::atomic<bool> finished{false};
+        backend.setFinishedCallback([&](bool, const auto&, const auto&) { finished = true; });
+        backend.startUpload({m_fixtureFile}, "/apps", true, false, "mock_connect_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Failed);
+        QCOMPARE(mock->clearCalls.load(), 0);
+        mock->m_connectOk = true;
+        finished = false;
+        backend.resumePreviousFailures();
+        backend.startUpload({m_fixtureFile}, "/apps", true, false, "mock_connect_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Ok);
+        QCOMPARE(mock->clearCalls.load(), 1);
+        QCOMPARE(mock->uploadCalls.load(), 1);
+        backend.OnStop();
+    }
     void explicitBackendRetry_skipsOnlyPreviousDelivery_withoutClearing() {
         auto mock = std::make_shared<MockDeployable>();
         mock->releaseGate = true;

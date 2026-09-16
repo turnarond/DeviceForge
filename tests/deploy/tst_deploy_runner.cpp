@@ -174,6 +174,43 @@ private:
     }
 
 private slots:
+    void sftpFolder_destinationDirectoryBoundary_data() {
+        QTest::addColumn<QString>("destination");
+        QTest::addColumn<QString>("expectedFile");
+        QTest::addColumn<QStringList>("expectedDirectories");
+        QTest::newRow("root") << QString("/") << QString("/good.txt") << QStringList{"/empty"};
+        QTest::newRow("trailing-slash") << QString("/apps/") << QString("/apps/good.txt")
+            << QStringList{"/apps", "/apps/empty"};
+        QTest::newRow("repeated-trailing-slashes") << QString("/apps///") << QString("/apps/good.txt")
+            << QStringList{"/apps", "/apps/empty"};
+    }
+    void sftpFolder_destinationDirectoryBoundary() {
+        QFETCH(QString, destination);
+        QFETCH(QString, expectedFile);
+        QFETCH(QStringList, expectedDirectories);
+        const auto root = m_tmpDir.filePath("sftp-boundary");
+        QVERIFY(QDir().mkpath(root + "/empty"));
+        QFile file(root + "/good.txt");
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("boundary fixture");
+        file.close();
+        ProtocolRegistry::instance()->registerFactory("ssh", [] { return std::make_shared<MockDeployable>(); });
+        auto p = makeParams(1, {root.toStdString()}).front();
+        p.protocol = "ssh";
+        p.remotePath = destination.toStdString();
+        QStringList directories;
+        p.makeDirectory = [&](IProtocolAdapter&, const std::string& path) {
+            directories.push_back(QString::fromStdString(path));
+            // 与远端已有目录确认一致：不能收到没有 basename 的 mkdir 目标。
+            return !path.empty() && path.back() != '/';
+        };
+        DeployJob job(p);
+        job.run();
+        QCOMPARE(job.result().state, DeviceResult::Ok);
+        QCOMPARE(directories, expectedDirectories);
+        QCOMPARE(job.result().deliveredFiles.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(job.result().deliveredFiles.front().remotePath), expectedFile);
+    }
     void nonAtomic_reportVisible() {
         auto p = makeParams(1, {m_goodFile}).front();
         p.channelFactory = memoryDeployChannelFactory(false);

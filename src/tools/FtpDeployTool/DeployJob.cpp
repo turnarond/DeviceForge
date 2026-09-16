@@ -93,7 +93,8 @@ void DeployJob::run()
         : (m_cancelFlag ? m_cancelFlag : &m_fallbackCancel);
     deployable->setCancelFlag(cancel);
     if (isCancelled()) { m_result.state = DeviceResult::Cancelled; return; }
-    if (m_params.clearBefore && !m_params.resume) {
+    // 恢复标志本身不证明曾经交付；首次连接失败后的重试仍须执行清目录。
+    if (m_params.clearBefore && (!m_params.resume || m_params.deliveredFiles.empty())) {
         log("清空远程目录: " + m_params.remotePath);
         if (!deployable->clearRemoteDirectory(m_params.remotePath))
             log("清空目录失败 — " + adapter->lastError());
@@ -114,9 +115,11 @@ void DeployJob::run()
             continue;
         }
         // 保留协议原有目录映射：FTP 包含顶层目录，SFTP 上传目录内容。
-        const auto base = m_params.protocol == "ssh" || m_params.protocol == "sftp"
+        auto base = m_params.protocol == "ssh" || m_params.protocol == "sftp"
             ? m_params.remotePath : joinPath(m_params.remotePath, local.filename().u8string());
-        directories.push_back(base);
+        // 根目录无 basename，也不应 mkdir；普通目录去除尾斜杠后再确认。
+        while (base.size() > 1 && base.back() == '/') base.pop_back();
+        if (base != "/") directories.push_back(base);
         fs::recursive_directory_iterator it(local, ec), end;
         for (; !ec && it != end; it.increment(ec)) {
             if (isCancelled()) break;

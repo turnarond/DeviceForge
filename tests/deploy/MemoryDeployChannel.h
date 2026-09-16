@@ -30,7 +30,9 @@ inline DeployJob::Params::ChannelFactory memoryDeployChannelFactory(
             QMutexLocker lock(&storage->mutex);
             for (auto i = storage->files.cbegin(); i != storage->files.cend(); ++i) {
                 const auto slash = i.key().lastIndexOf('/');
-                if (i.key().left(slash) == parent)
+                const auto fileParent = slash == 0 ? QStringLiteral("/")
+                    : (slash < 0 ? QStringLiteral(".") : i.key().left(slash));
+                if (fileParent == parent)
                     out.push_back({i.key().mid(slash + 1), quint64(i.value().size()), {}});
             }
             return true;
