@@ -104,6 +104,8 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）。
 
+**v2.9 传输可靠性内核（2026-09）**：双栏上传、下载、本地复制/移动和批量部署统一经 `TransferScheduler → TransferExecutor → ITransferChannel`；支持瞬时错误重试、SHA-256 校验、临时文件、原子提交、非原子降级告警、项目级取消、已交付文件恢复跳过和报告 `nonAtomic` 字段。`IProtocolAdapter`/`IDeployable` ABI 保持不变。
+
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
 **v2.5 功能补完（2026-07-26）**：
