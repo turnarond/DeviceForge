@@ -90,7 +90,7 @@ private slots:
         const QStringList lines = splitLines(renderReportCsv(report));
         QCOMPARE(lines.size(), 3);
         QCOMPARE(lines.at(0),
-                 QStringLiteral("device,result,failed_files,last_error,duration_ms,started_at"));
+                 QStringLiteral("device,result,failed_files,last_error,duration_ms,started_at,non_atomic"));
         QVERIFY(lines.at(1).startsWith(QStringLiteral("192.168.1.10:21,ok,")));
         QVERIFY(lines.at(2).startsWith(QStringLiteral("192.168.1.11:21,failed,")));
     }
@@ -120,8 +120,8 @@ private slots:
         const QString csv = QString::fromStdString(renderReportCsv(wrapOne(r, "sftp", 2)));
         QCOMPARE(csv,
                  QStringLiteral(
-                     "device,result,failed_files,last_error,duration_ms,started_at\n"
-                     "\"dev,\"\"x\"\"\",failed,,\"553 put failed\ncheck disk\",1500,\n"));
+                     "device,result,failed_files,last_error,duration_ms,started_at,non_atomic\n"
+                     "\"dev,\"\"x\"\"\",failed,,\"553 put failed\ncheck disk\",1500,,false\n"));
     }
 
     // 断言 4：html 输出含 <table> 表格结构；Cancelled 态行着色 class="cancelled"；
@@ -149,7 +149,7 @@ private slots:
         QVERIFY(html.contains(QStringLiteral("<table>")));
         QVERIFY(html.contains(QStringLiteral("</table>")));
         QVERIFY(html.contains(QStringLiteral("<tr><th>device</th>")));   // 首列表头
-        QCOMPARE(countOccurrences(html, QStringLiteral("<th>")), 6);     // 六列
+        QCOMPARE(countOccurrences(html, QStringLiteral("<th>")), 7);     // 原六列末尾追加非原子标志
         QVERIFY(html.contains(QStringLiteral("class=\"cancelled\"")));   // 取消态着色类
         QVERIFY(html.contains(QStringLiteral("&lt;a&gt; &amp; &lt;b&gt;")));
         QVERIFY(!html.contains(QStringLiteral("<a>")));                  // 原始尖括号禁止出现
@@ -162,12 +162,12 @@ private slots:
 
         const QString csv = QString::fromStdString(renderReportCsv(report));
         QCOMPARE(csv,
-                 QStringLiteral("device,result,failed_files,last_error,duration_ms,started_at\n"));
+                 QStringLiteral("device,result,failed_files,last_error,duration_ms,started_at,non_atomic\n"));
 
         const QString html = QString::fromStdString(renderReportHtml(report));
         QVERIFY(html.contains(QStringLiteral("<table>")));
         QVERIFY(html.contains(QStringLiteral("</table>")));
-        QCOMPARE(countOccurrences(html, QStringLiteral("<th>")), 6);
+        QCOMPARE(countOccurrences(html, QStringLiteral("<th>")), 7);
         QVERIFY(!html.contains(QStringLiteral("<td>")));                 // 无数据行
     }
 };

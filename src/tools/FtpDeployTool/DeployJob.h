@@ -24,6 +24,9 @@
 
 #include "framework/DeviceInfo.h"
 #include "tools/FtpDeployTool/DeployReport.h"
+#include "transfer/TransferExecutor.h"
+#include "adapter/IProtocolAdapter.h"
+#include <memory>
 
 // 单台设备部署事务：Params 携带全部输入，run() 执行并产出 DeviceResult。
 // 取消语义：设备间跳过判断归调度方（后端检查 globalCancel 后再提交下一台），
@@ -44,6 +47,13 @@ public:
         std::function<void(const std::string&)> logSink;  // 日志出口（Job 内统一注入
                                                           // "[ip:port] " 前缀，业务文案不变）
         std::function<void(int)> progressSink;            // 进度出口（单台整体百分比 0-100）
+        using ChannelFactory = std::function<std::unique_ptr<ITransferChannel>(
+            std::shared_ptr<IProtocolAdapter>)>;
+        ChannelFactory channelFactory; // 内部集成测试注入缝；生产使用 AdapterTransferChannel
+        std::function<bool(IProtocolAdapter&, const std::string&)> makeDirectory;
+        TransferExecutor::Sleeper retrySleeper;
+        bool resume = false;
+        std::vector<DeployDeliveredFile> deliveredFiles;
     };
 
     explicit DeployJob(Params params);

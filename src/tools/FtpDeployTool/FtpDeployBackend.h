@@ -15,6 +15,7 @@
 #pragma once
 #include "framework/ToolBackend.h"
 #include "tools/FtpDeployTool/DeployReport.h"
+#include "tools/FtpDeployTool/DeployJob.h"
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -59,6 +60,11 @@ public:
                      bool useFtps = false,
                      int port = 0);
     void cancelUpload();
+    // 显式恢复下一次请求；startUpload 消费一次，普通部署始终重新执行。
+    void resumePreviousFailures() { m_resumeNextUpload = true; }
+    void setTransferChannelFactory(DeployJob::Params::ChannelFactory factory) {
+        m_channelFactory = std::move(factory);
+    }
 
     // 最近一轮批量部署报告（v2.8 Task 5）：startUpload 工作线程在 Runner::run()
     // 返回后缓存，供 Widget「导出报告」事后读取（CSV/HTML 渲染见 DeployReport.h）。
@@ -99,6 +105,9 @@ private:
     // 最近一轮报告缓存（v2.8 Task 5）：工作线程写、GUI 线程读，互斥保证可见性
     mutable std::mutex m_reportMutex;
     DeployReport m_lastReport;
+    bool m_resumeNextUpload = false;
+    std::string m_previousRequestKey;
+    DeployJob::Params::ChannelFactory m_channelFactory;
 
     std::function<void(int)> m_progressCb;
     std::function<void(const std::string& key, int pct)> m_deviceProgressCb;

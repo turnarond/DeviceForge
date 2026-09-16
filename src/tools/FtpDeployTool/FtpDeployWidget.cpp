@@ -793,6 +793,7 @@ void FtpDeployWidget::onRetryFailedClicked()
     // 沿用上次请求缓存（文件/目录/选项/协议），凭证取设备总线当前值；
     // 走与普通部署完全相同的 startDeployment → startUpload 链路
     appendLog(QString("重试 %1 台失败设备...").arg(failedDevices.size()));
+    m_backend->resumePreviousFailures();
     startDeployment(failedDevices, m_lastFiles,
                     QString::fromStdString(m_lastRemotePath),
                     m_lastClearBefore, m_lastRebootAfter,

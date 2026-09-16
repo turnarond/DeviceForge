@@ -85,6 +85,7 @@ void appendCsvRecord(std::string& out, const DeviceResult& r)
     out += std::to_string(r.durationMs);
     out.push_back(',');
     out += csvEscape(formatTimestamp(r.startedAt));
+    out += r.nonAtomic ? ",true" : ",false";
     out.push_back('\n');
 }
 
@@ -136,7 +137,7 @@ std::string deviceStateToken(DeviceResult::State state)
 std::string renderReportCsv(const DeployReport& report)
 {
     static const char* kHeader =
-        "device,result,failed_files,last_error,duration_ms,started_at\n";
+        "device,result,failed_files,last_error,duration_ms,started_at,non_atomic\n";
 
     std::string out(kHeader);
     for (const auto& r : report.results)
@@ -169,7 +170,7 @@ std::string renderReportHtml(const DeployReport& report)
          + " | concurrency: " + std::to_string(report.concurrency) + "</p>\n";
     out += "<table>\n"
            "<tr><th>device</th><th>result</th><th>failed_files</th>"
-           "<th>last_error</th><th>duration_ms</th><th>started_at</th></tr>\n";
+           "<th>last_error</th><th>duration_ms</th><th>started_at</th><th>non_atomic</th></tr>\n";
 
     for (const auto& r : report.results) {
         const std::string token = deviceStateToken(r.state);
@@ -186,6 +187,7 @@ std::string renderReportHtml(const DeployReport& report)
         out += "<td>" + htmlMultiline(r.lastError) + "</td>";
         out += "<td>" + std::to_string(r.durationMs) + "</td>";
         out += "<td>" + htmlEscape(formatTimestamp(r.startedAt)) + "</td>";
+        out += r.nonAtomic ? "<td>true</td>" : "<td>false</td>";
         out += "</tr>\n";
     }
 
