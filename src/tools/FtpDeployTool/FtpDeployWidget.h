@@ -18,6 +18,7 @@
 #include "framework/DeviceInfo.h"
 #include <memory>
 #include <atomic>
+#include <functional>
 #include <vector>
 #include <string>
 #include <QString>
@@ -28,6 +29,9 @@
 #include <QSplitter>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QHash>
+#include <QMutex>
+#include <QUuid>
 
 class FtpDeployBackend;
 class DeviceBusWidget;
@@ -35,13 +39,18 @@ class MultiProgressWidget;
 class FileBrowserPanel;
 class RemoteFileSource;
 class QTimer;
+class TransferScheduler;
+struct TransferEvent;
+struct TransferItemRequest;
+struct TransferItemResult;
+struct TransferTask;
 
 class FtpDeployWidget : public ToolWidget {
     Q_OBJECT
 
 public:
     explicit FtpDeployWidget(QWidget* parent = nullptr);
-    ~FtpDeployWidget() override = default;
+    ~FtpDeployWidget() override;
 
     // --- ToolWidget 实现 ---
     QString toolId() const override { return "com.deviceforge.ftp.deploy"; }
@@ -98,6 +107,16 @@ private:
     void detachLeftPanel();
     // Task 3：设备列表同步到两面板源选择器（blockSignals 防循环）
     void populatePanelDeviceCombos();
+    void setupTransferScheduler();
+    QUuid submitPanelTransfer(TransferTask task);
+    TransferItemResult executePanelTransfer(const TransferTask& task,
+                                            int itemIndex,
+                                            const TransferItemRequest& item,
+                                            std::atomic_bool& cancel,
+                                            const std::function<void(int)>& progress);
+    AuthInfo transferCredentials(const QString& key) const;
+    void handleTransferEvent(const TransferEvent& event);
+    void clearTransferCredential(const QUuid& taskId);
 
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*   m_deviceBus = nullptr;
@@ -156,4 +175,11 @@ private:
 
     // 分割器
     QSplitter* m_splitter = nullptr;
+
+    // 双栏只持有提交/取消函数和事件快照；worker 及协议对象均归
+    // Scheduler 所有。凭证以短期引用键与任务 ID 关联，终态立即擦除。
+    std::unique_ptr<TransferScheduler> m_transferScheduler;
+    mutable QMutex m_transferCredentialMutex;
+    QHash<QString, AuthInfo> m_transferCredentialVault;
+    QHash<QUuid, QString> m_transferCredentialKeys;
 };

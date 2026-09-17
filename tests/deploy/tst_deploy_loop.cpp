@@ -7,6 +7,7 @@
 #include "framework/DeviceInfo.h"
 #include "tools/FtpDeployTool/FtpDeployBackend.h"
 #include "tools/FtpDeployTool/DeploymentRunner.h"
+#include "MemoryDeployChannel.h"
 #include <atomic>
 #include <functional>
 #include <map>
@@ -37,7 +38,7 @@ public:
     }
     void setCancelFlag(std::atomic<bool>* f) override { m_flag = f; }
 
-    bool uploadFile(const std::string&, const std::string&) override {
+    bool uploadFile(const std::string& local, const std::string&) override {
         ++uploadCalls;
         if (m_progressFn) m_progressFn(50);
         // 确定性闸门：releaseGate=false 时阻塞（模拟慢传输），
@@ -45,7 +46,7 @@ public:
         while (!releaseGate.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        return m_uploadOk;
+        return m_uploadOk && local != failedLocal;
     }
     bool uploadFolder(const std::string&, const std::string&) override {
         ++uploadCalls;
@@ -55,13 +56,15 @@ public:
         }
         return m_uploadOk;
     }
-    bool clearRemoteDirectory(const std::string&) override { return true; }
+    bool clearRemoteDirectory(const std::string&) override { ++clearCalls; return true; }
 
     bool m_connectOk = true;
     bool m_uploadOk = true;
     std::string m_error;
     std::atomic<bool>* m_flag = nullptr;
     std::atomic<int> uploadCalls{0};
+    std::atomic<int> clearCalls{0};
+    std::string failedLocal;
     std::atomic<bool> releaseGate{false};
     std::function<void(int)> m_progressFn;
 };
@@ -73,6 +76,68 @@ private:
     std::string m_fixtureFile;   // 临时目录中的上传源文件（真实存在的文件）
 
 private slots:
+    void retryAfterInitialConnectionFailure_stillClearsDirectory() {
+        auto mock = std::make_shared<MockDeployable>();
+        mock->m_connectOk = false;
+        mock->releaseGate = true;
+        ProtocolRegistry::instance()->registerFactory("mock_connect_retry", [mock] { return mock; });
+        FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        backend.bindDevices({{"192.168.1.1", 21, "", "", ""}});
+        backend.bindCredentials({"u", "p"});
+        std::atomic<bool> finished{false};
+        backend.setFinishedCallback([&](bool, const auto&, const auto&) { finished = true; });
+        backend.startUpload({m_fixtureFile}, "/apps", true, false, "mock_connect_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Failed);
+        QCOMPARE(mock->clearCalls.load(), 0);
+        mock->m_connectOk = true;
+        finished = false;
+        backend.resumePreviousFailures();
+        backend.startUpload({m_fixtureFile}, "/apps", true, false, "mock_connect_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Ok);
+        QCOMPARE(mock->clearCalls.load(), 1);
+        QCOMPARE(mock->uploadCalls.load(), 1);
+        backend.OnStop();
+    }
+    void explicitBackendRetry_skipsOnlyPreviousDelivery_withoutClearing() {
+        auto mock = std::make_shared<MockDeployable>();
+        mock->releaseGate = true;
+        const std::string bad = m_tmpDir.filePath("retry-bad.txt").toStdString();
+        QFile file(QString::fromStdString(bad));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("retry fixture");
+        file.close();
+        mock->failedLocal = bad;
+        ProtocolRegistry::instance()->registerFactory("mock_retry", [mock] { return mock; });
+        FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        backend.bindDevices({{"192.168.1.1", 21, "", "", ""}});
+        backend.bindCredentials({"u", "p"});
+        std::atomic<bool> finished{false};
+        backend.setFinishedCallback([&](bool, const auto&, const auto&) { finished = true; });
+        backend.startUpload({m_fixtureFile, bad}, "/apps", true, false, "mock_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Failed);
+        QCOMPARE(mock->uploadCalls.load(), 2);
+        mock->failedLocal.clear();
+        finished = false;
+        backend.resumePreviousFailures();
+        backend.startUpload({m_fixtureFile, bad}, "/apps", true, false, "mock_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Ok);
+        QCOMPARE(mock->uploadCalls.load(), 3);
+        QCOMPARE(mock->clearCalls.load(), 1);
+        finished = false;
+        backend.startUpload({m_fixtureFile, bad}, "/apps", true, false, "mock_retry");
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(mock->uploadCalls.load(), 5);
+        QCOMPARE(mock->clearCalls.load(), 2);
+        backend.OnStop();
+    }
     void initTestCase() {
         QVERIFY(m_tmpDir.isValid());
         m_fixtureFile = m_tmpDir.filePath("a.txt").toStdString();
@@ -89,6 +154,7 @@ private slots:
             [mock] { return std::shared_ptr<IProtocolAdapter>(mock, [](IProtocolAdapter*) {}); });
         mock->releaseGate = true;  // 本用例不注入取消，直接放闸
         FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"192.168.1.1", 0, "", "", ""}, {"192.168.1.2", 0, "", "", ""}});
         backend.bindCredentials({"user", "pass"});
@@ -115,6 +181,7 @@ private slots:
             [mock] { return std::shared_ptr<IProtocolAdapter>(mock, [](IProtocolAdapter*) {}); });
         mock->releaseGate = true;  // 本用例不注入取消，直接放闸
         FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"192.168.1.1", 0, "", "", ""}, {"192.168.1.2", 0, "", "", ""}});
         backend.bindCredentials({"u", "p"});
@@ -135,6 +202,7 @@ private slots:
         ProtocolRegistry::instance()->registerFactory("mock_cancel",
             [mock] { return std::shared_ptr<IProtocolAdapter>(mock, [](IProtocolAdapter*) {}); });
         FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"192.168.1.1", 0, "", "", ""}, {"192.168.1.2", 0, "", "", ""}});
         backend.bindCredentials({"u", "p"});
@@ -144,15 +212,17 @@ private slots:
             finished = true; ok = s; fail = f;
         });
         // 确定性取消验证：第一台在闸门处挂起 → 注入取消 → 放闸 →
-        // 第一台完成、第二台被取消跳过（uploadCalls 必须 == 1）
+        // 第一台尚未校验/提交即取消，第二台被跳过（uploadCalls 必须 == 1）
         backend.startUpload({m_fixtureFile}, "/apps", false, false, "mock_cancel");
         QTRY_VERIFY_WITH_TIMEOUT(mock->uploadCalls.load() >= 1, 5000);  // 第一台已进入上传（挂起中）
         backend.cancelUpload();
         mock->releaseGate = true;                                        // 放闸，第一台完成
         QTRY_VERIFY_WITH_TIMEOUT(finished, 5000);
         QCOMPARE(mock->uploadCalls.load(), 1);                           // 第二台被取消跳过
-        QCOMPARE(ok.size(), 1);
+        QCOMPARE(ok.size(), 0);
         QCOMPARE(fail.size(), 0);
+        for (const auto& result : backend.lastReport().results)
+            QCOMPARE(result.state, DeviceResult::Cancelled);
         backend.OnStop();
     }
 
@@ -167,6 +237,7 @@ private slots:
         mock->releaseGate = true;
 
         FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"10.0.0.1", 21, "", "", ""}, {"10.0.0.2", 21, "", "", ""}});
         backend.bindCredentials({"u", "p"});

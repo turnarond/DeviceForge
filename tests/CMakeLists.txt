@@ -1,5 +1,78 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql SerialBus)
 
+# --- 可靠传输基础类型测试（状态机、退避与错误分类）---
+add_executable(tst_transfer_types
+    transfer/tst_transfer_types.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_types PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_types PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_types COMMAND tst_transfer_types)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_types PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- FTP/SFTP 可靠传输通道包装契约测试（Mock Adapter，不连接服务器）---
+add_executable(tst_transfer_channel
+    transfer/tst_transfer_channel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+)
+target_include_directories(tst_transfer_channel PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_channel PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_transfer_channel COMMAND tst_transfer_channel)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_channel PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
+
+# --- 单文件可靠传输执行器（重试、取消、目标变更与原子提交）---
+add_executable(tst_transfer_executor
+    transfer/tst_transfer_executor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_executor PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_executor PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_executor COMMAND tst_transfer_executor)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_executor PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- 按设备串行传输调度器（FIFO、并发、取消、事件节流与生命周期）---
+add_executable(tst_transfer_scheduler
+    transfer/tst_transfer_scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_transfer_scheduler PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_transfer_scheduler PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_transfer_scheduler COMMAND tst_transfer_scheduler)
+if(_qt_bin_dir)
+    set_tests_properties(tst_transfer_scheduler PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 set(NETRELAY_DIR ${CMAKE_SOURCE_DIR}/src/tools/NetRelayTool)
 
 add_executable(tst_nrec
@@ -132,6 +205,10 @@ endif()
 #     （ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
 add_executable(tst_deploy_loop
     deploy/tst_deploy_loop.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
@@ -145,13 +222,14 @@ target_include_directories(tst_deploy_loop PRIVATE
 )
 target_link_libraries(tst_deploy_loop PRIVATE
     Qt6::Core Qt6::Concurrent Qt6::Sql Qt6::Test
+    Qt6::Network ${LIBSSH2_LIB}
     lwserverbase
     ${LIBCURL_IMPL_LIB}
 )
 add_test(NAME tst_deploy_loop COMMAND tst_deploy_loop)
 if(_qt_bin_dir)
     set_tests_properties(tst_deploy_loop PROPERTIES
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()
 
 # --- RemoteFileModel 排序语义测试（纯 model，无网络）---
@@ -333,6 +411,11 @@ endif()
 #     libcurl 导入库（仅满足链接，测试走 mock 适配器不触网）
 add_executable(tst_deploy_runner
     deploy/tst_deploy_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
@@ -346,9 +429,10 @@ target_include_directories(tst_deploy_runner PRIVATE
 target_link_libraries(tst_deploy_runner PRIVATE
     Qt6::Core Qt6::Test
     ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB} lwlog Qt6::Network
 )
 add_test(NAME tst_deploy_runner COMMAND tst_deploy_runner)
 if(_qt_bin_dir)
     set_tests_properties(tst_deploy_runner PROPERTIES
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()

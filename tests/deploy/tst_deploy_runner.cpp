@@ -33,6 +33,7 @@
 #include "framework/DeviceInfo.h"
 #include "tools/FtpDeployTool/DeployJob.h"
 #include "tools/FtpDeployTool/DeploymentRunner.h"
+#include "MemoryDeployChannel.h"
 
 // ---------------------------------------------------------------------------
 // Mock 部署通道：connect/upload 全部本地空转，仅统计调用与并发峰值。
@@ -52,11 +53,13 @@ public:
     static std::set<std::string> s_failFiles;  // 命中文件名的 uploadFile 返回 false
     static std::atomic<bool> s_gate;           // false = uploadFile 挂起等待放闸
     static int s_progressBurst;                // 成功路径连发的进度回调数（≥1）
+    static std::atomic<int> s_transientFailures;
+    static std::atomic<int> s_clearCalls;
 
     std::string protocolId() const override { return "mockrun"; }
-    bool connect(const DeviceInfo&, const AuthInfo&) override {
+    bool connect(const DeviceInfo&, const AuthInfo& auth) override {
         ++s_connectCalls;
-        return true;
+        return !auth.password.empty();
     }
     void disconnect() override {}
     bool isConnected() const override { return false; }
@@ -88,6 +91,12 @@ public:
         --s_active;
         ++s_uploadCalls;
 
+        if (s_transientFailures.load() > 0) {
+            --s_transientFailures;
+            m_error = "Connection reset by peer";
+            return false;
+        }
+
         std::string name = localPath;
         const size_t slash = name.find_last_of("/\\");
         if (slash != std::string::npos) name = name.substr(slash + 1);
@@ -110,7 +119,7 @@ public:
         ++s_uploadCalls;
         return true;
     }
-    bool clearRemoteDirectory(const std::string&) override { return true; }
+    bool clearRemoteDirectory(const std::string&) override { ++s_clearCalls; return true; }
     void setProgressCallback(std::function<void(int)> cb) override { m_progressCb = std::move(cb); }
     void setCancelFlag(std::atomic<bool>* flag) override { m_flag = flag; }
 
@@ -127,6 +136,8 @@ int MockDeployable::s_uploadMs = 0;
 std::set<std::string> MockDeployable::s_failFiles;
 std::atomic<bool> MockDeployable::s_gate{true};
 int MockDeployable::s_progressBurst = 1;
+std::atomic<int> MockDeployable::s_transientFailures{0};
+std::atomic<int> MockDeployable::s_clearCalls{0};
 
 // ---------------------------------------------------------------------------
 class TstDeployRunner : public QObject {
@@ -149,6 +160,7 @@ private:
             p.files = files;
             p.remotePath = "/apps";
             p.protocol = "mockrun";
+            p.channelFactory = memoryDeployChannelFactory();
             params.push_back(std::move(p));
         }
         return params;
@@ -162,6 +174,141 @@ private:
     }
 
 private slots:
+    void sftpFolder_destinationDirectoryBoundary_data() {
+        QTest::addColumn<QString>("destination");
+        QTest::addColumn<QString>("expectedFile");
+        QTest::addColumn<QStringList>("expectedDirectories");
+        QTest::newRow("root") << QString("/") << QString("/good.txt") << QStringList{"/empty"};
+        QTest::newRow("trailing-slash") << QString("/apps/") << QString("/apps/good.txt")
+            << QStringList{"/apps", "/apps/empty"};
+        QTest::newRow("repeated-trailing-slashes") << QString("/apps///") << QString("/apps/good.txt")
+            << QStringList{"/apps", "/apps/empty"};
+    }
+    void sftpFolder_destinationDirectoryBoundary() {
+        QFETCH(QString, destination);
+        QFETCH(QString, expectedFile);
+        QFETCH(QStringList, expectedDirectories);
+        const auto root = m_tmpDir.filePath("sftp-boundary");
+        QVERIFY(QDir().mkpath(root + "/empty"));
+        QFile file(root + "/good.txt");
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("boundary fixture");
+        file.close();
+        ProtocolRegistry::instance()->registerFactory("ssh", [] { return std::make_shared<MockDeployable>(); });
+        auto p = makeParams(1, {root.toStdString()}).front();
+        p.protocol = "ssh";
+        p.remotePath = destination.toStdString();
+        QStringList directories;
+        p.makeDirectory = [&](IProtocolAdapter&, const std::string& path) {
+            directories.push_back(QString::fromStdString(path));
+            // 与远端已有目录确认一致：不能收到没有 basename 的 mkdir 目标。
+            return !path.empty() && path.back() != '/';
+        };
+        DeployJob job(p);
+        job.run();
+        QCOMPARE(job.result().state, DeviceResult::Ok);
+        QCOMPARE(directories, expectedDirectories);
+        QCOMPARE(job.result().deliveredFiles.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(job.result().deliveredFiles.front().remotePath), expectedFile);
+    }
+    void nonAtomic_reportVisible() {
+        auto p = makeParams(1, {m_goodFile}).front();
+        p.channelFactory = memoryDeployChannelFactory(false);
+        DeployJob job(p);
+        job.run();
+        QCOMPARE(job.result().state, DeviceResult::Ok);
+        QVERIFY(job.result().nonAtomic);
+        QVERIFY(renderReportCsv({"mockrun", 1, {job.result()}}).find("non_atomic") != std::string::npos);
+        QVERIFY(renderReportHtml({"mockrun", 1, {job.result()}}).find("non_atomic") != std::string::npos);
+    }
+
+    void explicitResume_skipsDeliveredFiles() {
+        auto p = makeParams(1, {m_goodFile, m_badFile}).front();
+        p.clearBefore = true;
+        MockDeployable::s_failFiles.insert("bad.txt");
+        DeployJob first(p);
+        first.run();
+        QCOMPARE(first.result().state, DeviceResult::Failed);
+        QCOMPARE(first.result().deliveredFiles.size(), size_t(1));
+        MockDeployable::s_failFiles.clear();
+        p.resume = true;
+        p.deliveredFiles = first.result().deliveredFiles;
+        DeployJob retry(p);
+        retry.run();
+        QCOMPARE(retry.result().state, DeviceResult::Ok);
+        QCOMPARE(MockDeployable::s_uploadCalls.load(), 3);
+        QCOMPARE(MockDeployable::s_clearCalls.load(), 1);
+        p.resume = false;
+        DeployJob fresh(p);
+        fresh.run();
+        QCOMPARE(MockDeployable::s_uploadCalls.load(), 5);
+        QCOMPARE(MockDeployable::s_clearCalls.load(), 2);
+    }
+
+    void interruptedUpload_reconnectsWithPrivateCredentials() {
+        auto p = makeParams(1, {m_goodFile, m_badFile}).front();
+        std::vector<int> delays;
+        p.retrySleeper = [&](int delay) { delays.push_back(delay); };
+        MockDeployable::s_transientFailures = 1;
+        DeployJob job(p);
+        job.run();
+        QCOMPARE(job.result().state, DeviceResult::Ok);
+        QCOMPARE(job.result().deliveredFiles.size(), size_t(2));
+        QCOMPARE(MockDeployable::s_uploadCalls.load(), 3);
+        QCOMPARE(delays.size(), size_t(1));
+        QVERIFY(delays.front() > 0);
+    }
+
+    void cancellationAfterCommit_keepsDeliveredFact_data() {
+        QTest::addColumn<bool>("remaining");
+        QTest::newRow("single-delivered") << false;
+        QTest::newRow("remaining-cancelled") << true;
+    }
+    void cancellationAfterCommit_keepsDeliveredFact() {
+        QFETCH(bool, remaining);
+        std::atomic<bool> cancel{false};
+        auto p = makeParams(1, remaining ? std::vector<std::string>{m_goodFile, m_badFile}
+                                        : std::vector<std::string>{m_goodFile}).front();
+        p.globalCancel = &cancel;
+        p.channelFactory = memoryDeployChannelFactory(true, [&] { cancel = true; });
+        DeployJob job(p);
+        job.run();
+        QCOMPARE(job.result().state, remaining ? DeviceResult::Cancelled : DeviceResult::Ok);
+        QCOMPARE(job.result().deliveredFiles.size(), size_t(1));
+        QCOMPARE(job.result().deliveredFiles.front().remotePath, std::string("/apps/good.txt"));
+        QCOMPARE(MockDeployable::s_uploadCalls.load(), 1);
+    }
+
+    void folderResume_keepsEmptyDirectoriesAndSkipsDeliveredLeaves() {
+        const QString root = m_tmpDir.filePath("tree");
+        QVERIFY(QDir().mkpath(root + "/empty"));
+        QVERIFY(QDir().mkpath(root + "/nested"));
+        const auto good = (root + "/good.txt").toStdString();
+        const auto bad = (root + "/nested/bad.txt").toStdString();
+        for (const auto& name : {good, bad}) {
+            QFile file(QString::fromStdString(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("folder fixture");
+        }
+        auto p = makeParams(1, {root.toStdString()}).front();
+        std::set<std::string> made;
+        p.makeDirectory = [&](IProtocolAdapter&, const std::string& path) { made.insert(path); return true; };
+        MockDeployable::s_failFiles.insert("bad.txt");
+        DeployJob first(p);
+        first.run();
+        QCOMPARE(first.result().state, DeviceResult::Failed);
+        QVERIFY(made.count("/apps/tree/empty") == 1);
+        QCOMPARE(first.result().deliveredFiles.size(), size_t(1));
+        QCOMPARE(first.result().deliveredFiles.front().remotePath, std::string("/apps/tree/good.txt"));
+        p.resume = true;
+        p.deliveredFiles = first.result().deliveredFiles;
+        MockDeployable::s_failFiles.clear();
+        DeployJob second(p);
+        second.run();
+        QCOMPARE(second.result().state, DeviceResult::Ok);
+        QCOMPARE(second.result().deliveredFiles.size(), size_t(2));
+        QCOMPARE(MockDeployable::s_uploadCalls.load(), 3);
+    }
     // 每个用例前重置 mock 状态并注册 mock 工厂（QtTest 经元对象调用，必须在 slots 段）
     void init() {
         MockDeployable::s_active = 0;
@@ -172,6 +319,8 @@ private slots:
         MockDeployable::s_failFiles.clear();
         MockDeployable::s_gate = true;
         MockDeployable::s_progressBurst = 1;
+        MockDeployable::s_transientFailures = 0;
+        MockDeployable::s_clearCalls = 0;
         ProtocolRegistry::instance()->registerFactory("mockrun", [] {
             return std::shared_ptr<IProtocolAdapter>(new MockDeployable);
         });

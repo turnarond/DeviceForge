@@ -10,7 +10,7 @@ class IDeployable {
 public:
     virtual ~IDeployable() = default;
 
-    // 上传单个文件到远程路径（remotePath 含文件名）
+    // 上传单个文件到远程路径（localPath 为 UTF-8，remotePath 含文件名）
     virtual bool uploadFile(const std::string& localPath, const std::string& remotePath) = 0;
 
     // 递归上传整个目录到远程路径（目录本身作为远程子目录创建）

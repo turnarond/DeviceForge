@@ -11,6 +11,12 @@
 #include <string>
 #include <vector>
 
+struct DeployDeliveredFile {
+    std::string localPath;
+    std::string remotePath;
+    bool nonAtomic = false;
+};
+
 struct DeviceResult {
     enum State { Ok, Failed, Cancelled };
 
@@ -20,6 +26,8 @@ struct DeviceResult {
     std::string lastError;                  // 适配器错误摘要
     long long durationMs = 0;
     std::time_t startedAt = 0;
+    bool nonAtomic = false;
+    std::vector<DeployDeliveredFile> deliveredFiles;
 };
 
 struct DeployReport {
@@ -31,6 +39,6 @@ struct DeployReport {
 // 结果态 → 稳定小写令牌（CSV 列值与 HTML class 同源）：ok / failed / cancelled
 std::string deviceStateToken(DeviceResult::State state);
 
-// 统一列顺序：device,result,failed_files,last_error,duration_ms,started_at
+// 统一列顺序：device,result,failed_files,last_error,duration_ms,started_at,non_atomic
 std::string renderReportCsv(const DeployReport& report);
 std::string renderReportHtml(const DeployReport& report);

@@ -1,4 +1,5 @@
 #include "SshAdapter.h"
+#include "adapter/LocalFileOpen.h"
 #include <lwlog/lwlog.h>
 #include <filesystem>  // planFolderUpload 递归遍历（std::filesystem）
 
@@ -14,6 +15,12 @@
 // TOFU 已接受主机指纹集合 — 进程级静态存储，跨适配器实例共享
 QSet<QString> SshAdapter::s_knownHosts;
 QMutex        SshAdapter::s_knownHostsMutex;
+
+bool adapter_internal::sftpTransferCancellationRequested(
+    const std::atomic<bool>* cancelFlag)
+{
+    return cancelFlag && cancelFlag->load();
+}
 
 // ============================================================
 // 构造 / 析构
@@ -345,7 +352,8 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
 
     // 打开本地文件读取
-    FILE* localFile = fopen(localPath.c_str(), "rb");
+    FILE* localFile = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Read);
     if (!localFile) { m_lastError = "无法打开本地文件: " + localPath; return false; }
     _fseeki64(localFile, 0, SEEK_END);
     uint64_t fileSize = static_cast<uint64_t>(_ftelli64(localFile));
@@ -363,7 +371,11 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
     uint64_t sent = 0;
     bool ok = true;
     while (sent < fileSize) {
-        if (m_sftpCancelFlag && *m_sftpCancelFlag) { ok = false; m_lastError = "上传已取消"; break; }
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "上传已取消";
+            break;
+        }
         size_t n = fread(buf, 1, sizeof(buf), localFile);
         if (n == 0) {
             if (ferror(localFile)) { ok = false; m_lastError = "SFTP 上传读取本地文件失败"; }
@@ -393,6 +405,7 @@ bool SshAdapter::sftpUploadFile(const std::string& localPath, const std::string&
 bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::string& localPath)
 {
     if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    m_lastError.clear();
 
     LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
         LIBSSH2_FXF_READ, 0);
@@ -403,16 +416,31 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
     libssh2_sftp_fstat(remoteFile, &attrs);
     uint64_t fileSize = attrs.filesize;
 
-    FILE* localFile = fopen(localPath.c_str(), "wb");
+    FILE* localFile = adapter_internal::openLocalFileUtf8(
+        localPath, adapter_internal::LocalFileOpenMode::Write);
     if (!localFile) { libssh2_sftp_close(remoteFile); m_lastError = "无法创建本地文件"; return false; }
 
     char buf[8192];
     uint64_t received = 0;
     bool ok = true;
     while (true) {
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "下载已取消";
+            break;
+        }
         ssize_t n = libssh2_sftp_read(remoteFile, buf, sizeof(buf));
-        if (n < 0) { ok = false; break; }
+        if (n < 0) {
+            ok = false;
+            m_lastError = "SFTP 下载读取失败";
+            break;
+        }
         if (n == 0) break;
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "下载已取消";
+            break;
+        }
         if (fwrite(buf, 1, n, localFile) != static_cast<size_t>(n)) {
             ok = false;
             m_lastError = "SFTP 下载写入失败（磁盘空间不足？）";
@@ -427,7 +455,7 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
 
     fclose(localFile);
     libssh2_sftp_close(remoteFile);
-    if (!ok) m_lastError = "SFTP 下载读取失败";
+    if (!ok && m_lastError.empty()) m_lastError = "SFTP 下载读取失败";
     return ok;
 }
 
@@ -506,17 +534,18 @@ std::vector<SftpPlanItem> SshAdapter::planFolderUpload(const std::string& localR
     std::vector<SftpPlanItem> dirs, files;
     // 非抛异常迭代：遍历中途出错（权限/悬空链接等）时 MSVC 将迭代器置为 end 且
     // increment(ec) 仅置 ec 不抛异常 → 已展开条目保留，不会整体失败/跳过该条
-    fs::recursive_directory_iterator it(localRoot, ec);
+    const fs::path localRootPath = fs::u8path(localRoot);
+    fs::recursive_directory_iterator it(localRootPath, ec);
     const fs::recursive_directory_iterator end;
     for (; it != end; it.increment(ec)) {
-        std::string rel = it->path().lexically_relative(localRoot).generic_string();
+        std::string rel = it->path().lexically_relative(localRootPath).generic_u8string();
         std::string remote = remoteRoot;
         if (!remote.empty() && remote.back() != '/') remote += '/';
         remote += rel;
         if (it->is_directory(ec)) {
-            dirs.push_back({it->path().string(), remote, true});
+            dirs.push_back({it->path().u8string(), remote, true});
         } else if (!ec) {
-            files.push_back({it->path().string(), remote, false});
+            files.push_back({it->path().u8string(), remote, false});
         }
     }
     // 遍历异常终止（MSVC 出错即置 end）：已展开条目保留，但计划可能不完整 → 告警
@@ -533,7 +562,7 @@ bool SshAdapter::sftpUploadFolder(const std::string& localPath, const std::strin
 {
     auto items = planFolderUpload(localPath, remotePath);
     // localRoot 不存在/不可读：planFolderUpload 返回空 → 显式报错而非静默成功
-    if (items.empty() && !std::filesystem::exists(localPath)) {
+    if (items.empty() && !std::filesystem::exists(std::filesystem::u8path(localPath))) {
         m_lastError = "本地目录不存在或不可读: " + localPath;
         return false;
     }
