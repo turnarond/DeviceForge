@@ -116,6 +116,8 @@ private:
     QPushButton* m_transferCancelButton = nullptr;
     QPushButton* m_transferRetryButton = nullptr;
     QString     m_currentPath;
+    QString     m_restoreSelectionName;
+    quint64     m_restoreSelectionGeneration = 0;
     std::vector<FtpFileInfo> m_files;
     quint64 m_loadGeneration = 0;      // 代际令牌：每次导航/刷新/源切换 ++
     quint64 m_transferGeneration = 0;

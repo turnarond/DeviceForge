@@ -210,6 +210,10 @@ std::vector<FtpFileInfo> FtpListParser::parse(const std::string& rawList)
     // 先检测格式：取第一条有效行判断
     std::vector<std::string> lines;
     while (std::getline(stream, line)) {
+        // std::getline removes '\n' but retains the '\r' in FTP CRLF responses.
+        // It is line framing, not part of the remote filename.
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         if (!line.empty()) lines.push_back(line);
     }
 

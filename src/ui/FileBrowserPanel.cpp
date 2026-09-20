@@ -342,6 +342,10 @@ void FileBrowserPanel::loadDirectory(const QString& path)
         return;
     }
     const quint64 gen = ++m_loadGeneration;   // 代际令牌
+    if (m_restoreSelectionGeneration != 0 && m_restoreSelectionGeneration != gen) {
+        m_restoreSelectionName.clear();
+        m_restoreSelectionGeneration = 0;
+    }
     const QString p = path;
     auto source = m_source;                    // shared_ptr 拷贝（线程安全）
     m_pathEdit->setText(path);
@@ -416,6 +420,24 @@ void FileBrowserPanel::applyFileList(const QString& path,
     model->setFileList(full);
     model->sort(RemoteFileModel::ColName, Qt::AscendingOrder);
 
+    // 返回父目录后按目录名恢复选中；按名称而非行号定位，避免排序或列表变化导致错位。
+    if (m_restoreSelectionGeneration == m_loadGeneration) {
+        for (int row = 0; row < model->rowCount({}); ++row) {
+            if (model->fileAt(row).name != m_restoreSelectionName.toStdString())
+                continue;
+            const QModelIndex target = model->index(row, 0);
+            if (m_table->selectionModel()) {
+                m_table->selectionModel()->setCurrentIndex(
+                    target, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            }
+            m_table->scrollTo(target, QAbstractItemView::EnsureVisible);
+            m_table->setFocus(Qt::OtherFocusReason);
+            break;
+        }
+        m_restoreSelectionName.clear();
+        m_restoreSelectionGeneration = 0;
+    }
+
     m_breadcrumb->setText(path);
     m_pathEdit->setText(path);
     emit currentPathChanged(path);
@@ -428,13 +450,7 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
     if (!model) return;
     const auto& fi = model->fileAt(index.row());
     if (fi.name == "..") {
-        // 上级目录
-        QString parent = m_currentPath;
-        if (parent == "/" || parent.isEmpty()) return;
-        int lastSlash = parent.lastIndexOf('/');
-        parent = parent.left(lastSlash);
-        if (parent.isEmpty()) parent = "/";
-        navigateTo(parent);
+        navigateToParent();
         return;
     }
     if (!fi.isDir) return;
@@ -473,8 +489,12 @@ void FileBrowserPanel::navigateToParent()
         return;
     if (m_source && m_source->sourceId() == QStringLiteral("local")) {
         QDir dir(m_currentPath);
-        if (dir.cdUp())
+        const QString childName = dir.dirName();
+        if (dir.cdUp()) {
+            m_restoreSelectionName = childName;
+            m_restoreSelectionGeneration = m_loadGeneration + 1;
             navigateTo(QDir::fromNativeSeparators(dir.absolutePath()));
+        }
         return;
     }
     if (m_currentPath == QStringLiteral("/"))
@@ -483,7 +503,10 @@ void FileBrowserPanel::navigateToParent()
     while (parent.size() > 1 && parent.endsWith(u'/'))
         parent.chop(1);
     const qsizetype lastSlash = parent.lastIndexOf(u'/');
+    const QString childName = parent.mid(lastSlash + 1);
     parent = lastSlash <= 0 ? QStringLiteral("/") : parent.left(lastSlash);
+    m_restoreSelectionName = childName;
+    m_restoreSelectionGeneration = m_loadGeneration + 1;
     navigateTo(parent);
 }
 

@@ -42,6 +42,7 @@ public:
             return {};
         }
         m_err.clear();
+        if (path == QStringLiteral("/folder")) return m_filesA;
         if (path == QStringLiteral("/a")) return m_filesA;   // 竞态用例：按路径区分结果
         if (path == QStringLiteral("/b")) return m_filesB;
         return m_files;
@@ -141,6 +142,35 @@ static void selectRows(FileBrowserPanel& panel, const QList<int>& rows)
 class TstPanelAsync : public QObject {
     Q_OBJECT
 private slots:
+    void leftArrowReturnsWithEnteredDirectorySelected()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("folder", true), makeInfo("sibling", true) };
+        src->m_filesA = { makeInfo("inside.txt") };
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int folderRow = rowForName(panel, "folder");
+        QVERIFY(folderRow >= 0);
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(folderRow, 0));
+        panel.fileTable()->setFocus();
+        QTRY_VERIFY_WITH_TIMEOUT(panel.fileTable()->hasFocus(), 5000);
+        QTest::keyClick(panel.fileTable(), Qt::Key_Right);
+        QTRY_COMPARE_WITH_TIMEOUT(panel.currentPath(), QStringLiteral("/folder"), 5000);
+
+        QTest::keyClick(panel.fileTable(), Qt::Key_Left);
+        QTRY_COMPARE_WITH_TIMEOUT(panel.currentPath(), QStringLiteral("/"), 5000);
+
+        const QModelIndex current = panel.fileTable()->currentIndex();
+        QVERIFY(current.isValid());
+        QCOMPARE(qobject_cast<RemoteFileModel*>(panel.fileTable()->model())
+                     ->fileAt(current.row()).name, std::string("folder"));
+        QVERIFY(panel.fileTable()->selectionModel()->isRowSelected(current.row(), {}));
+        QCOMPARE(QApplication::focusWidget(), static_cast<QWidget*>(panel.fileTable()));
+    }
+
     // 用例 1：异步 list 结果应用（导航 → currentPathChanged + 表格行 + 面包屑）
     void asyncList_appliesResult()
     {

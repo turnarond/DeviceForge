@@ -118,6 +118,19 @@ private slots:
         QCOMPARE(QString::fromStdString(e->dateTime), QStringLiteral("2023-03-08 00:00:00"));
     }
 
+    void unix_crlfDoesNotBecomePartOfName()
+    {
+        auto v = FtpListParser::parse("drwxr-xr-x 2 root root 4096 Sep 17 10:00 apps\r\n");
+        QVERIFY(findEntry(v, "apps") != nullptr);
+        QVERIFY(findEntry(v, "apps\r") == nullptr);
+    }
+
+    void unix_trailingSpacesRemainPartOfName()
+    {
+        auto v = FtpListParser::parse("drwxr-xr-x 2 root root 4096 Sep 17 10:00 apps \r\n");
+        QVERIFY(findEntry(v, "apps ") != nullptr);
+    }
+
     // 符号链接 "link -> target" 只取 link 名；'l' 类型统一非目录（实现注释文档化行为）
     void unix_symlinkArrow()
     {
