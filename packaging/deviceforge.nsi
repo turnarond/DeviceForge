@@ -1,7 +1,14 @@
 ; ============================================================================
 ; DeviceForge NSIS 安装包脚本（v2.8 发布工程新增）
 ; ----------------------------------------------------------------------------
-; 用法（需安装 NSIS 3.x，本仓 CI 暂未集成，本地手工打包）：
+; !!! 分发阻塞：当前卸载器仍会对用户可选的 $INSTDIR 递归删除。只有独立 PATCH
+; !!! 以安全清单或专用目录保护替换该语义后，才允许恢复安装包自动化与分发。
+; !!! 本文件当前仅保留为既有实现，不得把生成的 setup.exe 作为发布产物。
+;
+; 用法（需安装 NSIS 3.x；仅供本地维护验证，发布验收工作流不会执行）：
+;   windeployqt --release --no-translations --plugindir build\Release\plugins --include-plugins qwindows,qsqlite build\Release\DeviceForge.exe
+;   if not exist build\Release\plugins\platforms\qwindows.dll exit /b 1
+;   if not exist build\Release\plugins\sqldrivers\qsqlite.dll exit /b 1
 ;   makensis /DVERSION=2.8.0 packaging\deviceforge.nsi
 ;   （不传 /DVERSION 时使用下方默认值，须与 CMakeLists.txt project() 保持同步）
 ;
@@ -16,11 +23,12 @@
 ;   · Updater.exe                OTA 独立替换进程（POST_BUILD 从 Updater 目标拷入）
 ;   · libcurl.dll                由 lib/libcurl-x64.dll 改名拷贝（POST_BUILD）
 ;   · libssh2.dll                SSH/SFTP 运行库（POST_BUILD）
-;   · Qt6*.dll                   Qt 运行时——dev 构建目录不含，打包前执行：
-;                                  windeployqt --no-compiler-runtime build\Release\DeviceForge.exe
+;   · Qt6*.dll                   Qt 运行时——dev 构建目录不含，打包前执行上述
+;                                windeployqt 命令，并把插件统一落到 plugins\：
 ;                                将 Core/Gui/Widgets/Network/SerialBus/WebSockets/
-;                                Sql/Concurrent 与 platforms\qwindows.dll 落位到
-;                                build/Release（STAGING_DIR）后，由下方通配符收进包
+;                                Sql/Concurrent 落位到 build/Release（STAGING_DIR），
+;                                并在继续前完成上述两个必需插件的存在性检查
+;   · plugins\platforms\qwindows.dll  Qt Windows 平台插件（缺失则 GUI 无法启动）
 ;   · plugins\sqldrivers\qsqlite.dll  ConfigStore 依赖（POST_BUILD 拷贝，
 ;                                     缺失则启动时 ConfigStore::open() 失败）
 ;   主题 QSS / WSS 测试证书等资源已随 QRC 编译进 exe，无需外部文件。

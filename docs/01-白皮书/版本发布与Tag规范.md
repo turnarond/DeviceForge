@@ -13,13 +13,17 @@
 ### 唯一权威与全仓同步
 
 - **唯一权威**：`CMakeLists.txt` 的 `project(DeviceForge VERSION x.y.z ...)`。
-- 改动版本号必须全仓同步以下文件（以权威为准）：
-  - `src/app/DeviceForge.rc`（FILEVERSION / FileVersion）
-  - `README.md`（版本徽章/标题）
-  - `CHANGELOG.md` / `RELEASE_NOTES.md`
-  - `docs/01-白皮书/白皮书.md`（版本头）
-  - `CLAUDE.md`（版本表述）
-- **强制校验**：版本变更后运行 `tools/devtools/versioncheck.py`，任一来源不一致即发布阻断。
+- 改动版本号必须全仓同步九个强制来源（以权威为准）：
+  1. `CMakeLists.txt`（`project(DeviceForge VERSION x.y.z ...)`，唯一权威）
+  2. `src/app/DeviceForge.rc`（FILEVERSION / FileVersion）
+  3. `README.md`（版本字段）
+  4. `CHANGELOG.md`（首个版本标题）
+  5. `CLAUDE.md`（当前版本表述）
+  6. `docs/01-白皮书/白皮书.md`（版本头）
+  7. `RELEASE_NOTES.md`（Release Notes 标题）
+  8. 根 `ROADMAP.md`（当前版本字段）
+  9. `docs/01-白皮书/产品路线图.md`（当前版本字段）
+- **强制校验**：版本变更后运行 `tools/devtools/versioncheck.py`；任一来源缺失、无法解析或版本不一致均返回非零并阻断发布。
 
 ## 2. 版本边界
 

@@ -1,0 +1,156 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version matching CMakeLists.txt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release-validation:
+    runs-on: windows-latest
+    env:
+      REQUESTED_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.2'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtserialport qtserialbus qtwebsockets'
+          cache: true
+
+      - name: Validate requested version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:REQUESTED_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'Requested version must use the x.y.z format.'
+          }
+          $cmakeText = Get-Content -LiteralPath CMakeLists.txt -Raw
+          $match = [regex]::Match(
+            $cmakeText,
+            'project\s*\(\s*DeviceForge\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+          if (-not $match.Success) {
+            throw 'Unable to extract the DeviceForge version from CMakeLists.txt.'
+          }
+          $cmakeVersion = $match.Groups[1].Value
+          if ($cmakeVersion -ne $env:REQUESTED_VERSION) {
+            throw "Requested version $env:REQUESTED_VERSION does not match CMake version $cmakeVersion."
+          }
+
+      - name: Run repository tools tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s tools/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run version consistency gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/devtools/versioncheck.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run release tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Deploy Qt runtime and required plugins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          windeployqt --release --no-translations --plugindir build\Release\plugins --include-plugins qwindows,qsqlite build\Release\DeviceForge.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($pluginPath in @(
+            'build\Release\plugins\platforms\qwindows.dll',
+            'build\Release\plugins\sqldrivers\qsqlite.dll'
+          )) {
+            if (-not (Test-Path -LiteralPath $pluginPath)) {
+              throw "Required Qt plugin is missing: $pluginPath"
+            }
+          }
+
+      - name: Create portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $portableZip = "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip"
+          Compress-Archive -Path build\Release\* -DestinationPath $portableZip -Force
+
+      - name: Smoke portable package in a hermetic Qt environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pythonPath = (Get-Command python -ErrorAction Stop).Source
+          $portableZip = "dist\DeviceForge-v$($env:REQUESTED_VERSION)-win64.zip"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "deviceforge-portable-smoke-$([guid]::NewGuid().ToString('N'))"
+          New-Item -ItemType Directory -Path $smokeRoot | Out-Null
+          Expand-Archive -LiteralPath $portableZip -DestinationPath $smokeRoot
+          $smokeExe = Join-Path $smokeRoot 'DeviceForge.exe'
+          if (-not (Test-Path -LiteralPath $smokeExe)) {
+            throw "Portable executable is missing after extraction: $smokeExe"
+          }
+
+          $qtRoot = [IO.Path]::GetFullPath($env:QT_ROOT_DIR).TrimEnd('\')
+          $sanitizedPathEntries = @(
+            $env:PATH -split [IO.Path]::PathSeparator |
+              Where-Object {
+                $pathEntry = $_.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($pathEntry)) {
+                  return $false
+                }
+                $candidatePath = [IO.Path]::GetFullPath($pathEntry).TrimEnd('\')
+                return -not (
+                  $candidatePath.Equals($qtRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                  $candidatePath.StartsWith("$qtRoot\", [StringComparison]::OrdinalIgnoreCase)
+                )
+              }
+          )
+          $env:PATH = (@($smokeRoot) + $sanitizedPathEntries) -join [IO.Path]::PathSeparator
+          $env:QT_PLUGIN_PATH = $null
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = $null
+          $env:QML2_IMPORT_PATH = $null
+          $env:QML_IMPORT_PATH = $null
+
+          & $pythonPath tools/devtools/smoke.py $smokeExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeviceForge-v${{ env.REQUESTED_VERSION }}-win64
+          path: dist\DeviceForge-v${{ env.REQUESTED_VERSION }}-win64.zip
+          if-no-files-found: error

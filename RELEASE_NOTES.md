@@ -1,57 +1,80 @@
-# DeviceForge v2.1.0 Release Notes
+# DeviceForge v2.8.0 Release Notes
 
-> 2026-07-10 · [完整变更日志](CHANGELOG.md) · [路线图](ROADMAP.md)
+> 2026-08-22 · [完整变更日志](CHANGELOG.md) · [路线图](ROADMAP.md)
 
 ---
 
 ## 本版本亮点
 
-### 🔁 网络调试中继（NetRelayTool）
+### 并行批量部署
 
-**TCP/UDP 透明中继旁路抓包 + 流量录制 + 按原始时序回放 + 组播**
+- FTP/FTPS 与 SFTP 共用 `DeploymentRunner` 调度，部署并发度可配 1-8，默认 1，兼容原有串行行为。
+- 单台部署事务由 `DeployJob` 执行，全局取消同时作用于待调度设备和传输中的协议检查点。
 
-- 数据生产者→工具→消费者双向原样转发，不影响生产链路
-- 实时 Hex+ASCII 双栏视图（上行青绿/下行琥珀）
-- 流量录制为 `.nrec` 自定义格式，**按原始时间间隔回放**上行数据到消费者
-- **组播录制零影响**：以额外订阅者加入组播组抓收雷达/设备组播数据，源与现有消费者无感知
-- 组播回灌原组（默认原组可改），**网卡选择**
+### 每设备实时进度
 
-### 🔐 SSH 批量命令
+- 进度面板为每个 `ip:port` 展示独立进度和等待中、上传中、成功、失败或已取消状态。
+- 总进度按批次生命周期聚合，完成时收口到本轮设备结果。
 
-原「批量命令」Tab 新增 **Telnet / SSH 双协议切换**（libssh2）。SSH 密码认证 + TOFU 主机密钥，比明文 Telnet 更安全。
+### CSV/HTML 部署报告
 
-### 🎨 工业仪表盘主题（「琴色是动词」体系）
+- 部署完成后可导出 CSV 或打印友好的 HTML 报告。
+- 报告按设备记录结果、失败文件、错误摘要和耗时，写盘失败会明确报错。
 
-深色主题重构：强调色仅用于标记可操作/活跃状态，静止边框统一石墨。输入框凹陷·按钮凸起·容器扁平的形态语言——**哪里能输入、哪里能点击，一眼可辨**。
+### 失败设备一键重试
 
-### 🏭 产品化就绪
+- 保留上一轮实际部署参数，仅对失败设备集合发起新一轮部署。
+- 重试轮沿用当前并发度，并重新生成该轮进度和报告结果。
 
-- 自定义 `app.ico` 应用图标（任务栏 + 窗口左上角 + exe 图标）
-- exe 版本/版权信息（DeviceForge / turnarond / 2.1.0）
-- 双击无 console 黑框
-- 首个单元测试目标 `tst_nrec`（12 用例）
+## 同版本其他变更
 
----
+- NetRelayTool 增加组播 M→U/M→M 实时转发、组播回灌修复和对应地址校验测试。
+- FtpListParser 修复单数字日期与小写 `pm` 的 LIST 行解析。
+- UpdateChecker 增加取消回调并收紧连接超时，减少退出窗口期阻塞。
 
-## 功能模块（6 模块）
+## 质量基线
 
-| 模块 | 协议 | 状态 |
-|------|------|------|
-| 文件部署 | FTP/FTPS | ✅ |
-| 批量命令 | Telnet / **SSH** | ✅ |
-| WebSocket 通信 | WS/WSS | ✅ |
-| Modbus 测试 | Modbus TCP | ✅ |
-| 网络调试中继 | TCP/UDP/**组播** + 录制回放 | ✅ |
-| OPC UA 客户端 | OPC UA | ⚠ 演示模式 |
+- `tests/CMakeLists.txt` 注册 20 个 QtTest/CTest 目标，覆盖部署调度、报告、FTP LIST、Updater、配置、协议和 UI 基础逻辑。
+- 日常 CI 使用 Windows + Qt 6.9.2，分别构建 Debug/Release，并运行全部 CTest、Python 工具测试和版本一致性检查。
+- 本地 CTest 中的 DPAPI 用例需要正常 Windows 用户 profile；CI 或服务账户失败时应保留 Windows 错误码，并在正常用户账户复测。
 
----
+## 系统与构建要求
 
-## 下载
+| 项目 | 要求 |
+|------|------|
+| 操作系统 | Windows 10/11 x64 |
+| 本地 Qt | Qt 6.11.1 `msvc2022_64`；安装路径可配置 |
+| CI Qt | Qt 6.9.2 `win64_msvc2022_64` |
+| 编译器 | Visual Studio 2022（v143） |
+| 构建系统 | CMake 3.22+，C++17 |
 
-- **预编译包**：`DeviceForge-v2.4.0-win64.zip`（Windows x64，解压即用，需 VC++ Redistributable）
-- **源码**：`git clone https://github.com/turnarond/DeviceForge.git`（Qt 6.11.1 + CMake 3.22+）
+手动配置示例：
 
-## 系统要求
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="D:\Qt\6.11.1\msvc2022_64"
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
 
-- Windows 10/11 x64
-- [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+示例中的 Qt 目录可替换为实际安装位置。使用 `build.bat` 时可先设置 `QT_PREFIX`；未设置时脚本按 `D:\Qt`、`C:\Qt` 顺序探测。
+
+## 构建与验收入口
+
+- 日常质量门禁：`.github/workflows/ci.yml`。
+- 手动发布验收：`.github/workflows/release-validation.yml`，校验输入版本后执行 Release 构建、20 个 CTest 与 `windeployqt`，生成绿色 zip 后从全新解压目录在隔离 Qt SDK 的环境中执行 UI 冒烟，并且只上传 portable zip artifact。
+- 手动工作流不创建 GitHub Release，也不创建或移动 Git Tag；既有 `v2.8.0` Tag 保持不变。NSIS 自动化与安装包分发因现有递归卸载语义不安全而阻塞，必须由独立 PATCH 修复后才能恢复。
+
+## 已知限制
+
+- 当前仅支持 Windows；Linux 适配仍在路线图中。
+- OPC UA 客户端当前为 None 安全策略 + 匿名认证，安全策略与证书认证属于中期候选。
+- SCP 未实现，仅在真实设备需求驱动时评估；现有批量部署协议为 FTP/FTPS/SFTP。
+- 真实 FTP/SFTP 设备集成、16 台 50 轮长稳和远端发布验收工作流结果以实际验收报告为准；没有日志或产物时不视为通过。
+- GUI 冒烟需要可交互 Windows 桌面；无法枚举主窗口时验收应失败并保留原始日志。
+
+## 从 v2.7 升级
+
+1. 升级前备份 `%APPDATA%\DeviceForge\config.db`。
+2. v2.8 新增 `deploy.concurrency` 配置，未设置时默认 1；原有设备、凭证和 Tool 配置继续由 ConfigStore 加载。
+3. 首次批量部署建议保持并发度 1，确认目标设备承载能力后再逐步调整；部署结束后保存 CSV/HTML 报告。
+4. 使用绿色包时应整体替换程序目录，避免混用旧 Qt DLL 或插件；当前只接受发布验收生成的 portable zip artifact，NSIS 安装包不得分发。

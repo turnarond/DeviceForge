@@ -42,6 +42,9 @@ python -m unittest discover -s tools/tests -v
 | `CHANGELOG.md` | 首个 `## [x.y.z]` |
 | `CLAUDE.md` | `当前版本 x.y.z` |
 | `docs/01-白皮书/白皮书.md` | `版本：x.y.z` |
+| `RELEASE_NOTES.md` | `# DeviceForge vX.Y.Z Release Notes` |
+| `ROADMAP.md` | `**当前版本**：vX.Y.Z` |
+| `docs/01-白皮书/产品路线图.md` | `**当前版本**：vX.Y.Z` |
 
 用法：
 
@@ -51,8 +54,7 @@ python tools/devtools/cli.py versioncheck --root <dir>
 ```
 
 - 全部一致：输出每个来源的版本并退出码 0
-- 任一来源缺失/解析失败：报告（缺失不阻断，但会提示）
-- 任一来源版本不一致：**退出码 1**（发布阻断，见 `docs/01-白皮书/版本发布与Tag规范.md`）
+- 任一强制来源缺失、解析失败或版本不一致：**退出码 1**（发布阻断，见 `docs/01-白皮书/版本发布与Tag规范.md`）
 
 ### 2. smoke.py — UI 冒烟验证
 
