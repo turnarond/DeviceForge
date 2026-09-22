@@ -1,199 +1,180 @@
-/*
- * Copyright (c) 2024-2026 turnarond.
- * All rights reserved.
- *
- * File: DeployJob.cpp
- *
- * Date: 2026-08-22
- *
- * Author: turnarond
- *
- * Description: 单台设备部署事务实现 — 逻辑自 FtpDeployBackend::startUpload
- *              设备循环体逐行平移（Task 2 串行等价重构，行为零变化）。
- */
-
+// 单台部署事务：连接/清目录/目录规划/报告属于 Job，单文件交付属于 Executor。
 #include "DeployJob.h"
-
 #include "adapter/FtpAdapter.h"
-#include "adapter/IProtocolAdapter.h"
+#include "adapter/SshAdapter.h"
 #include "adapter/IDeployable.h"
 #include "adapter/ProtocolRegistry.h"
-
+#include "transfer/AdapterTransferChannel.h"
+#include <algorithm>
 #include <chrono>
-#include <ctime>
 #include <filesystem>
 
-DeployJob::DeployJob(Params params)
-    : m_params(std::move(params))
+namespace {
+std::string joinPath(std::string parent, const std::string& name)
 {
-    // deviceKey 与原后端一致：端口覆盖已完成后再拼接 ip:port
-    m_result.deviceKey = m_params.device.ip + ":" + std::to_string(m_params.device.port);
+    if (!parent.empty() && parent.back() != '/') parent += '/';
+    return parent + name;
+}
+bool ensureDirectory(IProtocolAdapter& adapter, const std::string& path)
+{
+    // mkdir 失败不能当作“已存在”：列表复核目录类型，避免空目录静默丢失。
+    const auto slash = path.find_last_of('/');
+    const auto parent = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
+    const auto name = slash == std::string::npos ? path : path.substr(slash + 1);
+    if (auto* ftp = dynamic_cast<FtpAdapter*>(&adapter)) {
+        if (ftp->makeDirectory(path)) return true;
+        const auto entries = ftp->listDirectoryParsed(parent);
+        return ftp->lastError().empty() && std::any_of(entries.begin(), entries.end(),
+            [&](const auto& e) { return e.name == name && e.isDir; });
+    }
+    if (auto* ssh = dynamic_cast<SshAdapter*>(&adapter)) {
+        if (ssh->sftpMakeDirectory(path)) return true;
+        const auto entries = ssh->sftpListDirectory(parent);
+        return ssh->lastError().empty() && std::any_of(entries.begin(), entries.end(),
+            [&](const auto& e) { return e.name == name && e.isDir; });
+    }
+    return false;
+}
 }
 
-DeployJob::~DeployJob() = default;
+DeployJob::DeployJob(Params params) : m_params(std::move(params))
+{
+    m_result.deviceKey = m_params.device.ip + ":" + std::to_string(m_params.device.port);
+}
+DeployJob::~DeployJob() { m_params.auth.clear(); }
 
 void DeployJob::run()
 {
     namespace fs = std::filesystem;
-
-    const auto startClock = std::chrono::steady_clock::now();
+    const auto started = std::chrono::steady_clock::now();
     m_result.startedAt = std::time(nullptr);
-
-    // v2.8 Task 3：未启动即取消的台次直接记 Cancelled——不创建适配器、不连接
-    // （设计 §6「用户取消：未开始台次跳过」；同时是 requestCancel 对排队 job 的生效点）
-    if (isCancelled()) {
-        m_result.state = DeviceResult::Cancelled;
-        m_result.durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                  std::chrono::steady_clock::now() - startClock)
-                                  .count();
-        return;
-    }
-
-    // 日志出口统一注入 "[ip:port] " 前缀，业务调用点保留原始文案
-    auto log = [this](const std::string& msg) {
-        if (m_params.logSink) {
-            m_params.logSink("[" + m_result.deviceKey + "] " + msg);
+    m_result.state = DeviceResult::Failed;
+    struct Cleanup {
+        Params& params;
+        DeviceResult& result;
+        std::chrono::steady_clock::time_point started;
+        std::shared_ptr<IProtocolAdapter> adapter;
+        ~Cleanup() {
+            if (adapter) {
+                if (auto* d = dynamic_cast<IDeployable*>(adapter.get())) {
+                    d->setProgressCallback({});
+                    d->setCancelFlag(nullptr);
+                }
+                adapter->disconnect();
+            }
+            params.auth.clear();
+            result.durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
         }
+    } cleanup{m_params, m_result, started, {}};
+    auto log = [this](const std::string& message) {
+        if (m_params.logSink) m_params.logSink("[" + m_result.deviceKey + "] " + message);
     };
-    auto reportProgress = [this](int pct) {
-        if (m_params.progressSink) {
-            m_params.progressSink(pct);
-        }
+    auto fail = [&](const std::string& file, const std::string& error) {
+        m_result.failedFiles.push_back(file);
+        m_result.lastError = error;
+        log(file + " 上传失败: " + error);
     };
-
-    // 从 ProtocolRegistry 按协议创建适配器（"ftp"/"ssh"，SFTP 复用 "ssh" 键）
+    if (isCancelled()) { m_result.state = DeviceResult::Cancelled; return; }
     auto adapter = ProtocolRegistry::instance()->create(m_params.protocol);
-    if (!adapter) {
-        log("适配器不可用 (" + m_params.protocol + ")");
-        m_result.state = DeviceResult::Failed;
-        return;
-    }
-
-    auto* deployable = dynamic_cast<IDeployable*>(adapter.get());
-    if (!deployable) {
-        log("适配器不支持部署能力 (" + m_params.protocol + ")");
-        m_result.state = DeviceResult::Failed;
-        return;
-    }
-
-    if (m_params.useFtps && m_params.protocol == "ftp") {
-        auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get());
-        if (ftp) {
-            ftp->setUseFtps(true);
-            log("FTPS 模式已启用");
-        }
-    }
-
-    // 连接设备（connect/lastError/disconnect 属 IProtocolAdapter，
-    // 部署能力（上传/清空/进度/取消）属 IDeployable）
+    cleanup.adapter = adapter;
+    auto* deployable = adapter ? dynamic_cast<IDeployable*>(adapter.get()) : nullptr;
+    if (!deployable) { m_result.lastError = "适配器不支持部署能力"; log(m_result.lastError); return; }
+    if (auto* ftp = dynamic_cast<FtpAdapter*>(adapter.get())) ftp->setUseFtps(m_params.useFtps);
     log("正在连接 ...");
     if (!adapter->connect(m_params.device, m_params.auth)) {
-        log("连接失败 — " + adapter->lastError());
         m_result.lastError = adapter->lastError();
-        m_result.state = DeviceResult::Failed;
+        log("连接失败 — " + m_result.lastError);
+        if (isCancelled()) m_result.state = DeviceResult::Cancelled;
         return;
     }
-
     log("已连接");
-
-    // 可选：部署前清空远程目录
-    if (m_params.clearBefore) {
+    auto* cancel = m_params.globalCancel ? const_cast<std::atomic<bool>*>(m_params.globalCancel)
+        : (m_cancelFlag ? m_cancelFlag : &m_fallbackCancel);
+    deployable->setCancelFlag(cancel);
+    if (isCancelled()) { m_result.state = DeviceResult::Cancelled; return; }
+    // 恢复标志本身不证明曾经交付；首次连接失败后的重试仍须执行清目录。
+    if (m_params.clearBefore && (!m_params.resume || m_params.deliveredFiles.empty())) {
         log("清空远程目录: " + m_params.remotePath);
-        if (!deployable->clearRemoteDirectory(m_params.remotePath)) {
+        if (!deployable->clearRemoteDirectory(m_params.remotePath))
             log("清空目录失败 — " + adapter->lastError());
-            // 清空失败不中止，继续上传
-        }
     }
 
-    // 设置进度回调 + 取消标志。
-    // 进度换算：适配器按单文件报 0-100，此处折算为跨文件总进度
-    // devicePct = (doneFiles*100 + curPct) / totalFiles；
-    // 取消标志（carry-forward a 空守卫）：调度方注入的 per-job 标志优先，
-    // 回退 Params.globalCancel（串行等价路径，适配器中途断点语义不变）；
-    // 两者皆空时挂接内部哑标志，满足 IDeployable「非空指针存活至传输结束」契约。
-    const size_t totalFiles = m_params.files.empty() ? 1 : m_params.files.size();
-    size_t doneFiles = 0;
-    deployable->setProgressCallback([this, &doneFiles, totalFiles, &reportProgress](int pct) {
-        reportProgress(static_cast<int>((doneFiles * 100 + pct) / totalFiles));
-    });
-    std::atomic<bool>* adapterCancel =
-        m_params.globalCancel ? const_cast<std::atomic<bool>*>(m_params.globalCancel)
-                              : (m_cancelFlag ? m_cancelFlag : &m_fallbackCancel);
-    deployable->setCancelFlag(adapterCancel);
-
-    // 上传所有文件/文件夹；cancelledMidway 记录「跳过了余下工作」的取消中断，
-    // cancelAbortedTransfer 记录「传输被取消检查点中止」（设计 §6：归 Cancelled）
-    bool allOk = true;
-    bool cancelledMidway = false;
-    bool cancelAbortedTransfer = false;
-    for (const auto& file : m_params.files) {
-        if (isCancelled()) {
-            cancelledMidway = true;
-            break;
-        }
-
+    struct Item { std::string local, remote, label; };
+    std::vector<Item> items;
+    std::vector<std::string> directories;
+    for (const auto& source : m_params.files) {
+        if (isCancelled()) break;
         std::error_code ec;
-
-        if (fs::is_directory(file, ec)) {
-            // 文件夹：递归上传整个目录
-            std::string folderName = fs::path(file).filename().string();
-            log("上传文件夹: " + folderName);
-
-            if (deployable->uploadFolder(file, m_params.remotePath)) {
-                log(folderName + " 上传完成");
-            } else {
-                log(folderName + " 上传失败: " + adapter->lastError());
-                m_result.failedFiles.push_back(folderName);
-                m_result.lastError = adapter->lastError();
-                allOk = false;
-                if (isCancelled()) cancelAbortedTransfer = true;  // 取消期中止
-            }
-        } else if (!ec) {
-            // 单文件上传
-            std::string fileName = file;
-            size_t lastSlash = file.find_last_of("/\\");
-            if (lastSlash != std::string::npos) {
-                fileName = file.substr(lastSlash + 1);
-            }
-
-            std::string remoteFile = m_params.remotePath;
-            if (!remoteFile.empty() && remoteFile.back() != '/') {
-                remoteFile += '/';
-            }
-            remoteFile += fileName;
-
-            log("上传: " + fileName);
-
-            if (deployable->uploadFile(file, remoteFile)) {
-                log(fileName + " 上传完成");
-            } else {
-                log(fileName + " 上传失败: " + adapter->lastError());
-                m_result.failedFiles.push_back(fileName);
-                m_result.lastError = adapter->lastError();
-                allOk = false;
-                if (isCancelled()) cancelAbortedTransfer = true;  // 取消期中止
-            }
-        } else {
-            log("无法访问路径: " + file);
-            m_result.failedFiles.push_back(file);
-            allOk = false;
+        auto local = fs::u8path(source).lexically_normal();
+        if (local.filename().empty()) local = local.parent_path();
+        if (!fs::is_directory(local, ec)) {
+            if (ec) fail(source, "无法访问本地路径");
+            else items.push_back({source, joinPath(m_params.remotePath, local.filename().u8string()),
+                                  local.filename().u8string()});
+            continue;
         }
-
-        ++doneFiles;  // 本文件已出结果（成功或失败），推进整体进度窗口
+        // 保留协议原有目录映射：FTP 包含顶层目录，SFTP 上传目录内容。
+        auto base = m_params.protocol == "ssh" || m_params.protocol == "sftp"
+            ? m_params.remotePath : joinPath(m_params.remotePath, local.filename().u8string());
+        // 根目录无 basename，也不应 mkdir；普通目录去除尾斜杠后再确认。
+        while (base.size() > 1 && base.back() == '/') base.pop_back();
+        if (base != "/") directories.push_back(base);
+        fs::recursive_directory_iterator it(local, ec), end;
+        for (; !ec && it != end; it.increment(ec)) {
+            if (isCancelled()) break;
+            const auto relative = it->path().lexically_relative(local).generic_u8string();
+            const auto remote = joinPath(base, relative);
+            if (it->is_directory(ec)) directories.push_back(remote);
+            else if (!ec && it->is_regular_file(ec))
+                items.push_back({it->path().u8string(), remote, relative});
+        }
+        if (ec) fail(source, "本地目录遍历失败: " + ec.message());
+    }
+    for (const auto& directory : directories) {
+        if (isCancelled()) break;
+        const bool ok = m_params.makeDirectory ? m_params.makeDirectory(*adapter, directory)
+                                               : ensureDirectory(*adapter, directory);
+        if (!ok) fail(directory, "无法创建或确认远端目录");
     }
 
-    adapter->disconnect();
-
-    // 显式状态赋值（carry-forward b）：默认 Ok 绝不允许静默外漏——
-    //  · 取消导致的中止/跳过（循环头跳过余下文件、或取消检查点中止传输）→ Cancelled
-    //    （设计 §6：用户取消的批量以 Cancelled 收场；failedFiles 明细保留，信息不丢）
-    //  · 与取消无关的真实失败 → Failed（「重试失败设备」按钮的依据）
-    //  · 全部文件成功且无中断 → Ok
-    const bool cancelledOutcome = cancelledMidway || cancelAbortedTransfer;
-    m_result.state = cancelledOutcome ? DeviceResult::Cancelled
-                     : (!allOk ? DeviceResult::Failed : DeviceResult::Ok);
-    m_result.durationMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - startClock)
-            .count();
+    bool cancelled = isCancelled();
+    size_t completed = 0;
+    for (const auto& item : items) {
+        if (isCancelled()) { cancelled = true; break; }
+        const auto delivered = std::find_if(m_params.deliveredFiles.begin(), m_params.deliveredFiles.end(),
+            [&](const DeployDeliveredFile& f) { return f.localPath == item.local && f.remotePath == item.remote; });
+        if (m_params.resume && delivered != m_params.deliveredFiles.end()) {
+            m_result.deliveredFiles.push_back(*delivered);
+            m_result.nonAtomic |= delivered->nonAtomic;
+            log("跳过已交付文件: " + item.label);
+            ++completed;
+            if (m_params.progressSink) m_params.progressSink(int(completed * 100 / items.size()));
+            continue;
+        }
+        auto channel = m_params.channelFactory ? m_params.channelFactory(adapter)
+            : std::make_unique<AdapterTransferChannel>(QString::fromStdString(m_params.protocol), adapter);
+        if (!channel) { fail(item.label, "传输通道不可用"); ++completed; continue; }
+        channel->setProgressCallback([&, completed](int pct) {
+            if (m_params.progressSink) m_params.progressSink(int((completed * 100 + std::clamp(pct, 0, 100)) / items.size()));
+        });
+        // 每文件使用新的凭据副本；Executor 终态断开连接并擦除这个副本。
+        AuthInfo fileAuth = m_params.auth;
+        TransferExecutor executor(*channel, m_params.device, fileAuth, m_params.retrySleeper);
+        log("上传: " + item.label);
+        const auto result = executor.execute({QString::fromUtf8(item.local), QString::fromUtf8(item.remote)}, *cancel);
+        channel->setProgressCallback({});
+        m_result.nonAtomic |= result.nonAtomic;
+        if (result.nonAtomic) log("警告：非原子传输 (nonAtomic): " + item.label);
+        if (hasDeliveredTarget(result)) {
+            m_result.deliveredFiles.push_back({item.local, item.remote, result.nonAtomic});
+            log(item.label + " 上传完成");
+        } else {
+            fail(item.label, result.error.message.toStdString());
+            if (result.state == TransferState::Cancelled || isCancelled()) cancelled = true;
+        }
+        ++completed;
+    }
+    m_result.state = cancelled ? DeviceResult::Cancelled
+        : (m_result.failedFiles.empty() ? DeviceResult::Ok : DeviceResult::Failed);
 }

@@ -9,6 +9,8 @@
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QProgressBar>
+#include <QPushButton>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -22,7 +24,91 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QPointer>
+#include <QThread>
 #include <QtConcurrent/QtConcurrent>
+
+#include <algorithm>
+
+namespace {
+
+QString joinedPath(QString base, const QString& name)
+{
+    if (base.isEmpty())
+        return name;
+    if (!base.endsWith(u'/'))
+        base += u'/';
+    return base + name;
+}
+
+QString normalizedTransferProtocol(QString protocol)
+{
+    protocol = protocol.trimmed().toLower();
+    return protocol == QStringLiteral("ssh") ? QStringLiteral("sftp") : protocol;
+}
+
+QString transferStateText(TransferState state)
+{
+    switch (state) {
+    case TransferState::Queued: return QStringLiteral("已排队");
+    case TransferState::Preparing: return QStringLiteral("准备传输");
+    case TransferState::Transferring: return QStringLiteral("传输中");
+    case TransferState::Verifying: return QStringLiteral("校验中");
+    case TransferState::Committing: return QStringLiteral("提交中");
+    case TransferState::Reconnecting: return QStringLiteral("正在重连");
+    case TransferState::RetryWaiting: return QStringLiteral("等待重试");
+    case TransferState::NeedsAttention: return QStringLiteral("需要处理");
+    case TransferState::Succeeded: return QStringLiteral("传输完成");
+    case TransferState::PartiallySucceeded: return QStringLiteral("部分完成");
+    case TransferState::Failed: return QStringLiteral("传输失败");
+    case TransferState::Cancelling: return QStringLiteral("正在取消");
+    case TransferState::Cancelled: return QStringLiteral("已取消");
+    }
+    return QStringLiteral("传输状态未知");
+}
+
+bool hasCommittedItem(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       hasDeliveredTarget);
+}
+
+bool hasSourceRemovedItem(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.sourceRemoved;
+    });
+}
+
+bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.nonAtomic && hasDeliveredTarget(result);
+    });
+}
+
+QString transferStatusText(const TransferTaskSnapshot& snapshot)
+{
+    QString text = snapshot.error.message.isEmpty()
+        ? transferStateText(snapshot.state)
+        : QStringLiteral("%1：%2").arg(transferStateText(snapshot.state),
+                                         snapshot.error.message);
+    if (hasNonAtomicSuccess(snapshot))
+        text += QStringLiteral("（已完成但使用非原子替换，请复核目标文件）");
+    return text;
+}
+
+bool supportsPanelTransfer(const FileBrowserPanel* source,
+                           const FileBrowserPanel* target)
+{
+    if (!source || !target || !source->source() || !target->source())
+        return false;
+    return source->source()->sourceId() == QStringLiteral("local")
+        || target->source()->sourceId() == QStringLiteral("local");
+}
+
+} // namespace
 
 FileBrowserPanel::FileBrowserPanel(QWidget* parent) : QWidget(parent)
 {
@@ -88,6 +174,7 @@ void FileBrowserPanel::setupUi()
     m_table->setDragDropMode(QAbstractItemView::DragOnly);
     m_table->setAcceptDrops(true);
     m_table->viewport()->setAcceptDrops(true);
+    m_table->installEventFilter(this);
     m_table->viewport()->installEventFilter(this);
     setAcceptDrops(true);   // 面板级兜底：非表格区域（路径栏/面包屑）也能接收拖入
 
@@ -114,6 +201,34 @@ void FileBrowserPanel::setupUi()
     });
 
     layout->addWidget(m_table, 1);
+
+    // 可靠传输状态条只消费 Scheduler 的值快照，不保存或暴露任何 worker。
+    auto* transferRow = new QHBoxLayout();
+    transferRow->setSpacing(4);
+    m_transferStatus = new QLabel(tr("无传输任务"), this);
+    m_transferStatus->setObjectName("panelTransferStatus");
+    m_transferStatus->setMinimumWidth(96);
+    m_transferProgress = new QProgressBar(this);
+    m_transferProgress->setObjectName("panelTransferProgress");
+    m_transferProgress->setRange(0, 100);
+    m_transferProgress->setValue(0);
+    m_transferProgress->setTextVisible(false);
+    m_transferProgress->setFixedHeight(8);
+    m_transferCancelButton = new QPushButton(tr("取消"), this);
+    m_transferCancelButton->setObjectName("transferCancelButton");
+    m_transferCancelButton->setEnabled(false);
+    m_transferRetryButton = new QPushButton(tr("重试/恢复"), this);
+    m_transferRetryButton->setObjectName("transferRetryButton");
+    m_transferRetryButton->setEnabled(false);
+    connect(m_transferCancelButton, &QPushButton::clicked,
+            this, &FileBrowserPanel::cancelActiveTransfer);
+    connect(m_transferRetryButton, &QPushButton::clicked,
+            this, &FileBrowserPanel::resumeLastTransfer);
+    transferRow->addWidget(m_transferStatus);
+    transferRow->addWidget(m_transferProgress, 1);
+    transferRow->addWidget(m_transferCancelButton);
+    transferRow->addWidget(m_transferRetryButton);
+    layout->addLayout(transferRow);
 
     // 底部面包屑（文本展示当前路径，后续版本可点击）
     m_breadcrumb = new QLabel(this);
@@ -204,6 +319,21 @@ void FileBrowserPanel::navigateTo(const QString& path)
 
 void FileBrowserPanel::refresh() { loadDirectory(m_currentPath); }
 
+void FileBrowserPanel::setTransferSubmitter(TransferSubmitter submitter)
+{
+    m_transferSubmitter = std::move(submitter);
+}
+
+void FileBrowserPanel::setTransferCanceller(TransferCanceller canceller)
+{
+    m_transferCanceller = std::move(canceller);
+}
+
+void FileBrowserPanel::setOverwritePolicyChooser(OverwritePolicyChooser chooser)
+{
+    m_overwritePolicyChooser = std::move(chooser);
+}
+
 void FileBrowserPanel::loadDirectory(const QString& path)
 {
     // 无源（远程面板在协议/设备确定前 m_source 为 null）：明确提示而非静默无列表
@@ -212,6 +342,10 @@ void FileBrowserPanel::loadDirectory(const QString& path)
         return;
     }
     const quint64 gen = ++m_loadGeneration;   // 代际令牌
+    if (m_restoreSelectionGeneration != 0 && m_restoreSelectionGeneration != gen) {
+        m_restoreSelectionName.clear();
+        m_restoreSelectionGeneration = 0;
+    }
     const QString p = path;
     auto source = m_source;                    // shared_ptr 拷贝（线程安全）
     m_pathEdit->setText(path);
@@ -286,6 +420,24 @@ void FileBrowserPanel::applyFileList(const QString& path,
     model->setFileList(full);
     model->sort(RemoteFileModel::ColName, Qt::AscendingOrder);
 
+    // 返回父目录后按目录名恢复选中；按名称而非行号定位，避免排序或列表变化导致错位。
+    if (m_restoreSelectionGeneration == m_loadGeneration) {
+        for (int row = 0; row < model->rowCount({}); ++row) {
+            if (model->fileAt(row).name != m_restoreSelectionName.toStdString())
+                continue;
+            const QModelIndex target = model->index(row, 0);
+            if (m_table->selectionModel()) {
+                m_table->selectionModel()->setCurrentIndex(
+                    target, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            }
+            m_table->scrollTo(target, QAbstractItemView::EnsureVisible);
+            m_table->setFocus(Qt::OtherFocusReason);
+            break;
+        }
+        m_restoreSelectionName.clear();
+        m_restoreSelectionGeneration = 0;
+    }
+
     m_breadcrumb->setText(path);
     m_pathEdit->setText(path);
     emit currentPathChanged(path);
@@ -298,13 +450,7 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
     if (!model) return;
     const auto& fi = model->fileAt(index.row());
     if (fi.name == "..") {
-        // 上级目录
-        QString parent = m_currentPath;
-        if (parent == "/" || parent.isEmpty()) return;
-        int lastSlash = parent.lastIndexOf('/');
-        parent = parent.left(lastSlash);
-        if (parent.isEmpty()) parent = "/";
-        navigateTo(parent);
+        navigateToParent();
         return;
     }
     if (!fi.isDir) return;
@@ -319,6 +465,49 @@ void FileBrowserPanel::onPathEnterPressed()
 {
     QString p = m_pathEdit->text().trimmed();
     if (!p.isEmpty()) navigateTo(p);
+}
+
+void FileBrowserPanel::enterSelectedDirectory()
+{
+    QModelIndex index = m_table->currentIndex();
+    if (!index.isValid() && m_table->selectionModel()) {
+        const auto rows = m_table->selectionModel()->selectedRows();
+        if (!rows.isEmpty())
+            index = rows.front();
+    }
+    if (!index.isValid())
+        return;
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (!model || !model->fileAt(index.row()).isDir)
+        return;
+    onTableDoubleClicked(index);
+}
+
+void FileBrowserPanel::navigateToParent()
+{
+    if (m_currentPath.isEmpty())
+        return;
+    if (m_source && m_source->sourceId() == QStringLiteral("local")) {
+        QDir dir(m_currentPath);
+        const QString childName = dir.dirName();
+        if (dir.cdUp()) {
+            m_restoreSelectionName = childName;
+            m_restoreSelectionGeneration = m_loadGeneration + 1;
+            navigateTo(QDir::fromNativeSeparators(dir.absolutePath()));
+        }
+        return;
+    }
+    if (m_currentPath == QStringLiteral("/"))
+        return;
+    QString parent = m_currentPath;
+    while (parent.size() > 1 && parent.endsWith(u'/'))
+        parent.chop(1);
+    const qsizetype lastSlash = parent.lastIndexOf(u'/');
+    const QString childName = parent.mid(lastSlash + 1);
+    parent = lastSlash <= 0 ? QStringLiteral("/") : parent.left(lastSlash);
+    m_restoreSelectionName = childName;
+    m_restoreSelectionGeneration = m_loadGeneration + 1;
+    navigateTo(parent);
 }
 
 std::vector<FtpFileInfo> FileBrowserPanel::selectedFiles() const
@@ -361,100 +550,275 @@ void FileBrowserPanel::renameSelected()
 
 void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
 {
-    if (!target || !target->source()) return;
+    if (!m_source || !target || !target->source()) return;
     const auto files = selectedFiles();
     if (files.empty()) { m_breadcrumb->setText(tr("未选择文件")); return; }
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
-    const QString dstPath = target->currentPath();
-    int failed = 0;
-    if (srcKind == "local" && dstKind == "local") {
-        // 本地→本地：复制
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            const bool ok = f.isDir ? QDir(srcFull).mkpath(dstFull)   // 简化：目录复制仅建空目录
-                                    : QFile::copy(srcFull, dstFull);
-            if (!ok) ++failed;
-        }
-        refresh(); target->refresh();
-    } else if (srcKind == "local" && dstKind != "local") {
-        // 本地→远程：上传
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (!target->source()->upload(srcFull, dstFull)) ++failed;
-        }
-        target->refresh();
-    } else if (srcKind != "local" && dstKind == "local") {
-        // 远程→本地：下载
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (!m_source->download(srcFull, dstFull)) ++failed;
-        }
-        refresh();
+    if (srcKind == "local" || dstKind == "local") {
+        submitSelectedTransfer(target, false);
     } else {
         // 远程→远程：禁用提示
         m_breadcrumb->setText(tr("远程间复制暂不支持"));
         return;
     }
-    if (failed > 0)
-        m_breadcrumb->setText(tr("复制完成，%1 项失败").arg(failed));
 }
 
 void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
 {
-    if (!target || !target->source()) return;
+    if (!m_source || !target || !target->source()) return;
     const auto files = selectedFiles();
     if (files.empty()) { m_breadcrumb->setText(tr("未选择文件")); return; }
     const QString srcKind = m_source->sourceId();
     const QString dstKind = target->source()->sourceId();
-    const QString dstPath = target->currentPath();
     // 目录项统一跳过删源（浅拷贝限制：mkpath 仅建空目录/单文件上传下载不递归，
     // 删源将造成内容丢失）——跳过并提示，文件项仍按移动语义执行
     int dirSkipped = 0;
-    if (srcKind == "local" && dstKind == "local") {
-        // 本地→本地：复制后删源（移动语义）
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            if (f.isDir) { ++dirSkipped; continue; }
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (QFile::copy(srcFull, dstFull)) m_source->remove(srcFull, false);
-        }
-        refresh(); target->refresh();
-    } else if (srcKind == "local" && dstKind != "local") {
-        // 本地→远程：上传后删源
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            if (f.isDir) { ++dirSkipped; continue; }
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (target->source()->upload(srcFull, dstFull))
-                m_source->remove(srcFull, false);
-        }
-        target->refresh(); refresh();
-    } else if (srcKind != "local" && dstKind == "local") {
-        // 远程→本地：下载后删源
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            if (f.isDir) { ++dirSkipped; continue; }
-            const QString srcFull = m_currentPath + "/" + QString::fromStdString(f.name);
-            const QString dstFull = dstPath + "/" + QString::fromStdString(f.name);
-            if (m_source->download(srcFull, dstFull))
-                m_source->remove(srcFull, false);
-        }
-        refresh(); target->refresh();
+    if (srcKind == "local" || dstKind == "local") {
+        submitSelectedTransfer(target, true);
     } else {
         // 远程→远程：禁用提示
         m_breadcrumb->setText(tr("远程间移动暂不支持"));
     }
     if (dirSkipped > 0)
         m_breadcrumb->setText(tr("目录移动暂不支持（浅拷贝限制），已跳过 %1 个目录").arg(dirSkipped));
+}
+
+QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool move)
+{
+    if (!m_source || !target || !target->source() || !m_transferSubmitter)
+        return {};
+
+    const bool sourceLocal = m_source->sourceId() == QStringLiteral("local");
+    const bool targetLocal = target->source()->sourceId() == QStringLiteral("local");
+    if (!sourceLocal && !targetLocal)
+        return {};
+
+    QVector<TransferItemRequest> items;
+    int directoriesSkipped = 0;
+    for (const auto& file : selectedFiles()) {
+        if (file.name == "..")
+            continue;
+        if (file.isDir) {
+            ++directoriesSkipped;
+            continue;
+        }
+
+        const QString name = QString::fromStdString(file.name);
+        TransferItemRequest item;
+        const bool localToLocal = sourceLocal && targetLocal;
+        item.direction = sourceLocal && !localToLocal ? TransferDirection::Upload
+                                                      : TransferDirection::Download;
+        item.localPath = joinedPath(localToLocal || !sourceLocal
+                                        ? target->m_currentPath : m_currentPath,
+                                    name);
+        item.remotePath = joinedPath(localToLocal || !sourceLocal
+                                         ? m_currentPath : target->m_currentPath,
+                                     name);
+        items.push_back(std::move(item));
+    }
+
+    if (items.isEmpty()) {
+        m_breadcrumb->setText(directoriesSkipped > 0
+            ? tr("文件夹传输尚未支持，未提交任务")
+            : tr("未选择可传输文件"));
+        return {};
+    }
+
+    const auto policy = chooseOverwritePolicy(target, items);
+    if (!policy)
+        return {};
+    for (auto& item : items)
+        item.overwrite = *policy;
+
+    TransferTask task;
+    task.displayName = tr("%1 %2 个文件")
+        .arg(sourceLocal ? tr("上传") : tr("下载"))
+        .arg(items.size());
+    task.protocol = sourceLocal && targetLocal
+        ? QStringLiteral("local")
+        : normalizedTransferProtocol(
+              sourceLocal ? target->source()->sourceId() : m_source->sourceId());
+    task.generation = ++m_transferGeneration;
+    task.removeSourceAfterCommit = move;
+    task.items = std::move(items);
+    return submitTransferTask(std::move(task), this, target);
+}
+
+std::optional<OverwritePolicy> FileBrowserPanel::chooseOverwritePolicy(
+    FileBrowserPanel* target,
+    const QVector<TransferItemRequest>& items) const
+{
+    if (!target)
+        return std::nullopt;
+
+    int conflicts = 0;
+    for (const auto& item : items) {
+        const QString targetName = QFileInfo(item.direction == TransferDirection::Upload
+                                                 ? item.remotePath
+                                                 : item.localPath)
+                                       .fileName();
+        const auto found = std::find_if(target->m_files.cbegin(), target->m_files.cend(),
+            [&targetName](const FtpFileInfo& existing) {
+                return QString::fromStdString(existing.name) == targetName;
+            });
+        if (found != target->m_files.cend())
+            ++conflicts;
+    }
+
+    if (conflicts == 0)
+        return OverwritePolicy::Overwrite;
+    if (m_overwritePolicyChooser)
+        return m_overwritePolicyChooser(conflicts);
+
+    const auto answer = QMessageBox::question(
+        const_cast<FileBrowserPanel*>(this),
+        tr("同名文件"),
+        tr("有 %1 个同名项。覆盖这些文件吗？\n"
+           "选择“否”将跳过同名项。").arg(conflicts),
+        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+        QMessageBox::Cancel);
+    if (answer == QMessageBox::Cancel)
+        return std::nullopt;
+    return answer == QMessageBox::Yes ? OverwritePolicy::Overwrite
+                                      : OverwritePolicy::Skip;
+}
+
+QUuid FileBrowserPanel::submitTransferTask(TransferTask task,
+                                           FileBrowserPanel* sourcePanel,
+                                           FileBrowserPanel* targetPanel)
+{
+    if (!m_transferSubmitter || task.items.isEmpty())
+        return {};
+    if (task.generation == 0)
+        task.generation = ++m_transferGeneration;
+
+    const QUuid id = m_transferSubmitter(task);
+    if (id.isNull()) {
+        m_transferStatus->setText(tr("任务提交失败"));
+        return {};
+    }
+
+    PendingTransfer pending;
+    pending.task = std::move(task);
+    pending.sourcePanel = sourcePanel;
+    pending.targetPanel = targetPanel;
+    pending.sourceLoadGeneration = sourcePanel ? sourcePanel->m_loadGeneration : 0;
+    pending.targetLoadGeneration = targetPanel ? targetPanel->m_loadGeneration : 0;
+    m_pendingTransfers.insert(id, pending);
+    m_activeTransferId = id;
+    m_transferProgress->setValue(0);
+    m_transferStatus->setText(tr("已提交"));
+    m_transferCancelButton->setEnabled(true);
+    m_transferRetryButton->setEnabled(false);
+    return id;
+}
+
+void FileBrowserPanel::cancelActiveTransfer()
+{
+    if (m_activeTransferId.isNull() || !m_transferCanceller)
+        return;
+    m_transferCanceller(m_activeTransferId);
+    m_transferStatus->setText(transferStateText(TransferState::Cancelling));
+    m_transferCancelButton->setEnabled(false);
+}
+
+void FileBrowserPanel::resumeLastTransfer()
+{
+    if (!m_lastTransfer || !m_transferSubmitter)
+        return;
+    if ((m_lastTransfer->sourcePanel
+         && m_lastTransfer->sourcePanel->m_loadGeneration
+             != m_lastTransfer->sourceLoadGeneration)
+        || (m_lastTransfer->targetPanel
+            && m_lastTransfer->targetPanel->m_loadGeneration
+                != m_lastTransfer->targetLoadGeneration)) {
+        m_transferStatus->setText(tr("源或目标已切换，请重新选择文件"));
+        m_transferRetryButton->setEnabled(false);
+        return;
+    }
+
+    TransferTask resumed = m_lastTransfer->task;
+    QVector<TransferItemRequest> remaining;
+    for (qsizetype index = 0; index < resumed.items.size(); ++index) {
+        const bool needsResume = index >= m_lastTransferSnapshot.itemResults.size()
+            || !hasDeliveredTarget(m_lastTransferSnapshot.itemResults.at(index));
+        if (needsResume) {
+            remaining.push_back(resumed.items.at(index));
+        }
+    }
+    if (remaining.isEmpty()) {
+        m_transferStatus->setText(tr("没有需要恢复的项"));
+        m_transferRetryButton->setEnabled(false);
+        return;
+    }
+
+    resumed.items = std::move(remaining);
+    resumed.generation = ++m_transferGeneration;
+    resumed.credentialKey.clear();
+    submitTransferTask(std::move(resumed),
+                       m_lastTransfer->sourcePanel.data(),
+                       m_lastTransfer->targetPanel.data());
+}
+
+void FileBrowserPanel::consumeTransferEvent(const TransferEvent& event)
+{
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, event] { applyTransferEvent(event); },
+                                  Qt::QueuedConnection);
+        return;
+    }
+    applyTransferEvent(event);
+}
+
+void FileBrowserPanel::applyTransferEvent(const TransferEvent& event)
+{
+    const auto found = m_pendingTransfers.find(event.snapshot.id);
+    if (found == m_pendingTransfers.end()
+        || found->task.generation != event.snapshot.generation) {
+        return;
+    }
+
+    const bool isActive = event.snapshot.id == m_activeTransferId;
+    if (isActive) {
+        m_transferStatus->setText(transferStatusText(event.snapshot));
+        m_transferProgress->setValue(std::clamp(event.snapshot.progress, 0, 100));
+    }
+
+    if (event.type != TransferEventType::TaskFinished) {
+        if (isActive)
+            m_transferCancelButton->setEnabled(event.snapshot.state != TransferState::Cancelling);
+        emit transferSnapshotApplied();
+        return;
+    }
+
+    PendingTransfer completed = found.value();
+    const bool committed = hasCommittedItem(event.snapshot);
+    if (committed && completed.targetPanel
+        && completed.targetPanel->m_loadGeneration == completed.targetLoadGeneration) {
+        completed.targetPanel->refresh();
+        completed.targetLoadGeneration = completed.targetPanel->m_loadGeneration;
+    }
+    if (hasSourceRemovedItem(event.snapshot) && completed.sourcePanel
+        && completed.sourcePanel->m_loadGeneration == completed.sourceLoadGeneration) {
+        completed.sourcePanel->refresh();
+        completed.sourceLoadGeneration = completed.sourcePanel->m_loadGeneration;
+    }
+
+    m_lastTransfer = completed;
+    m_lastTransferSnapshot = event.snapshot;
+    m_pendingTransfers.erase(found);
+    if (isActive)
+        m_activeTransferId = {};
+    const TransferState state = event.snapshot.state;
+    if (isActive) {
+        m_transferCancelButton->setEnabled(false);
+        m_transferRetryButton->setEnabled(state == TransferState::NeedsAttention
+            || state == TransferState::Failed
+            || state == TransferState::Cancelled
+            || state == TransferState::PartiallySucceeded);
+    }
+    emit transferSnapshotApplied();
 }
 
 void FileBrowserPanel::showContextMenu(const QPoint& pos)
@@ -472,8 +836,9 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
 
     const auto files = selectedFiles();
     const bool hasSel = !files.empty() && !(files.size() == 1 && files.front().name == "..");
-    const bool singleSel = files.size() == 1 && files.front().name != "..";
-    const bool selIsDir = singleSel && files.front().isDir;
+    const bool singleRow = files.size() == 1;
+    const bool singleSel = singleRow && files.front().name != "..";
+    const bool selIsDir = singleRow && files.front().isDir;
 
     QMenu menu(this);
     auto* enterAct   = menu.addAction(tr("进入"));           // 目录 / .. 进入
@@ -579,33 +944,65 @@ FileBrowserPanel* FileBrowserPanel::dragSourcePanel(const QDropEvent* event) con
     return nullptr;
 }
 
+bool FileBrowserPanel::canAcceptDrag(const FileBrowserPanel* sourcePanel,
+                                     bool hasUrls) const
+{
+    return supportsPanelTransfer(sourcePanel, this)
+        || (!sourcePanel && hasUrls && m_source
+            && m_source->sourceId() != QStringLiteral("local"));
+}
+
 bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 {
     // 拦截表格视口上的面板间拖拽事件（与 FtpDeployWidget 的系统文件拖入同套路）
     if ((watched == m_table->viewport() || watched == m_table) && m_source) {
         switch (event->type()) {
-        case QEvent::DragEnter:
-            if (dragSourcePanel(static_cast<QDragEnterEvent*>(event))) {
+        case QEvent::KeyPress: {
+            const auto* key = static_cast<QKeyEvent*>(event);
+            if (key->key() == Qt::Key_Right) {
+                enterSelectedDirectory();
+                return true;
+            }
+            if (key->key() == Qt::Key_Left) {
+                navigateToParent();
+                return true;
+            }
+            break;
+        }
+        case QEvent::DragEnter: {
+            auto* drag = static_cast<QDragEnterEvent*>(event);
+            const auto sourcePanel = dragSourcePanel(drag);
+            const bool accepted = canAcceptDrag(sourcePanel, drag->mimeData()->hasUrls());
+            if (accepted) {
                 static_cast<QDragEnterEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragEnterEvent*>(event)->accept();
                 return true;
             }
-            break;
-        case QEvent::DragMove:
-            if (dragSourcePanel(static_cast<QDragMoveEvent*>(event))) {
+            drag->ignore();
+            return true;
+        }
+        case QEvent::DragMove: {
+            auto* drag = static_cast<QDragMoveEvent*>(event);
+            const auto sourcePanel = dragSourcePanel(drag);
+            const bool accepted = canAcceptDrag(sourcePanel, drag->mimeData()->hasUrls());
+            if (accepted) {
                 static_cast<QDragMoveEvent*>(event)->setDropAction(Qt::CopyAction);
                 static_cast<QDragMoveEvent*>(event)->accept();
                 return true;
             }
-            break;
+            drag->ignore();
+            return true;
+        }
         case QEvent::Drop: {
             auto* drop = static_cast<QDropEvent*>(event);
-            if (auto* srcPanel = dragSourcePanel(drop)) {
-                srcPanel->copySelectedTo(this);   // 拖入方向语义 = 源面板复制到本面板
-                drop->acceptProposedAction();
+            const DropRoute route = handleDrop(dragSourcePanel(drop), drop->mimeData()->urls());
+            if (route != DropRoute::Rejected) {
+                drop->setDropAction(Qt::CopyAction);
+                drop->accept();
                 return true;
             }
-            break;
+            drop->ignore();
+            return true;
         }
         default:
             break;
@@ -617,11 +1014,8 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 {
     // 非表格区域（路径栏/面包屑等）上的拖入：
-    //   面板间拖拽 → 接受（CopyAction）；系统文件拖入 → 接受（dropEvent 按目标源分流）
-    if (dragSourcePanel(event)) {
-        event->setDropAction(Qt::CopyAction);
-        event->accept();
-    } else if (event->mimeData()->hasUrls()) {
+    //   仅本地↔远程面板传输，或系统→远程上传可接受。
+    if (canAcceptDrag(dragSourcePanel(event), event->mimeData()->hasUrls())) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -631,10 +1025,7 @@ void FileBrowserPanel::dragEnterEvent(QDragEnterEvent* event)
 
 void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (dragSourcePanel(event)) {
-        event->setDropAction(Qt::CopyAction);
-        event->accept();
-    } else if (event->mimeData()->hasUrls()) {
+    if (canAcceptDrag(dragSourcePanel(event), event->mimeData()->hasUrls())) {
         event->setDropAction(Qt::CopyAction);
         event->accept();
     } else {
@@ -644,34 +1035,63 @@ void FileBrowserPanel::dragMoveEvent(QDragMoveEvent* event)
 
 void FileBrowserPanel::dropEvent(QDropEvent* event)
 {
-    // 面板间拖拽（来源面板存在）→ 现有复制/移动语义
-    if (FileBrowserPanel* src = dragSourcePanel(event)) {
-        src->copySelectedTo(this);
-        event->acceptProposedAction();
+    const DropRoute route = handleDrop(dragSourcePanel(event), event->mimeData()->urls());
+    if (route == DropRoute::Rejected) {
+        event->ignore();
         return;
     }
-    // 系统文件拖入：目标为远程源 → 逐文件上传
-    if (m_source && m_source->sourceId() != QLatin1String("local")) {
-        const auto urls = event->mimeData()->urls();
-        int valid = 0, failed = 0;
-        for (const auto& url : urls) {
-            const QString localPath = url.toLocalFile();
-            if (localPath.isEmpty()) continue;
-            ++valid;
-            const QString remotePath = m_currentPath + "/" + QFileInfo(localPath).fileName();
-            if (!m_source->upload(localPath, remotePath)) ++failed;
-        }
-        if (valid == 0) {
-            m_breadcrumb->setText(tr("未检测到可上传的文件"));
-        } else {
-            m_breadcrumb->setText(failed > 0
-                ? tr("上传完成，%1 项失败").arg(failed)
-                : tr("上传完成"));
-        }
-        event->acceptProposedAction();
-        refresh();   // 异步刷新（Task 1）
-        return;
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+}
+
+FileBrowserPanel::DropRoute FileBrowserPanel::handleDrop(
+    FileBrowserPanel* sourcePanel,
+    const QList<QUrl>& urls)
+{
+    if (sourcePanel && supportsPanelTransfer(sourcePanel, this)) {
+        sourcePanel->copySelectedTo(this);
+        return DropRoute::PanelTransfer;
     }
-    m_breadcrumb->setText(tr("拖拽上传仅支持远程面板"));
-    event->ignore();
+
+    if (sourcePanel) {
+        m_breadcrumb->setText(tr("远程间传输暂不支持"));
+        return DropRoute::Rejected;
+    }
+
+    if (!m_source || m_source->sourceId() == QStringLiteral("local")) {
+        m_breadcrumb->setText(tr("系统文件只能拖入远程面板"));
+        return DropRoute::Rejected;
+    }
+
+    QVector<TransferItemRequest> items;
+    for (const auto& url : urls) {
+        const QString localPath = url.toLocalFile();
+        const QFileInfo info(localPath);
+        if (localPath.isEmpty() || (info.exists() && !info.isFile()))
+            continue;
+        TransferItemRequest item;
+        item.localPath = localPath;
+        item.remotePath = joinedPath(m_currentPath, info.fileName());
+        item.direction = TransferDirection::Upload;
+        items.push_back(std::move(item));
+    }
+    if (items.isEmpty()) {
+        m_breadcrumb->setText(tr("未检测到可上传的文件"));
+        return DropRoute::Rejected;
+    }
+
+    const auto policy = chooseOverwritePolicy(this, items);
+    if (!policy)
+        return DropRoute::Rejected;
+    for (auto& item : items)
+        item.overwrite = *policy;
+
+    TransferTask task;
+    task.displayName = tr("上传 %1 个文件").arg(items.size());
+    task.protocol = normalizedTransferProtocol(m_source->sourceId());
+    task.generation = ++m_transferGeneration;
+    task.items = std::move(items);
+    if (submitTransferTask(std::move(task), nullptr, this).isNull())
+        return DropRoute::Rejected;
+    return DropRoute::SystemUpload;
 }

@@ -120,11 +120,27 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
     m_clearBeforeDeploy = clearBeforeDeploy;
     m_rebootAfterDeploy = rebootAfterDeploy;
 
+    // 请求身份不包含密码；新部署和显式恢复不会因参数相同而混淆。
+    std::string requestKey;
+    auto appendKey = [&requestKey](const std::string& value) {
+        requestKey += std::to_string(value.size()) + ":" + value;
+    };
+    appendKey(protocol);
+    appendKey(useFtps ? "ftps" : "plain");
+    appendKey(std::to_string(port));
+    appendKey(m_auth.user);
+    appendKey(remotePath);
+    for (const auto& file : localFiles) appendKey(file);
+    const bool resume = m_resumeNextUpload && requestKey == m_previousRequestKey;
+    m_resumeNextUpload = false;
+    m_previousRequestKey = std::move(requestKey);
+    const DeployReport previousReport = resume ? lastReport() : DeployReport{};
+
     // 并发度在调用方线程读库（Qt SQL 线程亲和，见 loadConcurrency 注释），
     // 值捕获进工作线程
     const int concurrency = loadConcurrency();
 
-    m_uploadFuture = QtConcurrent::run([this, localFiles, protocol, useFtps, port, concurrency]() {
+    m_uploadFuture = QtConcurrent::run([this, localFiles, protocol, useFtps, port, concurrency, resume, previousReport]() {
         if (m_devices.empty()) {
             if (m_logCb) m_logCb("错误：没有绑定设备，请先在设备总线中添加目标设备");
             if (m_finishedCb) m_finishedCb(false, {}, {});
@@ -149,6 +165,17 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             params.clearBefore = m_clearBeforeDeploy;
             params.useFtps = useFtps;
             params.protocol = protocol;
+            params.channelFactory = m_channelFactory;
+            if (resume) {
+                const auto key = device.ip + ":" + std::to_string(device.port);
+                for (const auto& result : previousReport.results) {
+                    if (result.deviceKey == key && result.state == DeviceResult::Failed) {
+                        params.resume = true;
+                        params.deliveredFiles = result.deliveredFiles;
+                        break;
+                    }
+                }
+            }
             params.globalCancel = &m_batchCancel;
             params.logSink = [this](const std::string& msg) {
                 if (m_logCb) m_logCb(msg);
@@ -179,6 +206,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
 
         const DeployReport report =
             runner->run(allParams, concurrency, m_batchCancel, deviceProgress);
+        for (auto& params : allParams) params.auth.clear();
 
         // 报告缓存（v2.8 Task 5）：供 Widget「导出报告」事后读取；互斥保护
         // 跨线程可见性（此处工作线程写，GUI 线程经 lastReport() 读）

@@ -46,7 +46,7 @@ cmake --build . --config Release
 .\Release\DeviceForge.exe
 ```
 
-> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.8.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
+> **注意**：CMake `project()` 名与可执行目标均为 `DeviceForge`（见 `CMakeLists.txt`，`project(DeviceForge VERSION 2.9.0 ...)` + `qt_add_executable(DeviceForge ...)`），产物是 `DeviceForge.exe`。VS/vcxproj 工程已删除（2026-08-01），CMake 是唯一构建系统，产物名不再有二义性。
 
 ### 测试（CTest）
 
@@ -100,9 +100,11 @@ GitHub Actions（`.github/workflows/msbuild.yml`，workflow 名为 "CMake Build"
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.8.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.9.0
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）。
+
+**v2.9 传输可靠性内核（2026-09）**：双栏上传、下载、本地复制/移动和批量部署统一经 `TransferScheduler → TransferExecutor → ITransferChannel`；支持瞬时错误重试、SHA-256 校验、临时文件、原子提交、非原子降级告警、项目级取消、已交付文件恢复跳过和报告 `nonAtomic` 字段。`IProtocolAdapter`/`IDeployable` ABI 保持不变。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 

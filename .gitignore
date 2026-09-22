@@ -362,6 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 .superpowers/
+.worktrees/
 .omc/
 build/
 build_release/

@@ -23,6 +23,13 @@
 #include "ui/IFileSource.h"
 #include "ui/LocalFileSource.h"
 #include "ui/RemoteFileSource.h"
+#include "adapter/FtpAdapter.h"
+#include "adapter/ProtocolRegistry.h"
+#include "config/ConfigStore.h"
+#include "transfer/AdapterTransferChannel.h"
+#include "transfer/LocalPanelTransfer.h"
+#include "transfer/TransferExecutor.h"
+#include "transfer/TransferScheduler.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -37,10 +44,73 @@
 #include <QtConcurrent>
 #include <algorithm>
 
+namespace {
+
+QString registryProtocol(const QString& protocol)
+{
+    return protocol == QStringLiteral("sftp") ? QStringLiteral("ssh") : protocol;
+}
+
+void configureTransferAdapter(const TransferTask& task,
+                              const std::shared_ptr<IProtocolAdapter>& adapter)
+{
+    if (task.protocol == QStringLiteral("ftp")) {
+        if (const auto ftp = std::dynamic_pointer_cast<FtpAdapter>(adapter))
+            ftp->setUseFtps(task.useFtps);
+    }
+}
+
+TransferItemResult transferFailure(TransferErrorCode code, const QString& message)
+{
+    return {TransferState::Failed, {code, message, message, false}, 0, false, 0};
+}
+
+TransferItemResult committedWithCleanupFailure(TransferItemResult result,
+                                                 TransferErrorCode code,
+                                                 const QString& message)
+{
+    result.state = TransferState::PartiallySucceeded;
+    result.error = {code, message, message, false};
+    return result;
+}
+
+TransferItemResult uncommittedMoveResult(TransferItemResult result,
+                                         TransferErrorCode code,
+                                         const QString& message)
+{
+    result.state = TransferState::PartiallySucceeded;
+    result.error = {code, message, message, false};
+    return result;
+}
+
+bool hasNonAtomicSuccess(const TransferTaskSnapshot& snapshot)
+{
+    return std::any_of(snapshot.itemResults.cbegin(), snapshot.itemResults.cend(),
+                       [](const TransferItemResult& result) {
+        return result.nonAtomic && hasDeliveredTarget(result);
+    });
+}
+
+} // namespace
+
 FtpDeployWidget::FtpDeployWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+}
+
+FtpDeployWidget::~FtpDeployWidget()
+{
+    if (m_transferScheduler)
+        m_transferScheduler->shutdown();
+
+    QMutexLocker locker(&m_transferCredentialMutex);
+    for (auto it = m_transferCredentialVault.begin();
+         it != m_transferCredentialVault.end(); ++it) {
+        it.value().clear();
+    }
+    m_transferCredentialVault.clear();
+    m_transferCredentialKeys.clear();
 }
 
 void FtpDeployWidget::setupUi()
@@ -66,6 +136,9 @@ void FtpDeployWidget::setupUi()
     // 面板互指（F5 复制/F6 移动/Tab 切换/拖拽方向语义依赖 peer）
     m_leftPanel->setPeerPanel(m_rightPanel);
     m_rightPanel->setPeerPanel(m_leftPanel);
+
+    // 两个面板共用同一 Scheduler/Executor；面板不知道 worker 和协议对象。
+    setupTransferScheduler();
 
     // 源选择器默认布局：左面板本地（设备下拉隐藏）；右面板=工具栏配置（FTP + 设备，
     // 设备列表在 setDeviceBusWidget 填充）——左面板可再切换远程浏览，右面板恒为部署目标浏览
@@ -98,6 +171,275 @@ void FtpDeployWidget::setupUi()
 
     setupBottomBar(mainLayout);
     connectBackendSignals();
+}
+
+void FtpDeployWidget::setupTransferScheduler()
+{
+    bool concurrencyOk = false;
+    int concurrency = ConfigStore::instance()
+        .load(QStringLiteral("deploy"), QStringLiteral("concurrency"))
+        .value(QStringLiteral("concurrency"), 1)
+        .toInt(&concurrencyOk);
+    if (!concurrencyOk)
+        concurrency = 1;
+    concurrency = std::clamp(concurrency, 1, 8);
+
+    m_transferScheduler = std::make_unique<TransferScheduler>(
+        concurrency,
+        [this](const TransferTask& task,
+               int itemIndex,
+               const TransferItemRequest& item,
+               std::atomic_bool& cancel,
+               const TransferScheduler::ProgressSink& progress) {
+            return executePanelTransfer(task, itemIndex, item, cancel, progress);
+        });
+    m_transferScheduler->setEventSink([this](const TransferEvent& event) {
+        // Scheduler 会从 submit 线程或 worker 线程发布；统一排队后
+        // 才访问 QWidget，同时确保同步冲突终态在 submit 建立 ID 映射之后消费。
+        QMetaObject::invokeMethod(this, [this, event] { handleTransferEvent(event); },
+                                  Qt::QueuedConnection);
+    });
+
+    const auto submitter = [this](TransferTask task) {
+        return submitPanelTransfer(std::move(task));
+    };
+    const auto canceller = [this](const QUuid& taskId) {
+        if (m_transferScheduler)
+            m_transferScheduler->cancel(taskId);
+    };
+    m_leftPanel->setTransferSubmitter(submitter);
+    m_rightPanel->setTransferSubmitter(submitter);
+    m_leftPanel->setTransferCanceller(canceller);
+    m_rightPanel->setTransferCanceller(canceller);
+}
+
+QUuid FtpDeployWidget::submitPanelTransfer(TransferTask task)
+{
+    if (!m_transferScheduler || task.items.isEmpty())
+        return {};
+
+    const QString protocol = registryProtocol(task.protocol.trimmed().toLower());
+    if (protocol == QStringLiteral("local")) {
+        task.protocol = QStringLiteral("local");
+        task.device = {"localhost", 0, "local", "local", ""};
+        task.userIdentity.clear();
+        task.credentialKey.clear();
+        return m_transferScheduler->submit(std::move(task));
+    }
+    if (!m_deviceBus
+        || (protocol != QStringLiteral("ftp") && protocol != QStringLiteral("ssh")))
+        return {};
+
+    const QString deviceIp = !m_remoteSrcDevice.isEmpty()
+        ? m_remoteSrcDevice : m_deviceCombo->currentText();
+    if (deviceIp.isEmpty())
+        return {};
+
+    task.protocol = protocol == QStringLiteral("ssh")
+        ? QStringLiteral("sftp") : protocol;
+    task.device.ip = deviceIp.toStdString();
+    task.device.port = m_remoteSrcPort > 0
+        ? m_remoteSrcPort : (protocol == QStringLiteral("ssh") ? 22 : m_portSpin->value());
+    task.device.protocol = protocol.toStdString();
+    task.userIdentity = m_deviceBus->user();
+    task.useFtps = protocol == QStringLiteral("ftp") && m_remoteSrcUseFtps;
+    task.credentialKey = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    AuthInfo auth;
+    auth.user = m_deviceBus->user().toStdString();
+    auth.password = m_deviceBus->password().toStdString();
+    {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        m_transferCredentialVault.insert(task.credentialKey, auth);
+    }
+    auth.clear();
+
+    const QString credentialKey = task.credentialKey;
+    const QUuid taskId = m_transferScheduler->submit(std::move(task));
+    if (taskId.isNull()) {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        auto credential = m_transferCredentialVault.find(credentialKey);
+        if (credential != m_transferCredentialVault.end()) {
+            credential.value().clear();
+            m_transferCredentialVault.erase(credential);
+        }
+        return {};
+    }
+    {
+        QMutexLocker locker(&m_transferCredentialMutex);
+        m_transferCredentialKeys.insert(taskId, credentialKey);
+    }
+    return taskId;
+}
+
+AuthInfo FtpDeployWidget::transferCredentials(const QString& key) const
+{
+    QMutexLocker locker(&m_transferCredentialMutex);
+    return m_transferCredentialVault.value(key);
+}
+
+TransferItemResult FtpDeployWidget::executePanelTransfer(
+    const TransferTask& task,
+    int,
+    const TransferItemRequest& item,
+    std::atomic_bool& cancel,
+    const std::function<void(int)>& progress)
+{
+    const QString adapterProtocol = registryProtocol(task.protocol);
+    TransferItemResult result;
+    if (adapterProtocol == QStringLiteral("local")) {
+        result = executeLocalPanelTransfer(item, cancel, progress);
+    } else {
+        auto adapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
+        if (!adapter) {
+            return transferFailure(TransferErrorCode::Unsupported,
+                                   tr("协议 %1 不可用").arg(task.protocol));
+        }
+        configureTransferAdapter(task, adapter);
+
+        AuthInfo credentials = transferCredentials(task.credentialKey);
+        AdapterTransferChannel channel(task.protocol, adapter);
+        channel.setProgressCallback(progress);
+        TransferExecutor executor(channel, task.device, credentials);
+        result = executor.execute(item, cancel);
+    }
+    if (!task.removeSourceAfterCommit)
+        return result;
+
+    // 预检失败同样可能 attempts==0；必须原样保留 Failed/NeedsAttention，
+    // 只有成功结果才进入“目标已交付、是否清理源”的移动语义。
+    if (result.state != TransferState::Succeeded)
+        return result;
+
+    if (result.skipped) {
+        return uncommittedMoveResult(
+            std::move(result), TransferErrorCode::TargetChanged,
+            tr("目标同名项已跳过，源文件未删除"));
+    }
+    if (result.nonAtomic) {
+        return uncommittedMoveResult(
+            std::move(result), TransferErrorCode::Unsupported,
+            tr("目标以非原子方式交付，为避免丢失已保留源文件"));
+    }
+    if (!hasDeliveredTarget(result))
+        return result;
+
+    // Skip 与 nonAtomic 已在上面以明确状态收口；以下仅处理原子提交。
+    if (cancel.load()) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止源文件清理"));
+    }
+
+    if (item.direction == TransferDirection::Upload
+        || adapterProtocol == QStringLiteral("local")) {
+        const QString sourcePath = adapterProtocol == QStringLiteral("local")
+            ? item.remotePath : item.localPath;
+        if (adapterProtocol == QStringLiteral("local")
+            && localPathsEquivalent(sourcePath, item.localPath)) {
+            return committedWithCleanupFailure(
+                std::move(result), TransferErrorCode::TargetChanged,
+                tr("源和目标指向同一个本地文件，已阻止源文件清理，请复核"));
+        }
+        const bool removed = !QFile::exists(sourcePath) || QFile::remove(sourcePath);
+        if (removed) {
+            result.sourceRemoved = true;
+            if (cancel.load()) {
+                return committedWithCleanupFailure(
+                    std::move(result), TransferErrorCode::Cancelled,
+                    tr("目标已提交，源文件已删除，但取消在清理期间到达，请复核"));
+            }
+            return result;
+        }
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::LocalIo,
+            tr("目标已提交，但本地源文件删除失败"));
+    }
+
+    auto cleanupAdapter = ProtocolRegistry::instance()->create(adapterProtocol.toStdString());
+    if (!cleanupAdapter) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Unsupported,
+            tr("目标已提交，但无法创建源清理通道"));
+    }
+    configureTransferAdapter(task, cleanupAdapter);
+    AuthInfo cleanupCredentials = transferCredentials(task.credentialKey);
+    AdapterTransferChannel cleanupChannel(task.protocol, cleanupAdapter);
+    cleanupChannel.setCancelFlag(&cancel);
+    const auto clearCleanupCredentials = [&cleanupChannel, &cleanupCredentials] {
+        cleanupChannel.clearCredentials();
+        cleanupCredentials.clear();
+    };
+    if (cancel.load()) {
+        clearCleanupCredentials();
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
+    const bool connected = cleanupChannel.connect(task.device, cleanupCredentials);
+    if (cancel.load()) {
+        clearCleanupCredentials();
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
+    const bool removed = connected && cleanupChannel.remove(item.remotePath);
+    const bool cancelledDuringCleanup = cancel.load();
+    TransferError cleanupError = cleanupChannel.lastError();
+    clearCleanupCredentials();
+    if (removed) {
+        result.sourceRemoved = true;
+        if (cancelledDuringCleanup) {
+            return committedWithCleanupFailure(
+                std::move(result), TransferErrorCode::Cancelled,
+                tr("目标已提交，远程源文件已删除，但取消在清理期间到达，请复核"));
+        }
+        return result;
+    }
+    if (cancelledDuringCleanup) {
+        return committedWithCleanupFailure(
+            std::move(result), TransferErrorCode::Cancelled,
+            tr("目标已提交，取消已阻止远程源文件清理"));
+    }
+    QString message = cleanupError.message.isEmpty()
+        ? tr("目标已提交，但远程源文件删除失败")
+        : tr("目标已提交，但源清理失败：%1").arg(cleanupError.message);
+    if (!cleanupError.detail.isEmpty())
+        message += tr("（详细信息：%1）").arg(cleanupError.detail);
+    return committedWithCleanupFailure(std::move(result), TransferErrorCode::RemoteIo,
+                                       message);
+}
+
+void FtpDeployWidget::handleTransferEvent(const TransferEvent& event)
+{
+    // 此方法始终在 GUI 线程；面板只消费值快照。
+    if (m_leftPanel)
+        m_leftPanel->consumeTransferEvent(event);
+    if (m_rightPanel)
+        m_rightPanel->consumeTransferEvent(event);
+
+    if (event.type == TransferEventType::TaskFinished) {
+        clearTransferCredential(event.snapshot.id);
+        const QString detail = event.snapshot.error.message.isEmpty()
+            ? QString() : QStringLiteral("：") + event.snapshot.error.message;
+        appendLog(tr("双栏传输终态 %1%2")
+                      .arg(static_cast<int>(event.snapshot.state))
+                      .arg(detail));
+        if (hasNonAtomicSuccess(event.snapshot)) {
+            appendLog(tr("提示：已完成但使用非原子替换，源文件未自动删除，请复核目标文件"));
+        }
+    }
+}
+
+void FtpDeployWidget::clearTransferCredential(const QUuid& taskId)
+{
+    QMutexLocker locker(&m_transferCredentialMutex);
+    const QString key = m_transferCredentialKeys.take(taskId);
+    auto credential = m_transferCredentialVault.find(key);
+    if (credential == m_transferCredentialVault.end())
+        return;
+    credential.value().clear();
+    m_transferCredentialVault.erase(credential);
 }
 
 void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
@@ -451,6 +793,7 @@ void FtpDeployWidget::onRetryFailedClicked()
     // 沿用上次请求缓存（文件/目录/选项/协议），凭证取设备总线当前值；
     // 走与普通部署完全相同的 startDeployment → startUpload 链路
     appendLog(QString("重试 %1 台失败设备...").arg(failedDevices.size()));
+    m_backend->resumePreviousFailures();
     startDeployment(failedDevices, m_lastFiles,
                     QString::fromStdString(m_lastRemotePath),
                     m_lastClearBefore, m_lastRebootAfter,

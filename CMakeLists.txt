@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # 项目名称和版本
-project(DeviceForge VERSION 2.8.0 LANGUAGES C CXX)
+project(DeviceForge VERSION 2.9.0 LANGUAGES C CXX)
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -198,6 +198,13 @@ set(SOURCES
     src/adapter/SshAdapter.cpp
     src/adapter/OpcUaAdapter.cpp
     src/adapter/ProtocolRegistry.cpp
+
+    # 可靠传输内核
+    src/transfer/TransferTypes.cpp
+    src/transfer/AdapterTransferChannel.cpp
+    src/transfer/LocalTransferChannel.cpp
+    src/transfer/TransferExecutor.cpp
+    src/transfer/TransferScheduler.cpp
 
     # 新框架文件
     src/framework/AppState.cpp

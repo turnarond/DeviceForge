@@ -14,6 +14,15 @@
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
 - **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
 
+## [2.9.0] — 2026-09-16
+
+### 可靠传输闭环
+
+- 双栏上传/下载、本地复制与移动、批量部署统一接入 TransferScheduler → TransferExecutor → ITransferChannel。
+- 增加瞬时错误重试、SHA-256 校验、临时文件提交、原子/非原子交付告警、项目级取消和失败恢复跳过。
+- 批量部署保留 FTP/SFTP 目录映射、清目录事务与部署报告，并修正根目录及首次连接失败恢复边界。
+- 同步 Commander 快捷键、同文件移动保护及 v2.9 可靠性文档说明。
+
 ## [2.8.0] — 2026-08-22
 
 ### 并行批量部署（feature/v28-parallel-deploy）

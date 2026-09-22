@@ -18,6 +18,12 @@ struct SftpPlanItem {
     bool isDirectory = false;
 };
 
+namespace adapter_internal {
+bool sftpTransferCancellationRequested(const std::atomic<bool>* cancelFlag);
+}
+
+class AdapterTransferChannel;
+
 // SSH 协议适配器 — 基于 libssh2 实现 IProtocolAdapter
 // 支持密码认证 + TOFU (Trust On First Use) 主机密钥校验
 // 阻塞模式，由调用方放入 QtConcurrent::run 线程中执行
@@ -38,6 +44,7 @@ public:
     ProtocolCapability capability() const override;
 
     // --- SFTP 文件操作（SSH 文件传输子系统）---
+    // 本地路径参数统一按 UTF-8 编码解释。
     std::vector<FtpFileInfo> sftpListDirectory(const std::string& remotePath);
     bool sftpUploadFile(const std::string& localPath, const std::string& remotePath);
     bool sftpDownloadFile(const std::string& remotePath, const std::string& localPath);
@@ -62,6 +69,10 @@ public:
     void setCancelFlag(std::atomic<bool>* flag) override;
 
 private:
+    friend class AdapterTransferChannel;
+
+    bool isSftpReady() const { return m_sftpSession != nullptr; }
+
     QTcpSocket*         m_socket = nullptr;
     LIBSSH2_SESSION*    m_session = nullptr;
     LIBSSH2_CHANNEL*    m_channel = nullptr;  // subscribe 模式用，request 模式每次新建
