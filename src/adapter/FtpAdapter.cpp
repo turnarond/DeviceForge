@@ -383,6 +383,9 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, file);
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(fileSize));
     curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
     // 闲置判定替代总时长限制（issue #20）：CURLOPT_TIMEOUT 是整个传输的总时限，
@@ -611,6 +614,9 @@ bool FtpAdapter::deleteFile(const std::string& remotePath) {
 
     std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL，避免 curl 尝试 RETR
     m_impl->setupCommonOpts(curl, url);
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
     // 使用 QUOTE 命令发送 DELE
     std::string pathForDelete = "/" + remotePath;
@@ -661,6 +667,9 @@ bool FtpAdapter::deleteDirectory(const std::string& remotePath) {
 
     std::string url = m_impl->buildUrl("/");
     m_impl->setupCommonOpts(curl, url);
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
     std::string pathForDelete = remotePath;
     if (!pathForDelete.empty() && pathForDelete[0] != '/') pathForDelete = "/" + pathForDelete;
@@ -693,6 +702,9 @@ bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& ne
     // 使用根 URL（RNFR/RNTO 用绝对路径，不需要 CWD）
     std::string url = m_impl->buildUrl("/");
     m_impl->setupCommonOpts(curl, url);
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
     // 确保路径以 / 开头（FTP 命令要求绝对路径）
     std::string path = remotePath;
@@ -736,6 +748,9 @@ bool FtpAdapter::makeDirectory(const std::string& remotePath)
 
     std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
     m_impl->setupCommonOpts(curl, url);
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
     std::string path = remotePath;
     if (!path.empty() && path[0] != '/') path = "/" + path;

@@ -62,6 +62,11 @@ private slots:
         QCOMPARE(transient.code, TransferErrorCode::ConnectionLost);
         QVERIFY(transient.retryable);
 
+        const auto quoteWrite = classifyTransferError(
+            QStringLiteral("重命名失败: Failed writing received data to disk/application"), 0);
+        QCOMPARE(quoteWrite.code, TransferErrorCode::RemoteIo);
+        QVERIFY(quoteWrite.retryable);
+
         const auto unsupported =
             classifyTransferError(QStringLiteral("unsupported connection protocol"), 0);
         QCOMPARE(unsupported.code, TransferErrorCode::Unsupported);

@@ -46,6 +46,13 @@ TransferError classifyTransferError(QString message, int nativeCode)
     if (containsAny(message, {"timed out", "timeout"}))
         return makeError(TransferErrorCode::Timeout, message, true);
 
+    // libcurl CURLE_WRITE_ERROR 常见于 FTP QUOTE/RNTO 阶段的瞬时响应写入失败。
+    // 这类错误不是权限或路径确定性错误，允许当前文件重新连接后重试。
+    if (containsAny(message, {"failed writing received data",
+                              "couldn't write received data",
+                              "write error"}))
+        return makeError(TransferErrorCode::RemoteIo, message, true);
+
     if (containsAny(message, {"connection reset", "connection refused", "connection closed",
                               "network is unreachable", "network unreachable", "resolve host",
                               "couldn't connect"}))
