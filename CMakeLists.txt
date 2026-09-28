@@ -199,6 +199,9 @@ set(SOURCES
     src/adapter/OpcUaAdapter.cpp
     src/adapter/ProtocolRegistry.cpp
 
+    # 批量命令内核
+    src/command/BatchCommandRunner.cpp
+
     # 可靠传输内核
     src/transfer/TransferTypes.cpp
     src/transfer/AdapterTransferChannel.cpp
