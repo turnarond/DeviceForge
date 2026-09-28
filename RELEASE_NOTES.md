@@ -1,6 +1,13 @@
-# DeviceForge v2.8.0 Release Notes
+# DeviceForge v2.9.1 Release Notes
 
-> 2026-08-22 · [完整变更日志](CHANGELOG.md) · [路线图](ROADMAP.md)
+> 2026-09-26 · [完整变更日志](CHANGELOG.md) · [路线图](ROADMAP.md)
+
+---
+
+## v2.9.1 补丁修复
+
+- 修复 FTP `QUOTE` 操作在 GUI 进程中默认写入标准输出导致的瞬时 `CURLE_WRITE_ERROR`。
+- 批量部署遇到瞬时 FTP 响应写入错误时自动重连并重试当前文件。
 
 ---
 
