@@ -60,6 +60,7 @@ private slots:
     void rebootDisconnectAfterSend();
     void emptyCommandRejected();
     void commandsRunInOrder();
+    void cancelStopsCallbacks();
 };
 
 void TestBatchCommandRunner::protocolDefaultPort()
@@ -120,5 +121,25 @@ void TestBatchCommandRunner::commandsRunInOrder()
     QCOMPARE(QString::fromStdString(adapter->requests[1].path), QStringLiteral("echo two"));
 }
 
+void TestBatchCommandRunner::cancelStopsCallbacks()
+{
+    auto adapter = std::make_shared<FakeAdapter>();
+    BatchCommandRunner runner([adapter](const std::string&) { return adapter; });
+    CommandRequest request;
+    request.devices = {device("192.168.1.10"), device("192.168.1.11")};
+    request.commands = {"echo one"};
+    std::atomic_bool cancelled{false};
+    int callbackCount = 0;
+    BatchCommandRunner::Callbacks callbacks;
+    callbacks.onDeviceResult = [&](const CommandDeviceResult&) {
+        ++callbackCount;
+        cancelled = true;
+    };
+
+    const auto result = runner.run(request, cancelled, callbacks);
+    QCOMPARE(result.devices.size(), size_t{2});
+    QCOMPARE(callbackCount, 1);
+    QCOMPARE(result.devices.back().state, CommandResultState::Cancelled);
+}
 QTEST_MAIN(TestBatchCommandRunner)
 #include "tst_batch_command_runner.moc"

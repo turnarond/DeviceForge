@@ -65,7 +65,6 @@ CommandBatchResult BatchCommandRunner::run(const CommandRequest& request,
         if (cancelled.load()) {
             deviceResult.state = CommandResultState::Cancelled;
             result.devices.push_back(deviceResult);
-            if (callbacks.onDeviceResult) callbacks.onDeviceResult(deviceResult);
             continue;
         }
         if (request.commands.empty()) {

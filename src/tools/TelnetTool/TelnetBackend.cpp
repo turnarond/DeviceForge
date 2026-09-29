@@ -13,6 +13,7 @@
  */
 
 #include "TelnetBackend.h"
+#include "command/BatchCommandRunner.h"
 #include "adapter/ProtocolRegistry.h"
 #include "adapter/TelnetAdapter.h"
 #include <QtConcurrent/QtConcurrent>
@@ -72,151 +73,48 @@ void TelnetBackend::executeCommand(const std::vector<std::string>& ips,
     }
 
     m_execFuture = QtConcurrent::run([this, ips, commands, timeoutSec]() {
-        int totalCount = static_cast<int>(ips.size());
-        int successCount = 0;
-        int failureCount = 0;
-
-        if (totalCount == 0) {
-            if (m_logCb) m_logCb("错误：目标 IP 列表为空");
-            if (m_finishedCb) m_finishedCb(0, 0, 0);
-            return;
+        CommandRequest request;
+        request.protocol = m_selectedProtocol.toStdString();
+        request.commands = commands;
+        request.timeoutSec = timeoutSec;
+        request.devices = m_devices;
+        if (request.devices.size() != ips.size()) {
+            request.devices.clear();
+            for (const auto& ip : ips) {
+                DeviceInfo device;
+                device.ip = ip;
+                request.devices.push_back(std::move(device));
+            }
         }
+        request.auth = m_auth;
 
-        if (commands.empty()) {
-            if (m_logCb) m_logCb("错误：命令列表为空");
-            if (m_finishedCb) m_finishedCb(totalCount, 0, totalCount);
-            return;
-        }
-
-        if (m_logCb) {
-            m_logCb("开始批量命令执行，目标设备: " + std::to_string(totalCount)
-                    + " 台，命令数: " + std::to_string(commands.size()));
-        }
-
-        // 逐台设备执行
-        for (const auto& ip : ips) {
-            if (m_cancelled) break;
-
-            if (m_logCb) m_logCb("--- 设备: " + ip + " ---");
-
-            // 从 ProtocolRegistry 创建协议适配器（telnet / ssh）
-            auto adapter = ProtocolRegistry::instance()->create(
-                m_selectedProtocol.toStdString());
-            if (!adapter) {
-                if (m_logCb) m_logCb(m_selectedProtocol.toStdString() + " 适配器不可用: " + ip);
-                if (m_resultCb) m_resultCb(ip, false, 0, "适配器不可用");
-                failureCount++;
-                continue;
-            }
-
-            // 取消标志注入：Telnet 等待循环检查 m_cancelled，使"停止"可中断在途命令
-            // （m_cancelled 为后端成员，生命周期覆盖整个异步任务，见析构等待）
-            if (auto* telnet = dynamic_cast<TelnetAdapter*>(adapter.get())) {
-                telnet->setCancelFlag(&m_cancelled);
-            }
-
-            // 构建设备信息
-            // C2: 端口按协议区分。telnet 固定 23；ssh 保持 0，
-            //     由 SshAdapter 回退到默认 22（原先硬编码 23 导致 SSH 连到 telnet 端口）
-            DeviceInfo dev;
-            dev.ip = ip;
-            if (m_selectedProtocol == "ssh") {
-                dev.port = 0;  // 交由 SshAdapter 使用默认 22
-            } else {
-                dev.port = 23;
-            }
-            dev.protocol = m_selectedProtocol.toStdString();
-
-            // 连接设备
-            if (m_logCb) m_logCb("正在连接: " + ip + " ...");
-            if (!adapter->connect(dev, m_auth)) {
-                std::string err = adapter->lastError().empty()
-                    ? "连接超时或被拒绝"
-                    : adapter->lastError();
-                if (m_logCb) m_logCb("连接失败: " + ip + " — " + err);
-                if (m_resultCb) m_resultCb(ip, false, 0, err);
-                failureCount++;
-                continue;
-            }
-
-            if (m_logCb) m_logCb("已连接: " + ip);
-
-            // 测量执行耗时
-            auto startTime = std::chrono::steady_clock::now();
-            bool allOk = true;
-            std::string accumulatedOutput;
-
-            // 逐条命令执行
-            int timeoutMs = timeoutSec * 1000;
-            for (size_t ci = 0; ci < commands.size(); ++ci) {
-                if (m_cancelled) { allOk = false; break; }
-
-                const auto& cmd = commands[ci];
-
-                Request req;
-                req.path = cmd;
-                req.timeoutMs = timeoutMs;
-
-                if (m_logCb) m_logCb("执行命令[" + std::to_string(ci + 1) + "/"
-                                     + std::to_string(commands.size()) + "]: " + cmd);
-
-                auto future = adapter->request(req);
-                auto resp = future.get();  // 阻塞等待响应
-
-                if (resp.success) {
-                    accumulatedOutput += resp.data;
-                    if (m_logCb) {
-                        m_logCb(ip + " 命令返回 " + std::to_string(resp.data.size()) + " 字节");
-                    }
+        BatchCommandRunner runner;
+        BatchCommandRunner::Callbacks callbacks;
+        callbacks.onLog = [this](const std::string& message) {
+            if (m_logCb) m_logCb(message);
+        };
+        callbacks.onDeviceResult = [this](const CommandDeviceResult& device) {
+            const auto separator = device.deviceKey.find(':');
+            const std::string ip = device.deviceKey.substr(0, separator);
+            const bool success = device.state == CommandResultState::Succeeded
+                              || device.state == CommandResultState::RebootTriggered;
+            if (m_resultCb) m_resultCb(ip, success, device.elapsedMs, device.output);
+        };
+        callbacks.onFinished = [this](const CommandBatchResult& result) {
+            int successes = 0;
+            int failures = 0;
+            for (const auto& device : result.devices) {
+                if (device.state == CommandResultState::Succeeded
+                    || device.state == CommandResultState::RebootTriggered) {
+                    ++successes;
                 } else {
-                    if (m_logCb) m_logCb("命令执行失败: " + cmd
-                                         + " — " + resp.errorMessage);
-                    accumulatedOutput += "[ERROR] " + resp.errorMessage + "\n";
-                    allOk = false;
-                }
-
-                // 命令间短暂间隔，避免 Telnet 缓冲区混乱
-                if (ci + 1 < commands.size()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    ++failures;
                 }
             }
-
-            auto endTime = std::chrono::steady_clock::now();
-            int elapsedMs = static_cast<int>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    endTime - startTime).count());
-
-            // 断开连接
-            adapter->disconnect();
-
-            if (allOk) {
-                successCount++;
-                if (m_logCb) m_logCb(ip + " 执行完成 (" + std::to_string(elapsedMs) + "ms)");
-            } else if (!m_cancelled) {
-                failureCount++;
-                if (m_logCb) m_logCb(ip + " 执行失败/异常");
-            } else {
-                failureCount++;
-                if (m_logCb) m_logCb(ip + " 已取消");
-            }
-
-            // 报告单设备结果
-            if (m_resultCb) {
-                m_resultCb(ip, allOk && !m_cancelled, elapsedMs, accumulatedOutput);
-            }
-        }
-
-        // 最终回调
-        if (m_finishedCb) {
-            m_finishedCb(totalCount, successCount, failureCount);
-        }
-
-        if (m_logCb) {
-            std::string summary = "批量命令执行完毕 — 总计: " + std::to_string(totalCount)
-                + ", 成功: " + std::to_string(successCount)
-                + ", 失败: " + std::to_string(failureCount);
-            m_logCb(summary);
-        }
+            if (m_finishedCb)
+                m_finishedCb(static_cast<int>(result.devices.size()), successes, failures);
+        };
+        runner.run(request, m_cancelled, callbacks);
     });
 }
 
