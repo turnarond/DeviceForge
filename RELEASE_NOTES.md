@@ -1,3 +1,11 @@
+# DeviceForge v2.10.0 Release Notes
+
+## v2.10.0 新增
+
+- 新增统一批量命令执行器，支持 Telnet/SSH、顺序命令、超时、重试与取消。
+- 部署完成后仅对上传成功设备执行重启命令，并识别重启导致的断开连接。
+- FTP 部署工具支持重启协议、命令、超时和重试参数持久化。
+
 # DeviceForge v2.9.1 Release Notes
 
 > 2026-09-26 · [完整变更日志](CHANGELOG.md) · [路线图](ROADMAP.md)
