@@ -237,6 +237,7 @@ add_executable(tst_deploy_loop
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
