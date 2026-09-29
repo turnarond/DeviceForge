@@ -61,6 +61,7 @@ private slots:
     void emptyCommandRejected();
     void commandsRunInOrder();
     void cancelStopsCallbacks();
+    void rebootSendThenDisconnectIsSuccess();
 };
 
 void TestBatchCommandRunner::protocolDefaultPort()
@@ -140,6 +141,20 @@ void TestBatchCommandRunner::cancelStopsCallbacks()
     QCOMPARE(result.devices.size(), size_t{2});
     QCOMPARE(callbackCount, 1);
     QCOMPARE(result.devices.back().state, CommandResultState::Cancelled);
+}
+void TestBatchCommandRunner::rebootSendThenDisconnectIsSuccess()
+{
+    auto adapter = std::make_shared<FakeAdapter>();
+    adapter->nextResponse = {false, {}, "connection closed after send", 0};
+    BatchCommandRunner runner([adapter](const std::string&) { return adapter; });
+    CommandRequest request;
+    request.devices = {device("192.168.1.10")};
+    request.commands = {"reboot"};
+    request.rebootMode = true;
+    std::atomic_bool cancelled{false};
+
+    const auto result = runner.run(request, cancelled, {});
+    QCOMPARE(result.devices.front().state, CommandResultState::RebootTriggered);
 }
 QTEST_MAIN(TestBatchCommandRunner)
 #include "tst_batch_command_runner.moc"

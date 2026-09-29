@@ -37,6 +37,17 @@ int BatchCommandRunner::defaultPort(const std::string& protocol)
     return normalizedProtocol(protocol) == "ssh" ? 22 : 23;
 }
 
+
+bool isDisconnectAfterSend(const std::string& error)
+{
+    std::string lower = error;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lower.find("connection closed") != std::string::npos
+        || lower.find("closed after send") != std::string::npos
+        || lower.find("connection reset") != std::string::npos
+        || lower.find("eof") != std::string::npos;
+}
 bool BatchCommandRunner::isRetryableError(const std::string& error)
 {
     std::string lower = error;
@@ -112,11 +123,15 @@ CommandBatchResult BatchCommandRunner::run(const CommandRequest& request,
                 commandRequest.timeoutMs = timeoutMs;
                 const Response response = adapter->request(commandRequest).get();
                 if (!response.success) {
-                    allOk = false;
                     lastError = response.errorMessage;
+                    if (request.rebootMode && command == request.commands.back()
+                        && isDisconnectAfterSend(lastError)) {
+                        allOk = true;
+                        break;
+                    }
+                    allOk = false;
                     break;
-                }
-                ++deviceResult.commandsExecuted;
+                }                ++deviceResult.commandsExecuted;
                 deviceResult.output += response.data;
             }
             adapter->disconnect();

@@ -14,6 +14,7 @@
 
 #pragma once
 #include "framework/ToolBackend.h"
+#include "command/CommandTypes.h"
 #include "tools/FtpDeployTool/DeployReport.h"
 #include "tools/FtpDeployTool/DeployJob.h"
 #include <memory>
@@ -58,7 +59,8 @@ public:
                      bool rebootAfterDeploy,
                      const std::string& protocol = "ftp",
                      bool useFtps = false,
-                     int port = 0);
+                     int port = 0,
+                     const RebootOptions& rebootOptions = {});
     void cancelUpload();
     // 显式恢复下一次请求；startUpload 消费一次，普通部署始终重新执行。
     void resumePreviousFailures() { m_resumeNextUpload = true; }
@@ -90,6 +92,7 @@ private:
     std::string m_remotePath;
     bool m_clearBeforeDeploy = false;
     bool m_rebootAfterDeploy = false;
+    RebootOptions m_rebootOptions;
     // 本轮批量的全局取消标志：作为 Params.globalCancel 注入各台 Job，
     // 并以引用传入 DeploymentRunner::run（Runner 预检 + requestCancel 传播目标）。
     // 生命周期由后端成员保证，覆盖整个 QtConcurrent 工作线程执行期
