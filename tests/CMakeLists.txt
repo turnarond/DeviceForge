@@ -463,3 +463,12 @@ if(_qt_bin_dir)
     set_tests_properties(tst_deploy_runner PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()
+
+add_executable(tst_reboot_preferences command/tst_reboot_preferences.cpp)
+target_include_directories(tst_reboot_preferences PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_reboot_preferences PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_reboot_preferences COMMAND tst_reboot_preferences)
+if(_qt_bin_dir)
+    set_tests_properties(tst_reboot_preferences PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

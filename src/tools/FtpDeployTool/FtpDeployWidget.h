@@ -25,6 +25,7 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QLineEdit>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QLabel>
@@ -128,6 +129,10 @@ private:
     QCheckBox*   m_ftpsCheck = nullptr;
     QCheckBox*   m_clearCheck = nullptr;
     QCheckBox*   m_rebootCheck = nullptr;
+    QComboBox*   m_rebootProtocolCombo = nullptr;
+    QLineEdit*   m_rebootCommandEdit = nullptr;
+    QSpinBox*    m_rebootTimeoutSpin = nullptr;
+    QSpinBox*    m_rebootRetrySpin = nullptr;
     QLabel*      m_connStatusDot = nullptr;   // 连接状态点（灰/灰闪/青绿/红，底色代码动态设置）
     QTimer*      m_connFlashTimer = nullptr;  // Connecting 态灰闪定时器（亮灰 ↔ 灰，500ms）
     bool         m_connFlashOn = false;       // 灰闪当前相位（定时器 tick 取反）
