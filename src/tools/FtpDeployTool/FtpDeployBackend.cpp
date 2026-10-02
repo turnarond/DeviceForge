@@ -14,6 +14,8 @@
  */
 
 #include "FtpDeployBackend.h"
+#include "command/BatchCommandRunner.h"
+#include "command/RebootSelection.h"
 #include "DeployJob.h"
 #include "DeploymentRunner.h"
 #include "config/ConfigStore.h"
@@ -108,7 +110,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                                     bool rebootAfterDeploy,
                                     const std::string& protocol,
                                     bool useFtps,
-                                    int port)
+                                    int port,
+                                    const RebootOptions& rebootOptions)
 {
     // 先等上一轮批量彻底收尾（工作线程返回、Runner 注销），再复位批量取消
     // 标志——顺序不能反：先复位会把在途批量的取消请求静默吞掉
@@ -119,6 +122,7 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
     m_remotePath = remotePath;
     m_clearBeforeDeploy = clearBeforeDeploy;
     m_rebootAfterDeploy = rebootAfterDeploy;
+    m_rebootOptions = rebootOptions;
 
     // 请求身份不包含密码；新部署和显式恢复不会因参数相同而混淆。
     std::string requestKey;
@@ -236,15 +240,41 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             }
         }
 
-        // 部署后重启
-        if (m_rebootAfterDeploy && !successes.empty()) {
-            if (m_logCb) m_logCb("待 TelnetPresenter 迁移后实现重启功能");
-            if (m_logCb) m_logCb("成功设备列表: ");
-            for (const auto& ip : successes) {
-                if (m_logCb) m_logCb("  - " + ip);
+        // 部署后重启：仅对文件部署成功的设备发送命令。
+        if (m_rebootAfterDeploy && !successes.empty() && !m_batchCancel.load()) {
+            std::vector<DeviceInfo> deployedDevices;
+            deployedDevices.reserve(allParams.size());
+            for (const auto& params : allParams)
+                deployedDevices.push_back(params.device);
+            const auto rebootDevices = selectRebootDevices(deployedDevices, successes);
+            if (!rebootDevices.empty()) {
+                CommandRequest rebootRequest;
+                rebootRequest.protocol = m_rebootOptions.protocol;
+                rebootRequest.devices = rebootDevices;
+                rebootRequest.auth = m_auth;
+                rebootRequest.commands = {m_rebootOptions.command};
+                rebootRequest.timeoutSec = m_rebootOptions.timeoutSec;
+                rebootRequest.retryCount = m_rebootOptions.retryCount;
+                rebootRequest.rebootMode = true;
+
+                if (m_logCb)
+                    m_logCb("开始发送部署后重启命令: " + m_rebootOptions.command);
+                BatchCommandRunner rebootRunner;
+                BatchCommandRunner::Callbacks rebootCallbacks;
+                rebootCallbacks.onDeviceResult = [this](const CommandDeviceResult& device) {
+                    if (m_logCb) {
+                        m_logCb(device.deviceKey + (device.rebootTriggered
+                            ? " 重启已触发" : " 重启失败: " + device.error));
+                    }
+                };
+                rebootCallbacks.onFinished = [this](const CommandBatchResult& batch) {
+                    if (m_logCb)
+                        m_logCb("部署后重启完成: " + std::to_string(batch.devices.size()) + " 台");
+                };
+                rebootRunner.run(rebootRequest, m_batchCancel, rebootCallbacks);
+                rebootRequest.auth.clear();
             }
         }
-
         if (m_finishedCb) {
             m_finishedCb(!successes.empty(), successes, failures);
         }

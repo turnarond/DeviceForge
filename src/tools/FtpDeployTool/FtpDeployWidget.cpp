@@ -26,6 +26,7 @@
 #include "adapter/FtpAdapter.h"
 #include "adapter/ProtocolRegistry.h"
 #include "config/ConfigStore.h"
+#include "command/RebootPreferences.h"
 #include "transfer/AdapterTransferChannel.h"
 #include "transfer/LocalPanelTransfer.h"
 #include "transfer/TransferExecutor.h"
@@ -531,6 +532,57 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
 
     m_rebootCheck = new QCheckBox("部署后重启", this);
     deployGroup->addWidget(m_rebootCheck);
+    deployGroup->addWidget(new QLabel(QStringLiteral("协议:"), this));
+    m_rebootProtocolCombo = new QComboBox(this);
+    m_rebootProtocolCombo->addItem("Telnet", "telnet");
+    m_rebootProtocolCombo->addItem("SSH", "ssh");
+    m_rebootProtocolCombo->setFixedWidth(70);
+    deployGroup->addWidget(m_rebootProtocolCombo);
+    deployGroup->addWidget(new QLabel(QStringLiteral("命令:"), this));
+    m_rebootCommandEdit = new QLineEdit(QStringLiteral("reboot"), this);
+    m_rebootCommandEdit->setFixedWidth(110);
+    deployGroup->addWidget(m_rebootCommandEdit);
+    deployGroup->addWidget(new QLabel(QStringLiteral("超时:"), this));
+    m_rebootTimeoutSpin = new QSpinBox(this);
+    m_rebootTimeoutSpin->setRange(1, 120);
+    m_rebootTimeoutSpin->setValue(10);
+    m_rebootTimeoutSpin->setSuffix(QStringLiteral("s"));
+    m_rebootTimeoutSpin->setFixedWidth(55);
+    deployGroup->addWidget(m_rebootTimeoutSpin);
+    deployGroup->addWidget(new QLabel(QStringLiteral("重试:"), this));
+    m_rebootRetrySpin = new QSpinBox(this);
+    m_rebootRetrySpin->setRange(0, 3);
+    m_rebootRetrySpin->setValue(1);
+    m_rebootRetrySpin->setFixedWidth(45);
+    deployGroup->addWidget(m_rebootRetrySpin);
+
+    const RebootOptions rebootPrefs = rebootOptionsFromMap(
+        ConfigStore::instance().load(QStringLiteral("ftp.deploy.prefs"), QStringLiteral("reboot")));
+    m_rebootProtocolCombo->setCurrentIndex(rebootPrefs.protocol == "ssh" ? 1 : 0);
+    m_rebootCommandEdit->setText(QString::fromStdString(rebootPrefs.command));
+    m_rebootTimeoutSpin->setValue(rebootPrefs.timeoutSec);
+    m_rebootRetrySpin->setValue(rebootPrefs.retryCount);
+    const auto saveRebootPrefs = [this]() {
+        RebootOptions options;
+        options.protocol = m_rebootProtocolCombo->currentData().toString().toStdString();
+        options.command = m_rebootCommandEdit->text().trimmed().toStdString();
+        options.timeoutSec = m_rebootTimeoutSpin->value();
+        options.retryCount = m_rebootRetrySpin->value();
+        ConfigStore::instance().save(QStringLiteral("ftp.deploy.prefs"), QStringLiteral("reboot"),
+                                     rebootOptionsToMap(options));
+    };
+    connect(m_rebootProtocolCombo, &QComboBox::currentIndexChanged, this, [saveRebootPrefs](int) { saveRebootPrefs(); });
+    connect(m_rebootCommandEdit, &QLineEdit::editingFinished, this, [saveRebootPrefs]() { saveRebootPrefs(); });
+    connect(m_rebootTimeoutSpin, &QSpinBox::valueChanged, this, [saveRebootPrefs](int) { saveRebootPrefs(); });
+    connect(m_rebootRetrySpin, &QSpinBox::valueChanged, this, [saveRebootPrefs](int) { saveRebootPrefs(); });
+    const auto updateRebootControls = [this](bool enabled) {
+        m_rebootProtocolCombo->setEnabled(enabled);
+        m_rebootCommandEdit->setEnabled(enabled);
+        m_rebootTimeoutSpin->setEnabled(enabled);
+        m_rebootRetrySpin->setEnabled(enabled);
+    };
+    connect(m_rebootCheck, &QCheckBox::toggled, this, updateRebootControls);
+    updateRebootControls(m_rebootCheck->isChecked());
 
     // 「⟳ 刷新」按钮（2026-08-12 修复波回归：onRefreshRemote 的 UI 入口）
     m_refreshBtn = new QPushButton("⟳ 刷新", this);

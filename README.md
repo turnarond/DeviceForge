@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.9.1 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.10.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -108,7 +108,7 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.9.1-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.10.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建

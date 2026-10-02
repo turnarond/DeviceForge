@@ -1,4 +1,31 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Network Test Sql SerialBus)
+# --- 批量命令共享执行内核（协议默认值、顺序、重试与重启断开终态） ---
+add_executable(tst_batch_command_runner
+    command/tst_batch_command_runner.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+)
+target_include_directories(tst_batch_command_runner PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_batch_command_runner PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_batch_command_runner COMMAND tst_batch_command_runner)
+if(_qt_bin_dir)
+    set_tests_properties(tst_batch_command_runner PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+add_executable(tst_deploy_reboot
+    command/tst_deploy_reboot.cpp
+)
+target_include_directories(tst_deploy_reboot PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_deploy_reboot PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_reboot COMMAND tst_deploy_reboot)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_reboot PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
 
 # --- 可靠传输基础类型测试（状态机、退避与错误分类）---
 add_executable(tst_transfer_types
@@ -210,6 +237,7 @@ add_executable(tst_deploy_loop
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
@@ -435,4 +463,13 @@ add_test(NAME tst_deploy_runner COMMAND tst_deploy_runner)
 if(_qt_bin_dir)
     set_tests_properties(tst_deploy_runner PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
+
+add_executable(tst_reboot_preferences command/tst_reboot_preferences.cpp)
+target_include_directories(tst_reboot_preferences PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_reboot_preferences PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_reboot_preferences COMMAND tst_reboot_preferences)
+if(_qt_bin_dir)
+    set_tests_properties(tst_reboot_preferences PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
