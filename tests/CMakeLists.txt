@@ -473,3 +473,15 @@ if(_qt_bin_dir)
     set_tests_properties(tst_reboot_preferences PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+add_executable(tst_device_registry
+    device/tst_device_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+)
+target_include_directories(tst_device_registry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_device_registry PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_device_registry COMMAND tst_device_registry)
+if(_qt_bin_dir)
+    set_tests_properties(tst_device_registry PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

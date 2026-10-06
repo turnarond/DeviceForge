@@ -202,6 +202,9 @@ set(SOURCES
     # 批量命令内核
     src/command/BatchCommandRunner.cpp
 
+    # 设备档案
+    src/device/DeviceRegistry.cpp
+
     # 可靠传输内核
     src/transfer/TransferTypes.cpp
     src/transfer/AdapterTransferChannel.cpp
