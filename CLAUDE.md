@@ -121,7 +121,7 @@ GitHub Actions 分为两个入口：
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.11.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.11.1
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）+ v2.8 并行批量部署（并发度 1-8、设备级进度、CSV/HTML 报告、失败设备重试）。
 

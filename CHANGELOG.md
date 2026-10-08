@@ -1,3 +1,14 @@
+## [2.11.1] — 2026-10-08
+
+### Fixed（现场反馈可用性补丁）
+- 设备档案编辑器协议列改为下拉选择（ftp/ftps/sftp/ssh/telnet/modbus，未知/留空回退 ftp），修复手填空协议导致任务执行校验失败。
+- 设备档案编辑器凭据引用列改为下拉选择已有 `ftp.credential` 记录，并支持"＋ 新建凭据…"就地创建（用户名/密码，密码经 DPAPI 加密入库，明文不落盘）；旧凭证输入区保存逻辑复用同一入口（`devicebus::storeFtpCredential`）。
+- 综合日志面板折叠条移出日志区、常驻可见（修复旧版折叠后无法再展开）；初始比例钳制（工具区至少保留 100px），折叠态与展开高度经 ConfigStore `app.panel/logPanel` 记忆。
+- 批量命令执行结果表列宽改为可拖动（Interactive 模式 + 合理初始宽度），修复 ResizeToContents 模式拖动弹回。
+
+### Tests
+- 新增 2 个 QtTest/CTest 目标：`tst_batch_result_header`（表头可拖回归）、`tst_log_panel_state`（日志面板状态纯逻辑）；全量 CTest 36 目标。
+
 ## [2.11.0] — 2026-10-08
 
 ### Added
