@@ -788,8 +788,13 @@ void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
     // 后端以工具栏端口覆盖全部设备端口（port 恒 >0），故此处行键端口
     // 直接取传入端口——否则 port=21 时行键缺端口段，终态回调将无法命中行
     for (const auto& d : devices) {
-        m_multiProgress->setDeviceInfo(
-            QString::fromStdString(d.ip) + ":" + QString::number(port));
+        const QString key =
+            QString::fromStdString(d.ip) + ":" + QString::number(port);
+        // v2.11：档案名称随设备栏下发（alias 为空或等同地址时保持仅地址展示）
+        QString name = QString::fromStdString(d.alias);
+        if (name.isEmpty() || name == key || name == QString::fromStdString(d.ip))
+            name.clear();
+        m_multiProgress->setDeviceInfo(key, name);
     }
 
     appendLog(logPrefix + QString("开始部署到 %1 台设备...").arg(devices.size()));

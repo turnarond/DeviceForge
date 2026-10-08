@@ -566,3 +566,52 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- 设备任务中心 UI 测试（v2.11 Task 6：设备档案胶囊/编辑对话框 + 三栏任务中心）---
+# 注：任务中心走真实 TaskExecutionEngine，但用例只触发 Validating 校验失败路径
+#     （设备缺 Telnet/SSH 端点），全程不建连接、不调适配器工厂；为使引擎可链接
+#     仍须编入其依赖 TU（对齐 tst_task_execution_engine 源集合）+ UI 侧
+#     DeviceBusWidget/TaskTemplateStore/TaskRunStore/DeviceRegistry/ConfigStore/DpapiCrypto/
+#     MultiProgressWidget/DeployReport。Widgets 测试经 QPA 插件（QT_PLUGIN_PATH）。
+add_executable(tst_task_center_widget
+    ui/tst_task_center_widget.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskCenterWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/MultiProgressWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DeviceBusWidget.cpp
+)
+target_include_directories(tst_task_center_widget PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(tst_task_center_widget PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+if(WIN32)
+    target_link_libraries(tst_task_center_widget PRIVATE crypt32)
+endif()
+add_test(NAME tst_task_center_widget COMMAND tst_task_center_widget)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_center_widget PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()

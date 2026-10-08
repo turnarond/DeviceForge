@@ -78,7 +78,13 @@ void MultiProgressWidget::rebuildUi()
         row->setContentsMargins(12, 0, 0, 0);   // 行相对总进度条缩进，层级可辨
         row->setSpacing(6);
 
-        auto* label = new QLabel(key, rowWidget);
+        auto* label = new QLabel(rowWidget);
+        // v2.11：档案名称优先展示，地址保持次级信息；无名称时维持旧「仅地址」样式
+        const QString name = m_names.value(key);
+        label->setText((name.isEmpty() || name == key)
+                           ? key
+                           : QStringLiteral("%1 %2").arg(name, key));
+        label->setToolTip(key);
         label->setMinimumWidth(120);
 
         auto* bar = new QProgressBar(rowWidget);
@@ -104,6 +110,7 @@ void MultiProgressWidget::setDeviceCount(int count)
     m_deviceCount = count;
     setVisible(count > 0);
     m_keys.clear();
+    m_names.clear();
     rebuildUi();
     m_overallBar->setValue(0);
     m_overallBar->setFormat(QString("正在部署 %1 台设备...").arg(count));
@@ -111,9 +118,16 @@ void MultiProgressWidget::setDeviceCount(int count)
 
 void MultiProgressWidget::setDeviceInfo(const QString& key)
 {
+    setDeviceInfo(key, QString());
+}
+
+void MultiProgressWidget::setDeviceInfo(const QString& key, const QString& displayName)
+{
     if (m_rows.contains(key)) {
         return;   // 重复注册防御（同键二次注册不产生第二行）
     }
+    if (!displayName.isEmpty())
+        m_names.insert(key, displayName);
     m_keys.push_back(key);
     rebuildUi();
 }

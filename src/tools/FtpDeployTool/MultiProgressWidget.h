@@ -38,6 +38,10 @@ public:
     void setDeviceCount(int count);
     // 注册一台设备的行（key = "ip:port"；重复注册防御式忽略）
     void setDeviceInfo(const QString& key);
+    // v2.11 Task 6：带设备档案名称的行注册——displayName 非空时行标签显示
+    // 「名称 地址」（名称优先、地址次级），空/与地址相同保持旧「仅地址」展示。
+    // 行键仍为 "ip:port"（与后端回调严格同源）。
+    void setDeviceInfo(const QString& key, const QString& displayName);
     // 单台即时进度（0-100）；未知 key 静默忽略（行已随新一轮批量重建的陈旧回调）
     void setDeviceProgress(const QString& key, int pct);
     // 单台终态着色：ok=true「成功」青绿 / false「失败」红
@@ -67,6 +71,7 @@ private:
     int m_deviceCount = 0;
     std::vector<QString> m_keys;      // 行序 = 设备注册序（部署提交序）
     QMap<QString, DeviceRow> m_rows;  // key("ip:port") → 行控件
+    QMap<QString, QString> m_names;   // key → 档案名称（v2.11：可空=仅地址）
     QVBoxLayout* m_rowsLayout = nullptr;  // 每设备一行的纵向容器
     QProgressBar* m_overallBar = nullptr;
     QPushButton* m_cancelBtn = nullptr;
