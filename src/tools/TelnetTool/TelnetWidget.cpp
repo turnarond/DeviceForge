@@ -14,6 +14,7 @@
 
 #include "TelnetWidget.h"
 #include "TelnetBackend.h"
+#include "BatchResultTable.h"
 #include "ui/DeviceBusWidget.h"
 #include "config/ConfigStore.h"
 #include <QVBoxLayout>
@@ -112,10 +113,7 @@ void TelnetWidget::setupUi()
     m_resultTree->setHeaderLabels({"IP", "状态", "耗时(ms)", "最后输出"});
     m_resultTree->setAlternatingRowColors(true);
     m_resultTree->setRootIsDecorated(false);
-    m_resultTree->header()->setStretchLastSection(true);
-    m_resultTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_resultTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_resultTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    configureBatchResultHeader(m_resultTree->header());
     connect(m_resultTree, &QTreeWidget::itemDoubleClicked,
             this, &TelnetWidget::onTreeItemDoubleClicked);
     resultLayout->addWidget(m_resultTree, 1);
