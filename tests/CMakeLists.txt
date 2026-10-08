@@ -505,3 +505,18 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- TaskTemplateStore 模板数据模型与持久化测试（v2.11 Task 3）---
+add_executable(tst_task_template_store
+    task/tst_task_template_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_task_template_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_template_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_task_template_store COMMAND tst_task_template_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_template_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()

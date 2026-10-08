@@ -206,6 +206,9 @@ set(SOURCES
     src/device/DeviceRegistry.cpp
     src/device/DeviceProfileCodec.cpp
 
+    # 任务模板（v2.11 设备任务中心）
+    src/task/TaskTemplateStore.cpp
+
     # 可靠传输内核
     src/transfer/TransferTypes.cpp
     src/transfer/AdapterTransferChannel.cpp
