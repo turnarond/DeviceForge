@@ -27,7 +27,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 
 | 文件部署（双栏） | 批量命令 |
 |----------|----------|
-| ![文件部署](docs/images/文件部署.png) | ![批量命令](docs/images/批量命令.png) |
+| ![文件部署](docs/images/文件部署.jpeg) | ![批量命令](docs/images/批量命令.png) |
 
 | MODBUS 测试 | WebSocket 通信 |
 |-------------|---------------|
