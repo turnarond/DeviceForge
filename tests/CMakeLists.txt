@@ -397,6 +397,65 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- WebSocket 帧协议纯逻辑（v2.12 页面重构：WsEventTypes.h 直测）---
+add_executable(tst_ws_event_types
+    WebSocketTool/tst_ws_event_types.cpp
+)
+target_include_directories(tst_ws_event_types PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_ws_event_types PRIVATE
+    Qt6::Core Qt6::Test
+)
+add_test(NAME tst_ws_event_types COMMAND tst_ws_event_types)
+if(_qt_bin_dir)
+    set_tests_properties(tst_ws_event_types PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- WebSocket 页面布局回归（v2.12 重构：双栏/列宽/上限/掩码/模式切换）---
+# 编入产品源码 WebSocketWidget/WebSocketBackend（widget 构造引用 ConfigStore 启动路径符号）
+add_executable(tst_ws_page_layout
+    WebSocketTool/tst_ws_page_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/WebSocketTool/WebSocketWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/WebSocketTool/WebSocketBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/framework/ToolWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_ws_page_layout PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_ws_page_layout PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_ws_page_layout COMMAND tst_ws_page_layout)
+if(_qt_bin_dir)
+    set_tests_properties(tst_ws_page_layout PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- WebSocket 本机环回集成（真 Server↔Client，自动端口，不出本机）---
+add_executable(tst_ws_loopback
+    WebSocketTool/tst_ws_loopback.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/WebSocketTool/WebSocketBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_ws_loopback PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_ws_loopback PRIVATE
+    Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_ws_loopback COMMAND tst_ws_loopback)
+if(_qt_bin_dir)
+    set_tests_properties(tst_ws_loopback PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
 # --- 综合日志面板状态纯逻辑回归（v2.11.1 折叠面板 + 初始比例记忆）---
 add_executable(tst_log_panel_state
     app/tst_log_panel_state.cpp

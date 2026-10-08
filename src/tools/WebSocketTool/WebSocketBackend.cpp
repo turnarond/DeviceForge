@@ -16,6 +16,7 @@
 #include <lwlog/lwlog.h>
 #include <thread>
 #include <chrono>
+#include <QDateTime>
 #include <QFile>
 #include <QHostAddress>
 #include <QSslConfiguration>
@@ -27,6 +28,27 @@
 WebSocketBackend::WebSocketBackend()
 {
 }
+
+namespace {
+
+// 组装事件流条目：byteCount 统一 UTF-8 口径，preview 边界安全截断
+wsproto::WsEvent makeWsEvent(const QString& direction, const QString& peer,
+                             const QString& action, const QString& topic,
+                             const QString& body)
+{
+    wsproto::WsEvent e;
+    e.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    e.direction = direction;
+    e.peer = peer;
+    e.action = action;
+    e.topic = topic;
+    e.byteCount = wsproto::utf8Bytes(body);
+    e.preview = wsproto::truncatePreview(body);
+    e.body = body;
+    return e;
+}
+
+} // namespace
 
 WebSocketBackend::~WebSocketBackend()
 {
@@ -197,53 +219,51 @@ void WebSocketBackend::onServerTextMessage(const QString& message, QWebSocket* c
 {
     if (!client) return;
 
-    std::string addr = client->peerAddress().toString().toStdString();
+    const QString addr = client->peerAddress().toString();
+    const wsproto::ParsedFrame f = wsproto::parseFrame(message);
+    using K = wsproto::FrameKind;
 
-    if (message.startsWith("SUBSCRIBE:")) {
-        QString topic = message.mid(10);
-        // 添加到订阅映射
+    switch (f.kind) {
+    case K::Subscribe: {
         {
             QMutexLocker locker(&m_topicMutex);
-            if (!m_topicSubscribers.contains(topic)) {
-                m_topicSubscribers[topic] = QList<QWebSocket*>();
-            }
-            if (!m_topicSubscribers[topic].contains(client)) {
-                m_topicSubscribers[topic].append(client);
-            }
+            QList<QWebSocket*>& list = m_topicSubscribers[f.topic];
+            if (!list.contains(client))
+                list.append(client);
         }
-        if (m_logCb) m_logCb("[Server] 客户端 " + addr + " 订阅主题 " + topic.toStdString());
-        // 协议消息同样路由到消息日志，保证发布/订阅流量在消息面板可见
-        if (m_messageCb) m_messageCb(addr + "> [订阅] " + topic.toStdString());
-    } else if (message.startsWith("UNSUBSCRIBE:")) {
-        QString topic = message.mid(12);
-        // 从订阅映射移除；退订后无订阅者的主题一并清理
+        if (m_logCb) m_logCb("[Server] 客户端 " + addr.toStdString() + " 订阅主题 " + f.topic.toStdString());
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), addr, QStringLiteral("订阅"), f.topic, QString()));
+        break;
+    }
+    case K::Unsubscribe: {
         {
             QMutexLocker locker(&m_topicMutex);
-            if (m_topicSubscribers.contains(topic)) {
-                m_topicSubscribers[topic].removeAll(client);
-                if (m_topicSubscribers[topic].isEmpty()) {
-                    m_topicSubscribers.remove(topic);
-                }
+            if (m_topicSubscribers.contains(f.topic)) {
+                m_topicSubscribers[f.topic].removeAll(client);
+                if (m_topicSubscribers[f.topic].isEmpty())
+                    m_topicSubscribers.remove(f.topic);
             }
         }
-        if (m_logCb) m_logCb("[Server] 客户端 " + addr + " 退订主题 " + topic.toStdString());
-        if (m_messageCb) m_messageCb(addr + "> [退订] " + topic.toStdString());
-    } else if (message.startsWith("PUBLISH:")) {
-        // 仅按第一个 ':' 切分：topic = 首个 ':' 之前，payload = 其后所有内容（兼容 topic 含 ':'）
-        QString rest = message.mid(8);
-        int sep = rest.indexOf(':');
-        QString topic = (sep < 0) ? rest : rest.left(sep);
-        QString publishMsg = (sep < 0) ? QString() : rest.mid(sep + 1);
-        serverPublishToSubscribers(topic, publishMsg);
-        if (m_logCb) {
-            m_logCb("[Server] 客户端 " + addr + " 发布到主题 "
-                    + topic.toStdString() + " (" + std::to_string(publishMsg.size()) + " 字节)");
-        }
-        if (m_messageCb) m_messageCb(addr + "> [发布] " + topic.toStdString() + ": " + publishMsg.toStdString());
-    } else {
-        std::string fullMsg = message.toStdString();
-        if (m_messageCb) m_messageCb(addr + "> " + fullMsg);
-        if (m_logCb) m_logCb("[Server] 收到 " + addr + " 的消息 (" + std::to_string(fullMsg.size()) + " 字节)");
+        if (m_logCb) m_logCb("[Server] 客户端 " + addr.toStdString() + " 退订主题 " + f.topic.toStdString());
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), addr, QStringLiteral("退订"), f.topic, QString()));
+        break;
+    }
+    case K::Publish: {
+        serverPublishToSubscribers(f.topic, f.body);
+        if (m_logCb) m_logCb("[Server] 客户端 " + addr.toStdString() + " 发布到主题 "
+                             + f.topic.toStdString() + " ("
+                             + std::to_string(wsproto::utf8Bytes(f.body)) + " 字节)");
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), addr, QStringLiteral("发布"), f.topic, f.body));
+        break;
+    }
+    default: {
+        // TopicPush/Plain 在 Server 侧收到的都是普通文本帧：按文本入事件流；
+        // 正文只进 UI 预览与计数，全局日志仅记方向+字节数（仓规脱敏约束）
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), addr, QStringLiteral("文本"), QString(), message));
+        if (m_logCb) m_logCb("[Server] 收到 " + addr.toStdString() + " 的消息 ("
+                             + std::to_string(wsproto::utf8Bytes(message)) + " 字节)");
+        break;
+    }
     }
 }
 
@@ -342,19 +362,16 @@ void WebSocketBackend::onClientConnected()
 
 void WebSocketBackend::onClientTextMessage(const QString& message)
 {
-    if (message.startsWith("TOPIC:")) {
-        // 仅按第一个 ':' 切分（主题可含 ':'）
-        QString rest = message.mid(6);
-        int sep = rest.indexOf(':');
-        QString topic = (sep < 0) ? rest : rest.left(sep);
-        QString topicMsg = (sep < 0) ? QString() : rest.mid(sep + 1);
-        std::string full = "[主题 " + topic.toStdString() + "] " + topicMsg.toStdString();
-        if (m_messageCb) m_messageCb(full);
-        if (m_logCb) m_logCb("[Client] 收到主题 " + topic.toStdString() + " 消息 (" + std::to_string(topicMsg.size()) + " 字节)");
+    const wsproto::ParsedFrame f = wsproto::parseFrame(message);
+    if (f.kind == wsproto::FrameKind::TopicPush) {
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), QStringLiteral("server"),
+                                                 QStringLiteral("推送"), f.topic, f.body));
+        if (m_logCb) m_logCb("[Client] 收到主题 " + f.topic.toStdString() + " 消息 ("
+                             + std::to_string(wsproto::utf8Bytes(f.body)) + " 字节)");
     } else {
-        std::string full = message.toStdString();
-        if (m_messageCb) m_messageCb(full);
-        if (m_logCb) m_logCb("[Client] 收到消息 (" + std::to_string(full.size()) + " 字节)");
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("收"), QStringLiteral("server"),
+                                                 QStringLiteral("文本"), QString(), message));
+        if (m_logCb) m_logCb("[Client] 收到消息 (" + std::to_string(wsproto::utf8Bytes(message)) + " 字节)");
     }
 }
 
@@ -390,9 +407,11 @@ void WebSocketBackend::subscribe(const std::string& topic)
         return;
     }
     if (m_client && m_client->state() == QAbstractSocket::ConnectedState) {
-        QString subscribeMsg = "SUBSCRIBE:" + qTopic;
+        QString subscribeMsg = wsproto::encodeSubscribe(qTopic);
         m_client->sendTextMessage(subscribeMsg);
         m_subscribedTopics.append(qTopic);
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("发"), QStringLiteral("server"),
+                                                 QStringLiteral("订阅"), qTopic, QString()));
         if (m_logCb) m_logCb("[Client] 订阅主题: " + topic);
     } else {
         if (m_errorCb) m_errorCb("客户端未连接");
@@ -411,8 +430,10 @@ void WebSocketBackend::unsubscribe(const std::string& topic)
         return;
     }
     if (m_client && m_client->state() == QAbstractSocket::ConnectedState) {
-        m_client->sendTextMessage("UNSUBSCRIBE:" + qTopic);
+        m_client->sendTextMessage(wsproto::encodeUnsubscribe(qTopic));
         m_subscribedTopics.removeAll(qTopic);
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("发"), QStringLiteral("server"),
+                                                 QStringLiteral("退订"), qTopic, QString()));
         if (m_logCb) m_logCb("[Client] 退订主题: " + topic);
     } else {
         if (m_errorCb) m_errorCb("客户端未连接");
@@ -432,19 +453,43 @@ void WebSocketBackend::publish(const std::string& topic, const std::string& mess
     if (m_isServerMode) {
         // Server 模式：直接向订阅者发送
         serverPublishToSubscribers(qTopic, qMsg);
+        if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("发"), QStringLiteral("订阅者"),
+                                                 QStringLiteral("发布"), qTopic, qMsg));
         if (m_logCb) {
-            m_logCb("[Server] 发布消息到主题 " + topic + " (" + std::to_string(message.size()) + " 字节)");
+            m_logCb("[Server] 发布消息到主题 " + topic + " ("
+                    + std::to_string(wsproto::utf8Bytes(qMsg)) + " 字节)");
         }
     } else {
         // Client 模式：向服务器发送 PUBLISH 协议消息
         if (m_client && m_client->state() == QAbstractSocket::ConnectedState) {
-            QString publishMsg = "PUBLISH:" + qTopic + ":" + qMsg;
-            m_client->sendTextMessage(publishMsg);
+            m_client->sendTextMessage(wsproto::encodePublish(qTopic, qMsg));
+            if (m_messageCb) m_messageCb(makeWsEvent(QStringLiteral("发"), QStringLiteral("server"),
+                                                     QStringLiteral("发布"), qTopic, qMsg));
             if (m_logCb) {
-                m_logCb("[Client] 发布消息到主题 " + topic + " (" + std::to_string(message.size()) + " 字节)");
+                m_logCb("[Client] 发布消息到主题 " + topic + " ("
+                        + std::to_string(wsproto::utf8Bytes(qMsg)) + " 字节)");
             }
         } else {
             if (m_errorCb) m_errorCb("客户端未连接");
         }
     }
+}
+
+// ============ UI 状态卡数据源 ============
+
+QStringList WebSocketBackend::serverClientPeers() const
+{
+    QStringList peers;
+    QMutexLocker locker(&m_clientsMutex);
+    for (QWebSocket* client : m_clients) {
+        if (client)
+            peers << client->peerAddress().toString()
+                  + QStringLiteral(":%1").arg(client->peerPort());
+    }
+    return peers;
+}
+
+QStringList WebSocketBackend::clientSubscriptions() const
+{
+    return m_subscribedTopics;
 }
