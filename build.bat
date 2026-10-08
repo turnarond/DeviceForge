@@ -3,7 +3,7 @@ REM ============================================================
 REM  DeviceForge Build Script
 REM  Purpose: One-click generate Visual Studio 2022 project
 REM  Prerequisites:
-REM    - Qt 6.11.1 installed (default: C:\Qt\6.11.1\msvc2022_64)
+REM    - Qt 6.11.1 installed (QT_PREFIX override; probes D:\Qt then C:\Qt)
 REM    - Visual Studio 2022 (v143 toolset) installed
 REM  Encoding: ANSI/ASCII only (no UTF-8 BOM) for cmd.exe compat
 REM ============================================================
@@ -19,18 +19,23 @@ echo.
 REM ---------- Configuration ----------
 set PROJECT_ROOT=%~dp0
 set BUILD_DIR=%PROJECT_ROOT%build
-set QT_PREFIX=c:\Qt\6.11.1\msvc2022_64
+REM Caller may set QT_PREFIX explicitly; otherwise probe known local roots.
+if not defined QT_PREFIX if exist "D:\Qt\6.11.1\msvc2022_64\bin\qmake.exe" set "QT_PREFIX=D:\Qt\6.11.1\msvc2022_64"
+if not defined QT_PREFIX if exist "C:\Qt\6.11.1\msvc2022_64\bin\qmake.exe" set "QT_PREFIX=C:\Qt\6.11.1\msvc2022_64"
+if not defined QT_PREFIX (
+    echo [ERROR] Qt 6.11.1 not found. Set QT_PREFIX to the msvc2022_64 directory.
+    exit /b 1
+)
 
 REM ---------- Check Qt ----------
 echo [1/4] Checking Qt installation...
 if not exist "%QT_PREFIX%\bin\qmake.exe" (
     echo [ERROR] Qt not found at: %QT_PREFIX%
-    echo        Please edit this script and set QT_PREFIX to your Qt path
+    echo        Set QT_PREFIX to a valid msvc2022_64 directory before calling this script.
     echo.
     echo        Common Qt paths:
-    echo          C:\Qt\6.11.1\msvc2022_64
-    echo          C:\Qt\6.10.1\msvc2022_64
     echo          D:\Qt\6.11.1\msvc2022_64
+    echo          C:\Qt\6.11.1\msvc2022_64
     pause
     exit /b 1
 )
@@ -58,7 +63,7 @@ if !CMAKE_ERR! NEQ 0 (
     echo.
     echo [ERROR] CMake configuration failed (exit code: !CMAKE_ERR!)
     echo        Please check:
-    echo          - Qt version (check QT_PREFIX in this script)
+    echo          - Qt version (check the caller-provided QT_PREFIX, if any)
     echo          - Qt MSVC compiler (should be msvc2022_64)
     echo          - Qt Visual Studio Tools extension installed
     exit /b !CMAKE_ERR!
