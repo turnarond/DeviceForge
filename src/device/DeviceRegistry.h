@@ -13,6 +13,16 @@ public:
     std::optional<DeviceProfile> find(const std::string& deviceId) const;
     std::vector<DeviceProfile> list() const;
 
+    // ConfigStore 持久化（type=device.profile，key=deviceId）。
+    // load() 同时回退读取旧 device.list 记录：缺失 deviceId 的旧记录按规范化
+    // 端点身份生成确定性 ID（只读迁移，不改写旧记录）；损坏记录跳过并告警。
+    bool load();
+    // save() 先合并进内存注册表（生成/保持 deviceId），再持久化合并结果。
+    bool save(const DeviceProfile& profile);
+    // remove() 从内存与 ConfigStore 删除指定档案；旧 device.list 记录保持不变
+    // （仍作为回退读取来源，由设备总线自行管理生命周期）。
+    bool remove(const std::string& deviceId);
+
     // 重名不阻止保存；UI 可读取此提示并以名称加地址消歧。
     const std::vector<std::string>& warnings() const;
 

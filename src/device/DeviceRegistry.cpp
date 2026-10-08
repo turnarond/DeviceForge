@@ -1,5 +1,9 @@
 #include "device/DeviceRegistry.h"
 
+#include "config/ConfigStore.h"
+#include "device/DeviceProfileCodec.h"
+
+#include <QDebug>
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -211,4 +215,73 @@ void DeviceRegistry::rebuildWarnings()
         if (!seen.insert(profile.name).second && warned.insert(profile.name).second)
             m_warnings.push_back("设备名称重复：" + profile.name);
     }
+}
+
+bool DeviceRegistry::load()
+{
+    m_profiles.clear();
+    m_warnings.clear();
+
+    auto& store = ConfigStore::instance();
+
+    // 新格式：device.profile（key=deviceId）
+    for (const auto& row : store.list(QStringLiteral("device.profile"), 1000)) {
+        const auto profile = decodeDeviceProfile(row);
+        if (profile) {
+            upsert(*profile);
+        } else {
+            qWarning("DeviceRegistry: 跳过损坏的 device.profile 记录 key=%s",
+                     qPrintable(row.value(QStringLiteral("key")).toString()));
+        }
+    }
+
+    // 兼容迁移：旧 device.list 记录只读回退，缺失 deviceId 的按端点身份生成确定性 ID
+    for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+        const auto profile = decodeDeviceProfile(row);
+        if (profile) {
+            upsert(*profile);
+        } else {
+            qWarning("DeviceRegistry: 跳过损坏的 device.list 旧记录 key=%s",
+                     qPrintable(row.value(QStringLiteral("key")).toString()));
+        }
+    }
+
+    rebuildWarnings();
+    return true;
+}
+
+bool DeviceRegistry::save(const DeviceProfile& profile)
+{
+    const auto stored = upsert(profile);
+    if (stored.deviceId.empty()) {
+        qWarning("DeviceRegistry: 设备档案无法生成稳定 ID，跳过保存 name=%s",
+                 stored.name.c_str());
+        return false;
+    }
+    if (!ConfigStore::instance().save(QStringLiteral("device.profile"),
+                                      QString::fromStdString(stored.deviceId),
+                                      encodeDeviceProfile(stored))) {
+        qWarning("DeviceRegistry: 保存设备档案失败 deviceId=%s", stored.deviceId.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool DeviceRegistry::remove(const std::string& deviceId)
+{
+    if (deviceId.empty()) return false;
+    const auto it = std::find_if(m_profiles.begin(), m_profiles.end(),
+                                 [&deviceId](const DeviceProfile& profile) {
+                                     return profile.deviceId == deviceId;
+                                 });
+    const bool existed = it != m_profiles.end();
+    const bool storeRemoved = ConfigStore::instance().remove(
+        QStringLiteral("device.profile"), QString::fromStdString(deviceId));
+    if (existed) {
+        m_profiles.erase(it);
+        rebuildWarnings();
+    }
+    if (!existed && !storeRemoved)
+        qWarning("DeviceRegistry: 移除设备档案未命中 deviceId=%s", deviceId.c_str());
+    return existed || storeRemoved;
 }

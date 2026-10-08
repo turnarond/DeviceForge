@@ -474,14 +474,34 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- DeviceRegistry 内存语义测试（v2.11 Task 1；Task 2 起需链 ConfigStore/Codec）---
 add_executable(tst_device_registry
     device/tst_device_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
 )
 target_include_directories(tst_device_registry PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(tst_device_registry PRIVATE Qt6::Core Qt6::Test)
+target_link_libraries(tst_device_registry PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
 add_test(NAME tst_device_registry COMMAND tst_device_registry)
 if(_qt_bin_dir)
     set_tests_properties(tst_device_registry PROPERTIES
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- DeviceRegistry ConfigStore 持久化与兼容迁移测试（v2.11 Task 2）---
+add_executable(tst_device_registry_store
+    device/tst_device_registry_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_device_registry_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_device_registry_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_device_registry_store COMMAND tst_device_registry_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_device_registry_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
