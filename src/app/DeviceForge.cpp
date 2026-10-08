@@ -9,6 +9,9 @@
 #include <QTimer>
 #include <QAction>      // Task 5: 菜单项
 #include <QKeySequence>
+#include <QSplitter>    // v2.11.1 日志面板比例
+#include <QShowEvent>   // v2.11.1 首显应用面板尺寸
+#include "src/config/ConfigStore.h" // v2.11.1 日志面板状态持久化
 
 #include <QPushButton>
 
@@ -94,6 +97,25 @@ DeviceForge::DeviceForge(QWidget* parent)
         rightVBox->addWidget(m_deviceBusWidget);
         // 工具区 + 日志
         rightVBox->addWidget(ui.splitter_log, 1);
+        // v2.11.1：折叠条移出日志组框，作为 splitter 下方常驻兄弟节点
+        //（旧版折叠条藏在组框内，一折叠即整体隐藏、无法再展开）
+        m_logCollapseBar = new QWidget(this);
+        m_logCollapseBar->setObjectName(QStringLiteral("logCollapseBar"));
+        m_logCollapseBar->setAttribute(Qt::WA_StyledBackground, true);
+        m_logCollapseBar->setProperty("flash", false); // 闪烁态由 QSS [flash="true"] 驱动
+        m_logCollapseBar->setFixedHeight(20);
+        m_logCollapseBar->setCursor(Qt::PointingHandCursor);
+        {
+            auto* barLayout = new QHBoxLayout(m_logCollapseBar);
+            barLayout->setContentsMargins(8, 0, 8, 0);
+            m_logCollapseLabel = new QLabel(m_logCollapseBar);
+            m_logCollapseLabel->setObjectName(QStringLiteral("logCollapseBarLabel"));
+            barLayout->addWidget(m_logCollapseLabel);
+        }
+        m_logCollapseBar->installEventFilter(this);
+        rightVBox->addWidget(m_logCollapseBar);
+        connect(ui.splitter_log, &QSplitter::splitterMoved, this,
+                [this](int, int){ scheduleLogHeightPersist(); });
         mainHBox->addLayout(rightVBox, 1);
     }
 
@@ -138,24 +160,9 @@ DeviceForge::DeviceForge(QWidget* parent)
     m_navBar->setActiveItem(0);
     m_toolStack->setCurrentIndex(0);
 
-    // 7. 调整 splitter 比例（日志区默认 250px，约 10 行）
-    ui.splitter_log->setSizes(QList<int>() << 600 << 250);
-
-    // 8. 底部日志折叠条（Task 4）
-    m_logCollapseBar = new QWidget(this);
-    m_logCollapseBar->setObjectName("logCollapseBar");
-    m_logCollapseBar->setAttribute(Qt::WA_StyledBackground, true); // 自定义 QWidget 子类，QSS 背景需显式声明
-    m_logCollapseBar->setProperty("flash", false); // 闪烁态由 QSS [flash="true"] 驱动，替代组件级 setStyleSheet
-    m_logCollapseBar->setFixedHeight(4);
-    m_logCollapseBar->setCursor(Qt::PointingHandCursor);
-    m_logCollapseBar->installEventFilter(this);
-    // 将折叠条放在日志组框顶部
-    auto* logLayout = qobject_cast<QVBoxLayout*>(ui.groupBox_log->layout());
-    if (logLayout) {
-        logLayout->insertWidget(0, m_logCollapseBar);
-    }
-
-    m_logExpanded = true;
+    // 7. 日志面板状态（v2.11.1）：从 ConfigStore 恢复折叠态与展开高度，
+    //    初始比例由 splitSizes 钳制（不再硬编码 600:250）
+    setupLogPanel();
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
@@ -598,13 +605,13 @@ void DeviceForge::onVersionLabelClicked()
 
  //eventFilter — 处理版本标签鼠标点击 + 日志折叠条点击（Task 4）
 bool DeviceForge::eventFilter(QObject* watched, QEvent* event) {
-    // 日志折叠条点击（Task 4）
+    // 日志折叠条点击（v2.11.1：状态入 ConfigStore，尺寸由 splitSizes 钳制）
     if (watched == m_logCollapseBar && event->type() == QEvent::MouseButtonPress) {
-        m_logExpanded = !m_logExpanded;
-        ui.groupBox_log->setVisible(m_logExpanded);
-        ui.splitter_log->setSizes(m_logExpanded
-            ? QList<int>() << 600 << 250
-            : QList<int>() << 600 << 0);
+        m_logPanelState.collapsed = !m_logPanelState.collapsed;
+        m_logExpanded = !m_logPanelState.collapsed;
+        persistLogPanelState();
+        applyLogPanelSizes();
+        updateLogCollapseBarText();
         return true;
     }
     if (watched == m_versionLabel && event->type() == QEvent::MouseButtonRelease) {
@@ -615,4 +622,69 @@ bool DeviceForge::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+// ===== v2.11.1 综合日志折叠面板 =====
+
+void DeviceForge::setupLogPanel()
+{
+    m_logPanelState = logpanel::fromRecord(ConfigStore::instance().load(
+        QString::fromLatin1(logpanel::kRecordType),
+        QString::fromLatin1(logpanel::kRecordKey)));
+    m_logExpanded = !m_logPanelState.collapsed;
+    updateLogCollapseBarText();
+    applyLogPanelSizes();
+}
+
+void DeviceForge::applyLogPanelSizes()
+{
+    const int total = ui.splitter_log->height();
+    if (total <= 0)
+        return; // 首显前无有效高度，showEvent 再应用
+    // 折叠时允许日志区收为 0（.ui 默认 minimumSize 高度 100 会挡住）
+    ui.groupBox_log->setMinimumHeight(m_logPanelState.collapsed ? 0 : 100);
+    const auto sizes = logpanel::splitSizes(m_logPanelState, total);
+    ui.splitter_log->setSizes(QList<int>() << sizes.first << sizes.second);
+}
+
+void DeviceForge::persistLogPanelState()
+{
+    ConfigStore::instance().save(
+        QString::fromLatin1(logpanel::kRecordType),
+        QString::fromLatin1(logpanel::kRecordKey),
+        logpanel::toRecord(m_logPanelState));
+}
+
+void DeviceForge::updateLogCollapseBarText()
+{
+    if (!m_logCollapseLabel)
+        return;
+    m_logCollapseLabel->setText(m_logPanelState.collapsed
+        ? QStringLiteral("▸ 综合日志输出（点击展开）")
+        : QStringLiteral("▾ 综合日志输出（点击折叠）"));
+}
+
+void DeviceForge::scheduleLogHeightPersist()
+{
+    if (!m_logHeightDebounce) {
+        m_logHeightDebounce = new QTimer(this);
+        m_logHeightDebounce->setSingleShot(true);
+        m_logHeightDebounce->setInterval(600);
+        connect(m_logHeightDebounce, &QTimer::timeout, this, [this]{
+            if (m_logPanelState.collapsed)
+                return;
+            const int h = ui.groupBox_log->height();
+            if (h >= logpanel::kMinLogHeight && h != m_logPanelState.expandedHeight) {
+                m_logPanelState.expandedHeight = h;
+                persistLogPanelState();
+            }
+        });
+    }
+    m_logHeightDebounce->start();
+}
+
+void DeviceForge::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    applyLogPanelSizes(); // 首显后 splitter 才有真实高度
 }

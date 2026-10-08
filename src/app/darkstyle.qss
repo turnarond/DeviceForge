@@ -578,8 +578,13 @@ QMessageBox QLabel {
 /* ===== 日志折叠条（Task 4） ===== */
 #logCollapseBar {
     background: #252A33;
-    min-height: 4px;
-    max-height: 4px;
+    min-height: 20px;
+    max-height: 20px;
+}
+
+#logCollapseBarLabel {
+    color: #8A93A0;
+    font-size: 11px;
 }
 
 #logCollapseBar:hover {

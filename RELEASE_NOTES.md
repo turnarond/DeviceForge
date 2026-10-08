@@ -1,3 +1,12 @@
+# DeviceForge v2.11.1 Release Notes
+
+## v2.11.1 补丁（现场反馈可用性）
+
+- 设备档案编辑器：协议下拉选择 + 凭据下拉选择/就地新建（DPAPI 加密入库），不再手填协议与凭据引用键。
+- 综合日志面板：折叠条常驻可见、可一键折叠/展开，比例记忆；修复旧版折叠后难以恢复的问题。
+- 批量命令执行结果表：列宽可手动拖动。
+- 测试基线：全量 CTest 36 目标（新增 `tst_batch_result_header`、`tst_log_panel_state`）。
+
 # DeviceForge v2.11.0 Release Notes
 
 ## v2.11.0 新增（设备任务中心）

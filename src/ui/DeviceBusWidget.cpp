@@ -30,11 +30,53 @@
 #include <QPoint>
 #include <QSet>
 #include <QStyle>
+#include <QComboBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QDebug>
 
+namespace devicebus {
+
+QStringList editableEndpointProtocols()
+{
+    return {QStringLiteral("ftp"), QStringLiteral("ftps"), QStringLiteral("sftp"),
+            QStringLiteral("ssh"), QStringLiteral("telnet"), QStringLiteral("modbus")};
+}
+
+QString storeFtpCredential(const QString& key, const QString& user, const QString& pass,
+                           const QString& host, int port)
+{
+    const QString trimmedKey = key.trimmed();
+    if (trimmedKey.isEmpty())
+        return QString();
+    const QString cipher = DpapiCrypto::protect(pass);
+    if (!pass.isEmpty() && cipher.isEmpty()) {
+        qWarning("DeviceBus: DPAPI 加密密码失败，跳过凭证保存以免清空已存密文");
+        return QString();
+    }
+    QVariantMap cred;
+    cred.insert(QStringLiteral("username"), user.trimmed());
+    cred.insert(QStringLiteral("password"), cipher);
+    cred.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
+    const QString trimmedHost = host.trimmed();
+    if (!trimmedHost.isEmpty()) {
+        cred.insert(QStringLiteral("host"), trimmedHost);
+        cred.insert(QStringLiteral("port"), port);
+    }
+    if (!ConfigStore::instance().save(QStringLiteral("ftp.credential"), trimmedKey, cred)) {
+        qWarning("DeviceBus: 保存 ftp.credential 失败 key=%s", qPrintable(trimmedKey));
+        return QString();
+    }
+    return trimmedKey;
+}
+
+} // namespace devicebus
+
 namespace {
+
+// v2.11.1 凭据下拉的两枚特殊项
+const QString kCredNone = QStringLiteral("（无凭据）");
+const QString kCredCreate = QStringLiteral("＋ 新建凭据…");
 
 // 胶囊主文案：名称优先（v2.11），地址为次级信息；无名称退回纯地址（旧行为）
 QString pillCaption(const QString& ipPart, const QString& name)
@@ -168,14 +210,23 @@ public:
                 QTableWidgetItem* item = m_endpoints->item(row, column);
                 return item ? item->text().trimmed() : QString();
             };
+            const auto comboCell = [this, row](int column) -> QComboBox* {
+                return qobject_cast<QComboBox*>(m_endpoints->cellWidget(row, column));
+            };
             const QString ip = cell(1);
             if (ip.isEmpty())
                 continue;   // 空行忽略
             DeviceEndpoint endpoint;
-            endpoint.protocol = cell(0).toLower().toStdString();
+            // 协议/凭据来自下拉：协议不可能再被留空成 ""（修复 v2.11 终审遗留）
+            QComboBox* proto = comboCell(0);
+            endpoint.protocol = (proto ? proto->currentText() : QStringLiteral("ftp"))
+                                    .trimmed().toLower().toStdString();
             endpoint.ip = ip.toStdString();
             endpoint.port = cell(2).toInt();   // 0 → registry 按协议补默认端口
-            endpoint.credentialRef = cell(3).toStdString();
+            const QString ref = comboCell(3) ? comboCell(3)->currentText().trimmed()
+                                             : QString();
+            if (!ref.isEmpty() && ref != kCredNone && ref != kCredCreate)
+                endpoint.credentialRef = ref.toStdString();
             endpoints.push_back(endpoint);
         }
         if (endpoints.empty()) {
@@ -194,9 +245,123 @@ private:
     {
         const int row = m_endpoints->rowCount();
         m_endpoints->insertRow(row);
-        QStringList values{protocol, ip, port, credentialRef};
-        for (int column = 0; column < values.size(); ++column)
-            m_endpoints->setItem(row, column, new QTableWidgetItem(values.at(column)));
+        // 协议列：下拉选择，杜绝手打留空/拼错（v2.11.1）
+        auto* protoCombo = new QComboBox(m_endpoints);
+        protoCombo->setObjectName(QStringLiteral("endpointProtocolCombo"));
+        const QStringList protocols = devicebus::editableEndpointProtocols();
+        protoCombo->addItems(protocols);
+        const QString wanted = protocol.trimmed().toLower();
+        protoCombo->setCurrentIndex(qMax(0, protocols.indexOf(wanted))); // 未知/空 → ftp
+        m_endpoints->setCellWidget(row, 0, protoCombo);
+        m_endpoints->setItem(row, 1, new QTableWidgetItem(ip));
+        m_endpoints->setItem(row, 2, new QTableWidgetItem(port));
+        // 凭据引用列：下拉选择已有 ftp.credential 键，或经"新建凭据…"就地创建（DPAPI 加密）
+        auto* credCombo = new QComboBox(m_endpoints);
+        credCombo->setObjectName(QStringLiteral("endpointCredentialCombo"));
+        populateCredentialCombo(credCombo, credentialRef.trimmed());
+        connect(credCombo, QOverload<int>::of(&QComboBox::activated), this,
+                [this, credCombo, row](int){ handleCredentialActivated(credCombo, row); });
+        m_endpoints->setCellWidget(row, 3, credCombo);
+    }
+
+    void populateCredentialCombo(QComboBox* combo, const QString& current)
+    {
+        combo->blockSignals(true);
+        combo->clear();
+        combo->addItem(kCredNone);
+        QStringList existing;
+        const auto rows = ConfigStore::instance().list(QStringLiteral("ftp.credential"), 1000);
+        for (const QVariantMap& r : rows) {
+            const QString k = r.value(QStringLiteral("key")).toString();
+            if (!k.isEmpty() && !existing.contains(k))
+                existing << k;
+        }
+        existing.sort(Qt::CaseInsensitive);
+        combo->addItems(existing);
+        int idx = 0;
+        if (!current.isEmpty()) {
+            if (!existing.contains(current))
+                combo->addItem(current);   // 引用可能来自旧配置：保底可见
+            idx = qMax(1, combo->findText(current));
+        }
+        combo->addItem(kCredCreate);
+        combo->setCurrentIndex(idx);
+        combo->setProperty("lastRef", idx > 0 ? current : QString());
+        combo->blockSignals(false);
+    }
+
+    void handleCredentialActivated(QComboBox* combo, int row)
+    {
+        const QString text = combo->currentText();
+        if (text != kCredCreate) {
+            combo->setProperty("lastRef", text);
+            return;
+        }
+        // 选了"新建凭据…"：先回退显示，弹创建框，成功后切到新键
+        const QString prev = combo->property("lastRef").toString();
+        combo->blockSignals(true);
+        combo->setCurrentText(prev.isEmpty() ? kCredNone : prev);
+        combo->blockSignals(false);
+        QString newKey;
+        if (promptCreateCredential(row, &newKey)) {
+            populateCredentialCombo(combo, newKey);
+            combo->setProperty("lastRef", newKey);
+        }
+    }
+
+    bool promptCreateCredential(int row, QString* outKey)
+    {
+        const auto cellText = [this, row](int col) -> QString {
+            QTableWidgetItem* it = m_endpoints->item(row, col);
+            return it ? it->text().trimmed() : QString();
+        };
+        const QString host = cellText(1);
+        const int port = cellText(2).toInt();
+
+        QDialog dlg(this);
+        dlg.setObjectName(QStringLiteral("deviceCredentialCreate"));
+        dlg.setWindowTitle(tr("新建凭据"));
+        auto* lay = new QVBoxLayout(&dlg);
+        auto* form = new QFormLayout();
+        auto* keyEdit = new QLineEdit(&dlg);
+        keyEdit->setObjectName(QStringLiteral("credentialKey"));
+        keyEdit->setText(host.isEmpty()
+                             ? QStringLiteral("user@主机:端口")
+                             : QStringLiteral("user@%1:%2").arg(host)
+                                   .arg(port > 0 ? port : 21));
+        keyEdit->setPlaceholderText(tr("引用键名，如 root@192.168.20.123:21"));
+        auto* userEdit = new QLineEdit(&dlg);
+        userEdit->setObjectName(QStringLiteral("credentialUser"));
+        auto* passEdit = new QLineEdit(&dlg);
+        passEdit->setObjectName(QStringLiteral("credentialPass"));
+        passEdit->setEchoMode(QLineEdit::Password);
+        form->addRow(tr("引用键"), keyEdit);
+        form->addRow(tr("用户名"), userEdit);
+        form->addRow(tr("密码"), passEdit);
+        lay->addLayout(form);
+        auto* buttons = new QDialogButtonBox(&dlg);
+        auto* okBtn = buttons->addButton(tr("保存"), QDialogButtonBox::AcceptRole);
+        okBtn->setObjectName(QStringLiteral("credentialSave"));
+        buttons->addButton(tr("取消"), QDialogButtonBox::RejectRole);
+        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        lay->addWidget(buttons);
+        if (dlg.exec() != QDialog::Accepted)
+            return false;
+        const QString key = keyEdit->text().trimmed();
+        if (key.isEmpty()) {
+            QMessageBox::warning(this, tr("新建凭据"), tr("引用键不能为空。"));
+            return false;
+        }
+        const QString saved =
+            devicebus::storeFtpCredential(key, userEdit->text(), passEdit->text(), host, port);
+        if (saved.isEmpty()) {
+            QMessageBox::warning(this, tr("新建凭据"),
+                                 tr("凭据保存失败（加密或写入未成功），已保持原引用。"));
+            return false;
+        }
+        *outKey = saved;
+        return true;
     }
 
     DeviceProfile m_original;
@@ -299,36 +464,25 @@ void DeviceBusWidget::setupUi()
         emit credentialsChanged(m_userEdit->text(), m_passEdit->text());
     });
 
-    // 失焦时隐式保存凭证（密码经 DPAPI 加密后入库）
+    // 失焦时隐式保存凭证（密码经 DPAPI 加密后入库；v2.11.1 复用 devicebus::storeFtpCredential）
     auto saveCreds = [this]() {
         const QString user = m_userEdit ? m_userEdit->text().trimmed() : QString();
         const QString pass = m_passEdit ? m_passEdit->text() : QString();
         if (user.isEmpty() && pass.isEmpty())
             return;
-        const QString cipher = DpapiCrypto::protect(pass);
-        if (!pass.isEmpty() && cipher.isEmpty()) {
-            qWarning("DeviceBus: DPAPI 加密密码失败，跳过凭证保存以免清空已存密文");
-            return;
-        }
-        QVariantMap cred;
-        cred.insert(QStringLiteral("username"), user);
-        cred.insert(QStringLiteral("password"), cipher);
-        cred.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
-        // 若当前有选中设备，附带 host/port 方便回填与区分
         const auto selected = selectedDevices();
         QString key = user.isEmpty() ? QStringLiteral("_default") : user;
+        QString host;
+        int port = 0;
         if (!selected.empty()) {
             const auto& d = selected.front();
-            const QString host = QString::fromStdString(d.ip);
-            const int port = d.port > 0 ? d.port : 21;
-            cred.insert(QStringLiteral("host"), host);
-            cred.insert(QStringLiteral("port"), port);
+            host = QString::fromStdString(d.ip);
+            port = d.port > 0 ? d.port : 21;
             key = QStringLiteral("%1@%2:%3").arg(user.isEmpty() ? QStringLiteral("anon") : user,
                                                  host,
                                                  QString::number(port));
         }
-        if (!ConfigStore::instance().save(QStringLiteral("ftp.credential"), key, cred))
-            qWarning("DeviceBus: 保存 ftp.credential 失败 key=%s", qPrintable(key));
+        devicebus::storeFtpCredential(key, user, pass, host, port);
     };
     connect(m_userEdit, &QLineEdit::editingFinished, this, saveCreds);
     connect(m_passEdit, &QLineEdit::editingFinished, this, saveCreds);

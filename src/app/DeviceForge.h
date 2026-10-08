@@ -6,8 +6,11 @@
 #include "src/framework/AppState.h"
 #include "src/ui/NavBar.h"
 #include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
+#include "src/app/LogPanelState.h"   // v2.11.1 综合日志折叠面板状态纯逻辑
 
 #include <memory>
+
+class QTimer;
 
 class ToolHost;
 class DeviceBusWidget;
@@ -31,6 +34,7 @@ public:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void showEvent(QShowEvent* event) override; // v2.11.1 首显时应用日志面板比例
 
 public:
     QStringList getTargetIPList() const;
@@ -98,9 +102,17 @@ private:
     TaskCenterWidget* m_taskCenterWidget = nullptr;   // 首次导航时懒创建
     int m_taskCenterIndex = -1;                       // 任务中心导航索引
 
-    // 底部日志折叠（Task 4）
-    QWidget* m_logCollapseBar = nullptr;  // 日志折叠指示条
+    // 底部日志折叠（Task 4；v2.11.1 折叠条移出日志组框常驻可见 + ConfigStore 记忆）
+    QWidget* m_logCollapseBar = nullptr;  // 日志折叠指示条（splitter 下方常驻）
+    class QLabel* m_logCollapseLabel = nullptr; // 折叠条文字（箭头+提示）
     bool     m_logExpanded    = true;     // 日志展开状态
+    logpanel::State m_logPanelState;      // 折叠/高度状态（app.panel/logPanel）
+    QTimer*  m_logHeightDebounce = nullptr; // 拖动 splitter 后延迟记忆展开高度
+    void setupLogPanel();
+    void applyLogPanelSizes();
+    void persistLogPanelState();
+    void updateLogCollapseBarText();
+    void scheduleLogHeightPersist();
 
     // 在线更新（Task 5）
     std::shared_ptr<UpdateChecker> m_updateChecker; // 在线更新 ServiceTask
