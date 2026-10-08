@@ -12,6 +12,7 @@
 
 #include "adapter/FtpAdapter.h"
 #include "adapter/ProtocolRegistry.h"
+#include "task/TaskRunStore.h"   // sanitizeTaskErrorText：日志路径错误文本统一脱敏
 #include "transfer/AdapterTransferChannel.h"
 #include "transfer/TransferScheduler.h"
 #include "transfer/TransferTypes.h"
@@ -649,8 +650,10 @@ TaskDeviceOutcome TaskExecutionEngine::runDevicePipeline(
         outcome.state = TaskDeviceState::Failed;
         outcome.error = validation.error;
         emitState(callbacks, profile.deviceId, TaskDeviceState::Failed);
+        // 终审 Important 2：错误文本入日志（含 qDebug 镜像）前统一脱敏
         emitLog(callbacks, QStringLiteral("[%1] 设备校验失败：%2")
-                    .arg(displayLabel, utf8ToQString(validation.error)));
+                    .arg(displayLabel,
+                         utf8ToQString(sanitizeTaskErrorText(validation.error))));
         return outcome;
     }
 
@@ -747,6 +750,8 @@ TaskDeviceOutcome TaskExecutionEngine::runDevicePipeline(
         if (callbacks.onStepFinished) {
             callbacks.onStepFinished(profile.deviceId, stepResult);
         }
+        // 终审 Important 2：stepResult.error 入日志（含 qDebug→LogBridge→文件
+        // 日志镜像）前必须脱敏；落库路径由 TaskRunStore 写前脱敏，两者互不依赖
         emitLog(callbacks, QStringLiteral("[%1] 步骤 %2（%3）结果：%4%5")
                     .arg(displayLabel)
                     .arg(nextIndex + 1)
@@ -754,12 +759,12 @@ TaskDeviceOutcome TaskExecutionEngine::runDevicePipeline(
                          taskDeviceStateToString(stepResult.state))
                     .arg(stepResult.error.empty()
                              ? QString()
-                             : QStringLiteral("，原因：%1").arg(utf8ToQString(stepResult.error))));
+                             : QStringLiteral("，原因：%1").arg(utf8ToQString(
+                                   sanitizeTaskErrorText(stepResult.error)))));
 
         if (stepResult.state != TaskDeviceState::Succeeded) {
             broken = true;
             lastResult = stepResult;
-            ++nextIndex;
             break;
         }
     }

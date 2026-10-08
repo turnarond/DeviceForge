@@ -289,8 +289,12 @@ std::string renderTaskRunHtml(const TaskRunRecord& record)
          + " | template: " + htmlEscape(record.templateId)
          + " v" + std::to_string(record.templateVersion)
          + " | status: " + htmlEscape(statusToken) + "</p>\n";
+    // 终审 Important 3 伴生守卫：未收口记录（finishedAt<=0，如对账前的崩溃遗留
+    // running 行）显示占位「—」，绝不落 1970 纪元时间
     out += "<p>started_at: " + htmlEscape(formatTimestamp(record.startedAt))
-         + " | finished_at: " + htmlEscape(formatTimestamp(record.finishedAt))
+         + " | finished_at: " + htmlEscape(record.finishedAt > 0
+                                               ? formatTimestamp(record.finishedAt)
+                                               : std::string("\xE2\x80\x94"))
          + " | operator: " + htmlEscape(record.operatorName)
          + " | software: " + htmlEscape(record.softwareVersion) + "</p>\n";
     out += "<table>\n"

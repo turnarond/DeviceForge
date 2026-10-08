@@ -651,3 +651,57 @@ int TaskRunStore::prune(int retentionDays, int pageSize)
             << "条（保留天数" << retentionDays << "）";
     return expiredRunKeys.size();
 }
+
+// 终审 Important 3：启动对账——上一进程崩溃/强杀遗留的 status=running 运行行
+// 按「失败（中断）」收口（写 finishedAt=now），使其脱离「运行中保护」进入可
+// 保留清理状态，历史导出不再出现未收口时间。分页遍历到底（同 prune 的窗口策略）。
+// 状态无法解析的记录保守不动；终态记录不受影响。
+int TaskRunStore::reconcileOrphanedRuns()
+{
+    auto& store = ConfigStore::instance();
+    QList<QVariantMap> orphanRows;
+    QStringList orphanKeys;
+    for (int offset = 0;; offset += kRunListLimit) {
+        const QList<QVariantMap> page = store.list(kRunType, kRunListLimit, offset);
+        for (const QVariantMap& row : page) {
+            const std::optional<TaskRunStatus> status = taskRunStatusFromToken(
+                row.value(QString(kFieldStatus)).toString().toStdString());
+            if (status == TaskRunStatus::Running) {
+                orphanKeys << row.value(QString(kRowKey)).toString();
+                orphanRows << row;
+            }
+        }
+        if (page.size() < kRunListLimit) break;
+    }
+
+    int reconciled = 0;
+    const std::time_t now = nowSeconds();
+    for (qsizetype i = 0; i < orphanRows.size(); ++i) {
+        QVariantMap row = orphanRows.at(i);
+        row.insert(QString(kFieldStatus), qstr(taskRunStatusToken(TaskRunStatus::Failed)));
+        row.insert(QString(kFieldFinishedAt), qint64(now));
+        if (store.save(kRunType, orphanKeys.at(i), row)) {
+            ++reconciled;
+        } else {
+            qWarning() << "TaskRunStore: 启动对账收口失败" << orphanKeys.at(i);
+        }
+    }
+    if (reconciled > 0) {
+        qInfo() << "TaskRunStore: 启动对账——" << reconciled
+                << "条崩溃遗留的运行记录已按失败收口（中断）";
+    }
+    return reconciled;
+}
+
+// 保留天数读取：ConfigStore type="task"、key="retention"、字段 "days"
+// （模式对齐 deploy/concurrency 设置项）；缺失或非法（非 1..3650）回落默认 90。
+int taskRunRetentionDays()
+{
+    const QVariantMap row = ConfigStore::instance().load(
+        QStringLiteral("task"), QStringLiteral("retention"));
+    bool ok = false;
+    const int days = row.value(QStringLiteral("days")).toInt(&ok);
+    if (!ok || days < 1 || days > 3650)
+        return kTaskRunDefaultRetentionDays;
+    return days;
+}

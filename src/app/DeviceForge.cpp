@@ -82,6 +82,15 @@ DeviceForge::DeviceForge(QWidget* parent)
         m_deviceRegistry = std::make_unique<DeviceRegistry>();
         m_deviceRegistry->load();
         m_deviceBusWidget->setRegistry(m_deviceRegistry.get());
+
+        // v2.11 终审 Important 3：启动维护——先把上一进程崩溃遗留的 running
+        // 执行记录按失败（中断）收口，再按保留天数清理过期终态历史
+        //（ConfigStore task/retention.days 可覆盖，默认 90 天；见 TaskRunStore.h）
+        if (!m_runStore)
+            m_runStore = std::make_unique<TaskRunStore>();
+        m_runStore->reconcileOrphanedRuns();
+        m_runStore->prune(taskRunRetentionDays());
+
         rightVBox->addWidget(m_deviceBusWidget);
         // 工具区 + 日志
         rightVBox->addWidget(ui.splitter_log, 1);
@@ -364,6 +373,7 @@ void DeviceForge::setupTaskCenterTab()
     m_toolStack->addWidget(widget);
     appendGlobalLog(QStringLiteral("任务中心已就绪：选择模板 → 执行任务（执行前展示摘要与风险提示）"));
 }
+
 void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);

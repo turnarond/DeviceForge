@@ -53,7 +53,20 @@ public:
     // 分页遍历到底，超期记录不再因落在读取窗口之外而永久漏删。
     // pageSize <= 0 拒绝执行并返回 0。
     int prune(int retentionDays, int pageSize);
+
+    // 启动对账（v2.11 终审 Important 3）：上一进程崩溃/强杀遗留的
+    // status=running 运行行按「失败（中断）」收口——写入 finishedAt=now，
+    // 使其进入可保留清理状态，历史导出不再出现未收口时间。
+    // 状态无法解析的记录保守不动；终态记录不受影响。返回收口条数。
+    // 必须先于 prune 调用（对账后的记录本轮即可被清理）。
+    int reconcileOrphanedRuns();
 };
+
+// 启动保留清理的默认天数（发布文档「按保留天数清理」所指默认值）。
+// ConfigStore type="task"、key="retention"、字段 "days" 可覆盖
+//（模式对齐 deploy/concurrency 设置项）；缺失或非法（非 1..3650）回落默认。
+constexpr int kTaskRunDefaultRetentionDays = 90;
+int taskRunRetentionDays();
 
 // 步骤错误文本脱敏（落库前与报告共享的唯一入口）：
 // 掩蔽 password/passwd/pwd/secret/token/apikey/private_key 等 "键=值"、

@@ -739,6 +739,95 @@ private slots:
             QStringLiteral("device,result,failed_files,last_error,duration_ms,started_at,non_atomic")));
     }
 
+    // 终审 Important 3：启动对账——崩溃遗留的 running 行按失败（中断）收口，
+    // 收口后不再受「运行中保护」，可被保留清理删除
+    void reconcileOrphanedRunningRunsThenPrunable()
+    {
+        TaskRunStore store;
+        const std::time_t old = std::time(nullptr) - 200 * 86400;
+        QVERIFY(ConfigStore::instance().save(
+            QStringLiteral("task.run"), QStringLiteral("run-orphan"),
+            rawRunRow(QStringLiteral("run-orphan"), QStringLiteral("tpl-x"),
+                      QStringLiteral("running"), old)));
+        QVERIFY(ConfigStore::instance().save(
+            QStringLiteral("task.run.device"), QStringLiteral("run-orphan/device-o"),
+            rawDeviceRow(QStringLiteral("run-orphan"), QStringLiteral("device-o"),
+                         QStringLiteral("甲"), QStringLiteral("10.0.0.1:21"), 0)));
+
+        // 对账前：running 受保护，保留清理不删（既有契约不变）
+        QCOMPARE(store.prune(90), 0);
+
+        // 对账：1 条 running → 失败收口（中断），写入 finishedAt
+        QCOMPARE(store.reconcileOrphanedRuns(), 1);
+        const auto afterReconcile = store.query({});
+        QCOMPARE(afterReconcile.size(), size_t(1));
+        QCOMPARE(int(afterReconcile.front().status), int(TaskRunStatus::Failed));
+        QVERIFY(afterReconcile.front().finishedAt > 0);
+
+        // 幂等：终态记录不再二次对账
+        QCOMPARE(store.reconcileOrphanedRuns(), 0);
+
+        // 对账后立即进入保留清理窗口
+        QCOMPARE(store.prune(90), 1);
+        QVERIFY(store.query({}).empty());
+        QVERIFY(!rowExists("task.run", QStringLiteral("run-orphan")));
+        QVERIFY(!rowExists("task.run.device", QStringLiteral("run-orphan/device-o")));
+    }
+
+    // 终审 Important 3：保留天数读取——默认 90，ConfigStore task/retention.days 可覆盖
+    void retentionDaysReadFromConfigStoreWithDefault()
+    {
+        QCOMPARE(kTaskRunDefaultRetentionDays, 90);
+        QCOMPARE(taskRunRetentionDays(), kTaskRunDefaultRetentionDays);
+
+        QVariantMap row;
+        row.insert(QStringLiteral("days"), 30);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("task"),
+                                             QStringLiteral("retention"), row));
+        QCOMPARE(taskRunRetentionDays(), 30);
+
+        // 非法值（0/负数/非数字/越界）一律回落默认，防止误清全部历史
+        row.insert(QStringLiteral("days"), 0);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("task"),
+                                             QStringLiteral("retention"), row));
+        QCOMPARE(taskRunRetentionDays(), kTaskRunDefaultRetentionDays);
+
+        row.insert(QStringLiteral("days"), QStringLiteral("abc"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("task"),
+                                             QStringLiteral("retention"), row));
+        QCOMPARE(taskRunRetentionDays(), kTaskRunDefaultRetentionDays);
+
+        row.insert(QStringLiteral("days"), 99999);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("task"),
+                                             QStringLiteral("retention"), row));
+        QCOMPARE(taskRunRetentionDays(), kTaskRunDefaultRetentionDays);
+    }
+
+    // 终审 Important 3 伴生：未收口（finishedAt=0）记录 HTML 报告显示「—」，
+    // 绝不出现 1970 纪元时间
+    void unfinishedRunHtmlShowsDashNotEpoch()
+    {
+        TaskRunStore store;
+        const TaskRunId runId = store.begin(makeRequest(
+            QStringLiteral("tpl-dash"),
+            {makeDevice(QStringLiteral("device-d"), QStringLiteral("表盘"),
+                        QStringLiteral("10.0.0.3"), 21)}));
+        QVERIFY(!runId.empty());
+
+        const auto records = store.query({});
+        QCOMPARE(records.size(), size_t(1));
+        const QString html = QString::fromStdString(renderTaskRunHtml(records.front()));
+        QVERIFY2(html.contains(QStringLiteral("finished_at: \xE2\x80\x94")), qPrintable(html));
+        QVERIFY(!html.contains(QStringLiteral("1970")));
+
+        QVERIFY(store.finish(runId, TaskRunStatus::Succeeded));
+        const auto finished = store.query({});
+        QCOMPARE(finished.size(), size_t(1));
+        const QString finishedHtml = QString::fromStdString(
+            renderTaskRunHtml(finished.front()));
+        QVERIFY(!finishedHtml.contains(QStringLiteral("1970")));
+    }
+
     // 令牌编解码：所有状态/类型令牌 round-trip
     void statusAndStateTokensRoundTrip()
     {

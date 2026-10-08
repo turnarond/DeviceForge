@@ -522,9 +522,13 @@ if(_qt_bin_dir)
 endif()
 
 # --- TaskExecutionEngine 状态机与阶段恢复测试（v2.11 Task 4，Fake 适配器无网络）---
+# 注：引擎日志路径复用 TaskRunStore 的 sanitizeTaskErrorText（终审 Important 2），
+#     须一并编入 TaskRunStore.cpp + ConfigStore.cpp（脱敏实现所在 TU）。
 add_executable(tst_task_execution_engine
     task/tst_task_execution_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
     ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
@@ -537,7 +541,7 @@ add_executable(tst_task_execution_engine
 )
 target_include_directories(tst_task_execution_engine PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(tst_task_execution_engine PRIVATE
-    Qt6::Core Qt6::Network Qt6::Test
+    Qt6::Core Qt6::Network Qt6::Sql Qt6::Test
     ${LIBCURL_IMPL_LIB}
     ${LIBSSH2_LIB}
     lwlog

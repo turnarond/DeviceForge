@@ -117,6 +117,10 @@ public:
     bool commandConnect(const QString& ip, std::string* error)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_hardFailConnectIp.isEmpty() && ip == m_hardFailConnectIp) {
+            *error = m_hardFailConnectError;
+            return false;
+        }
         const int attempt = ++m_connectAttempts[ip];
         if (!m_flakyConnectIp.isEmpty() && ip == m_flakyConnectIp && attempt == 1) {
             *error = "connection timed out";
@@ -202,6 +206,13 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         m_flakyConnectIp = ip;
     }
+    // 终审 Important 2：让指定 IP 的命令连接永久失败并回显自定义错误文本
+    void setHardFailingConnect(const QString& ip, const std::string& errorText)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_hardFailConnectIp = ip;
+        m_hardFailConnectError = errorText;
+    }
 
     int uploadEntered() const { return m_uploadEntered.load(); }
     int commandGateEntered() const { return m_commandGateEntered.load(); }
@@ -256,6 +267,8 @@ private:
     std::set<QString> m_rebootDisconnectIps;
     std::set<QString> m_failingCommands;
     QString m_flakyConnectIp;
+    QString m_hardFailConnectIp;
+    std::string m_hardFailConnectError;
     QString m_deployGateIp;
     QString m_gatedCommand;
     std::atomic_bool m_deployGateArmed{false};
@@ -989,6 +1002,47 @@ private slots:
                 }
             }
         }
+    }
+
+    // 场景九：终审 Important 2——步骤错误文本含凭据时，引擎日志（onLog，
+    // 亦即 qDebug 镜像进全局/文件日志的路径）必须先经 sanitizeTaskErrorText 脱敏
+    void stepErrorTextInLogsIsSanitized()
+    {
+        auto fixture = std::make_shared<EngineFixture>();
+        Recorder recorder;
+        TaskExecutionEngine engine(makeDependencies(fixture));
+        fixture->setHardFailingConnect(QStringLiteral("10.0.0.81"),
+                                       u8"登录被拒绝：password=task-secret");
+
+        TaskTemplate tmpl = makeTemplate({
+            makeStep(TaskStepType::RunCommands,
+                     commandParameters({QStringLiteral("uptime")})),
+        });
+        TaskExecutionRequest request;
+        request.task = tmpl;
+        request.devices = {makeProfile("dev-log", QStringLiteral("10.0.0.81"))};
+        request.authResolver = [](const DeviceProfile&) { return makeAuth(); };
+
+        const TaskRunId runId = engine.start(request, recorder.make());
+        QVERIFY(!runId.empty());
+        QTRY_VERIFY_WITH_TIMEOUT(recorder.runDone(), 20000);
+
+        const TaskRunOutcome outcome = recorder.outcomeAt(0);
+        QCOMPARE(outcome.devices[0].state, TaskDeviceState::Failed);
+
+        bool sawReasonLog = false;
+        for (const auto& message : recorder.logs()) {
+            QVERIFY2(message.find("task-secret") == std::string::npos,
+                     qPrintable(QStringLiteral("引擎日志不得含凭据明文: %1")
+                                    .arg(QString::fromStdString(message))));
+            if (message.find(u8"原因：") != std::string::npos) {
+                sawReasonLog = true;
+                QVERIFY2(message.find("password=***") != std::string::npos,
+                         qPrintable(QStringLiteral("步骤错误入日志前必须脱敏: %1")
+                                        .arg(QString::fromStdString(message))));
+            }
+        }
+        QVERIFY2(sawReasonLog, "失败步骤必须产生含「原因：」的结果日志");
     }
 };
 
