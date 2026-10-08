@@ -19,8 +19,9 @@ public:
     bool load();
     // save() 先合并进内存注册表（生成/保持 deviceId），再持久化合并结果。
     bool save(const DeviceProfile& profile);
-    // remove() 从内存与 ConfigStore 删除指定档案；旧 device.list 记录保持不变
-    // （仍作为回退读取来源，由设备总线自行管理生命周期）。
+    // remove() 从内存与 ConfigStore 删除指定档案；同时删除与该档案端点身份
+    // 匹配的旧 device.list 行（key=ip:port），保证对迁移设备删除持久；
+    // 不匹配的旧行保留，仍可被 load() 回退读取。
     bool remove(const std::string& deviceId);
 
     // 重名不阻止保存；UI 可读取此提示并以名称加地址消歧。

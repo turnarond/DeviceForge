@@ -275,9 +275,31 @@ bool DeviceRegistry::remove(const std::string& deviceId)
                                      return profile.deviceId == deviceId;
                                  });
     const bool existed = it != m_profiles.end();
-    const bool storeRemoved = ConfigStore::instance().remove(
+    auto& store = ConfigStore::instance();
+    const bool storeRemoved = store.remove(
         QStringLiteral("device.profile"), QString::fromStdString(deviceId));
     if (existed) {
+        // 删除必须持久：同步删除与该档案端点身份匹配的旧 device.list 行
+        // （key=ip:port，见 DeviceBusWidget），否则 load() 回退读取会让设备复活；
+        // 不匹配的旧行保留，回退读取兼容不受影响。
+        for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+            const auto legacy = decodeDeviceProfile(row);
+            if (!legacy) continue;
+            bool matched = false;
+            for (const auto& legacyEndpoint : legacy->endpoints) {
+                const auto key = endpointKey(legacyEndpoint);
+                matched = std::any_of(it->endpoints.begin(), it->endpoints.end(),
+                                      [&key](const DeviceEndpoint& endpoint) {
+                                          return endpointKey(endpoint) == key;
+                                      });
+                if (matched) break;
+            }
+            if (matched && !store.remove(QStringLiteral("device.list"),
+                                         row.value(QStringLiteral("key")).toString())) {
+                qWarning("DeviceRegistry: 删除旧 device.list 记录失败 key=%s",
+                         qPrintable(row.value(QStringLiteral("key")).toString()));
+            }
+        }
         m_profiles.erase(it);
         rebuildWarnings();
     }

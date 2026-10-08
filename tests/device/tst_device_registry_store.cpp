@@ -268,6 +268,52 @@ private slots:
         QVERIFY(json.contains(QStringLiteral("credentialRef")));
     }
 
+    // 由旧 device.list 迁移来的档案：remove() 须同步删除匹配的旧行，删除必须持久
+    void removeIsDurableForLegacyMigratedDevices()
+    {
+        QVariantMap legacyRow;
+        legacyRow.insert(QStringLiteral("ip"), QStringLiteral("192.168.20.128"));
+        legacyRow.insert(QStringLiteral("port"), 23);
+        legacyRow.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+        legacyRow.insert(QStringLiteral("displayName"), QStringLiteral("现场柜-02"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("192.168.20.128:23"), legacyRow));
+
+        // 同库另一台旧设备：不应被误删（仅删除匹配被移除档案端点的旧行）
+        QVariantMap otherRow;
+        otherRow.insert(QStringLiteral("ip"), QStringLiteral("192.168.20.200"));
+        otherRow.insert(QStringLiteral("port"), 21);
+        otherRow.insert(QStringLiteral("displayName"), QStringLiteral("别-01"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("192.168.20.200:21"), otherRow));
+
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QCOMPARE(registry.list().size(), size_t(2));
+        // 按端点 IP 定位迁移来的目标档案（list() 顺序不保证）
+        DeviceProfile migrated;
+        for (const auto& candidate : registry.list()) {
+            if (candidate.name == QStringLiteral("现场柜-02").toStdString())
+                migrated = candidate;
+        }
+        QVERIFY(!migrated.deviceId.empty());
+        const std::string migratedKey = migrated.deviceId;
+
+        QVERIFY(registry.remove(migrated.deviceId));
+        QCOMPARE(registry.list().size(), size_t(1));
+
+        // 全新 Registry 重新加载：被移除的旧迁移设备不得复活
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.list().size(), size_t(1));
+        QVERIFY(!reloaded.find(migratedKey).has_value());
+        QVERIFY(!ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                                QStringLiteral("192.168.20.128:23")));
+        // 未匹配的旧行保留（回退读取兼容不受影响）
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                               QStringLiteral("192.168.20.200:21")));
+    }
+
     // 删除后内存与 ConfigStore 同步，重载不再出现
     void removeDeletesPersistedRecord()
     {
