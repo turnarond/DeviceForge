@@ -12,8 +12,9 @@
  *              凭证输入。工业仪表盘风格。
  *              v2.11：接入 DeviceRegistry 后胶囊名称优先（地址为次级信息），
  *              悬浮显示协议端点与备注，双击打开档案编辑对话框（保存经
- *              registry->save 持久化并发射 deviceProfileEdited）；未接入注册表
- *              时保持旧 ip:port 行为与 device.list 回退写入。
+ *              registry->saveReplacing 以端点替换语义持久化并发射
+ *              deviceProfileEdited）；未接入注册表时保持旧 ip:port 行为与
+ *              device.list 回退写入。
  */
 
 #pragma once
@@ -77,7 +78,6 @@ private:
     // 创建一枚胶囊（name 为空时纯地址展示；toolTip 承载端点详情与备注）
     QPushButton* createPill(const QString& ipPart, const QString& name,
                             const QString& deviceId, const QString& toolTip);
-    void updatePillText(QPushButton* pill, const QString& ipPart, const QString& name);
     // 双击编辑入口：打开档案对话框，保存经 registry 持久化
     void editProfileFor(QPushButton* pill);
     // 旧 device.list ip:port 行写入/删除（回退兼容，registry 路径同样保留）

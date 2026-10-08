@@ -233,6 +233,147 @@ private slots:
         QCOMPARE(m_editorRejectButtonCount, 1);
     }
 
+    // ── ②b 终审 Critical 1：编辑器改地址 → 旧端点/旧 device.list 行彻底消失 ──
+    void deviceBus_editorAddressChange_dropsOldEndpointAndStaleLegacyRow()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(
+            QStringLiteral("dev-ip"), QStringLiteral("改址设备"),
+            QStringLiteral("10.3.0.1"), 21)));
+
+        // 模拟旧增添路径持久化过的 device.list 回退行（key=ip:port）+ 无关设备旧行
+        QVariantMap legacyRow;
+        legacyRow.insert(QStringLiteral("ip"), QStringLiteral("10.3.0.1"));
+        legacyRow.insert(QStringLiteral("port"), 21);
+        legacyRow.insert(QStringLiteral("displayName"), QStringLiteral("改址设备"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.3.0.1:21"), legacyRow));
+        QVariantMap unrelatedRow;
+        unrelatedRow.insert(QStringLiteral("ip"), QStringLiteral("10.3.0.9"));
+        unrelatedRow.insert(QStringLiteral("port"), 21);
+        unrelatedRow.insert(QStringLiteral("displayName"), QStringLiteral("无关设备"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.3.0.9:21"), unrelatedRow));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        QPushButton* pill = firstPill(bus);
+        QVERIFY(pill);
+
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
+        QVERIFY(spy.isValid());
+
+        // 布防：把端点表首行主机地址 ip1→ip2 后保存（对话框嵌套事件循环）
+        QTimer::singleShot(50, this, [this] {
+            QDialog* dialog = nullptr;
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    dialog = qobject_cast<QDialog*>(w);
+                    break;
+                }
+            }
+            if (!dialog)
+                return;
+            auto* table = dialog->findChild<QTableWidget*>(
+                QStringLiteral("deviceProfileEndpoints"));
+            auto* save = dialog->findChild<QPushButton*>(QStringLiteral("deviceProfileSave"));
+            if (!table || !save || table->rowCount() == 0 || !table->item(0, 1))
+                return;
+            table->item(0, 1)->setText(QStringLiteral("10.3.0.2"));
+            save->click();
+        });
+        QTimer::singleShot(3000, [] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor"))
+                    w->close();
+            }
+        });
+
+        QTest::mouseDClick(pill, Qt::LeftButton);
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+
+        // 信号携带的已保存档案只剩新地址（旧端点未被并集写回）
+        const DeviceProfile saved = spy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(saved.endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(saved.endpoints.front().ip),
+                 QStringLiteral("10.3.0.2"));
+
+        // 内存注册表 + device.profile 落库均只剩新端点
+        const auto stored = registry.find("dev-ip");
+        QVERIFY(stored.has_value());
+        QCOMPARE(stored->endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(stored->endpoints.front().ip),
+                 QStringLiteral("10.3.0.2"));
+
+        // 被取代旧行清扫；persistLegacyRow 回写新地址行；无关旧行保留
+        QVERIFY(!ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                                QStringLiteral("10.3.0.1:21")));
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                               QStringLiteral("10.3.0.2:21")));
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                               QStringLiteral("10.3.0.9:21")));
+
+        // 重载：旧地址与旧行不复活（本档案唯一端点 ip2 + 无关旧设备一台）
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.list().size(), std::size_t{2});
+        const auto after = reloaded.find("dev-ip");
+        QVERIFY(after.has_value());
+        QCOMPARE(after->endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(after->endpoints.front().ip),
+                 QStringLiteral("10.3.0.2"));
+    }
+
+    // ── ②c 终审 Important 4：档案新增/编辑/删除不得清空胶囊选中范围 ──────
+    void deviceBus_registryRefreshKeepsPillSelection()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-keep"),
+                                           QStringLiteral("保留我"),
+                                           QStringLiteral("10.4.0.1"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-other"),
+                                           QStringLiteral("旁站"),
+                                           QStringLiteral("10.4.0.2"), 21)));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        const auto pillsBefore = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
+        QCOMPARE(pillsBefore.size(), 2);
+        QPushButton* keep = nullptr;
+        for (QPushButton* p : pillsBefore) {
+            if (p->property("deviceId").toString() == QStringLiteral("dev-keep"))
+                keep = p;
+        }
+        QVERIFY(keep);
+        keep->click();
+        QCOMPARE(keep->property("selected").toBool(), true);
+
+        // 新增一台设备 → 胶囊栏整体重建（refreshFromRegistry）
+        DeviceInfo third;
+        third.ip = "10.4.0.3";
+        third.port = 21;
+        bus.addDevice(third);
+
+        // 选中范围必须原样保持：仍只选中 dev-keep
+        const auto selected = bus.selectedDeviceProfiles();
+        QCOMPARE(selected.size(), std::size_t{1});
+        if (!selected.empty())
+            QCOMPARE(QString::fromStdString(selected.front().deviceId),
+                     QStringLiteral("dev-keep"));
+        const auto pillsAfter = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
+        QCOMPARE(pillsAfter.size(), 3);
+        int selectedCount = 0;
+        for (QPushButton* p : pillsAfter) {
+            if (p->property("selected").toBool())
+                ++selectedCount;
+        }
+        QCOMPARE(selectedCount, 1);
+    }
+
     // ── ③ 无注册表：旧 ip:port 胶囊与 device.list 回退保持可用 ───
     void deviceBus_legacyRowsKeepWorking()
     {
@@ -438,6 +579,68 @@ private slots:
             return runs.query(filter).size();
         };
         QTRY_VERIFY_WITH_TIMEOUT(failedCount() == std::size_t{2}, 10000);
+    }
+
+    // ── ⑥b 终审 Important 5：同档案多个不同 credentialRef → 中文告警一次 ──
+    void taskCenter_warnsOnMultipleDistinctCredentialRefs()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        // dev-multi：ftp 与 sftp 端点携带不同凭据引用 → 必须告警（仅 1 次）；
+        // dev-single：两端点同引用 → 不得告警。两台都缺 Telnet/SSH 命令端点，
+        // 运行只会走 Validating 校验失败路径（同用例⑥，不触碰适配器工厂）。
+        DeviceProfile multi;
+        multi.deviceId = "dev-multi";
+        multi.name = QStringLiteral("多凭据设备").toStdString();
+        multi.endpoints.push_back({"ftp", "10.5.0.1", 21, "ref-never-echo-A"});
+        multi.endpoints.push_back({"sftp", "10.5.0.1", 22, "ref-never-echo-B"});
+        QVERIFY(registry.save(multi));
+        DeviceProfile single;
+        single.deviceId = "dev-single";
+        single.name = QStringLiteral("单凭据设备").toStdString();
+        single.endpoints.push_back({"ftp", "10.5.0.2", 21, "ref-never-echo-A"});
+        single.endpoints.push_back({"sftp", "10.5.0.2", 22, "ref-never-echo-A"});
+        QVERIFY(registry.save(single));
+
+        TaskTemplateStore templates;
+        TaskTemplate task;
+        task.templateId = "tpl-creds";
+        task.name = QStringLiteral("凭据巡检").toStdString();
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        task.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        task.deviceIds = {"dev-multi", "dev-single"};
+        QVERIFY(templates.save(task));
+        const std::string templateId = task.templateId;
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+        center.setRunConfirmer([](const QString&, bool) { return true; });
+
+        QSignalSpy logs(&center, &TaskCenterWidget::logMessage);
+        QVERIFY(logs.isValid());
+        QSignalSpy finished(&center, &TaskCenterWidget::runFinished);
+        QVERIFY(finished.isValid());
+
+        center.startTemplate(templateId);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 15000);
+
+        int warnCount = 0;
+        for (const QVariantList& args : logs) {
+            const QString text = args.at(0).toString();
+            if (text.contains(QStringLiteral("不同凭据引用"))) {
+                ++warnCount;
+                QVERIFY2(text.contains(QStringLiteral("多凭据设备")), qPrintable(text));
+                QVERIFY2(text.contains(QStringLiteral("2")), qPrintable(text));
+                // 告警绝不泄露引用内容（这里引用键本身也不得出现）
+                QVERIFY2(!text.contains(QStringLiteral("ref-never-echo")), qPrintable(text));
+            }
+        }
+        QCOMPARE(warnCount, 1);
     }
 
     // ── ⑦ MultiProgressWidget：名称 + 地址；无名称保持原样 ────────

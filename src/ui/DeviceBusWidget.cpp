@@ -28,6 +28,7 @@
 #include <QEvent>
 #include <QMenu>
 #include <QPoint>
+#include <QSet>
 #include <QStyle>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -357,8 +358,20 @@ void DeviceBusWidget::setRegistry(DeviceRegistry* registry)
 
 // 以注册表档案为唯一真相重建胶囊栏：名称优先、悬浮端点详情、双击编辑。
 // 只读不写库（device.list 回退行由 addDevice/编辑路径显式保留）。
+// 终审 Important 4：重建前快照选中档案 deviceId，重建后按 deviceId 恢复——
+// 任何档案新增/编辑/删除都不得清空胶囊选中范围（FtpDeployWidget 等宿主把
+// 空选中解释为「全部设备」，静默清空会放大单次部署的目标范围）。
 void DeviceBusWidget::refreshFromRegistry()
 {
+    QSet<QString> selectedIds;
+    for (auto* pill : m_pills) {
+        if (pill->property("selected").toBool()) {
+            const QString id = pill->property("deviceId").toString();
+            if (!id.isEmpty())
+                selectedIds.insert(id);
+        }
+    }
+
     // 摘除旧胶囊与设备视图
     for (auto* pill : m_pills) {
         m_pillLayout->removeWidget(pill);
@@ -379,9 +392,11 @@ void DeviceBusWidget::refreshFromRegistry()
         const QString ipPart = QStringLiteral("%1:%2")
             .arg(QString::fromStdString(di.ip))
             .arg(di.port);
+        const QString deviceId = QString::fromStdString(profile.deviceId);
         QPushButton* pill = createPill(ipPart, QString::fromStdString(profile.name),
-                                       QString::fromStdString(profile.deviceId),
-                                       profileToolTip(profile));
+                                       deviceId, profileToolTip(profile));
+        if (selectedIds.contains(deviceId))
+            pill->setProperty("selected", true);   // 选中范围跨重建保持
         m_pillLayout->insertWidget(m_pillLayout->count() - 1, pill);
         m_pills.push_back(pill);
     }
@@ -438,14 +453,6 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
     return pill;
 }
 
-void DeviceBusWidget::updatePillText(QPushButton* pill, const QString& ipPart,
-                                     const QString& name)
-{
-    pill->setText(pillCaption(ipPart, name) + QStringLiteral("  \xC3\x97"));
-    pill->style()->unpolish(pill);
-    pill->style()->polish(pill);
-}
-
 bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick && m_registry) {
@@ -490,10 +497,12 @@ void DeviceBusWidget::editProfileFor(QPushButton* pill)
     if (!dialog.collect(&edited))
         return;
 
-    // 先 upsert 得到合并档案（生成/保持 deviceId），再持久化同一结果
-    const DeviceProfile saved = m_registry->upsert(edited);
-    if (!m_registry->save(saved))
-        qWarning("DeviceBus: 保存 device.profile 失败 deviceId=%s",
+    // 终审 Critical 1：编辑器收集的是「替换清单」——经 saveReplacing 以替换语义
+    // 落库（未列出的既有端点删除 + 被取代旧 device.list 行清扫），
+    // 并集合并仅保留给协议发现路径（addDevice/fromDeviceInfo）
+    DeviceProfile saved;
+    if (!m_registry->saveReplacing(edited, &saved))
+        qWarning("DeviceBus: 替换保存 device.profile 失败 deviceId=%s",
                  qPrintable(QString::fromStdString(saved.deviceId)));
     if (!saved.endpoints.empty())
         persistLegacyRow(toDeviceInfo(saved, saved.endpoints.front()));

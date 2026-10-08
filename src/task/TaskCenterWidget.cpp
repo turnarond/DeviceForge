@@ -412,11 +412,9 @@ void TaskCenterWidget::startTemplate(const std::string& templateId)
     }
 
     const RunTotals totals = tallySteps(*task);
-    if (!confirmRun(buildSummary(*task, devices, true), totals.risky)) {
-        emit logMessage(QStringLiteral("任务中心：执行确认被拒绝，未启动"));
-        return;
-    }
 
+    // 终审 Small(a)：活跃运行检查必须先于风险确认对话框——已有运行在跑时直接
+    // 拒绝启动，不应先要求操作员确认一份永远不会执行的摘要
     if (!m_engine)
         m_engine = createEngine();
     if (m_engine->isRunning()) {
@@ -424,10 +422,32 @@ void TaskCenterWidget::startTemplate(const std::string& templateId)
         return;
     }
 
+    if (!confirmRun(buildSummary(*task, devices, true), totals.risky)) {
+        emit logMessage(QStringLiteral("任务中心：执行确认被拒绝，未启动"));
+        return;
+    }
+
     // 凭据快照：GUI 线程读 ConfigStore，只保留 user + DPAPI 密文；
     // 协调线程仅本地解密、用后由引擎 AuthScopeGuard 擦除，绝不写回、绝不入日志。
     auto vault = std::make_shared<QHash<QString, QPair<QString, QString>>>();
     for (const auto& profile : devices) {
+        // 终审 Important 5：同一档案多协议端点携带不同 credentialRef 时，本轮
+        // 只能采用首个可解析引用（per-device AuthResolver 引擎契约的限制）——
+        // 显式中文告警，只含设备名与引用数量，绝不输出引用内容
+        std::set<std::string> distinctRefs;
+        for (const auto& endpoint : profile.endpoints) {
+            if (!endpoint.credentialRef.empty())
+                distinctRefs.insert(endpoint.credentialRef);
+        }
+        if (distinctRefs.size() > 1) {
+            emit logMessage(QStringLiteral(
+                                "任务中心：设备「%1」的端点存在 %2 个不同凭据引用，"
+                                "本轮执行仅采用首个可解析引用（跨协议独立凭据暂未支持）")
+                                .arg(QString::fromStdString(profile.name.empty()
+                                                                ? profile.deviceId
+                                                                : profile.name))
+                                .arg(static_cast<int>(distinctRefs.size())));
+        }
         for (const auto& endpoint : profile.endpoints) {
             if (endpoint.credentialRef.empty())
                 continue;

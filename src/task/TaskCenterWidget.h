@@ -25,6 +25,12 @@
  *     协调线程只解 DPAPI（CryptUnprotectData 线程安全），不再触碰 ConfigStore；
  *   · 异步回调携带 QPointer 守卫 + 运行谱系令牌（generation），stop/restart 或
  *     新一轮运行开启后的陈旧回调直接丢弃，防 UAF 与跨轮串写。
+ *
+ * 凭据解析限制（v2.11 终审 Important 5，绑定引擎 per-device AuthResolver 签名）：
+ *   引擎按「设备档案」粒度取一份 AuthInfo——同一档案的多个协议端点若携带不同
+ *   credentialRef（如 FTP 与 Telnet 各一套凭据），本轮执行只用首个可解析引用，
+ *   其余端点共用该凭据；此时 startTemplate 发出中文告警（仅设备名与引用数量，
+ *   不含引用内容）。跨协议独立凭据需引擎签名演进（per-endpoint 解析）后支持。
  */
 
 #pragma once
