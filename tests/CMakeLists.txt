@@ -520,3 +520,31 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- TaskExecutionEngine 状态机与阶段恢复测试（v2.11 Task 4，Fake 适配器无网络）---
+add_executable(tst_task_execution_engine
+    task/tst_task_execution_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+)
+target_include_directories(tst_task_execution_engine PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_execution_engine PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_task_execution_engine COMMAND tst_task_execution_engine)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_execution_engine PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
