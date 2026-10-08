@@ -60,7 +60,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 | 文件部署 | ✅ 双栏文件管理器 | FTP/FTPS (libcurl) | 本地↔远程双栏统一表格视图、双击导航/路径栏跳转、F2 重命名、F5 复制到对面、F6 移动到对面、Tab 切栏、面板间拖拽（方向语义）、多设备批量部署（并发度可配 1-8，部署目标=右侧面板当前路径）、部署报告导出（CSV/HTML）、失败设备一键重试、选择性部署、目录递归删除、远程重命名/新建目录、远程文件精确对比 |
 | SFTP 文件管理 | ✅ 文件管理 + 批量部署 | SFTP (libssh2) | 列目录/上传/下载/删除/重命名/新建目录，双栏协议切换，批量部署（IDeployable 统一部署循环，与文件部署同源：并发度可配/报告导出/失败重试） |
 | 批量命令执行 | ✅ Tool 架构 | Telnet / SSH (libssh2) | 批量 Shell 命令，Telnet/SSH 切换，认证失败阻断 |
-| WebSocket 通信 | ✅ Tool 架构 | WebSocket | Server/Client，默认 localhost + 可选 Token 认证，WSS 服务端自签名证书（测试用） |
+| WebSocket 通信 | ✅ Tool 架构 | WebSocket | Server/Client，控制台+消息事件流双栏（v2.12），默认 localhost + 可选 Token 认证，WSS 服务端自签名证书（测试用） |
 | Modbus 集群测试 | ✅ Tool 架构 | Modbus TCP | 批量读写寄存器（0x01-0x04 正确映射、0x06/0x05 写入对话框、异常码中文展示），自动刷新 |
 | 网络调试中继 | ✅ Tool 架构 | TCP/UDP/组播 透明代理 | 双向流量中继，Hex+ASCII 实时视图，数据导出，流量录制(.nrec)与按原始时序回放 |
 | OPC UA 客户端 | ✅ Tool 架构 | OPC UA (open62541) | 连接(None+匿名)，批量读/写节点，DataChange 订阅，地址空间浏览 |

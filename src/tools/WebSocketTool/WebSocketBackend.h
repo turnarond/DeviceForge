@@ -14,6 +14,7 @@
 
 #pragma once
 #include "framework/ToolBackend.h"
+#include "WsEventTypes.h"
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QMutex>
@@ -61,6 +62,11 @@ public:
     // 状态查询
     bool isRunning() const { return m_isRunning; }
     bool isServerMode() const { return m_isServerMode; }
+    // v2.12 页面重构：UI 状态卡数据源（线程安全快照）
+    QStringList serverClientPeers() const;
+    QStringList clientSubscriptions() const;
+    // Server 实际监听端口（port=0 自动分配时供测试/回环使用）
+    int serverListenPort() const { return m_server ? m_server->serverPort() : -1; }
 
     void setBindAddress(const QString& addr) { m_bindAddress = addr; }
     void setAuthToken(const std::string& tok) { m_authToken = tok; }
@@ -68,7 +74,8 @@ public:
 
     // 回调设置（由 Widget 调用，跨线程安全）
     using LogCallback = std::function<void(const std::string&)>;
-    using MessageCallback = std::function<void(const std::string&)>;
+    // 结构化事件载荷（收/发、主题、UTF-8 字节数、正文预览），替代旧裸字符串消息回调
+    using MessageCallback = std::function<void(const wsproto::WsEvent&)>;
     using ClientCallback = std::function<void(const std::string& clientInfo)>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
@@ -103,10 +110,10 @@ private:
     // --- Server 模式 ---
     QWebSocketServer* m_server = nullptr;
     QList<QWebSocket*> m_clients;
-    QMutex m_clientsMutex;
+    mutable QMutex m_clientsMutex;
     // 主题 -> 订阅客户端列表
     QMap<QString, QList<QWebSocket*>> m_topicSubscribers;
-    QMutex m_topicMutex;
+    mutable QMutex m_topicMutex;
 
     // --- Client 模式 ---
     QWebSocket* m_client = nullptr;
