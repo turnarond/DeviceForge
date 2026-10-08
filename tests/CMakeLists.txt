@@ -615,3 +615,39 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- 设备任务中心端到端集成测试（v2.11 Task 7：档案圈选→部署→命令→重启→恢复→
+#     持久化记录→阶段恢复，无头复刻 TaskCenterWidget 存储写入契约，Fake 适配器零网络）---
+# 源集合 = tst_task_execution_engine（引擎可链接闭包）+ TaskTemplateStore/TaskRunStore/
+#     DeviceRegistry/DeviceProfileCodec/ConfigStore（生产持久化缝）；无 Widgets/QPA。
+add_executable(tst_task_center_e2e
+    task/tst_task_center_e2e.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_task_center_e2e PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_center_e2e PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_task_center_e2e COMMAND tst_task_center_e2e)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_center_e2e PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
