@@ -227,9 +227,10 @@ std::string sanitizeTaskErrorText(const std::string& text)
             const std::string lower = asciiLower(out);
             const auto p = lower.find(key, searchFrom);
             if (p == std::string::npos) break;
-            if (p > 0
-                && (std::isalnum(static_cast<unsigned char>(lower[p - 1])) != 0
-                    || lower[p - 1] == '_')) {
+            // 前导边界只排除字母数字：下划线前缀键（db_password、session_token、
+            // client_secret 等配置文件解析错误常见形态）同样属于凭据，必须掩蔽；
+            // 键表已含 access_token/private_key 等复合键，放开 '_' 不会漏掉枚举项
+            if (p > 0 && std::isalnum(static_cast<unsigned char>(lower[p - 1])) != 0) {
                 searchFrom = p + keyLen;
                 continue;
             }
@@ -585,41 +586,65 @@ std::vector<TaskRunRecord> TaskRunStore::query(const TaskRunFilter& filter) cons
 
 int TaskRunStore::prune(int retentionDays)
 {
+    return prune(retentionDays, kRunListLimit);
+}
+
+int TaskRunStore::prune(int retentionDays, int pageSize)
+{
     if (retentionDays <= 0) {
         qWarning() << "TaskRunStore: 拒绝执行非正数保留天数" << retentionDays
                    << "（防止误清全部历史，记录未做任何修改）";
+        return 0;
+    }
+    if (pageSize <= 0) {
+        qWarning() << "TaskRunStore: 拒绝执行非正数分页窗口" << pageSize;
         return 0;
     }
     const std::time_t cutoff = nowSeconds()
         - static_cast<std::time_t>(retentionDays) * 86400;
     auto& store = ConfigStore::instance();
 
+    // 分页遍历到底收集全部超期终态运行键：ConfigStore::list() 是
+    // updated_at 倒序 + LIMIT 的窗口读取，历史积压超过窗口时若不翻页，
+    // 恰好是"最老的过期记录"永远落在窗口之外，prune 将永久返回 0、库无限增长
     QStringList expiredRunKeys;
-    for (const QVariantMap& row : store.list(kRunType, kRunListLimit)) {
-        const QString key = row.value(QString(kRowKey)).toString();
-        const std::optional<TaskRunStatus> status = taskRunStatusFromToken(
-            row.value(QString(kFieldStatus)).toString().toStdString());
-        // 状态无法解析或仍在运行：保守保留，绝不删除可能活跃的记录
-        if (!status || *status == TaskRunStatus::Running) continue;
-        std::time_t started = static_cast<std::time_t>(
-            row.value(QString(kFieldStartedAt)).toLongLong());
-        if (started <= 0)
-            started = static_cast<std::time_t>(row.value(QString(kRowUpdatedAt)).toLongLong() / 1000);
-        if (started < cutoff) expiredRunKeys << key;
+    for (int offset = 0;; offset += pageSize) {
+        const QList<QVariantMap> page = store.list(kRunType, pageSize, offset);
+        for (const QVariantMap& row : page) {
+            const QString key = row.value(QString(kRowKey)).toString();
+            const std::optional<TaskRunStatus> status = taskRunStatusFromToken(
+                row.value(QString(kFieldStatus)).toString().toStdString());
+            // 状态无法解析或仍在运行：保守保留，绝不删除可能活跃的记录
+            if (!status || *status == TaskRunStatus::Running) continue;
+            std::time_t started = static_cast<std::time_t>(
+                row.value(QString(kFieldStartedAt)).toLongLong());
+            if (started <= 0)
+                started = static_cast<std::time_t>(
+                    row.value(QString(kRowUpdatedAt)).toLongLong() / 1000);
+            if (started < cutoff) expiredRunKeys << key;
+        }
+        if (page.size() < pageSize) break;
     }
     if (expiredRunKeys.isEmpty()) return 0;
 
-    const auto expired = [&expiredRunKeys](const QVariantMap& row) {
-        return expiredRunKeys.contains(row.value(QString(kFieldRunId)).toString());
+    // 子行级联同样分页遍历（收集与删除分两段，翻页期间行集保持稳定）：
+    // 逐行按 runId 归属精确删除过期运行的设备/步骤行，
+    // 超窗口的旧子行不再成为永久孤儿
+    const auto removeChildren = [&store, &expiredRunKeys, pageSize](const QLatin1String& type) {
+        QStringList keysToRemove;
+        for (int offset = 0;; offset += pageSize) {
+            const QList<QVariantMap> page = store.list(type, pageSize, offset);
+            for (const QVariantMap& row : page) {
+                if (expiredRunKeys.contains(row.value(QString(kFieldRunId)).toString()))
+                    keysToRemove << row.value(QString(kRowKey)).toString();
+            }
+            if (page.size() < pageSize) break;
+        }
+        for (const QString& key : keysToRemove) store.remove(type, key);
     };
-    for (const QVariantMap& row : store.list(kDeviceType, kChildListLimit)) {
-        if (expired(row))
-            store.remove(kDeviceType, row.value(QString(kRowKey)).toString());
-    }
-    for (const QVariantMap& row : store.list(kStepType, kChildListLimit)) {
-        if (expired(row))
-            store.remove(kStepType, row.value(QString(kRowKey)).toString());
-    }
+    removeChildren(kDeviceType);
+    removeChildren(kStepType);
+
     for (const QString& key : expiredRunKeys) store.remove(kRunType, key);
 
     qInfo() << "TaskRunStore: 保留清理完成，删除终态运行记录" << expiredRunKeys.size()

@@ -543,6 +543,68 @@ private slots:
             QVERIFY(QString::fromStdString(r.runId) != QStringLiteral("run-old"));
     }
 
+    // 保留清理的分页排空：积压超过读取窗口时，最老的过期记录也必须被清理，
+    // 其子行不得成为永久孤儿（回归 ConfigStore::list 的 LIMIT 窗口盲区）
+    void prunePagesPastReadWindow()
+    {
+        TaskRunStore store;
+        const std::time_t now = std::time(nullptr);
+        auto& cs = ConfigStore::instance();
+
+        // 12 条超期终态旧记录（每条带设备+步骤子行），注入小窗口 pageSize=5
+        // 迫使多页翻页；旧记录先写入，保证在 updated_at 倒序里全部落在首页之外
+        const int expiredCount = 12;
+        for (int i = 0; i < expiredCount; ++i) {
+            const QString runId = QStringLiteral("run-stale-%1").arg(i, 2, 10, QLatin1Char('0'));
+            QVERIFY(cs.save(QStringLiteral("task.run"), runId,
+                            rawRunRow(runId, QStringLiteral("tpl-stale"),
+                                      QStringLiteral("succeeded"), now - 10 * 86400 + i)));
+            QVERIFY(cs.save(QStringLiteral("task.run.device"), runId + QStringLiteral("/dev-s"),
+                            rawDeviceRow(runId, QStringLiteral("dev-s"),
+                                         QStringLiteral("积压设备"), QStringLiteral("10.9.9.9:21"), 0)));
+            QVERIFY(cs.save(QStringLiteral("task.run.step"),
+                            runId + QStringLiteral("/dev-s/0"),
+                            rawStepRow(runId, QStringLiteral("dev-s"), 0)));
+        }
+        // 窗口之后再写近期终态与超期但运行中的记录（翻页后仍须甄别保留）
+        for (int i = 0; i < 2; ++i) {
+            const QString runId = QStringLiteral("run-keep-%1").arg(i);
+            QVERIFY(cs.save(QStringLiteral("task.run"), runId,
+                            rawRunRow(runId, QStringLiteral("tpl-keep"),
+                                      QStringLiteral("succeeded"), now)));
+        }
+        for (int i = 0; i < 2; ++i) {
+            const QString runId = QStringLiteral("run-running-%1").arg(i);
+            QVERIFY(cs.save(QStringLiteral("task.run"), runId,
+                            rawRunRow(runId, QStringLiteral("tpl-live"),
+                                      QStringLiteral("running"), now - 10 * 86400)));
+        }
+
+        // 非法分页窗口同样拒绝
+        QCOMPARE(store.prune(5, 0), 0);
+        QCOMPARE(store.prune(5, -4), 0);
+
+        const int removed = store.prune(5, 5);
+        QCOMPARE(removed, expiredCount);
+        for (int i = 0; i < expiredCount; ++i) {
+            const QString runId = QStringLiteral("run-stale-%1").arg(i, 2, 10, QLatin1Char('0'));
+            QVERIFY2(!rowExists("task.run", runId), qPrintable(runId));
+            QVERIFY2(!rowExists("task.run.device", runId + QStringLiteral("/dev-s")),
+                     qPrintable(runId));
+            QVERIFY2(!rowExists("task.run.step", runId + QStringLiteral("/dev-s/0")),
+                     qPrintable(runId));
+        }
+        for (int i = 0; i < 2; ++i) {
+            QVERIFY(rowExists("task.run", QStringLiteral("run-keep-%1").arg(i)));
+            QVERIFY(rowExists("task.run", QStringLiteral("run-running-%1").arg(i)));
+        }
+
+        // 收敛性：再跑一次没有新的过期记录可删
+        QCOMPARE(store.prune(5, 5), 0);
+        const auto records = store.query({});
+        QCOMPARE(records.size(), size_t(4));
+    }
+
     // 脱敏：步骤错误中的凭据明文（password=/token=/URL userinfo）不落库
     void stepErrorsAreSanitizedOnPersist()
     {
@@ -558,9 +620,13 @@ private slots:
                                                           QStringLiteral("10.0.0.5:21"),
                                                           TaskDeviceState::Deploying)));
 
+        // 下划线前缀凭据键（db_password / session_token / client_secret）必须同样脱敏：
+        // 协议/工具错误文本常回显配置文件解析错误，形如 db_password=… 的键极常见
         const std::string dirty =
             "open failed ftp://deploy:hunter2@10.0.0.5:21 refused; password=abc123; "
-            "TOKEN=deadbeef; private_key: 0xAAAA";
+            "TOKEN=deadbeef; private_key: 0xAAAA; "
+            "config parse error: db_password=hunter2; session_token=ses_s3cr3t; "
+            "client_secret=cli_s3cr3t";
         QVERIFY(store.appendStepResult(runId, makeStep(TaskStepType::DeployFiles,
                                                        TaskDeviceState::Failed, 1, dirty)));
 
@@ -574,7 +640,8 @@ private slots:
                  qPrintable(storedQt));
         QVERIFY2(storedQt.contains(QStringLiteral("***")), qPrintable(storedQt));
         for (const QString& secret : {QStringLiteral("hunter2"), QStringLiteral("abc123"),
-                                      QStringLiteral("deadbeef"), QStringLiteral("0xAAAA")}) {
+                                      QStringLiteral("deadbeef"), QStringLiteral("0xAAAA"),
+                                      QStringLiteral("ses_s3cr3t"), QStringLiteral("cli_s3cr3t")}) {
             QVERIFY2(!storedQt.contains(secret),
                      qPrintable(QStringLiteral("脱敏失败，残留明文: %1").arg(secret)));
         }
@@ -587,6 +654,8 @@ private slots:
             QJsonObject::fromVariantMap(stepRows.first())).toJson(QJsonDocument::Compact));
         QVERIFY2(!rawJson.contains(QStringLiteral("hunter2")), qPrintable(rawJson));
         QVERIFY2(!rawJson.contains(QStringLiteral("abc123")), qPrintable(rawJson));
+        QVERIFY2(!rawJson.contains(QStringLiteral("ses_s3cr3t")), qPrintable(rawJson));
+        QVERIFY2(!rawJson.contains(QStringLiteral("cli_s3cr3t")), qPrintable(rawJson));
 
         // 超长错误按字节上限截断并带标记；sanitize 自由函数可直接验证
         const QString huge(5000, QLatin1Char('x'));
@@ -596,6 +665,12 @@ private slots:
         // 干净文本原样保留
         QCOMPARE(QString::fromStdString(sanitizeTaskErrorText("connection timeout")),
                  QStringLiteral("connection timeout"));
+        // 直测自由函数：下划线前缀凭据键的 "键=值" 必须掩值留键，而非整键视为非匹配放行
+        const QString prefixedQt = QString::fromStdString(sanitizeTaskErrorText(
+            "db_password=hunter2; session_token=ses_s3cr3t; client_secret=cli_s3cr3t"));
+        QVERIFY2(prefixedQt.contains(QStringLiteral("db_password=***")), qPrintable(prefixedQt));
+        QVERIFY2(prefixedQt.contains(QStringLiteral("session_token=***")), qPrintable(prefixedQt));
+        QVERIFY2(prefixedQt.contains(QStringLiteral("client_secret=***")), qPrintable(prefixedQt));
     }
 
     // 报告数据：renderTaskRunCsv/Html 行含设备快照名称+地址与逐步结果

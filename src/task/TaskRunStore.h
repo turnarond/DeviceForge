@@ -48,11 +48,18 @@ public:
     // retentionDays <= 0 拒绝执行（防误清全部历史）并返回 0。
     // 返回被清理的运行数。
     int prune(int retentionDays);
+
+    // 同上，但分页窗口可注入（测试与小库调优用）：历史按 updated_at 倒序
+    // 分页遍历到底，超期记录不再因落在读取窗口之外而永久漏删。
+    // pageSize <= 0 拒绝执行并返回 0。
+    int prune(int retentionDays, int pageSize);
 };
 
 // 步骤错误文本脱敏（落库前与报告共享的唯一入口）：
 // 掩蔽 password/passwd/pwd/secret/token/apikey/private_key 等 "键=值"、
-// "键: 值" 形式与 URL userinfo（scheme://user:pass@host → scheme://***@host），
+// "键: 值" 形式（含下划线前缀键，如 db_password=…、session_token=…、
+// client_secret=…，协议/工具错误文本回显配置文件时常见），以及 URL
+// userinfo（scheme://user:pass@host → scheme://***@host），
 // 超过 512 字节按 UTF-8 边界截断并追加 "(已截断)"。
 // 契约：输出不含任何被掩蔽的凭据明文；干净文本原样返回。
 std::string sanitizeTaskErrorText(const std::string& text);

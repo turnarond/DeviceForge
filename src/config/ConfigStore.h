@@ -19,7 +19,9 @@ public:
     QVariantMap load(const QString& type, const QString& key);
     bool exists(const QString& type, const QString& key);
     bool remove(const QString& type, const QString& key);
-    QList<QVariantMap> list(const QString& type, int limit = 1000);
+    // 分页读取：updated_at 倒序（同秒并列用自增 id 升序打破，保证分页游标稳定）。
+    // offset 默认 0，既有调用方源码兼容。
+    QList<QVariantMap> list(const QString& type, int limit = 1000, int offset = 0);
 
     bool exportTo(const QString& jsonPath);
     bool importFrom(const QString& jsonPath);
