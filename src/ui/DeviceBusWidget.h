@@ -23,9 +23,23 @@
 #include <QLineEdit>
 #include <QVariantMap>
 #include <QList>
+#include <QStringList>
 #include <vector>
 #include "device/DeviceProfile.h"
 #include "framework/DeviceInfo.h"
+
+// v2.11.1 设备编辑器可用性：协议枚举与凭据持久化对测试与内联新建对话框复用
+namespace devicebus {
+
+// 端点编辑允许的协议集合（小写；对齐引擎路由：ftp/ftps/sftp/ssh/telnet/modbus）
+QStringList editableEndpointProtocols();
+
+// 凭据入库：密码经 DPAPI 加密后写 ftp.credential；成功返回 key，失败返回空串。
+// 密码明文只存在于调用栈内（写前即加密，失败不覆盖已存密文）。
+QString storeFtpCredential(const QString& key, const QString& user, const QString& pass,
+                           const QString& host, int port);
+
+} // namespace devicebus
 
 class QHBoxLayout;
 class DeviceRegistry;

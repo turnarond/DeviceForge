@@ -11,6 +11,7 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -79,6 +80,9 @@ private:
     // 档案编辑对话框 RejectRole 按钮计数（布防定时器在对话框嵌套事件循环中写入，
     // -1 = 未命中对话框；回归：重复 addButton「取消」会计数 >1）
     int m_editorRejectButtonCount = -1;
+    // v2.11.1 取证暂存：端点表协议/凭据下拉内容（布防定时器写入，空 = 未命中）
+    QStringList m_captureProtocolItems;
+    QStringList m_captureCredentialItems;
 
     // 每个用例独立数据库（同 tst_task_run_store 模式）
     void freshDb()
@@ -328,6 +332,98 @@ private slots:
     }
 
     // ── ②c 终审 Important 4：档案新增/编辑/删除不得清空胶囊选中范围 ──────
+    // ── v2.11.1 ①：端点表协议下拉 + 凭据下拉/就地新建 ──
+    void deviceBus_editorProtocolAndCredentialCombos()
+    {
+        // 存储层直测：空键拒绝、DPAPI 密文入库、无明文
+        QCOMPARE(devicebus::storeFtpCredential(QString(), QStringLiteral("u"),
+                                              QStringLiteral("p"), QString(), 0),
+                 QString());
+        const QString credKey = devicebus::storeFtpCredential(
+            QStringLiteral("root@10.6.0.1:21"), QStringLiteral("root"),
+            QStringLiteral("s3cret"), QStringLiteral("10.6.0.1"), 21);
+        QCOMPARE(credKey, QStringLiteral("root@10.6.0.1:21"));
+        const QVariantMap raw = ConfigStore::instance().load(
+            QStringLiteral("ftp.credential"), credKey);
+        QCOMPARE(raw.value(QStringLiteral("username")).toString(),
+                 QStringLiteral("root"));
+        const QString storedPass = raw.value(QStringLiteral("password")).toString();
+        QVERIFY2(!storedPass.isEmpty(), "DPAPI 密文缺失");
+        QVERIFY(!storedPass.contains(QStringLiteral("s3cret")));
+
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(
+            QStringLiteral("dev-dd"), QStringLiteral("焊机"),
+            QStringLiteral("10.6.0.1"), 21)));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        QPushButton* pill = firstPill(bus);
+        QVERIFY(pill);
+
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
+        QVERIFY(spy.isValid());
+        m_captureProtocolItems.clear();
+        m_captureCredentialItems.clear();
+
+        QTimer::singleShot(50, this, [this] {
+            QDialog* dialog = nullptr;
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    dialog = qobject_cast<QDialog*>(w);
+                    break;
+                }
+            }
+            if (!dialog)
+                return;
+            auto* table = dialog->findChild<QTableWidget*>(
+                QStringLiteral("deviceProfileEndpoints"));
+            auto* save = dialog->findChild<QPushButton*>(QStringLiteral("deviceProfileSave"));
+            if (!table || !save || table->rowCount() == 0)
+                return;
+            auto* proto = qobject_cast<QComboBox*>(table->cellWidget(0, 0));
+            auto* cred = qobject_cast<QComboBox*>(table->cellWidget(0, 3));
+            if (!proto || !cred)
+                return;
+            for (int i = 0; i < proto->count(); ++i)
+                m_captureProtocolItems << proto->itemText(i);
+            for (int i = 0; i < cred->count(); ++i)
+                m_captureCredentialItems << cred->itemText(i);
+            proto->setCurrentIndex(proto->findText(QStringLiteral("telnet")));
+            cred->setCurrentIndex(cred->findText(QStringLiteral("root@10.6.0.1:21")));
+            save->click();
+        });
+        QTimer::singleShot(3000, [] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor"))
+                    w->close();
+            }
+        });
+
+        QTest::mouseDClick(pill, Qt::LeftButton);
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+
+        // 下拉内容取证
+        QVERIFY2(!m_captureProtocolItems.isEmpty(), "布防未命中协议下拉");
+        for (const char* p : {"ftp", "ftps", "sftp", "ssh", "telnet", "modbus"})
+            QVERIFY(m_captureProtocolItems.contains(QString::fromLatin1(p)));
+        QVERIFY2(!m_captureCredentialItems.isEmpty(), "布防未命中凭据下拉");
+        QVERIFY(m_captureCredentialItems.contains(QStringLiteral("（无凭据）")));
+        QVERIFY(m_captureCredentialItems.contains(QStringLiteral("root@10.6.0.1:21")));
+        QVERIFY(m_captureCredentialItems.contains(QStringLiteral("＋ 新建凭据…")));
+
+        // 选择结果落库：协议 telnet + 凭据引用回填
+        const DeviceProfile saved = spy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(saved.endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(saved.endpoints.front().protocol),
+                 QStringLiteral("telnet"));
+        QCOMPARE(QString::fromStdString(saved.endpoints.front().credentialRef),
+                 QStringLiteral("root@10.6.0.1:21"));
+    }
+
     void deviceBus_registryRefreshKeepsPillSelection()
     {
         DeviceRegistry registry;
