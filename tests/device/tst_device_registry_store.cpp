@@ -335,6 +335,96 @@ private slots:
         QCOMPARE(QString::fromStdString(reloaded.list().front().deviceId),
                  QString::fromStdString(second.deviceId));
     }
+
+    // 终审 Critical 1：编辑器替换语义保存——改地址/删端点后旧端点必须消失，
+    // 被取代的旧 device.list ip:port 行同步清扫，重载不复活；
+    // 并集合并语义（save/upsert）仅保留给协议发现类调用方
+    void saveReplacingDropsRemovedEndpointsAndSweepsSupersededLegacyRows()
+    {
+        DeviceRegistry registry;
+        DeviceProfile profile = makeProfile(QStringLiteral("控制器-01"),
+                                            QStringLiteral("10.6.0.1"), 21,
+                                            QStringLiteral("ftp"),
+                                            QStringLiteral("ref-ftp"));
+        profile.endpoints.push_back({"telnet", "10.6.0.1", 23, {}});
+        const auto stored = registry.upsert(profile);
+        QVERIFY(registry.save(stored));
+        const QString deviceId = QString::fromStdString(stored.deviceId);
+        QVERIFY(!deviceId.isEmpty());
+
+        // 旧 device.list 回退行：一行属于本档案被取代的地址，一行属于无关设备
+        QVariantMap telnetLegacy;
+        telnetLegacy.insert(QStringLiteral("ip"), QStringLiteral("10.6.0.1"));
+        telnetLegacy.insert(QStringLiteral("port"), 23);
+        telnetLegacy.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+        telnetLegacy.insert(QStringLiteral("displayName"), QStringLiteral("控制器-01"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.6.0.1:23"), telnetLegacy));
+        QVariantMap unrelatedLegacy;
+        unrelatedLegacy.insert(QStringLiteral("ip"), QStringLiteral("10.6.0.9"));
+        unrelatedLegacy.insert(QStringLiteral("port"), 21);
+        unrelatedLegacy.insert(QStringLiteral("displayName"), QStringLiteral("别-01"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.6.0.9:21"), unrelatedLegacy));
+
+        // 编辑器动作：ftp 地址 ip1→ip2 且删除 telnet 端点（清单未列出即移除）
+        DeviceProfile edited = stored;
+        edited.endpoints = {{"ftp", "10.6.0.2", 21, "ref-ftp"}};
+        DeviceProfile result;
+        QVERIFY(registry.saveReplacing(edited, &result));
+        QCOMPARE(result.deviceId, stored.deviceId);
+        QCOMPARE(result.endpoints.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(endpointKey(result.endpoints.front())),
+                 QStringLiteral("ftp://10.6.0.2:21"));
+
+        // 内存档案只剩新端点（旧端点未被并集写回）
+        const auto found = registry.find(stored.deviceId);
+        QVERIFY(found.has_value());
+        QCOMPARE(found->endpoints.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(found->endpoints.front().ip),
+                 QStringLiteral("10.6.0.2"));
+
+        // device.profile 落库内容同样只剩新端点
+        const QVariantMap raw = ConfigStore::instance().load(
+            QStringLiteral("device.profile"), deviceId);
+        const auto decoded = decodeDeviceProfile(raw);
+        QVERIFY(decoded.has_value());
+        QCOMPARE(decoded->endpoints.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(decoded->endpoints.front().ip),
+                 QStringLiteral("10.6.0.2"));
+
+        // 被取代的旧 device.list 行已清扫；无关旧行保留（回退读取兼容）
+        QVERIFY(!ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                                QStringLiteral("10.6.0.1:23")));
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                               QStringLiteral("10.6.0.9:21")));
+
+        // 重载：旧地址与旧行均不复活（本档案唯一端点为 ip2，另有无关旧设备一台）
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.list().size(), size_t(2));
+        const auto after = reloaded.find(stored.deviceId);
+        QVERIFY(after.has_value());
+        QCOMPARE(after->endpoints.size(), size_t(1));
+        QCOMPARE(QString::fromStdString(after->endpoints.front().ip),
+                 QStringLiteral("10.6.0.2"));
+    }
+
+    // 终审 Critical 1 对照：发现类调用方（save/upsert）保持并集合并不受影响
+    void discoveryUpsertKeepsUnionMerge()
+    {
+        DeviceRegistry registry;
+        const auto stored = registry.upsert(makeProfile(QStringLiteral("控制器-01"),
+                                                        QStringLiteral("10.6.0.1"), 21));
+        QVERIFY(registry.save(stored));
+        DeviceProfile discovered;
+        discovered.deviceId = stored.deviceId;
+        discovered.endpoints.push_back({"telnet", "10.6.0.1", 23, {}});
+        QVERIFY(registry.save(discovered));
+        const auto found = registry.find(stored.deviceId);
+        QVERIFY(found.has_value());
+        QCOMPARE(found->endpoints.size(), size_t(2));
+    }
 };
 
 QTEST_MAIN(TstDeviceRegistryStore)

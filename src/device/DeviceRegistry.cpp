@@ -135,30 +135,31 @@ std::string DeviceRegistry::stableId(const DeviceProfile& profile)
     return "device-" + fnv1a64(identity);
 }
 
-DeviceProfile DeviceRegistry::upsert(const DeviceProfile& profile)
+std::size_t DeviceRegistry::locate(const DeviceProfile& incoming) const
 {
-    auto incoming = normalize(profile);
-    std::size_t index = m_profiles.size();
-
     if (!incoming.deviceId.empty()) {
         const auto it = std::find_if(m_profiles.begin(), m_profiles.end(), [&incoming](const DeviceProfile& item) {
             return item.deviceId == incoming.deviceId;
         });
-        if (it != m_profiles.end()) index = static_cast<std::size_t>(std::distance(m_profiles.begin(), it));
-    } else {
-        for (const auto& endpoint : incoming.endpoints) {
-            const auto key = endpointKey(endpoint);
-            const auto it = std::find_if(m_profiles.begin(), m_profiles.end(), [&key](const DeviceProfile& item) {
-                return std::any_of(item.endpoints.begin(), item.endpoints.end(), [&key](const DeviceEndpoint& existing) {
-                    return endpointKey(existing) == key;
-                });
-            });
-            if (it != m_profiles.end()) {
-                index = static_cast<std::size_t>(std::distance(m_profiles.begin(), it));
-                break;
-            }
-        }
+        if (it != m_profiles.end()) return static_cast<std::size_t>(std::distance(m_profiles.begin(), it));
+        return m_profiles.size();
     }
+    for (const auto& endpoint : incoming.endpoints) {
+        const auto key = endpointKey(endpoint);
+        const auto it = std::find_if(m_profiles.begin(), m_profiles.end(), [&key](const DeviceProfile& item) {
+            return std::any_of(item.endpoints.begin(), item.endpoints.end(), [&key](const DeviceEndpoint& existing) {
+                return endpointKey(existing) == key;
+            });
+        });
+        if (it != m_profiles.end()) return static_cast<std::size_t>(std::distance(m_profiles.begin(), it));
+    }
+    return m_profiles.size();
+}
+
+DeviceProfile DeviceRegistry::upsert(const DeviceProfile& profile)
+{
+    auto incoming = normalize(profile);
+    std::size_t index = locate(incoming);
 
     if (index == m_profiles.size()) {
         if (incoming.deviceId.empty()) incoming.deviceId = stableId(incoming);
@@ -184,6 +185,94 @@ DeviceProfile DeviceRegistry::upsert(const DeviceProfile& profile)
     }
     rebuildWarnings();
     return existing;
+}
+
+// 终审 Critical 1：编辑器保存路径——端点整体替换 + 被取代旧行清扫。
+// 与 save()/upsert() 的并集合并（协议发现类调用方专用）互补：编辑器对话框收集
+// 的是「替换清单」，凡未列出的既有端点必须从档案中删除。
+bool DeviceRegistry::saveReplacing(const DeviceProfile& profile, DeviceProfile* stored)
+{
+    auto incoming = normalize(profile);
+    const std::size_t index = locate(incoming);
+    std::vector<std::string> removedAddresses;   // 被移除端点的 "ip:port"（小写 ip）
+
+    if (index == m_profiles.size()) {
+        if (incoming.deviceId.empty()) incoming.deviceId = stableId(incoming);
+        m_profiles.push_back(std::move(incoming));
+        rebuildWarnings();
+    } else {
+        auto& existing = m_profiles[index];
+        if (!incoming.name.empty()) existing.name = incoming.name;
+        if (!incoming.note.empty()) existing.note = incoming.note;
+        for (const auto& tag : incoming.tags) appendUnique(existing.tags, tag);
+
+        // 替换前先记录被移除端点的地址身份（供旧 device.list 行清扫）
+        for (const auto& old : existing.endpoints) {
+            const auto normalized = normalizeEndpoint(old);
+            const std::string address = normalized.ip + ":" + std::to_string(normalized.port);
+            const bool kept = std::any_of(incoming.endpoints.begin(), incoming.endpoints.end(),
+                                          [&address](const DeviceEndpoint& candidate) {
+                                              const auto c = normalizeEndpoint(candidate);
+                                              return c.ip + ":" + std::to_string(c.port) == address;
+                                          });
+            if (!kept) removedAddresses.push_back(address);
+        }
+        existing.endpoints = incoming.endpoints;   // 替换语义核心：未列出即删除
+        rebuildWarnings();
+    }
+
+    if (stored) *stored = m_profiles[std::min(index, m_profiles.size() - 1)];
+    const DeviceProfile& merged = m_profiles[std::min(index, m_profiles.size() - 1)];
+    if (merged.deviceId.empty()) {
+        qWarning("DeviceRegistry: 设备档案无法生成稳定 ID，跳过替换保存 name=%s",
+                 merged.name.c_str());
+        return false;
+    }
+    if (!ConfigStore::instance().save(QStringLiteral("device.profile"),
+                                      QString::fromStdString(merged.deviceId),
+                                      encodeDeviceProfile(merged))) {
+        qWarning("DeviceRegistry: 替换保存设备档案失败 deviceId=%s",
+                 merged.deviceId.c_str());
+        return false;
+    }
+
+    // 清扫被取代的旧 device.list ip:port 行：本轮被移除的地址若已不再属于任何
+    // 在册档案则删除对应旧行，防止 load() 回退读取把旧地址并集复活；
+    // 仍被其他档案持有的地址保留（回退读取兼容不受影响）。
+    if (!removedAddresses.empty()) {
+        std::unordered_set<std::string> removed(removedAddresses.begin(),
+                                                removedAddresses.end());
+        std::unordered_set<std::string> owned;
+        for (const auto& profileItem : m_profiles) {
+            for (const auto& endpoint : profileItem.endpoints) {
+                const auto normalized = normalizeEndpoint(endpoint);
+                owned.insert(normalized.ip + ":" + std::to_string(normalized.port));
+            }
+        }
+        auto& store = ConfigStore::instance();
+        for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+            const auto legacy = decodeDeviceProfile(row);
+            if (!legacy) continue;
+            bool superseded = false;
+            for (const auto& legacyEndpoint : legacy->endpoints) {
+                const auto normalized = normalizeEndpoint(legacyEndpoint);
+                const std::string address =
+                    normalized.ip + ":" + std::to_string(normalized.port);
+                if (removed.count(address) != 0 && owned.count(address) == 0) {
+                    superseded = true;
+                    break;
+                }
+            }
+            if (superseded) {
+                const QString key = row.value(QStringLiteral("key")).toString();
+                if (!store.remove(QStringLiteral("device.list"), key)) {
+                    qWarning("DeviceRegistry: 清扫被取代的旧 device.list 记录失败 key=%s",
+                             qPrintable(key));
+                }
+            }
+        }
+    }
+    return true;
 }
 
 std::optional<DeviceProfile> DeviceRegistry::find(const std::string& deviceId) const
