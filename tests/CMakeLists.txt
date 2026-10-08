@@ -548,3 +548,21 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()
+
+# --- TaskRunStore 执行记录/历史筛选/报告数据测试（v2.11 Task 5）---
+# 编入产品源码 TaskRunStore.cpp + ConfigStore.cpp（SQLite 持久化）+
+#     DeployReport.cpp（任务报告行渲染，验证附加 API 与既有报告同源共存）
+add_executable(tst_task_run_store
+    task/tst_task_run_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+)
+target_include_directories(tst_task_run_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_run_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_task_run_store COMMAND tst_task_run_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_run_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()

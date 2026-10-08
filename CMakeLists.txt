@@ -209,6 +209,7 @@ set(SOURCES
     # 任务模板（v2.11 设备任务中心）
     src/task/TaskTemplateStore.cpp
     src/task/TaskExecutionEngine.cpp
+    src/task/TaskRunStore.cpp
 
     # 可靠传输内核
     src/transfer/TransferTypes.cpp
