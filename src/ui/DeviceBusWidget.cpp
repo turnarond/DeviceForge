@@ -141,7 +141,6 @@ public:
         auto* saveBtn = buttons->addButton(tr("保存"), QDialogButtonBox::AcceptRole);
         saveBtn->setObjectName(QStringLiteral("deviceProfileSave"));
         buttons->addButton(tr("取消"), QDialogButtonBox::RejectRole);
-        buttons->addButton(tr("取消"), QDialogButtonBox::RejectRole);
         connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         layout->addWidget(buttons);

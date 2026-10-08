@@ -12,6 +12,7 @@
 
 #include <QApplication>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
@@ -75,6 +76,9 @@ class TstTaskCenterWidget : public QObject {
 private:
     QString m_workDir;
     QString m_dbPath;
+    // 档案编辑对话框 RejectRole 按钮计数（布防定时器在对话框嵌套事件循环中写入，
+    // -1 = 未命中对话框；回归：重复 addButton「取消」会计数 >1）
+    int m_editorRejectButtonCount = -1;
 
     // 每个用例独立数据库（同 tst_task_run_store 模式）
     void freshDb()
@@ -165,9 +169,10 @@ private slots:
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
+        m_editorRejectButtonCount = -1;
 
         // 布防：对话框 exec 的嵌套事件循环中改名并保存
-        QTimer::singleShot(50, [] {
+        QTimer::singleShot(50, this, [this] {
             QDialog* dialog = nullptr;
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
@@ -182,6 +187,16 @@ private slots:
             auto* save = dialog->findChild<QPushButton*>(QStringLiteral("deviceProfileSave"));
             if (!nameEdit || !save)
                 return;
+            // 回归断言取证：对话框必须只暴露一个 RejectRole（取消）按钮
+            if (auto* box = dialog->findChild<QDialogButtonBox*>()) {
+                int rejectCount = 0;
+                const auto buttons = box->buttons();
+                for (QAbstractButton* b : buttons) {
+                    if (box->buttonRole(b) == QDialogButtonBox::RejectRole)
+                        ++rejectCount;
+                }
+                m_editorRejectButtonCount = rejectCount;
+            }
             nameEdit->setText(QStringLiteral("新名称"));
             save->click();
         });
@@ -211,6 +226,11 @@ private slots:
         // 胶囊文案即时刷新为新名称
         QTRY_VERIFY_WITH_TIMEOUT(
             firstPill(bus)->text().startsWith(QStringLiteral("新名称")), 5000);
+
+        // 对话框取消按钮唯一（修复回归：曾因 addButton 重复渲染两个「取消」）
+        QVERIFY2(m_editorRejectButtonCount >= 0,
+                 "布防定时器未命中编辑对话框，无法取证按钮计数");
+        QCOMPARE(m_editorRejectButtonCount, 1);
     }
 
     // ── ③ 无注册表：旧 ip:port 胶囊与 device.list 回退保持可用 ───
