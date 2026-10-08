@@ -77,8 +77,14 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_ftplist_parser`：FTP LIST 格式矩阵解析
 - `tst_deploy_report`：部署报告数据与 CSV/HTML 渲染
 - `tst_deploy_runner`：并发调度、进度、取消与结果聚合
+- `tst_device_registry` / `tst_device_registry_store`：设备档案内存语义 / ConfigStore 持久化与旧 device.list 兼容迁移（v2.11）
+- `tst_task_template_store`：任务模板数据模型与持久化、凭据拒绝（v2.11）
+- `tst_task_execution_engine`：执行引擎状态机与阶段恢复，Fake 适配器零网络（v2.11）
+- `tst_task_run_store`：执行记录持久化、历史筛选、保留清理与脱敏（v2.11）
+- `tst_task_center_widget`：设备档案胶囊/编辑对话框与三栏任务中心 UI（v2.11）
+- `tst_task_center_e2e`：端到端集成——档案圈选→部署→命令→重启→恢复→持久化记录→阶段恢复（v2.11）
 
-当前共 20 个 QtTest/CTest 目标，以 `tests/CMakeLists.txt` 中的 `add_test()` 为准。
+当前共 34 个 QtTest/CTest 目标，以 `tests/CMakeLists.txt` 中的 `add_test()` 为准。
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -115,11 +121,13 @@ GitHub Actions 分为两个入口：
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.10.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.11.0
 
 项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）+ v2.8 并行批量部署（并发度 1-8、设备级进度、CSV/HTML 报告、失败设备重试）。
 
 **v2.9 传输可靠性内核（2026-09）**：双栏上传、下载、本地复制/移动和批量部署统一经 `TransferScheduler → TransferExecutor → ITransferChannel`；支持瞬时错误重试、SHA-256 校验、临时文件、原子提交、非原子降级告警、项目级取消、已交付文件恢复跳过和报告 `nonAtomic` 字段。`IProtocolAdapter`/`IDeployable` ABI 保持不变。
+
+**v2.11 设备任务中心（2026-10）**：新增统一设备档案层 `src/device/`（`DeviceProfile`/`DeviceRegistry`/`DeviceProfileCodec`：多协议端点档案，ConfigStore `device.profile` 持久化 + 旧 `device.list` 只读兼容回退，`remove()` 对迁移设备删除持久）与任务层 `src/task/`——`TaskTemplateStore`（`task.template` 版本化模板，`validateTaskTemplate` 拒绝凭据秘密值）、`TaskExecutionEngine`（worker-owns-coordinator：设备间串行、步骤严格按"文件部署→批量命令→重启→恢复检查"推进，复用 v2.9 传输内核与 v2.10 `BatchCommandRunner`，重启后断开按预期成功，`retryFailed` 阶段恢复跳过已交付文件与已成功设备，`cancel` 在检查点收敛）、`TaskRunStore`（`task.run`/`task.run.device`/`task.run.step` 三级执行记录，设备名称/地址在 `begin()` 定格为不可变快照，`query()` 按模板/设备/结果筛选，`prune()` 保留清理不删运行中记录，`sanitizeTaskErrorText` 落库前统一脱敏）、`TaskCenterWidget`（三栏任务中心页，NavBar 直达、懒创建；引擎回调经 QueuedConnection 编组回 GUI 线程写存储，风险确认默认拒绝）。`DeviceBusWidget` 胶囊改为名称优先 + 端点 tooltip + 双击档案编辑；`DeployReport` 附加 `renderTaskRunCsv`/`renderTaskRunHtml`（既有 API 一字不改）；`MultiProgressWidget::setDeviceInfo(key, displayName)` 支持档案名称显示。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 
@@ -298,6 +306,10 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - `src/config/`：ConfigStore(.cpp/.h) / DpapiCrypto(.cpp/.h) / SettingsDialog(.cpp/.h) — SQLite 配置持久化 + DPAPI 加密 + 设置面板
 - `src/logging/`：LogBridge(.cpp/.h)
 - `src/ui/`：DeviceBusWidget(.cpp/.h) / FileBrowserPanel(.cpp/.h) / IFileSource.h / LocalFileSource(.cpp/.h) / RemoteFileSource(.cpp/.h) — 双栏文件面板 + 文件源统一接口（FTP 双栏面板化核心）
+- `src/transfer/`：ITransferChannel.h / AdapterTransferChannel(.cpp/.h) / LocalTransferChannel(.cpp/.h) / TransferExecutor(.cpp/.h) / TransferScheduler(.cpp/.h) / TransferTypes(.cpp/.h) — v2.9 传输可靠性内核
+- `src/command/`：BatchCommandRunner(.cpp/.h) — v2.10 统一批量命令下发内核（超时/重试/取消/重启断开终态）
+- `src/device/`：DeviceProfile.h / DeviceRegistry(.cpp/.h) / DeviceProfileCodec(.cpp/.h) — v2.11 统一设备档案（多协议端点 + ConfigStore device.profile 持久化 + 旧 device.list 兼容）
+- `src/task/`：TaskTemplateTypes.h / TaskTemplateStore(.cpp/.h) / TaskExecutionTypes.h / TaskExecutionEngine(.cpp/.h) / TaskRunTypes.h / TaskRunStore(.cpp/.h) / TaskCenterWidget(.cpp/.h) — v2.11 设备任务中心（模板→编排执行→记录持久化→三栏 UI）
 - `src/tools/FtpDeployTool/`：FtpDeployBackend(.cpp/.h) / FtpDeployWidget(.cpp/.h)
 - `src/tools/TelnetTool/`：TelnetBackend(.cpp/.h) / TelnetWidget(.cpp/.h)
 - `src/tools/WebSocketTool/`：WebSocketBackend(.cpp/.h) / WebSocketWidget(.cpp/.h)

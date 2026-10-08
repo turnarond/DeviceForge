@@ -5,6 +5,9 @@
 //     字段含 , " 或换行时包裹双引号且内部 " 翻倍；失败文件分号连接且整体引号包裹；
 //   · HTML 为极简打印友好黑白表格（评审决议）：仅内联样式、无外部资源、<>& 转义，
 //     结果单元格按状态携带 class="ok|failed|cancelled"。
+//   · v2.11 Task 5 附加（tests/task/tst_task_run_store.cpp 锁定）：任务执行记录
+//     报告行 renderTaskRunCsv/renderTaskRunHtml，列 name,address,device,result,steps,error
+//     （name/address 为执行期设备快照），转义契约与既有报告一致。
 
 #include "DeployReport.h"
 
@@ -188,6 +191,127 @@ std::string renderReportHtml(const DeployReport& report)
         out += "<td>" + std::to_string(r.durationMs) + "</td>";
         out += "<td>" + htmlEscape(formatTimestamp(r.startedAt)) + "</td>";
         out += r.nonAtomic ? "<td>true</td>" : "<td>false</td>";
+        out += "</tr>\n";
+    }
+
+    out += "</table>\n"
+           "</body>\n"
+           "</html>\n";
+    return out;
+}
+
+// —— v2.11 Task 5 附加 API：设备任务执行记录 → 报告数据（既有 API 不变） ——
+
+std::string taskStepOutcomeSummary(const TaskDeviceResult& device)
+{
+    // 报告 steps 列："deploy_files:succeeded;run_commands:failed (attempt 2)"
+    std::string out;
+    for (std::size_t i = 0; i < device.steps.size(); ++i) {
+        const TaskStepResult& step = device.steps[i];
+        if (i > 0)
+            out.push_back(';');
+        const std::string typeToken = taskStepTypeToken(step.type);
+        out += typeToken.empty() ? "unknown_step" : typeToken;
+        out.push_back(':');
+        const std::string stateToken = taskDeviceStateToken(step.state);
+        out += stateToken.empty() ? "unknown" : stateToken;
+        if (step.attempt > 1)
+            out += " (attempt " + std::to_string(step.attempt) + ")";
+    }
+    return out;
+}
+
+std::string taskDeviceErrorSummary(const TaskDeviceResult& device)
+{
+    // 报告 error 列：各步骤非空（已脱敏）错误摘要按 "; " 连接
+    std::string out;
+    for (const auto& step : device.steps) {
+        if (step.error.empty())
+            continue;
+        if (!out.empty())
+            out += "; ";
+        out += step.error;
+    }
+    return out;
+}
+
+std::string renderTaskRunCsv(const TaskRunRecord& record)
+{
+    // 统一列顺序：name,address,device,result,steps,error
+    // （name/address 为执行期不可变设备快照——设备改名后历史报告仍显示当时值）
+    static const char* kHeader = "name,address,device,result,steps,error\n";
+
+    std::string out(kHeader);
+    for (const auto& device : record.devices) {
+        std::string stateToken = taskDeviceStateToken(device.state);
+        if (stateToken.empty())
+            stateToken = "unknown";
+        out += csvEscape(device.name);
+        out.push_back(',');
+        out += csvEscape(device.address);
+        out.push_back(',');
+        out += csvEscape(device.deviceId);
+        out.push_back(',');
+        out += csvEscape(stateToken);
+        out.push_back(',');
+        out += csvEscape(taskStepOutcomeSummary(device));
+        out.push_back(',');
+        out += csvEscape(taskDeviceErrorSummary(device));
+        out.push_back('\n');
+    }
+    return out;
+}
+
+std::string renderTaskRunHtml(const TaskRunRecord& record)
+{
+    // 与部署报告同款极简打印友好黑白表格：仅内联样式、无外部资源、<>& 转义
+    std::string statusToken = taskRunStatusToken(record.status);
+    if (statusToken.empty())
+        statusToken = "unknown";
+
+    std::string out;
+    out += "<!DOCTYPE html>\n"
+           "<html>\n"
+           "<head>\n"
+           "<meta charset=\"utf-8\">\n"
+           "<title>设备任务执行报告</title>\n"
+           "<style>\n"
+           "body{font-family:\"Microsoft YaHei\",sans-serif;color:#000;background:#fff;margin:16px}\n"
+           "table{border-collapse:collapse;font-size:13px}\n"
+           "th,td{border:1px solid #000;padding:2px 8px;text-align:left}\n"
+           "th{background:#eee}\n"
+           "td.failed,td.cancelled{color:#666}\n"
+           "@media print{body{margin:0}}\n"
+           "</style>\n"
+           "</head>\n"
+           "<body>\n";
+    out += "<p>run: " + htmlEscape(record.runId)
+         + " | template: " + htmlEscape(record.templateId)
+         + " v" + std::to_string(record.templateVersion)
+         + " | status: " + htmlEscape(statusToken) + "</p>\n";
+    // 终审 Important 3 伴生守卫：未收口记录（finishedAt<=0，如对账前的崩溃遗留
+    // running 行）显示占位「—」，绝不落 1970 纪元时间
+    out += "<p>started_at: " + htmlEscape(formatTimestamp(record.startedAt))
+         + " | finished_at: " + htmlEscape(record.finishedAt > 0
+                                               ? formatTimestamp(record.finishedAt)
+                                               : std::string("\xE2\x80\x94"))
+         + " | operator: " + htmlEscape(record.operatorName)
+         + " | software: " + htmlEscape(record.softwareVersion) + "</p>\n";
+    out += "<table>\n"
+           "<tr><th>name</th><th>address</th><th>device</th><th>result</th>"
+           "<th>steps</th><th>error</th></tr>\n";
+
+    for (const auto& device : record.devices) {
+        std::string stateToken = taskDeviceStateToken(device.state);
+        if (stateToken.empty())
+            stateToken = "unknown";
+        out += "<tr>";
+        out += "<td>" + htmlEscape(device.name) + "</td>";
+        out += "<td>" + htmlEscape(device.address) + "</td>";
+        out += "<td>" + htmlEscape(device.deviceId) + "</td>";
+        out += "<td class=\"" + stateToken + "\">" + stateToken + "</td>";
+        out += "<td>" + htmlEscape(taskStepOutcomeSummary(device)) + "</td>";
+        out += "<td>" + htmlMultiline(taskDeviceErrorSummary(device)) + "</td>";
         out += "</tr>\n";
     }
 

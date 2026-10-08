@@ -18,6 +18,7 @@ private slots:
     void roundTrip();
     void uniqueKeyUpsert();
     void listOrder();
+    void listPaging();
     void removeWorks();
     void exportImportRoundtrip();
 };
@@ -90,6 +91,46 @@ void TestConfigStore::listOrder()
     auto l = ConfigStore::instance().list(QStringLiteral("t"));
     QCOMPARE(l.size(), 2);
     QCOMPARE(l.at(0).value(QStringLiteral("key")).toString(), QStringLiteral("b"));
+}
+
+void TestConfigStore::listPaging()
+{
+    // 12 行按插入顺序保存（updated_at 严格递增），list 以 updated_at 倒序返回：
+    // 最新在前。offset 分页必须能完整遍历超出单页窗口的历史。
+    for (int i = 0; i < 12; ++i) {
+        QVERIFY(ConfigStore::instance().save(
+            QStringLiteral("page.t"), QStringLiteral("k%1").arg(i, 2, 10, QLatin1Char('0')),
+            QVariantMap{{QStringLiteral("n"), i}}));
+        QTest::qWait(15);
+    }
+    // 默认调用（不带 offset）与旧行为一致：从最新开始、受 limit 约束
+    const auto head = ConfigStore::instance().list(QStringLiteral("page.t"), 5);
+    QCOMPARE(head.size(), 5);
+    QCOMPARE(head.at(0).value(QStringLiteral("key")).toString(), QStringLiteral("k11"));
+    QCOMPARE(head.at(4).value(QStringLiteral("key")).toString(), QStringLiteral("k07"));
+    // 后续页逐页向后移动
+    const auto p1 = ConfigStore::instance().list(QStringLiteral("page.t"), 5, 5);
+    QCOMPARE(p1.size(), 5);
+    QCOMPARE(p1.at(0).value(QStringLiteral("key")).toString(), QStringLiteral("k06"));
+    QCOMPARE(p1.at(4).value(QStringLiteral("key")).toString(), QStringLiteral("k02"));
+    const auto p2 = ConfigStore::instance().list(QStringLiteral("page.t"), 5, 10);
+    QCOMPARE(p2.size(), 2);
+    QCOMPARE(p2.at(0).value(QStringLiteral("key")).toString(), QStringLiteral("k01"));
+    QCOMPARE(p2.at(1).value(QStringLiteral("key")).toString(), QStringLiteral("k00"));
+    // 越界页为空
+    QVERIFY(ConfigStore::instance().list(QStringLiteral("page.t"), 5, 12).isEmpty());
+    // 分页拼接 = 全量倒序（无重复、无遗漏）
+    QStringList joined;
+    for (int offset = 0;; offset += 5) {
+        const auto page = ConfigStore::instance().list(QStringLiteral("page.t"), 5, offset);
+        for (const QVariantMap& row : page)
+            joined << row.value(QStringLiteral("key")).toString();
+        if (page.size() < 5) break;
+    }
+    QStringList expected;
+    for (int i = 11; i >= 0; --i)
+        expected << QStringLiteral("k%1").arg(i, 2, 10, QLatin1Char('0'));
+    QCOMPARE(joined, expected);
 }
 
 void TestConfigStore::removeWorks()

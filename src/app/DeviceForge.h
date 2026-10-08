@@ -7,6 +7,8 @@
 #include "src/ui/NavBar.h"
 #include "src/updater/UpdateTypes.h" // Task 5: UpdateState 枚举(用于 onUpdateStateChanged 签名)
 
+#include <memory>
+
 class ToolHost;
 class DeviceBusWidget;
 class TelnetWidget;
@@ -14,6 +16,10 @@ class WebSocketWidget; // forward declaration (migrated to Tool architecture)
 class NetRelayWidget; // forward declaration (网络调试中继 Tool)
 class UpdateChecker;  // 在线更新检查服务（Task 3）
 class UpdateDialog;   // 在线更新对话框（Task 4）
+class DeviceRegistry;      // v2.11 设备档案注册表（device.profile + device.list 回退）
+class TaskTemplateStore;   // v2.11 任务模板存储
+class TaskRunStore;        // v2.11 执行记录存储
+class TaskCenterWidget;    // v2.11 设备任务中心三栏 UI
 
 class DeviceForge : public QMainWindow
 {
@@ -58,6 +64,7 @@ private:
     void setupOpcUaClientTab(); // new
     void setupWebSocketClientTab(); // new
     void setupNetRelayTab(); // 网络调试中继 Tool
+    void setupTaskCenterTab(); // v2.11 设备任务中心（首次导航时懒创建）
 
     // 在线更新集成（Task 5）
     void setupUpdateChecker();
@@ -83,6 +90,13 @@ private:
     WebSocketWidget* m_webSocketWidget = nullptr; // migrated to Tool architecture
     std::shared_ptr<class NetRelayBackend> m_netRelayBackend;
     NetRelayWidget* m_netRelayWidget = nullptr;
+
+    // v2.11 设备任务中心（Task 6）：注册表/存储由主窗口持有并注入设备栏与任务中心
+    std::unique_ptr<DeviceRegistry> m_deviceRegistry;
+    std::unique_ptr<TaskTemplateStore> m_templateStore;
+    std::unique_ptr<TaskRunStore> m_runStore;
+    TaskCenterWidget* m_taskCenterWidget = nullptr;   // 首次导航时懒创建
+    int m_taskCenterIndex = -1;                       // 任务中心导航索引
 
     // 底部日志折叠（Task 4）
     QWidget* m_logCollapseBar = nullptr;  // 日志折叠指示条

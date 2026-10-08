@@ -726,3 +726,23 @@ QTreeWidget QLabel[state="error"] {
     color: #D6453A;
     font-weight: 600;
 }
+
+/* ===== 设备任务中心（v2.11 Task 6，双主题）===== */
+/* 主按钮「执行任务」：琴色信号态（浅色主题深琴色，与既有主按钮同源） */
+QPushButton#btnTaskRun {
+    background-color: #D48820;
+    border: none;
+    border-radius: 4px;
+    color: #FFFFFF;
+    font-weight: 600;
+    padding: 4px 12px;
+}
+
+QPushButton#btnTaskRun:hover {
+    background-color: #F0A030;
+}
+
+QPushButton#btnTaskRun:disabled {
+    background-color: #D3D8E0;
+    color: #9AA0AC;
+}

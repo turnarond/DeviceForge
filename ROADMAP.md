@@ -2,11 +2,11 @@
 
 > 本文件描述 DeviceForge 的发展方向。计划会随社区反馈调整——**如果你正好需要某个功能,欢迎在 [Issues](../../issues) 提出或 👍,这会直接影响优先级。**
 
-**当前版本**：v2.10.0 · **平台**：Windows（x64）· **许可**：MIT
+**当前版本**：v2.11.0 · **平台**：Windows（x64）· **许可**：MIT License
 
 ---
 
-## 已交付（至 v2.9.1）
+## 已交付（至 v2.11.0）
 
 | 模块 | 能力 |
 |------|------|
@@ -20,6 +20,7 @@
 | **OTA 在线更新** | 主程序内检查 + 独立 Updater.exe 双进程替换（备份/回滚/重启） |
 | **配置持久化** | ConfigStore（SQLite）+ DPAPI 凭证加密，设备/凭证/端点历史/Tool 设置持久化 |
 | 日志统一 | 所有 Tool 日志统一路由到底部可折叠全局日志面板 |
+| **设备任务中心** | 统一设备档案（多协议端点 + 旧设备列表兼容迁移）+ 任务模板（部署→命令→重启→恢复，凭据拒绝入库）+ 编排执行引擎（阶段恢复/重启断开按成功）+ 执行记录持久化（不可变快照/筛选/保留清理/脱敏）+ 三栏任务中心页 + 任务运行 CSV/HTML 报告 |
 
 ### 版本节奏
 
@@ -31,16 +32,19 @@
 - **v2.6**（2026-08-07）：SFTP 批量部署——IDeployable 部署能力接口 + SshAdapter 部署链路 + 部署循环协议化（FTP/SFTP 同一逻辑）+ UI 解锁 + 双主题/紧凑密度
 - **v2.7**（2026-08-18）：UX 收尾——远程列表/连接异步化（QtConcurrent + 代际令牌，慢速目录不冻结 UI）+ 面板源选择器（本地/FTP/SFTP 独立浏览）+ 系统文件拖入上传恢复 + 顺带项（readdir 错误上报/sort 降序 SWO/双主题像素验证）
 - **v2.8**（2026-08-22）：并行批量部署（并发度 1–8）+ 每设备实时进度 + CSV/HTML 部署报告 + 失败设备一键重试 + NSIS 安装包
+- **v2.9**（2026-09-16，补丁 09-26）：传输可靠性内核——双栏/批量部署统一重试、SHA-256 校验、原子提交、取消与已交付文件恢复跳过
+- **v2.10**（2026-09-29）：统一批量命令下发内核（BatchCommandRunner）+ 部署后成功设备重启闭环（重启断开按预期成功）+ 重启参数持久化
+- **v2.11**（2026-10-08）：设备任务中心——统一设备档案 + 任务模板库 + 编排执行引擎（阶段恢复）+ 执行记录持久化 + 三栏任务中心页
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + IDeployable 部署能力接口 + 工业仪表盘深色主题（「琴色是动词」体系）。
 产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
-测试：13 个 QtTest/CTest 目标（tst_nrec / tst_updatechecker / tst_dpapi_crypto / tst_config_store / tst_opcua_encode / tst_opcua_loopback / tst_sftp_plan / tst_deploy_loop / tst_remote_model / tst_theme / tst_file_source / tst_panel_async / tst_qss_pixels）。
+测试：34 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e）。
 
 ---
 
-## v2.9 设计中：现场工作台与可靠传输
+## v2.9 → v2.11 已交付：可靠传输 → 命令闭环 → 设备任务中心
 
-v2.9 聚焦三项相互配套的改进：统一双栏上传/下载与批量部署的可靠性内核；建立文件与设备为中心的现场工作区；首窗优先并按需加载 Tool。详见 `docs/03-设计/方案设计/2026-09-09-v2.9-现场工作台蓝图.md`。
+v2.9 传输可靠性内核（详见 `docs/03-设计/方案设计/2026-09-09-v2.9-现场工作台蓝图.md`）与 v2.10 批量命令/重启闭环之上，v2.11 落地设备任务中心：统一设备档案、任务模板、编排执行引擎（阶段恢复）与执行记录持久化。下一步聚焦快速启动与懒加载的现场验收。
 
 ## 中期
 

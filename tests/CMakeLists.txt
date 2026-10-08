@@ -473,3 +473,185 @@ if(_qt_bin_dir)
     set_tests_properties(tst_reboot_preferences PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- DeviceRegistry 内存语义测试（v2.11 Task 1；Task 2 起需链 ConfigStore/Codec）---
+add_executable(tst_device_registry
+    device/tst_device_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_device_registry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_device_registry PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_device_registry COMMAND tst_device_registry)
+if(_qt_bin_dir)
+    set_tests_properties(tst_device_registry PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- DeviceRegistry ConfigStore 持久化与兼容迁移测试（v2.11 Task 2）---
+add_executable(tst_device_registry_store
+    device/tst_device_registry_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_device_registry_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_device_registry_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_device_registry_store COMMAND tst_device_registry_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_device_registry_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- TaskTemplateStore 模板数据模型与持久化测试（v2.11 Task 3）---
+add_executable(tst_task_template_store
+    task/tst_task_template_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_task_template_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_template_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_task_template_store COMMAND tst_task_template_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_template_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- TaskExecutionEngine 状态机与阶段恢复测试（v2.11 Task 4，Fake 适配器无网络）---
+# 注：引擎日志路径复用 TaskRunStore 的 sanitizeTaskErrorText（终审 Important 2），
+#     须一并编入 TaskRunStore.cpp + ConfigStore.cpp（脱敏实现所在 TU）。
+add_executable(tst_task_execution_engine
+    task/tst_task_execution_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+)
+target_include_directories(tst_task_execution_engine PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_execution_engine PRIVATE
+    Qt6::Core Qt6::Network Qt6::Sql Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_task_execution_engine COMMAND tst_task_execution_engine)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_execution_engine PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
+endif()
+
+# --- TaskRunStore 执行记录/历史筛选/报告数据测试（v2.11 Task 5）---
+# 编入产品源码 TaskRunStore.cpp + ConfigStore.cpp（SQLite 持久化）+
+#     DeployReport.cpp（任务报告行渲染，验证附加 API 与既有报告同源共存）
+add_executable(tst_task_run_store
+    task/tst_task_run_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+)
+target_include_directories(tst_task_run_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_run_store PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+add_test(NAME tst_task_run_store COMMAND tst_task_run_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_run_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- 设备任务中心 UI 测试（v2.11 Task 6：设备档案胶囊/编辑对话框 + 三栏任务中心）---
+# 注：任务中心走真实 TaskExecutionEngine，但用例只触发 Validating 校验失败路径
+#     （设备缺 Telnet/SSH 端点），全程不建连接、不调适配器工厂；为使引擎可链接
+#     仍须编入其依赖 TU（对齐 tst_task_execution_engine 源集合）+ UI 侧
+#     DeviceBusWidget/TaskTemplateStore/TaskRunStore/DeviceRegistry/ConfigStore/DpapiCrypto/
+#     MultiProgressWidget/DeployReport。Widgets 测试经 QPA 插件（QT_PLUGIN_PATH）。
+add_executable(tst_task_center_widget
+    ui/tst_task_center_widget.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskCenterWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/MultiProgressWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DeviceBusWidget.cpp
+)
+target_include_directories(tst_task_center_widget PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(tst_task_center_widget PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+if(WIN32)
+    target_link_libraries(tst_task_center_widget PRIVATE crypt32)
+endif()
+add_test(NAME tst_task_center_widget COMMAND tst_task_center_widget)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_center_widget PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- 设备任务中心端到端集成测试（v2.11 Task 7：档案圈选→部署→命令→重启→恢复→
+#     持久化记录→阶段恢复，无头复刻 TaskCenterWidget 存储写入契约，Fake 适配器零网络）---
+# 源集合 = tst_task_execution_engine（引擎可链接闭包）+ TaskTemplateStore/TaskRunStore/
+#     DeviceRegistry/DeviceProfileCodec/ConfigStore（生产持久化缝）；无 Widgets/QPA。
+add_executable(tst_task_center_e2e
+    task/tst_task_center_e2e.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_task_center_e2e PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_center_e2e PRIVATE
+    Qt6::Core Qt6::Sql Qt6::Network Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+)
+add_test(NAME tst_task_center_e2e COMMAND tst_task_center_e2e)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_center_e2e PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()

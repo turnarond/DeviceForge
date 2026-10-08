@@ -198,19 +198,21 @@ bool ConfigStore::remove(const QString& type, const QString& key)
     return q.exec();
 }
 
-QList<QVariantMap> ConfigStore::list(const QString& type, int limit)
+QList<QVariantMap> ConfigStore::list(const QString& type, int limit, int offset)
 {
     QList<QVariantMap> out;
     if (!ensureOpen())
         return out;
 
     QSqlQuery q(m_db);
+    // updated_at 并列时以自增 id 升序兜底，保证 OFFSET 分页遍历顺序稳定可复现
     if (!q.prepare(QStringLiteral(
             "SELECT type, key, value, updated_at FROM config_items "
-            "WHERE type=:t ORDER BY updated_at DESC LIMIT :n")))
+            "WHERE type=:t ORDER BY updated_at DESC, id ASC LIMIT :n OFFSET :o")))
         return out;
     q.bindValue(QStringLiteral(":t"), type);
     q.bindValue(QStringLiteral(":n"), limit);
+    q.bindValue(QStringLiteral(":o"), offset);
     if (!q.exec())
         return out;
 

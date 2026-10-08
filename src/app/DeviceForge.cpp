@@ -28,6 +28,12 @@
 #include "src/tools/NetRelayTool/NetRelayWidget.h"
 #include "src/tools/NetRelayTool/NetRelayBackend.h"
 
+// v2.11 设备任务中心（Task 6）
+#include "src/device/DeviceRegistry.h"
+#include "src/task/TaskCenterWidget.h"
+#include "src/task/TaskRunStore.h"
+#include "src/task/TaskTemplateStore.h"
+
 #include "src/updater/UpdateChecker.h"  // Task 5: 在线更新服务
 #include "src/updater/UpdateDialog.h"   // Task 5: 在线更新对话框
 #include "config/SettingsDialog.h"      // 配置管理面板
@@ -45,6 +51,8 @@ DeviceForge::DeviceForge(QWidget* parent)
     m_navBar->addItem("📊", "MOD\nBUS", "modbus.test");
     m_navBar->addItem("🌐", "网络\n调试", "netrelay.proxy");
     m_navBar->addItem("🔧", "OPC\nUA", "opcua.client");
+    m_taskCenterIndex = m_navBar->count();   // v2.11：任务中心（懒创建，见 itemClicked）
+    m_navBar->addItem("🎯", "任务\n中心", "task.center");
     m_navBar->addItem("⚙", "设置", "settings");
 
     // 2. 获取 m_toolStack 指针
@@ -69,6 +77,20 @@ DeviceForge::DeviceForge(QWidget* parent)
         rightVBox->setSpacing(4);
         // 设备栏（Task 3 重写，这里先保留原 DeviceBusWidget 作为占位）
         m_deviceBusWidget = new DeviceBusWidget(this);
+        // v2.11：主窗口持有档案注册表（load 合并 device.profile + 旧 device.list 回退），
+        // 注入设备栏后胶囊按档案视图展示（名称优先、端点悬浮、双击编辑）
+        m_deviceRegistry = std::make_unique<DeviceRegistry>();
+        m_deviceRegistry->load();
+        m_deviceBusWidget->setRegistry(m_deviceRegistry.get());
+
+        // v2.11 终审 Important 3：启动维护——先把上一进程崩溃遗留的 running
+        // 执行记录按失败（中断）收口，再按保留天数清理过期终态历史
+        //（ConfigStore task/retention.days 可覆盖，默认 90 天；见 TaskRunStore.h）
+        if (!m_runStore)
+            m_runStore = std::make_unique<TaskRunStore>();
+        m_runStore->reconcileOrphanedRuns();
+        m_runStore->prune(taskRunRetentionDays());
+
         rightVBox->addWidget(m_deviceBusWidget);
         // 工具区 + 日志
         rightVBox->addWidget(ui.splitter_log, 1);
@@ -77,6 +99,10 @@ DeviceForge::DeviceForge(QWidget* parent)
 
     // 4. 连接导航栏
     connect(m_navBar, &NavBar::itemClicked, this, [this](int index) {
+        // v2.11 任务中心页：首次导航时懒创建（此后按索引直接切换）
+        if (index == m_taskCenterIndex && !m_taskCenterWidget) {
+            setupTaskCenterTab();
+        }
         if (index < m_toolStack->count()) {
             m_toolStack->setCurrentIndex(index);
         }
@@ -324,6 +350,28 @@ void DeviceForge::setupWebSocketClientTab()
 void DeviceForge::onClearLogClicked()
 {
     ui.txt_globalLog->clear();
+}
+
+// v2.11 设备任务中心 Tab（Task 6）：非 Tool 框架页，直接挂三栏 Widget；
+// 注册表/存储由主窗口持有（懒建），引擎与执行编排全部在 TaskCenterWidget 内部
+// 经由既有内核（TransferScheduler/BatchCommandRunner），UI 不触碰协议库。
+void DeviceForge::setupTaskCenterTab()
+{
+    if (m_taskCenterWidget)
+        return;
+    if (!m_templateStore)
+        m_templateStore = std::make_unique<TaskTemplateStore>();
+    if (!m_runStore)
+        m_runStore = std::make_unique<TaskRunStore>();
+
+    auto* widget = new TaskCenterWidget(this);
+    widget->setRegistry(m_deviceRegistry.get());
+    widget->setStores(m_templateStore.get(), m_runStore.get());
+    connect(widget, &TaskCenterWidget::logMessage,
+            this, &DeviceForge::appendGlobalLog);
+    m_taskCenterWidget = widget;
+    m_toolStack->addWidget(widget);
+    appendGlobalLog(QStringLiteral("任务中心已就绪：选择模板 → 执行任务（执行前展示摘要与风险提示）"));
 }
 
 void DeviceForge::appendGlobalLog(const QString& log)

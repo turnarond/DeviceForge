@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # 项目名称和版本
-project(DeviceForge VERSION 2.10.0 LANGUAGES C CXX)
+project(DeviceForge VERSION 2.11.0 LANGUAGES C CXX)
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -201,6 +201,16 @@ set(SOURCES
 
     # 批量命令内核
     src/command/BatchCommandRunner.cpp
+
+    # 设备档案
+    src/device/DeviceRegistry.cpp
+    src/device/DeviceProfileCodec.cpp
+
+    # 任务模板（v2.11 设备任务中心）
+    src/task/TaskTemplateStore.cpp
+    src/task/TaskExecutionEngine.cpp
+    src/task/TaskRunStore.cpp
+    src/task/TaskCenterWidget.cpp
 
     # 可靠传输内核
     src/transfer/TransferTypes.cpp

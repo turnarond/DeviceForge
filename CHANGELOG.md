@@ -1,3 +1,14 @@
+## [2.11.0] — 2026-10-08
+
+### Added
+- 新增统一设备档案层（`src/device/`）：`DeviceProfile`/`DeviceRegistry` 多协议端点档案，ConfigStore `device.profile` 持久化，兼容只读回退旧 `device.list` 记录，删除对迁移设备持久。
+- 新增设备任务中心（`src/task/`）：`TaskTemplateStore` 版本化任务模板持久化（含凭据秘密值拒绝）、`TaskExecutionEngine` 按"文件部署→批量命令→重启→恢复检查"编排执行（设备间串行、重启断开按预期成功、`retryFailed` 阶段恢复跳过已交付文件与已成功设备）、`TaskRunStore` 执行记录持久化（设备名称/地址不可变快照、历史筛选、保留清理、错误文本脱敏）、`TaskCenterWidget` 三栏任务中心页（模板/目标设备/执行历史，风险确认默认拒绝）。保留清理于应用启动自动执行：先对账崩溃遗留的 running 记录为失败（中断），再删除超期终态记录（默认保留 90 天，ConfigStore `task/retention.days` 可覆盖）。
+- 设备总线胶囊栏名称优先展示、悬浮端点详情、双击打开档案编辑对话框写回注册表（`DeviceBusWidget`）。
+- 部署报告新增任务执行记录 CSV/HTML 渲染（`DeployReport` 附加 `renderTaskRunCsv`/`renderTaskRunHtml`，既有 API 不变）；逐设备进度面板支持档案名称显示（`MultiProgressWidget::setDeviceInfo`）。
+
+### Tests
+- 新增 7 个 QtTest/CTest 目标：`tst_device_registry`、`tst_device_registry_store`、`tst_task_template_store`、`tst_task_execution_engine`、`tst_task_run_store`、`tst_task_center_widget`、`tst_task_center_e2e`（端到端：档案圈选→部署→命令→重启→恢复→持久化记录→阶段恢复，Fake 适配器零网络）。
+
 ## [2.10.0] — 2026-09-29
 
 ### Added
