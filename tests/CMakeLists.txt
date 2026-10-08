@@ -397,6 +397,22 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 综合日志面板状态纯逻辑回归（v2.11.1 折叠面板 + 初始比例记忆）---
+add_executable(tst_log_panel_state
+    app/tst_log_panel_state.cpp
+)
+target_include_directories(tst_log_panel_state PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_log_panel_state PRIVATE
+    Qt6::Core Qt6::Test
+)
+add_test(NAME tst_log_panel_state COMMAND tst_log_panel_state)
+if(_qt_bin_dir)
+    set_tests_properties(tst_log_panel_state PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- Updater 文件操作原语测试（issue #22：备份守卫的前提语义 = copyDirectory 失败必须返回 false）---
 # 编入产品源码 UpdaterFileOps.cpp（纯 Win32 API，无 Qt 依赖；QtTest 仅作测试壳）
 add_executable(tst_updater_fileops
