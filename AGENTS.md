@@ -33,7 +33,7 @@ DeviceForge/
 ├── src/updater/        # OTA 双进程：UpdateChecker(主进程) + Updater.exe(独立纯 Win32，替换 exe)
 ├── src/logging/        # LogBridge：qDebug/qWarning/… → lwlog
 ├── src/thirdparty/     # vendored 静态库链 lwcomm→lwevent→lwmsgq→lwlog→lwcommunicate→lwserverbase，勿改
-├── tests/              # QtTest/CTest 36 目标 → 见 tests/AGENTS.md
+├── tests/              # QtTest/CTest 39 目标 → 见 tests/AGENTS.md
 ├── tools/devtools/     # Python 配套工具集 → 见 tools/devtools/AGENTS.md
 ├── docs/               # 文档中心（唯一对外接口，索引 docs/README.md）
 ├── include/curl lib/   # libcurl 头文件与 x64 二进制（DLL 入库）
