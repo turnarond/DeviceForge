@@ -37,6 +37,8 @@ namespace {
 
 constexpr int kConsoleMinWidth = 320;
 constexpr int kConsoleDefaultWidth = 360;
+// tooltip 单条正文驻留上限（UTF-8 字节）
+constexpr int kBodyResidentMaxBytes = 4096;
 
 // 事件流列定义
 enum EventColumn { ColTime = 0, ColDirection, ColTopic, ColBytes, ColPreview, ColCount };
@@ -52,10 +54,57 @@ WebSocketWidget::WebSocketWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+    restoreLastEndpoint();
+    sweepLegacyTokenRows();
 
     m_statusTimer.setInterval(1000);
     m_statusTimer.setTimerType(Qt::CoarseTimer);
     connect(&m_statusTimer, &QTimer::timeout, this, &WebSocketWidget::onRefreshStatusTick);
+}
+
+// 恢复上次使用的端点配置（v2.11 既有行为，重构时不得丢失；Token 永不回填）
+void WebSocketWidget::restoreLastEndpoint()
+{
+    const auto hist = ConfigStore::instance().list(QStringLiteral("websocket.endpoint"), 1);
+    if (hist.isEmpty())
+        return;
+    const QVariantMap h = hist.first();
+    const QString mode = h.value(QStringLiteral("mode")).toString();
+    if (mode == QStringLiteral("server")) {
+        const QString bind = h.value(QStringLiteral("bind")).toString().trimmed();
+        if (!bind.isEmpty())
+            m_editBindAddr->setText(bind);
+        const int port = h.value(QStringLiteral("port")).toInt();
+        if (port >= 1 && port <= 65535)
+            m_spinPort->setValue(port);
+        m_chkWss->setChecked(h.value(QStringLiteral("ssl")).toBool());
+    } else if (mode == QStringLiteral("client")) {
+        const QString url = h.value(QStringLiteral("url")).toString().trimmed();
+        if (!url.isEmpty()) {
+            m_editUrl->setText(url);
+            m_btnModeClient->click(); // 复用模式槽：切配置页 + 订阅按钮可用性
+        }
+        m_chkTrustCert->setChecked(h.value(QStringLiteral("trustCert")).toBool());
+    }
+}
+
+// 清扫历史版本明文写入的 Token 行（写路径已改 token_set，存量行导出仍会带走明文）
+void WebSocketWidget::sweepLegacyTokenRows()
+{
+    const auto rows = ConfigStore::instance().list(QStringLiteral("websocket.endpoint"), 1000);
+    for (QVariantMap row : rows) {
+        if (!row.contains(QStringLiteral("token")))
+            continue;
+        const QString key = row.value(QStringLiteral("key")).toString();
+        row.remove(QStringLiteral("token"));
+        row.remove(QStringLiteral("key"));     // list() 注入的元数据不回写
+        row.remove(QStringLiteral("type"));
+        row.remove(QStringLiteral("updated_at"));
+        row.insert(QStringLiteral("token_swept"), true);
+        row.insert(QStringLiteral("updated_at"), QDateTime::currentMSecsSinceEpoch());
+        if (!key.isEmpty())
+            ConfigStore::instance().save(QStringLiteral("websocket.endpoint"), key, row);
+    }
 }
 
 void WebSocketWidget::setupUi()
@@ -306,7 +355,14 @@ void WebSocketWidget::setBackend(WebSocketBackend* backend)
     m_backend->setClientDisconnectCallback([this](const std::string& clientInfo) {
         QMetaObject::invokeMethod(this, [this, clientInfo]() {
             appendLog(QString::fromStdString("[断开] " + clientInfo));
-            refreshStatusCard();
+            // Client 模式下对端断开即退出运行态：否则停止按钮失效、状态卡冻结
+            if (m_backend && !m_backend->isServerMode()) {
+                applyRunningUi(false);
+                refreshStatusCard();
+                m_statusText->setText(QStringLiteral("与服务器断开"));
+            } else {
+                refreshStatusCard();
+            }
         }, Qt::QueuedConnection);
     });
 
@@ -359,7 +415,13 @@ void WebSocketWidget::pushEvent(const wsproto::WsEvent& event)
     setCell(ColTopic, event.topic);
     setCell(ColBytes, QString::number(event.byteCount));
     auto* previewItem = new QTableWidgetItem(event.preview);
-    previewItem->setToolTip(event.body.isEmpty() ? event.preview : event.body);
+    // tooltip 驻留上限：大报文场景防 2000 行全文累积（长稳内存约束）
+    QString tip = event.body.isEmpty() ? event.preview : event.body;
+    if (wsproto::utf8Bytes(tip) > kBodyResidentMaxBytes) {
+        tip = wsproto::truncatePreview(tip, kBodyResidentMaxBytes)
+              + QStringLiteral("…[已截断，完整 %1 字节]").arg(event.byteCount);
+    }
+    previewItem->setToolTip(tip);
     m_eventTable->setItem(target, ColPreview, previewItem);
 
     if (m_chkAutoScroll->isChecked())
@@ -513,10 +575,15 @@ void WebSocketWidget::onStartClicked()
         emit toolStatusChanged(QStringLiteral("Client 连接中..."));
     }
     applyRunningUi(true);
-    if (!m_backend->isRunning()) {
-        // 同步失败路径（如端口占用/地址非法）立即回落 UI
-        applyRunningUi(false);
-        m_statusText->setText(QStringLiteral("启动失败"));
+    if (serverMode) {
+        // Server.listen 为同步操作：失败立即回落；Client 模式 isRunning 要等
+        // connected 回调，绝不可在此同步检查（否则必然误报"启动失败"）
+        if (!m_backend->isRunning()) {
+            applyRunningUi(false);
+            m_statusText->setText(QStringLiteral("启动失败"));
+        }
+    } else {
+        m_statusText->setText(QStringLiteral("连接中…"));
     }
     refreshStatusCard();
 }
