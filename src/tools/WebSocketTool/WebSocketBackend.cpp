@@ -52,13 +52,10 @@ wsproto::WsEvent makeWsEvent(const QString& direction, const QString& peer,
 
 WebSocketBackend::~WebSocketBackend()
 {
-    if (m_isRunning) {
-        if (m_isServerMode) {
-            stopServer();
-        } else {
-            stopClient();
-        }
-    }
+    // 无条件清理：错误路径下 m_isRunning 已为假，但 m_client/m_server 仍存活且信号未断开，
+    // 若跳过清理，socket 悬连会在后端析构后继续投递回调（UAF）
+    stopServer();
+    stopClient();
 }
 
 int WebSocketBackend::svc()
@@ -385,12 +382,13 @@ void WebSocketBackend::onClientDisconnected()
 void WebSocketBackend::onClientError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error);
-    if (m_client) {
-        std::string err = m_client->errorString().toStdString();
-        if (m_errorCb) m_errorCb(err);
-        if (m_logCb) m_logCb("[Client] 错误: " + err);
-    }
-    m_isRunning = false;
+    QString err;
+    if (m_client)
+        err = m_client->errorString();
+    if (m_logCb) m_logCb("[Client] 错误: " + err.toStdString());
+    if (m_errorCb) m_errorCb(err.toStdString());
+    // 错误即释放 socket 与订阅态；否则残留连接可越过失败重试造成句柄泄漏/UAF
+    stopClient();
 }
 
 // ============ 发布/订阅 ============

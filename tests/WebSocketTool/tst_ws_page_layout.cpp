@@ -15,6 +15,10 @@
 
 #include <QtTest>
 #include <QCheckBox>
+#include <QHostAddress>
+#include <QTemporaryDir>
+#include <QWebSocket>
+#include <QWebSocketServer>
 #include <QComboBox>
 #include <QHeaderView>
 #include <QLabel>
@@ -25,7 +29,23 @@
 #include <QTableWidget>
 
 #include "tools/WebSocketTool/WebSocketWidget.h"
+#include "tools/WebSocketTool/WebSocketBackend.h"
 #include "tools/WebSocketTool/WsEventTypes.h"
+#include "config/ConfigStore.h"
+
+namespace {
+
+QLineEdit* findLine(QWidget* w, const char* name)
+{
+    return w->findChild<QLineEdit*>(QString::fromLatin1(name));
+}
+
+QPushButton* findBtn(QWidget* w, const char* name)
+{
+    return w->findChild<QPushButton*>(QString::fromLatin1(name));
+}
+
+} // namespace
 
 namespace {
 
@@ -48,12 +68,133 @@ class TstWsPageLayout : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+    void cleanupTestCase();
+    void clientModeStartStaysBusyUntilConnected();
+    void clientModeStartRefusedResetsUi();
+    void constructorRestoresLastClientEndpoint();
+    void constructorSweepsLegacyTokenRows();
+    void hugeBodyTooltipIsCapped();
     void eventTableIsTheOnlyVerticalExpander();
     void eventColumnsAreUserResizable();
     void eventStreamCapsAtCapacityWithDroppedCount();
     void tokenFieldMaskedWithVisibilityToggle();
     void modeSwitchSelectsConfigPageAndSubscriptionAvailability();
 };
+
+void TstWsPageLayout::initTestCase()
+{
+    static QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QVERIFY(ConfigStore::instance().open(dir.filePath(QStringLiteral("tst_ws.db"))));
+}
+
+void TstWsPageLayout::cleanupTestCase()
+{
+    ConfigStore::instance().close();
+}
+
+void TstWsPageLayout::clientModeStartStaysBusyUntilConnected()
+{
+    QWebSocketServer srv(QStringLiteral("stub"), QWebSocketServer::NonSecureMode);
+    QVERIFY(srv.listen(QHostAddress::LocalHost, 0));
+    QWebSocket* peer = nullptr;
+    QObject::connect(&srv, &QWebSocketServer::newConnection, [&srv, &peer]() {
+        peer = srv.nextPendingConnection();
+    });
+
+    WebSocketBackend backend;
+    {
+        WebSocketWidget widget;
+        widget.setBackend(&backend);
+        findBtn(&widget, "wsModeClient")->click();
+        findLine(&widget, "wsUrl")
+            ->setText(QStringLiteral("ws://127.0.0.1:%1").arg(srv.serverPort()));
+        findBtn(&widget, "wsStartButton")->click();
+
+        // Critical 回归：异步连接期间必须保持"连接中"忙态
+        //（旧缺陷：startClient 后同步 isRunning 恒假 → UI 立即回落，停止按钮失效）
+        auto* start = findBtn(&widget, "wsStartButton");
+        auto* stop = findBtn(&widget, "wsStopButton");
+        QVERIFY2(!start->isEnabled(), "启动后应禁用启动按钮（忙态）");
+        QVERIFY2(stop->isEnabled(), "启动后应允许停止（忙态）");
+        auto* status = widget.findChild<QLabel*>(QStringLiteral("wsStatusText"));
+        QVERIFY(status);
+        QVERIFY2(!status->text().contains(QStringLiteral("启动失败")),
+                 qPrintable(QStringLiteral("误报启动失败：").append(status->text())));
+
+        QTRY_VERIFY_WITH_TIMEOUT(backend.isRunning(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(peer != nullptr, 5000);
+
+        // 对端断开 → UI 必须复位（旧缺陷：断开回调不 reset，状态冻结）
+        peer->close();
+        QTRY_VERIFY_WITH_TIMEOUT(start->isEnabled(), 5000);
+        QVERIFY(!stop->isEnabled());
+        backend.stopClient();
+    }
+    delete peer;
+}
+
+void TstWsPageLayout::clientModeStartRefusedResetsUi()
+{
+    WebSocketBackend backend;
+    WebSocketWidget widget;
+    widget.setBackend(&backend);
+    findBtn(&widget, "wsModeClient")->click();
+    // 127.0.0.1 未监听端口：错误回调应把忙态复位
+    findLine(&widget, "wsUrl")->setText(QStringLiteral("ws://127.0.0.1:1"));
+    findBtn(&widget, "wsStartButton")->click();
+    auto* start = findBtn(&widget, "wsStartButton");
+    QTRY_VERIFY_WITH_TIMEOUT(start->isEnabled(), 5000);
+}
+
+void TstWsPageLayout::constructorRestoresLastClientEndpoint()
+{
+    QVariantMap row;
+    row.insert(QStringLiteral("mode"), QStringLiteral("client"));
+    row.insert(QStringLiteral("url"), QStringLiteral("ws://10.9.8.7:7000"));
+    row.insert(QStringLiteral("trustCert"), true);
+    QVERIFY(ConfigStore::instance().save(QStringLiteral("websocket.endpoint"),
+                                         QStringLiteral("ws://10.9.8.7:7000"), row));
+
+    WebSocketWidget widget;
+    auto* url = findLine(&widget, "wsUrl");
+    QVERIFY2(url->text() == QStringLiteral("ws://10.9.8.7:7000"),
+             "构造应从 websocket.endpoint 恢复上次配置（回归 v2.11 行为）");
+    auto* trust = widget.findChild<QCheckBox*>(QStringLiteral("wsTrustCert"));
+    QVERIFY(trust && trust->isChecked());
+    auto* stack = widget.findChild<QStackedWidget*>(QStringLiteral("wsConfigStack"));
+    QVERIFY(stack && stack->currentIndex() == 1);
+}
+
+void TstWsPageLayout::constructorSweepsLegacyTokenRows()
+{
+    QVariantMap legacy;
+    legacy.insert(QStringLiteral("mode"), QStringLiteral("server"));
+    legacy.insert(QStringLiteral("port"), 9101);
+    legacy.insert(QStringLiteral("token"), QStringLiteral("hunter2"));
+    QVERIFY(ConfigStore::instance().save(QStringLiteral("websocket.endpoint"),
+                                         QStringLiteral("server:9101"), legacy));
+
+    { WebSocketWidget widget; }  // 构造触发清扫
+
+    const QVariantMap swept = ConfigStore::instance().load(
+        QStringLiteral("websocket.endpoint"), QStringLiteral("server:9101"));
+    QVERIFY2(!swept.contains(QStringLiteral("token")),
+             "存量明文 Token 行必须在构造时清除（导出脱敏面闭环）");
+    QCOMPARE(swept.value(QStringLiteral("port")).toInt(), 9101); // 其余字段保持
+}
+
+void TstWsPageLayout::hugeBodyTooltipIsCapped()
+{
+    WebSocketWidget widget;
+    wsproto::WsEvent e = makeEvent(QString(64 * 1024, QChar(QLatin1Char('A'))));
+    widget.pushEvent(e);
+    auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
+    const QString tip = table->item(0, 4)->toolTip();
+    QVERIFY2(tip.size() < 64 * 1024, "超长正文必须限制驻留（长稳内存约束）");
+    QVERIFY(tip.contains(QStringLiteral("已截断")));
+}
 
 void TstWsPageLayout::eventTableIsTheOnlyVerticalExpander()
 {

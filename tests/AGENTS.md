@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-36 个测试目标，**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+39 个测试目标，**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -15,6 +15,8 @@
 | opcua_encode/ | tst_opcua_encode(.c) / tst_opcua_loopback | open62541 编解码 | C 语言直测 |
 | panel_async/ | tst_panel_async | FileBrowserPanel 异步加载 | 异步竞态回归（代际令牌） |
 | remote_model/ sftp/ telnet/ theme/ | 各自 tst_* | 远程模型/SFTP 计划/Telnet 超时/QSS 像素 | 见各子目录 |
+| WebSocketTool/ | tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback | WsEventTypes.h 纯逻辑 / 双栏页面布局 / 本机 Server↔Client 环回 | 纯逻辑 + QtTest UI 回归 + 环回集成 |
+| app/ telnet(表头)/ | tst_log_panel_state / tst_batch_result_header | 日志面板状态纯逻辑 / 结果表头属性 | 纯逻辑（仅头文件） |
 | （根） | tst_updatechecker | UpdateChecker | OTA 检查 |
 
 ## 注册模板（tests/CMakeLists.txt）
@@ -48,4 +50,4 @@ cd build && ctest -C Release -R tst_nrec --output-on-failure # 单目标
 
 ## 已知覆盖空白
 
-FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、DeviceBusWidget、NavBar 尚无专属目标——新增相关行为时优先在此补测。
+FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。

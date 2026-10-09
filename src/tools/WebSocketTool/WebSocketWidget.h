@@ -52,6 +52,8 @@ private slots:
 
 private:
     void setupUi();
+    void restoreLastEndpoint();
+    void sweepLegacyTokenRows();
     void appendLog(const QString& msg);
     void applyRunningUi(bool running);
     void refreshStatusCard();
