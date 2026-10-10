@@ -770,3 +770,22 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- MODBUS 轮询调度器 + 内存数据表纯逻辑测试（v2.12 Task 2）---
+# 仿 tst_ws_event_types 注册块：假时钟经参数注入、派发经返回值，无 IO 无事件循环；
+# 编入产品源码 ModbusScheduler.cpp/ModbusDataStore.cpp。ModbusTargetTypes.h 引用
+# QModbusDataUnit（RegisterType 枚举来自 SerialBus 头），故在 Core/Test 之外加链 SerialBus。
+add_executable(tst_modbus_scheduler
+    modbus/tst_modbus_scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+)
+target_include_directories(tst_modbus_scheduler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_modbus_scheduler PRIVATE
+    Qt6::Core Qt6::SerialBus Qt6::Test
+)
+add_test(NAME tst_modbus_scheduler COMMAND tst_modbus_scheduler)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_scheduler PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
