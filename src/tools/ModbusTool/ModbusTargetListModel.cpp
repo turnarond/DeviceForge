@@ -244,6 +244,12 @@ const TargetRow* ModbusTargetListModel::rowAt(int row) const
     return &m_rows.at(row);
 }
 
+const TargetRow* ModbusTargetListModel::allRowAt(int index) const
+{
+    if (index < 0 || index >= m_allRows.size()) return nullptr;
+    return &m_allRows.at(index);
+}
+
 const TargetRow* ModbusTargetListModel::rowByTargetId(const QString& targetId) const
 {
     const int row = rowIndexOfTarget(targetId);

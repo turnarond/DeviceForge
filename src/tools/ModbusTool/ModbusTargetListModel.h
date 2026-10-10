@@ -62,6 +62,11 @@ public:
     const TargetRow* rowByTargetId(const QString& targetId) const;
     int rowIndexOfTarget(const QString& targetId) const;
 
+    // 过滤前全集访问（行数 ≥ rowCount）：后端结果归位必须走全集——搜索过滤只影响视图，
+    // 未命中行的读结果仍须写入 dataStore（绑定约束"不可见行只更新 store"）
+    int allRowCount() const { return m_allRows.size(); }
+    const TargetRow* allRowAt(int index) const;
+
     // 端口写回（裁决 4，v2.11.1 saveReplacing 语义）：档案 modbus 端点改端口并全量刷新，
     // 同 deviceId 的其余行由 refresh 呈现新端点。失败（无档案/无端点/写库失败）返回 false。
     bool applyPortEdit(const QString& deviceId, int newPort, QString* errText = nullptr);

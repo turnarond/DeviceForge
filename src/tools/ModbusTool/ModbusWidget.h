@@ -56,6 +56,12 @@ public:
     // 弹出模态确认（objectName=mbWriteConfirm，默认按钮=取消）；确认返回 true
     bool confirmWrite(const QString& targetId, int addr, quint16 value);
 
+    // 后端结果回调（旧广播 API 的临时归位：按端点 ip 匹配行；任务 4 换 targetId 精确交付）。
+    // 公开为观察点：生产由 setBackend 的 ResultCallback 经队列投递，测试直接驱动
+    // （同 confirmWrite 绕模态的口径），避免为测试引入网络环回。
+    void handleBackendResult(const QString& deviceIp, const QVector<quint16>& values,
+                             qint64 elapsedMs, const QString& error);
+
 private slots:
     void onAddTargetClicked();
     void onPauseToggled(bool checked);
@@ -73,9 +79,6 @@ private:
     void updateVisibleRangeTracking(QTableView* view, modbus::ModbusPointModel* model);
     // 添加目标：为设备落默认从站 1 目标记录；createEndpoint=true 先建默认 502 modbus 端点写回档案
     void ensureDefaultTarget(const QString& deviceId, bool createEndpoint);
-    // 后端结果回调（旧广播 API 的临时归位：按端点 ip 匹配行；任务 4 换 targetId 精确交付）
-    void handleBackendResult(const QString& deviceIp, const QVector<quint16>& values,
-                             qint64 elapsedMs, const QString& error);
 
     ModbusBackend* m_backend = nullptr;
     DeviceRegistry* m_registry = nullptr;

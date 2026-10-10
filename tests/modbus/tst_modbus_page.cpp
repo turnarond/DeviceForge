@@ -2,7 +2,8 @@
 // 覆盖：无档案回退 ip:port、添加目标下拉（仅 modbus 端点设备 + 其它设备…）、
 // 逐寄存器 4xxxx 编址、十/十六进制切换、变化标记仅增量、两表列宽 Interactive、
 // 写确认默认取消（含 shouldConfirmWrite 纯函数）、搜索过滤纯函数、
-// 端口编辑写回档案（saveReplacing 同步全行）、异常保留末值置灰、2000 行宽容限性能。
+// 端口编辑写回档案（saveReplacing 同步全行）、异常保留末值置灰、2000 行宽容限性能、
+// 后端结果入 store 不受搜索过滤影响（轮1 发现 1）、逐寄存器可视区抑制与滚入补发（轮1 发现 2）。
 #include <QtTest>
 
 #include <QApplication>
@@ -483,6 +484,124 @@ private slots:
         const qint64 elapsed = timer.elapsed();
         QVERIFY2(elapsed < 500, qPrintable(QStringLiteral("2000 行 reset+单行增量耗时 %1ms").arg(elapsed)));
         QCOMPARE(cellData(&m, 1999, ModbusPointModel::ColChanged).toString(), QStringLiteral("↑"));
+    }
+
+    // ── 审查发现 1（轮1）：搜索过滤激活时，未命中行的后端结果仍须入 dataStore ──
+    // 绑定约束：不可见行只是不发视图信号，store 侧必须照常归位（updatePoll/updateError
+    // 与 m_wallMsByTarget 全量覆盖，遍历模型全集而非过滤后可见行）
+    void backendResultReachesStoreForFilteredOutRows()
+    {
+        QVariantMap a;
+        a.insert(QStringLiteral("ip"), QStringLiteral("10.0.0.1"));
+        a.insert(QStringLiteral("port"), 502);
+        QVariantMap b;
+        b.insert(QStringLiteral("ip"), QStringLiteral("10.0.0.2"));
+        b.insert(QStringLiteral("port"), 502);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.0.0.1:502"), a));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.0.0.2:502"), b));
+
+        ModbusWidget w;
+        w.setRegistry(nullptr);  // 回退模式：设备身份 = ip:port
+        auto* tm = w.targetModel();
+        QVERIFY(tm);
+        QCOMPARE(tm->refresh(), 2);
+        const QString hiddenId = QStringLiteral("10.0.0.1:502#1");
+        const QString shownId = QStringLiteral("10.0.0.2:502#1");
+
+        auto* search = w.findChild<QLineEdit*>(QStringLiteral("mbSearch"));
+        QVERIFY(search);
+        search->setText(QStringLiteral("10.0.0.2"));  // 过滤激活：10.0.0.1 行被隐藏
+        QCOMPARE(tm->rowCount(), 1);
+        QCOMPARE(tm->rowIndexOfTarget(hiddenId), -1);
+
+        QSignalSpy spy(tm, &QAbstractItemModel::dataChanged);
+        QVERIFY(spy.isValid());
+        w.handleBackendResult(QStringLiteral("10.0.0.1"), {7, 8, 9}, 42, QString());
+
+        // store-only：被过滤的目标必须收到样本
+        const auto stored = w.dataStore()->sample(hiddenId);
+        QVERIFY2(stored.has_value(), "被搜索过滤隐藏的目标也必须收到读结果（store 更新不受过滤影响）");
+        QCOMPARE(stored->values.size(), 3);
+        QCOMPARE(stored->values.at(0), quint16(7));
+        QCOMPARE(stored->values.at(2), quint16(9));
+        QCOMPARE(stored->elapsedMs, qint64(42));
+        QVERIFY(stored->ok);
+        // 隐藏行不得有视图信号（只有可见行才发 dataChanged）
+        QCOMPARE(spy.count(), 0);
+        // 可见行未被本次回调误触及
+        QVERIFY(!w.dataStore()->sample(shownId).has_value());
+
+        // 错误样本同样不受过滤影响（updateError 保留末值）
+        w.handleBackendResult(QStringLiteral("10.0.0.1"), {}, 55, QStringLiteral("超时重试"));
+        const auto errored = w.dataStore()->sample(hiddenId);
+        QVERIFY(errored.has_value());
+        QCOMPARE(errored->error, QStringLiteral("超时重试"));
+        QCOMPARE(errored->values.size(), 3);
+        QCOMPARE(errored->values.at(0), quint16(7));
+
+        // m_wallMsByTarget 归位：清过滤后选中该行，UpdatedAt 取自隐藏期间的真实时钟
+        search->clear();
+        QCOMPARE(tm->rowCount(), 2);
+        const int hiddenRow = tm->rowIndexOfTarget(hiddenId);
+        QVERIFY2(hiddenRow >= 0, "清除过滤后隐藏行须回到视图");
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(hiddenRow);
+        auto* pm = w.pointModel();
+        QVERIFY(pm);
+        QCOMPARE(pm->targetId(), hiddenId);
+        const QString updated = cellData(pm, 0, ModbusPointModel::ColUpdatedAt).toString();
+        QVERIFY2(updated != QStringLiteral("—") && !updated.isEmpty(),
+                 qPrintable(QStringLiteral("隐藏期间的结果须记录真实时钟，UpdatedAt 实际为 '%1'")
+                                .arg(updated)));
+        w.hide();
+    }
+
+    // ── 审查发现 2（轮1）：可视区跟踪——不可见行不发 dataChanged、滚入补发 ──
+    void invisibleRowDefersDataChangedUntilScrolledIn()
+    {
+        PollSpec spec;
+        spec.count = 3;
+        ModbusPointModel m;
+        m.setTarget(QStringLiteral("dev#1"), spec, {1, 1, 1}, {1, 1, 1});
+        m.setVisibleRange(0, 0);  // 仅首行在视口内
+
+        QSignalSpy spy(&m, &QAbstractItemModel::dataChanged);
+        QVERIFY(spy.isValid());
+        m.applyUpdate({1, 1, 1}, {1, 1, 2});  // 变化落在不可见末行
+        QCOMPARE(spy.count(), 0);             // 虚拟化：不可见行不发视图信号
+        // 模型数据本身照常更新（可视区只影响信号，不影响数据）
+        QCOMPARE(cellData(&m, 2, ModbusPointModel::ColDecimal).toString(), QStringLiteral("2"));
+        QCOMPARE(cellData(&m, 2, ModbusPointModel::ColChanged).toString(), QStringLiteral("↑"));
+
+        m.setVisibleRange(0, 1);  // 滚入但未覆盖脏行 → 仍不补发
+        QCOMPARE(spy.count(), 0);
+
+        m.setVisibleRange(0, 2);  // 脏行滚入 → 补发
+        QCOMPARE(spy.count(), 1);
+        const QModelIndex tl = spy.at(0).at(0).toModelIndex();
+        const QModelIndex br = spy.at(0).at(1).toModelIndex();
+        QVERIFY2(tl.isValid() && br.isValid() && tl.row() == 2 && br.row() == 2,
+                 "滚入补发的 dataChanged 必须覆盖该行");
+        QCOMPARE(tl.column(), int(ModbusPointModel::ColDecimal));
+        QCOMPARE(br.column(), int(ModbusPointModel::ColChanged));
+
+        m.setVisibleRange(2, 4);  // 已补发行不得重复发（dirty 已清）
+        QCOMPARE(spy.count(), 1);
+
+        // 可视区内行变化 → 立即发信号（虚拟化不得吞掉可见更新）
+        ModbusPointModel visible;
+        visible.setTarget(QStringLiteral("dev#1"), spec, {1, 1, 1}, {1, 1, 1});
+        visible.setVisibleRange(0, 2);
+        QSignalSpy visibleSpy(&visible, &QAbstractItemModel::dataChanged);
+        QVERIFY(visibleSpy.isValid());
+        visible.applyUpdate({1, 1, 1}, {5, 1, 1});
+        QCOMPARE(visibleSpy.count(), 1);
+        QCOMPARE(visibleSpy.at(0).at(0).toModelIndex().row(), 0);
+        QCOMPARE(cellData(&visible, 0, ModbusPointModel::ColDecimal).toString(),
+                 QStringLiteral("5"));
     }
 };
 

@@ -411,11 +411,13 @@ void ModbusWidget::handleBackendResult(const QString& deviceIp, const QVector<qu
                                        qint64 elapsedMs, const QString& error)
 {
     // 临时归位（任务 4 换 targetId 精确交付）：旧广播读 API 只带设备 ip，
-    // 按端点 ip 前缀匹配归属到清单行；同 ip 多从站时全部更新（与旧行为一致）
+    // 按端点 ip 前缀匹配归属到清单行；同 ip 多从站时全部更新（与旧行为一致）。
+    // 遍历过滤前全集：搜索过滤只隐藏视图行，未命中行的样本仍必须入 dataStore
+    // （绑定约束"不可见行只更新 store"，视图信号由 syncSamples 自行按可见性抑制）
     const qint64 wall = QDateTime::currentMSecsSinceEpoch();
     bool touched = false;
-    for (int i = 0; i < m_targetModel->rowCount(); ++i) {
-        const auto* row = m_targetModel->rowAt(i);
+    for (int i = 0; i < m_targetModel->allRowCount(); ++i) {
+        const auto* row = m_targetModel->allRowAt(i);
         if (!row || row->endpoint == QStringLiteral("—")) continue;
         const int sep = row->endpoint.lastIndexOf(QLatin1Char(':'));
         if (sep <= 0 || row->endpoint.left(sep) != deviceIp) continue;
