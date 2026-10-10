@@ -146,6 +146,13 @@ int ModbusTargetStore::migrateLegacySlaves(DeviceRegistry* registry)
     for (const auto& profile : registry->list()) {
         if (!hasModbusEndpoint(profile) || profile.deviceId.empty()) continue;
 
+        // 已有新 modbus.target 记录（如首次迁移后用户编辑过）→ 跳过，
+        // 避免重复迁移把旧 slave 合成的内容整体回写、覆盖用户数据；不计入 migrated。
+        if (ConfigStore::instance().exists(QString(kRecordType),
+                                           QString::fromStdString(profile.deviceId))) {
+            continue;
+        }
+
         DeviceTargets targets;
         targets.deviceId = profile.deviceId;
         targets.tagSchema = 0;

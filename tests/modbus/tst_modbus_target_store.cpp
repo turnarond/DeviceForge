@@ -272,6 +272,67 @@ private slots:
         QCOMPARE(ConfigStore::instance().list(QStringLiteral("modbus.slave")).size(), 2);
     }
 
+    // 迁移幂等：已有新 modbus.target 记录的设备跳过，二次迁移不覆盖用户编辑后的数据
+    void migrateSkipsExistingTargetRecords()
+    {
+        // 旧口径 regType 为下拉索引：0=保持寄存器、1=输入寄存器
+        seedLegacySlaveRow(QStringLiteral("slave:1"), 0, 4, 8, 1, 250);
+        seedLegacySlaveRow(QStringLiteral("slave:3"), 1, 0, 2, 3, 1000);
+
+        DeviceRegistry registry;
+        QVERIFY(registry.save(makeProfile(QStringLiteral("plc-88"), QStringLiteral("modbus"),
+                                          QStringLiteral("10.0.0.8"), 502)));
+
+        modbus::ModbusTargetStore store;
+        QCOMPARE(store.migrateLegacySlaves(&registry), 1);
+
+        // 模拟首次迁移后用户在 UI 编辑该设备的 modbus.target：
+        // 改 slave1 的 poll 值、删掉 slave3、新增 slave5
+        modbus::DeviceTargets edited;
+        edited.deviceId = "plc-88";
+        edited.tagSchema = 0;
+        modbus::SlaveTarget t1;
+        t1.slaveId = 1;
+        t1.enabled = true;
+        t1.poll = {QModbusDataUnit::HoldingRegisters, 100, 20, 500};
+        modbus::SlaveTarget t5;
+        t5.slaveId = 5;
+        t5.enabled = false;
+        t5.poll = {QModbusDataUnit::Coils, 7, 3, 800};
+        edited.targets.push_back(t1);
+        edited.targets.push_back(t5);
+        QVERIFY(store.save(edited));
+
+        // 二次迁移：plc-88 已有新记录 → 跳过、不计入 migrated（返回 0）
+        QCOMPARE(store.migrateLegacySlaves(&registry), 0);
+
+        // 用户编辑仍在，未被旧 slave 行合成的内容覆盖
+        modbus::DeviceTargets out;
+        QVERIFY(store.load("plc-88", &out));
+        QCOMPARE(out.targets.size(), 2);
+        const auto* a1 = findTarget(out, 1);
+        QVERIFY(a1 != nullptr);
+        comparePoll(a1->poll, QModbusDataUnit::HoldingRegisters, 100, 20, 500);
+        QVERIFY(findTarget(out, 3) == nullptr);
+        const auto* a5 = findTarget(out, 5);
+        QVERIFY(a5 != nullptr);
+        QCOMPARE(a5->enabled, false);
+        comparePoll(a5->poll, QModbusDataUnit::Coils, 7, 3, 800);
+
+        // 尚未迁移过的新设备仍应被正常迁移并计入返回值
+        QVERIFY(registry.save(makeProfile(QStringLiteral("plc-99"), QStringLiteral("modbus"),
+                                          QStringLiteral("10.0.0.9"), 502)));
+        QCOMPARE(store.migrateLegacySlaves(&registry), 1);
+
+        // plc-88 的用户编辑在第三次迁移后依旧完好（skip 判定持续生效）
+        QVERIFY(store.load("plc-88", &out));
+        QCOMPARE(out.targets.size(), 2);
+        QVERIFY(findTarget(out, 3) == nullptr);
+
+        // 旧记录始终不删除
+        QCOMPARE(ConfigStore::instance().list(QStringLiteral("modbus.slave")).size(), 2);
+    }
+
     // 迁移失败回退：nullptr / 无 modbus 设备 → 返回 0、不崩、旧行仍可读且可回退合成
     void migrationFailureFallback()
     {
