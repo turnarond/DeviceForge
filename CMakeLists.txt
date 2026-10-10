@@ -239,6 +239,7 @@ set(SOURCES
     # v2.12 MODBUS 重构 Task 3：ModbusWidget 引用目标存储/数据表/两视图模型，须入主程序链接
     src/tools/ModbusTool/ModbusTargetStore.cpp
     src/tools/ModbusTool/ModbusDataStore.cpp
+    src/tools/ModbusTool/ModbusScheduler.cpp
     src/tools/ModbusTool/ModbusTargetListModel.cpp
     src/tools/ModbusTool/ModbusPointModel.cpp
     src/tools/FtpDeployTool/FtpDeployBackend.cpp

@@ -798,6 +798,7 @@ add_executable(tst_modbus_page
     modbus/tst_modbus_page.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetListModel.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusPointModel.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetStore.cpp
@@ -819,4 +820,25 @@ if(_qt_bin_dir)
     set_tests_properties(tst_modbus_page PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- MODBUS 本机环回集成（v2.12 Task 4）：QModbusTcpServer 真轮询/写生效/掉线恢复 ---
+# 编入产品源码 ModbusBackend.cpp（调度器驱动的传输执行器）+ ModbusScheduler.cpp +
+#     ModbusDataStore.cpp；QModbusTcpClient/Server 经 SerialBus，ServiceTask 壳经
+#     lwserverbase（含 lwlog 引用）；无 Widget/QPA，GUILESS 事件循环即可。
+add_executable(tst_modbus_loopback
+    modbus/tst_modbus_loopback.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+)
+target_include_directories(tst_modbus_loopback PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_modbus_loopback PRIVATE
+    Qt6::Core Qt6::Network Qt6::SerialBus Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_loopback COMMAND tst_modbus_loopback)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_loopback PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()

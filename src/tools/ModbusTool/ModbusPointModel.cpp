@@ -96,9 +96,25 @@ void ModbusPointModel::setSampleMeta(qint64 wallMs, const QString& error)
         : QStringLiteral("—");
     m_error = error;
     if (m_points.isEmpty()) return;
-    // 元信息影响全表（更新时刻 + 异常置灰前景），一次列级信号即可
-    emit dataChanged(index(0, ColDecimal),
-                     index(m_points.size() - 1, ColumnCount - 1),
+    // 裁决 3（收敛旧全表 dataChanged）：可视区内脏行一次列级区间信号，
+    // 越界行只置 metaDirty，滚入时补发——与 applyUpdate 同一虚拟化纪律
+    for (Point& p : m_points) p.metaDirty = true;
+    flushMetaInRange();
+}
+
+void ModbusPointModel::flushMetaInRange()
+{
+    int first = -1;
+    int last = -1;
+    for (int row = 0; row < m_points.size(); ++row) {
+        if (!m_points[row].metaDirty || !rowVisible(row, m_visFirst, m_visLast)) continue;
+        m_points[row].metaDirty = false;
+        if (first < 0) first = row;
+        last = row;
+    }
+    if (first < 0) return;
+    // 元信息影响值列前景与更新时刻列，整段一次 Display+Foreground 信号
+    emit dataChanged(index(first, ColDecimal), index(last, ColumnCount - 1),
                      {Qt::DisplayRole, Qt::ForegroundRole});
 }
 
@@ -114,6 +130,7 @@ void ModbusPointModel::setVisibleRange(int first, int last)
     m_visFirst = first;
     m_visLast = last;
     flushDirtyInRange();
+    flushMetaInRange();   // 裁决 3：滚入的 meta 脏行补发
 }
 
 void ModbusPointModel::flushDirtyInRange()

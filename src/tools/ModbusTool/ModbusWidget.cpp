@@ -4,7 +4,6 @@
 #include "ModbusPointModel.h"
 #include "ModbusTargetListModel.h"
 #include "ModbusTargetTypes.h"
-#include "config/ConfigStore.h"
 #include "device/DeviceProfile.h"
 #include "device/DeviceRegistry.h"
 
@@ -302,6 +301,10 @@ void ModbusWidget::setupUi()
     connect(m_pointView, &QTableView::doubleClicked, this, &ModbusWidget::onPointDoubleClicked);
     connect(m_targetModel, &modbus::ModbusTargetListModel::portEditFailed,
             this, &ModbusWidget::onPortEditFailed);
+    // 任务 4 接线：清单结构变化（添加目标/端口写回/搜索 reset）后同步调度目标集——
+    // syncPollingTargets 内部按指纹比对，纯过滤不重启调度器（在途/退避态得以保全）
+    connect(m_targetModel, &QAbstractItemModel::modelReset, this,
+            [this]() { syncPollingTargets(); });
 
     // 虚拟化：滚动条驱动模型可视区跟踪（不可见行只更新模型数据，不发 dataChanged 风暴）
     connect(m_pointView->verticalScrollBar(), &QScrollBar::valueChanged, m_pointView,
@@ -333,15 +336,20 @@ void ModbusWidget::setBackend(ModbusBackend* backend)
             if (self) self->appendLog(text);
         }, Qt::QueuedConnection);
     });
-    m_backend->setResultCallback([self](const std::string& device, const QVector<quint16>& values,
-                                        qint64 elapsedMs, const std::string& errorMsg) {
+    m_backend->setResultCallback([self](const QString& targetId, const QVector<quint16>& values,
+                                        qint64 elapsedMs, const QString& errorMsg) {
         if (!self) return;
-        const QString ip = QString::fromStdString(device);
-        const QString err = QString::fromStdString(errorMsg);
         const QVector<quint16> snapshot = values;
-        QMetaObject::invokeMethod(self, [self, ip, snapshot, elapsedMs, err]() {
-            if (self) self->handleBackendResult(ip, snapshot, elapsedMs, err);
+        const QString id = targetId;
+        const QString err = errorMsg;
+        QMetaObject::invokeMethod(self, [self, id, snapshot, elapsedMs, err]() {
+            if (self) self->handleBackendResult(id, snapshot, elapsedMs, err);
         }, Qt::QueuedConnection);
+    });
+    // 裁决 5：清单"退避黄"由调度器退避态判定（同步探针，GUI 线程独占后端）
+    ModbusBackend* backendRaw = m_backend;
+    m_targetModel->setBackoffProbe([backendRaw](const QString& targetId) {
+        return backendRaw->inTargetBackoff(targetId);
     });
 }
 
@@ -357,11 +365,20 @@ void ModbusWidget::setRegistry(DeviceRegistry* registry)
 void ModbusWidget::onToolStart()
 {
     appendLog(QStringLiteral("Modbus 测试工具已就绪"));
+    // 任务 4 裁决 7：启动一次性迁移旧 modbus.slave（store 内 exists 判重，重复调用幂等）
+    if (m_registry) {
+        const int migrated = m_targetStore.migrateLegacySlaves(m_registry);
+        if (migrated > 0)
+            appendLog(QStringLiteral("已迁移 %1 台设备的旧从站配置为轮询目标").arg(migrated));
+    }
     refreshTargets();
+    if (m_backend && !pollingPaused())
+        restartPolling();
 }
 
 void ModbusWidget::onToolStop()
 {
+    if (m_backend) m_backend->stopPolling();   // 停 tick→清队列→逐 client 先断信号后关
     appendLog(QStringLiteral("Modbus 测试工具已停止"));
 }
 
@@ -407,38 +424,30 @@ void ModbusWidget::showTargetDetail(const QString& targetId)
     updateVisibleRangeTracking(m_pointView, m_pointModel);
 }
 
-void ModbusWidget::handleBackendResult(const QString& deviceIp, const QVector<quint16>& values,
+void ModbusWidget::handleBackendResult(const QString& targetId, const QVector<quint16>& values,
                                        qint64 elapsedMs, const QString& error)
 {
-    // 临时归位（任务 4 换 targetId 精确交付）：旧广播读 API 只带设备 ip，
-    // 按端点 ip 前缀匹配归属到清单行；同 ip 多从站时全部更新（与旧行为一致）。
-    // 遍历过滤前全集：搜索过滤只隐藏视图行，未命中行的样本仍必须入 dataStore
-    // （绑定约束"不可见行只更新 store"，视图信号由 syncSamples 自行按可见性抑制）
+    // 裁决 1（任务 4 定稿）：后端按 targetId = deviceId#slaveId 精确交付，不再 ip 前缀归位。
+    // 过滤前全集定位：搜索过滤只隐藏视图行，未命中行的样本仍必须入 dataStore
+    // （绑定约束"不可见行只更新 store"，视图信号由 syncSamples 按可见性抑制）
+    const int idx = m_targetModel->allIndexOfTarget(targetId);
+    if (idx < 0) return;   // 目标已删除后的残响：代际语义，丢弃
     const qint64 wall = QDateTime::currentMSecsSinceEpoch();
-    bool touched = false;
-    for (int i = 0; i < m_targetModel->allRowCount(); ++i) {
-        const auto* row = m_targetModel->allRowAt(i);
-        if (!row || row->endpoint == QStringLiteral("—")) continue;
-        const int sep = row->endpoint.lastIndexOf(QLatin1Char(':'));
-        if (sep <= 0 || row->endpoint.left(sep) != deviceIp) continue;
-        const QString id = row->targetId;
-        QVector<quint16> prev;
-        if (const auto s = m_dataStore.sample(id)) prev = s->values;
-        if (!error.isEmpty()) {
-            m_dataStore.updateError(id, error, elapsedMs);  // 保留旧值（裁决 1 的 store 语义）
-        } else if (!values.isEmpty()) {
-            m_dataStore.updatePoll(id, values, elapsedMs);
-        }
-        // values 空且无错误 = 写成功回执：不更新数值
-        m_wallMsByTarget.insert(id, wall);
-        if (m_pointModel->targetId() == id) {
-            const QVector<quint16>& cur = (error.isEmpty() && !values.isEmpty()) ? values : prev;
-            m_pointModel->applyUpdate(prev, cur);
-            m_pointModel->setSampleMeta(wall, error);
-        }
-        touched = true;
+    QVector<quint16> prev;
+    if (const auto s = m_dataStore.sample(targetId)) prev = s->values;
+    if (!error.isEmpty()) {
+        m_dataStore.updateError(targetId, error, elapsedMs);  // 保留末知值（裁决 1 store 语义）
+    } else if (!values.isEmpty()) {
+        m_dataStore.updatePoll(targetId, values, elapsedMs);
     }
-    if (touched) m_targetModel->syncSamples();
+    // values 空且无错误 = 写成功回执：不更新数值
+    m_wallMsByTarget.insert(targetId, wall);
+    if (m_pointModel->targetId() == targetId) {
+        const QVector<quint16>& cur = (error.isEmpty() && !values.isEmpty()) ? values : prev;
+        m_pointModel->applyUpdate(prev, cur);
+        m_pointModel->setSampleMeta(wall, error);
+    }
+    m_targetModel->syncSamples();
 }
 
 void ModbusWidget::onAddTargetClicked()
@@ -511,7 +520,14 @@ void ModbusWidget::onPauseToggled(bool checked)
 {
     m_pauseBtn->setText(checked ? QStringLiteral("恢复轮询") : QStringLiteral("暂停轮询"));
     appendLog(checked ? QStringLiteral("轮询已暂停") : QStringLiteral("轮询已恢复"));
-    // 调度器驱动接线在任务 4：pollingPaused() 将被后端 tick 循环读取
+    // 任务 4 接线：暂停 = stopPolling（停 tick→清队列→断 client），恢复 = 整组重启目标集
+    if (!m_backend) return;
+    if (checked) {
+        m_backend->stopPolling();
+        m_polledSignature.clear();
+    } else {
+        restartPolling();
+    }
 }
 
 void ModbusWidget::onReadOnceClicked()
@@ -526,54 +542,66 @@ void ModbusWidget::onReadOnceClicked()
         appendLog(QStringLiteral("请先在左侧清单选择目标"));
         return;
     }
-    syncDevicesToBackend();
-    // 旧广播 API 的定向读：临时只绑目标所在端点，发起后恢复全量绑定
-    const int sep = row->endpoint.lastIndexOf(QLatin1Char(':'));
-    DeviceInfo target;
-    target.ip = row->endpoint.left(sep).toStdString();
-    target.port = row->endpoint.mid(sep + 1).toInt();
-    target.note = row->name.toStdString();
-    const auto full = m_backend->devices();
-    m_backend->bindDevices({target});
-    m_backend->readAllRegisters(row->slaveId, row->poll.regType,
-                                row->poll.startAddr, row->poll.count);
-    m_backend->bindDevices(full);
+    m_backend->requestReadOnce(row->targetId);
     appendLog(QStringLiteral("已对 %1 发起立即读取（%2）")
                   .arg(row->name, modbus::ModbusTargetListModel::rangeLabel(row->poll)));
 }
 
-void ModbusWidget::syncDevicesToBackend()
+QVector<modbus::PollTarget> ModbusWidget::pollTargetList() const
+{
+    QVector<modbus::PollTarget> targets;
+    if (!m_targetModel) return targets;
+    for (int i = 0; i < m_targetModel->allRowCount(); ++i) {
+        const auto* row = m_targetModel->allRowAt(i);
+        if (!row || row->endpoint == QStringLiteral("—"))
+            continue;   // 孤儿记录无端点不可轮询
+        modbus::PollTarget t;
+        t.targetId = row->targetId;
+        t.connKey = row->endpoint;   // "ip:port" 连接池键（同端点多从站共线串行，规格 §3）
+        t.slaveId = row->slaveId;
+        t.enabled = row->enabled;
+        t.spec = row->poll;
+        targets.push_back(t);
+    }
+    return targets;
+}
+
+namespace {
+
+// 目标集结构指纹：仅内容变化才值得重启调度器（搜索过滤等纯视图操作不触发）
+QString pollTargetsSignature(const QVector<modbus::PollTarget>& targets)
+{
+    QStringList parts;
+    parts.reserve(targets.size());
+    for (const modbus::PollTarget& t : targets) {
+        parts << QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8")
+                     .arg(t.targetId, t.connKey)
+                     .arg(t.slaveId).arg(t.enabled)
+                     .arg(int(t.spec.regType)).arg(t.spec.startAddr)
+                     .arg(t.spec.count).arg(t.spec.intervalMs);
+    }
+    return parts.join(QLatin1Char(';'));
+}
+
+} // namespace
+
+void ModbusWidget::restartPolling()
 {
     if (!m_backend) return;
-    std::vector<DeviceInfo> devices;
-    if (m_registry) {
-        // 档案模式：设备源 = 各档案 modbus 端点（ip:port 去重）
-        std::vector<std::string> seen;
-        for (const auto& profile : m_registry->list()) {
-            for (const auto& ep : profile.endpoints) {
-                if (ep.protocol != "modbus") continue;
-                const std::string key = ep.ip + ":" + std::to_string(ep.port);
-                if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
-                seen.push_back(key);
-                DeviceInfo info;
-                info.ip = ep.ip;
-                info.port = ep.port > 0 ? ep.port : 502;
-                info.note = profile.name;
-                devices.push_back(info);
-            }
-        }
-    } else {
-        // 回退模式：device.list 与设备栏持久化同源（沿用旧 UI 口径）
-        const auto rows = ConfigStore::instance().list(QStringLiteral("device.list"), 20);
-        for (const auto& row : rows) {
-            DeviceInfo info;
-            info.ip = row.value(QStringLiteral("ip")).toString().toStdString();
-            info.port = row.value(QStringLiteral("port")).toInt();
-            info.note = row.value(QStringLiteral("note")).toString().toStdString();
-            if (!info.ip.empty()) devices.push_back(info);
-        }
-    }
-    m_backend->bindDevices(devices);
+    const QVector<modbus::PollTarget> targets = pollTargetList();
+    m_polledSignature = pollTargetsSignature(targets);
+    m_backend->startPolling(targets, &m_targetStore, &m_dataStore);
+}
+
+void ModbusWidget::syncPollingTargets()
+{
+    // 清单结构变化后的同步：仅当轮询在跑且目标集指纹变化时整组重启（reset 语义清零在途）
+    if (!m_backend || pollingPaused() || !m_backend->isPolling()) return;
+    const QVector<modbus::PollTarget> targets = pollTargetList();
+    const QString signature = pollTargetsSignature(targets);
+    if (signature == m_polledSignature) return;
+    m_polledSignature = signature;
+    m_backend->startPolling(targets, &m_targetStore, &m_dataStore);
 }
 
 void ModbusWidget::onPointDoubleClicked(const QModelIndex& index)
@@ -613,15 +641,9 @@ void ModbusWidget::onPointDoubleClicked(const QModelIndex& index)
         appendLog(QStringLiteral("后端未就绪，写入未发出"));
         return;
     }
-    syncDevicesToBackend();
-    const int sep = row->endpoint.lastIndexOf(QLatin1Char(':'));
-    const QString ip = sep > 0 ? row->endpoint.left(sep) : QString();
-    if (ip.isEmpty()) {
-        appendLog(QStringLiteral("目标端点缺失，写入无法定位设备：%1").arg(targetId));
-        return;
-    }
-    m_backend->writeRegister(ip.toStdString(), row->slaveId, spec.regType, addr, value);
-    appendLog(QStringLiteral("已发起写入: %1 从站%2 %3 地址=%4 值=%5")
+    // 任务 4 接线：写经调度器插该连接队首（永不丢弃；同端点读写在途串行）
+    m_backend->enqueueWriteTarget(targetId, addr, value);
+    appendLog(QStringLiteral("已入写队列: %1 从站%2 %3 地址=%4 值=%5")
                   .arg(targetId).arg(row->slaveId)
                   .arg(modbus::ModbusTargetListModel::registerTypeName(spec.regType))
                   .arg(addr).arg(value));

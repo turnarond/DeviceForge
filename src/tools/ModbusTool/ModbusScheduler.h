@@ -15,6 +15,9 @@ namespace modbus {
 
 // 轮询目标：一条从站轮询线。enabled 由调用方自 SlaveTarget 带入，调度器据此过滤；
 // targetId 用 makeTargetId(deviceId, slaveId) 生成，connKey 为协议层连接池键。
+// 契约：targetId 必须在同一 reset 目标集内全局唯一（makeTargetId 的 deviceId#slaveId
+// 天然保证）；重复 targetId 的目标记账（nextDueMs/skipped）合并到首个匹配项，
+// 调度语义不再逐条独立（调用方去重责任，任务 4 后端 startPolling 有兜底剔除）。
 struct PollTarget {
     QString targetId;
     QString connKey;
@@ -51,7 +54,8 @@ public:
     // 全量重建目标集与连接态（在途/队列/退避/计数清零）；所有目标即刻到期
     void reset(const QVector<PollTarget>& targets, qint64 nowMs);
 
-    // 一个节拍：①到期且 enabled 且已过连接退避门限的目标入队尾（溢出弹最旧轮询）；
+    // 一个节拍：①到期且 enabled 且已过连接退避门限的目标入队尾（入队即推进 nextDueMs，
+    // 裁决 2 修复：杜绝连接忙碌时同到期目标逐 tick 重复入队堆积）并计溢出；
     // ②每个空闲、非空、过门限的连接弹队首进入返回值并置在途
     QVector<Dispatch> onTick(qint64 nowMs);
 
@@ -68,6 +72,10 @@ public:
     // 某目标的轮询因队列溢出被丢弃的累计次数（未知目标返回 0）
     int skippedCount(const QString& targetId) const;
 
+    // 连接当前是否处于退避等待（退避门限未到）：驱动 timer 用自身同一时钟传 nowMs；
+    // 供清单"退避黄"状态呈现（任务 4 裁决 5：sample error 非空 + 此处真值 → 黄）
+    bool connInBackoff(const QString& connKey, qint64 nowMs) const;
+
     // 下次可能产生动作的最早时刻（供驱动 timer 唤醒）：
     // min(enabled 目标的 max(nextDue, 所属连接退避门限)), 另计入空闲连接待发队列的退避门限；
     // 无任何待办时回落 nowMs+kTickMs
@@ -81,7 +89,7 @@ private:
         int backoffIdx = 0;
         qint64 connNextReadyMs = 0;
     };
-    // 目标运行态：nextDueMs 仅在轮询派发（弹队首）后推进；skipped 记溢出丢弃数
+    // 目标运行态：nextDueMs 在轮询入队时即推进（裁决 2）；skipped 记溢出丢弃数
     struct TargetState {
         PollTarget target;
         qint64 nextDueMs = 0;

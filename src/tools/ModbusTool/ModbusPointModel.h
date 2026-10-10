@@ -30,7 +30,8 @@ public:
                    const QVector<quint16>& prev, const QVector<quint16>& cur);
     // 增量刷新：行数与 spec 一致时仅对变化行发 dataChanged（大小不符自动 reset）
     void applyUpdate(const QVector<quint16>& prev, const QVector<quint16>& cur);
-    // 样本元信息：wallMs=真实时钟毫秒（0 → "—"）；error 非空 → 值列置灰（裁决 1）
+    // 样本元信息（裁决 3 收敛）：wallMs=真实时钟毫秒（0 → "—"）；error 非空 → 值列置灰。
+    // 可视区纪律同 applyUpdate：只对可视行发 dataChanged，越界行置 metaDirty 滚入时补发
     void setSampleMeta(qint64 wallMs, const QString& error);
 
     void setHexMode(bool on);
@@ -58,9 +59,12 @@ private:
         quint16 value = 0;
         quint8 changed = 0;   // 0 无标记 / 1 ↑ / 2 ↓
         bool dirty = false;   // 值/标记已更新但（因不可见）未发 dataChanged
+        bool metaDirty = false; // 元信息（时刻/置灰）已更新但未发 dataChanged（裁决 3）
     };
     void rebuild(const QVector<quint16>& prev, const QVector<quint16>& cur);
     void flushDirtyInRange();
+    // 裁决 3：可视区内脏 meta 行一次列级区间 dataChanged；越界行保留 metaDirty 待滚入补发
+    void flushMetaInRange();
 
     QString m_targetId;
     PollSpec m_spec;

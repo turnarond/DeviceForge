@@ -11,6 +11,8 @@
 #include <QString>
 #include <QVector>
 
+#include <functional>
+
 #include "ModbusTargetTypes.h"
 
 class DeviceRegistry;
@@ -29,10 +31,11 @@ struct TargetRow {
     PollSpec poll;
     QString name;          // 档案名称优先，回退 ip:port（裁决 3）
     QString endpoint;      // "ip:port"；孤儿记录 = "—"
-    QString status;        // "OK" / "异常" / "停用" / "—"
+    QString status;        // "OK" / "异常" / "退避" / "停用" / "—"
     QString detail;        // 耗时或错误摘要（截断）
     QString detailFull;    // 错误全文（tooltip）
     bool hasError = false; // 健康判定唯一权威 = Sample.error 非空（裁决 1）
+    bool inBackoff = false; // 异常且调度器退避等待中 → "退避黄"（裁决 5，任务 4 接线）
     bool hasSample = false;
 };
 
@@ -61,6 +64,13 @@ public:
     const TargetRow* rowAt(int row) const;
     const TargetRow* rowByTargetId(const QString& targetId) const;
     int rowIndexOfTarget(const QString& targetId) const;
+    // 过滤前全集中的行号（裁决 1：后端结果按 targetId 精确归位走全集）；未找到 -1
+    int allIndexOfTarget(const QString& targetId) const;
+
+    // 退避态探针（任务 4 裁决 5）：由 Widget 注入 backend.inTargetBackoff；
+    // 空指针 = 恒非退避（清单回退"异常红"，任务 3 既有语义不变）
+    using BackoffProbe = std::function<bool(const QString& targetId)>;
+    void setBackoffProbe(BackoffProbe probe) { m_backoffProbe = std::move(probe); }
 
     // 过滤前全集访问（行数 ≥ rowCount）：后端结果归位必须走全集——搜索过滤只影响视图，
     // 未命中行的读结果仍须写入 dataStore（绑定约束"不可见行只更新 store"）
@@ -109,6 +119,8 @@ private:
     void applyFilter();
     // 从 dataStore 拉样本回填行的状态/详情字段（refresh 与 syncSamples 共用）
     void fillSampleFields(TargetRow& row) const;
+    // 裁决 4：主题状态色在 refresh 时缓存一次（data() 每格查库属禁改缺陷）
+    void cacheThemeColors();
 
     ModbusTargetStore* m_store = nullptr;
     ModbusDataStore* m_data = nullptr;
@@ -116,6 +128,9 @@ private:
     QString m_search;
     QVector<TargetRow> m_allRows; // 过滤前全集
     QVector<TargetRow> m_rows;    // 视图当前行集
+    BackoffProbe m_backoffProbe;  // 裁决 5：退避态判定注入点
+    QColor m_errorColor;          // 裁决 4 缓存：异常红
+    QColor m_backoffColor;        // 裁决 4/5 缓存：退避黄（既有琴色 token，双主题同值）
 };
 
 } // namespace modbus

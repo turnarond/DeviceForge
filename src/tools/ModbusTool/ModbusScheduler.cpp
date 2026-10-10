@@ -51,6 +51,9 @@ QVector<Dispatch> ModbusScheduler::onTick(qint64 nowMs)
         d.kind = Kind::Poll;
         d.poll = st.target.spec;
         conn.queue.append(d);
+        // 裁决 2（任务 2 遗留缺陷修复）：入队即推进 nextDueMs。旧版仅在派发弹队首时
+        // 推进，连接在途/退避时同一到期目标每个 tick 重复入队，慢 PLC 恢复后派发风暴。
+        st.nextDueMs = nowMs + st.target.spec.intervalMs;
 
         while (conn.queue.size() > kQueueCap) {
             // 自队首起找最旧的轮询项弹出；写项（插队首而来）扫描时自然跳过
@@ -71,6 +74,7 @@ QVector<Dispatch> ModbusScheduler::onTick(qint64 nowMs)
     }
 
     // ② 每连接单在途：空闲、队列非空、已过退避门限 → 弹队首派发并置在途
+    //（nextDueMs 已在入队时推进，派发侧不再记账——裁决 2 修复的成对改动）
     QVector<Dispatch> out;
     for (auto it = m_conns.begin(); it != m_conns.end(); ++it) {
         Conn& conn = it.value();
@@ -78,11 +82,6 @@ QVector<Dispatch> ModbusScheduler::onTick(qint64 nowMs)
             continue;
         const Dispatch d = conn.queue.takeFirst();
         conn.inFlight = true;   // onDispatched 语义；驱动侧再调一次幂等
-        if (d.kind == Kind::Poll) {
-            const int ti = targetIndex(d.targetId);
-            if (ti >= 0)
-                m_targets[ti].nextDueMs = nowMs + m_targets[ti].target.spec.intervalMs;
-        }
         out.append(d);
     }
     return out;
@@ -138,6 +137,14 @@ int ModbusScheduler::skippedCount(const QString& targetId) const
 {
     const int ti = targetIndex(targetId);
     return ti >= 0 ? m_targets[ti].skipped : 0;
+}
+
+bool ModbusScheduler::connInBackoff(const QString& connKey, qint64 nowMs) const
+{
+    const auto it = m_conns.constFind(connKey);
+    if (it == m_conns.constEnd())
+        return false;   // 未知连接无退避可言
+    return it->connNextReadyMs > nowMs;
 }
 
 qint64 ModbusScheduler::nextWakeMs(qint64 nowMs) const

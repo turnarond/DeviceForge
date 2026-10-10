@@ -104,6 +104,14 @@ QColor ModbusTargetListModel::statusColor(bool success)
                    : QColor(dark ? QStringLiteral("#E85848") : QStringLiteral("#D6453A"));
 }
 
+void ModbusTargetListModel::cacheThemeColors()
+{
+    // 裁决 4：主题色只在 refresh 查库一次——data() 是视图每格回调，查库属禁改缺陷
+    m_errorColor = statusColor(false);
+    // 裁决 5：退避黄复用既有琴色 token #F0A030（信号态专用、双主题同值，不新增色值）
+    m_backoffColor = QColor(QStringLiteral("#F0A030"));
+}
+
 QVector<ModbusTargetListModel::SourceDevice> ModbusTargetListModel::collectDevices() const
 {
     QVector<SourceDevice> devices;
@@ -156,10 +164,13 @@ void ModbusTargetListModel::fillSampleFields(TargetRow& row) const
     }
     // 裁决 1：健康判定以 Sample.error 非空为唯一权威，不得单信 ok
     row.hasError = !sample->error.isEmpty();
+    // 裁决 5：异常且调度器所属连接退避等待 → "退避黄"；探针未注入恒非退避（回退异常红）
+    row.inBackoff = row.enabled && row.hasError && m_backoffProbe
+                        && m_backoffProbe(row.targetId);
     if (!row.enabled) {
         row.status = QStringLiteral("停用");
     } else if (row.hasError) {
-        row.status = QStringLiteral("异常");
+        row.status = row.inBackoff ? QStringLiteral("退避") : QStringLiteral("异常");
     } else if (sample->ok) {
         row.status = QStringLiteral("OK");
     } else {
@@ -175,15 +186,19 @@ void ModbusTargetListModel::fillSampleFields(TargetRow& row) const
 
 int ModbusTargetListModel::refresh()
 {
+    cacheThemeColors();   // 裁决 4：主题色每次 refresh 取一次，data() 不再查库
     QVector<TargetRow> all;
     for (const auto& dev : collectDevices()) {
         DeviceTargets dt;
         QVector<SlaveTarget> targets;
-        if (m_store && m_store->load(dev.deviceId.toStdString(), &dt)) {
+        const bool loaded = m_store && m_store->load(dev.deviceId.toStdString(), &dt);
+        if (loaded)
             targets = dt.targets;
-        }
-        if (targets.isEmpty()) {
-            targets.push_back(SlaveTarget{});  // 回退模式设备：默认从站 1 展示行
+        // 裁决 6：档案模式下"空 targets 记录"= 删除全部目标的落库形态——
+        // load 已不回退旧行（store 修复），清单侧同样不得合成默认行让它视图复活；
+        // 仅回退模式（无档案注册表）设备缺记录时给默认从站 1 展示行
+        if (targets.isEmpty() && !(m_registry && loaded)) {
+            targets.push_back(SlaveTarget{});
         }
         for (const auto& slave : targets) {
             TargetRow row;
@@ -264,6 +279,14 @@ int ModbusTargetListModel::rowIndexOfTarget(const QString& targetId) const
     return -1;
 }
 
+int ModbusTargetListModel::allIndexOfTarget(const QString& targetId) const
+{
+    for (int i = 0; i < m_allRows.size(); ++i) {
+        if (m_allRows.at(i).targetId == targetId) return i;
+    }
+    return -1;
+}
+
 bool ModbusTargetListModel::applyPortEdit(const QString& deviceId, int newPort, QString* errText)
 {
     if (!m_registry) {
@@ -335,7 +358,7 @@ QVariant ModbusTargetListModel::data(const QModelIndex& index, int role) const
     }
     if (role == Qt::ForegroundRole) {
         if (row.hasError && (index.column() == ColStatus || index.column() == ColDetail))
-            return statusColor(false);
+            return row.inBackoff ? m_backoffColor : m_errorColor;   // 裁决 4 缓存色 / 裁决 5 退避黄
         return QVariant();
     }
     return QVariant();

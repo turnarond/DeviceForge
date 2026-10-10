@@ -240,6 +240,25 @@ private slots:
         QVERIFY(store.allDeviceIds().empty());
     }
 
+    // 裁决 6（任务 4）：空 targets 记录 = 删除全部目标的落库形态，load 不得回退旧行复活
+    void emptyTargetsRecordBeatsLegacyFallback()
+    {
+        // 先种旧 modbus.slave 行（若回退会命中并"复活"）
+        seedLegacySlaveRow(QStringLiteral("slave:1"), 0, 0, 10, 1, 1000);
+
+        modbus::ModbusTargetStore store;
+        modbus::DeviceTargets emptied;
+        emptied.deviceId = "plc-del";
+        emptied.tagSchema = 0;   // targets 空 = 删除全部目标
+        QVERIFY(store.save(emptied));
+
+        modbus::DeviceTargets got;
+        QVERIFY(store.load("plc-del", &got));
+        QCOMPARE(got.deviceId, std::string("plc-del"));
+        QCOMPARE(got.targets.size(), 0);   // 命中空记录，不回退旧行合成
+        QVERIFY(store.allDeviceIds().size() == 1);
+    }
+
     // 迁移：旧 modbus.slave 两行 + 一个含 modbus 端点档案 → 回填该设备的 targets
     void migrateLegacySlavesBackfills()
     {

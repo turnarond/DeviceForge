@@ -167,6 +167,55 @@ private slots:
         QCOMPARE(s.skippedCount(QStringLiteral("dev#1")), 0);
     }
 
+    // 裁决 2（任务 2 遗留缺陷回归）：在途期间同到期目标不得每个 tick 重复入队。
+    // 旧实现 nextDueMs 仅在派发弹队首时推进——连接忙碌时同一到期项反复入队堆积，
+    // 慢 PLC 恢复后形成"派发风暴"；修复口径为入队即推进 nextDueMs。
+    void noDuplicateEnqueueWhileInFlight()
+    {
+        ModbusScheduler s;
+        s.reset({ makeTarget(QStringLiteral("dev"), 1, QStringLiteral("connA"), 500) }, 0);
+
+        QCOMPARE(s.onTick(0).size(), 1);            // 派发并置在途（入队即推进 nextDue→500）
+        QCOMPARE(s.onTick(250).size(), 0);
+        QVERIFY(s.onTick(500).isEmpty());           // 500 新到期：入队 1 项，但在途不派发
+        QCOMPARE(s.onTick(750).size(), 0);          // 750 无到期：不得因旧项未推进而重复入队
+        s.onResult(QStringLiteral("connA"), Outcome::Ok, 750);
+
+        QCOMPARE(s.onTick(750).size(), 1);          // 归位：取出 500 到期那一条
+        s.onResult(QStringLiteral("connA"), Outcome::Ok, 750);   // 本次派发归位
+        QVERIFY(s.onTick(750).isEmpty());           // 队中已无重复积压项（核心回归断言）
+        QCOMPARE(s.onTick(1000).size(), 1);         // 恢复 500ms 正常节奏
+    }
+
+    // 裁决 2：Outcome::Timeout 与 CommError 共享同一退避通道，交替命中依序推进
+    void timeoutAlternatesWithCommErrorBackoff()
+    {
+        ModbusScheduler s;
+        s.reset({ makeTarget(QStringLiteral("dev"), 1, QStringLiteral("connA"), 1000) }, 0);
+
+        QCOMPARE(s.onTick(0).size(), 1);
+        s.onResult(QStringLiteral("connA"), Outcome::Timeout, 0);
+        QVERIFY(s.connInBackoff(QStringLiteral("connA"), 999));    // 退避门限 1s 未到（裁决 5 依据）
+        QVERIFY(!s.connInBackoff(QStringLiteral("connA"), 1000));
+        const qint64 w1 = s.nextWakeMs(0);
+        QCOMPARE(w1, qint64(1000));
+
+        QCOMPARE(s.onTick(w1).size(), 1);
+        s.onResult(QStringLiteral("connA"), Outcome::CommError, w1);  // 交替：通道不重置
+        const qint64 w2 = s.nextWakeMs(w1);
+        QCOMPARE(w2, w1 + 2000);
+
+        QCOMPARE(s.onTick(w2).size(), 1);
+        s.onResult(QStringLiteral("connA"), Outcome::Timeout, w2);
+        const qint64 w3 = s.nextWakeMs(w2);
+        QCOMPARE(w3, w2 + 5000);
+
+        QCOMPARE(s.onTick(w3).size(), 1);
+        s.onResult(QStringLiteral("connA"), Outcome::Ok, w3);         // 成功复位
+        QVERIFY(!s.connInBackoff(QStringLiteral("connA"), w3));
+        QCOMPARE(s.nextWakeMs(w3), w3 + 1000);
+    }
+
     // 数据表：updatePoll 写入后读回全字段；clear 后即消失
     void storeUpdateAndReadback()
     {

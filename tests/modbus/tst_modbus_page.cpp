@@ -486,9 +486,10 @@ private slots:
         QCOMPARE(cellData(&m, 1999, ModbusPointModel::ColChanged).toString(), QStringLiteral("↑"));
     }
 
-    // ── 审查发现 1（轮1）：搜索过滤激活时，未命中行的后端结果仍须入 dataStore ──
+    // ── 审查发现 1（轮1）+ 任务 4 裁决 1：搜索过滤激活时，未命中行的后端结果仍须入
+    // dataStore；交付身份升级为精确 targetId（deviceId#slaveId），不再 ip 前缀归位 ──
     // 绑定约束：不可见行只是不发视图信号，store 侧必须照常归位（updatePoll/updateError
-    // 与 m_wallMsByTarget 全量覆盖，遍历模型全集而非过滤后可见行）
+    // 与 m_wallMsByTarget 全集覆盖，按 allIndexOfTarget 走过滤前全集）
     void backendResultReachesStoreForFilteredOutRows()
     {
         QVariantMap a;
@@ -518,7 +519,7 @@ private slots:
 
         QSignalSpy spy(tm, &QAbstractItemModel::dataChanged);
         QVERIFY(spy.isValid());
-        w.handleBackendResult(QStringLiteral("10.0.0.1"), {7, 8, 9}, 42, QString());
+        w.handleBackendResult(hiddenId, {7, 8, 9}, 42, QString());
 
         // store-only：被过滤的目标必须收到样本
         const auto stored = w.dataStore()->sample(hiddenId);
@@ -533,8 +534,8 @@ private slots:
         // 可见行未被本次回调误触及
         QVERIFY(!w.dataStore()->sample(shownId).has_value());
 
-        // 错误样本同样不受过滤影响（updateError 保留末值）
-        w.handleBackendResult(QStringLiteral("10.0.0.1"), {}, 55, QStringLiteral("超时重试"));
+        // 错误样本同样不受过滤影响（updateError 保留末值）；targetId 精确归位不误伤他行
+        w.handleBackendResult(hiddenId, {}, 55, QStringLiteral("超时重试"));
         const auto errored = w.dataStore()->sample(hiddenId);
         QVERIFY(errored.has_value());
         QCOMPARE(errored->error, QStringLiteral("超时重试"));
@@ -602,6 +603,91 @@ private slots:
         QCOMPARE(visibleSpy.at(0).at(0).toModelIndex().row(), 0);
         QCOMPARE(cellData(&visible, 0, ModbusPointModel::ColDecimal).toString(),
                  QStringLiteral("5"));
+    }
+
+    // ── 裁决 3（任务 4）：setSampleMeta 收敛为可视区纪律——只对可视行发信号、滚入补发 ──
+    void sampleMetaSignalsOnlyVisibleRowsUntilScrolledIn()
+    {
+        PollSpec spec;
+        spec.count = 3;
+        ModbusPointModel m;
+        m.setTarget(QStringLiteral("dev#1"), spec, {1, 1, 1}, {1, 1, 1});
+        m.setVisibleRange(0, 0);   // 仅首行在视口内
+
+        QSignalSpy spy(&m, &QAbstractItemModel::dataChanged);
+        QVERIFY(spy.isValid());
+        m.setSampleMeta(1700000000000LL, QStringLiteral("通讯异常"));
+        QCOMPARE(spy.count(), 1);  // 旧实现对全表发信号，裁决 3 后收敛到可视行
+        QCOMPARE(spy.at(0).at(0).toModelIndex().row(), 0);
+        QCOMPARE(spy.at(0).at(1).toModelIndex().row(), 0);
+        // 越界行数据照常就位（值可读），只是不发视图信号
+        QVERIFY2(cellData(&m, 2, ModbusPointModel::ColUpdatedAt).toString()
+                     != QStringLiteral("—"),
+                 "不可见行的 UpdatedAt 数据也应立即就位");
+
+        m.setVisibleRange(0, 2);   // meta 脏行滚入 → 一段补发
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toModelIndex().row(), 1);
+        QCOMPARE(spy.at(1).at(1).toModelIndex().row(), 2);
+    }
+
+    // ── 裁决 5（任务 4）：sample error 非空 + 调度器退避态 → 清单"退避黄"（既有 token）──
+    void backoffStatusShowsYellow()
+    {
+        QVariantMap a;
+        a.insert(QStringLiteral("ip"), QStringLiteral("10.0.0.1"));
+        a.insert(QStringLiteral("port"), 502);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.0.0.1:502"), a));
+        const QString targetId = QStringLiteral("10.0.0.1:502#1");
+        ModbusTargetStore store;
+        ModbusDataStore data;
+        data.updatePoll(targetId, {1}, 10);
+        data.updateError(targetId, QStringLiteral("通讯错误: 从站不可达"), 20);
+
+        ModbusTargetListModel m(&store, &data);
+        bool inBackoff = true;
+        m.setBackoffProbe([&inBackoff, targetId](const QString& id) {
+            return id == targetId && inBackoff;
+        });
+        QCOMPARE(m.refresh(), 1);
+        QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus).toString(),
+                 QStringLiteral("退避"));
+        // 复用既有琴色 token #F0A030（"琴色是动词"信号态专用，双主题同值，不新增色值）
+        QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus, Qt::ForegroundRole)
+                     .value<QColor>(), QColor(QStringLiteral("#F0A030")));
+
+        inBackoff = false;   // 非退避的同一异常回落红（任务 3 语义保持）
+        m.syncSamples();
+        QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus).toString(),
+                 QStringLiteral("异常"));
+        QVERIFY(cellData(&m, 0, ModbusTargetListModel::ColStatus, Qt::ForegroundRole)
+                    .value<QColor>() != QColor(QStringLiteral("#F0A030")));
+    }
+
+    // ── 裁决 6（任务 4）：删除设备全部目标 = 存空 targets 记录；清单不合成默认行复活 ──
+    void emptyTargetRecordShowsNoRows()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-plc-e"), QStringLiteral("PLC-E"),
+                                          QStringLiteral("modbus"), QStringLiteral("10.0.0.5"), 502)));
+        ModbusTargetStore store;
+        DeviceTargets filled;
+        filled.deviceId = "dev-plc-e";
+        SlaveTarget t1;
+        t1.slaveId = 1;
+        filled.targets.push_back(t1);
+        QVERIFY(store.save(filled));
+        // 删除全部目标的落库形态 = save 空记录（裁决 6，非 remove()——load 不回退旧行）
+        DeviceTargets emptied;
+        emptied.deviceId = "dev-plc-e";
+        QVERIFY(store.save(emptied));
+
+        ModbusDataStore data;
+        ModbusTargetListModel m(&store, &data);
+        m.setRegistry(&registry);          // 注入即触发 refresh
+        QCOMPARE(m.rowCount(), 0);         // 空记录不合成"默认从站 1"展示行
     }
 };
 
