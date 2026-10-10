@@ -785,3 +785,33 @@ QPushButton#wsStartButton:disabled {
     background-color: #252A33;
     color: #7B8494;
 }
+
+/* ===== v2.12 MODBUS 双栏页：添加目标主按钮/暂停信号态/清单视图边框（色值全部复用既有 token） ===== */
+QTableView#mbTargetTable, QTableView#mbPointTable {
+    border: 1px solid #252A33;
+}
+QPushButton#mbAddTarget {
+    background-color: #F0A030;
+    border: none;
+    border-radius: 4px;
+    color: #141820;
+    font-weight: 600;
+    padding: 4px 12px;
+}
+QPushButton#mbAddTarget:hover {
+    background-color: #FFB44A;
+}
+QPushButton#mbAddTarget:disabled {
+    background-color: #252A33;
+    color: #7B8494;
+}
+QPushButton#mbPauseToggle:checked {
+    border: 1px solid #F0A030;
+    color: #F0A030;
+    font-weight: 600;
+}
+QPushButton#mbHexToggle:checked {
+    border: 1px solid #F0A030;
+    color: #F0A030;
+    font-weight: 600;
+}

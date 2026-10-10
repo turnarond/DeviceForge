@@ -789,3 +789,34 @@ if(_qt_bin_dir)
     set_tests_properties(tst_modbus_scheduler PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
+
+# --- MODBUS 双栏页面布局回归（v2.12 Task 3）---
+# 仿 tst_ws_page_layout 注册块（Widget 组装层直测）：编入 ModbusWidget/Backend 与两视图模型
+# 及其数据源；SerialBus（QModbusDataUnit/QModbusTcpClient）+ lwserverbase（ServiceTask）
+# 链接闭包沿用既有 Modbus 后端与 ws 块口径，Sql 覆盖 ConfigStore/DeviceRegistry。
+add_executable(tst_modbus_page
+    modbus/tst_modbus_page.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetListModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusPointModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/framework/ToolWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_modbus_page PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_modbus_page PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::SerialBus Qt6::Sql Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_page COMMAND tst_modbus_page)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_page PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
