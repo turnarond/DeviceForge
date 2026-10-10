@@ -191,3 +191,16 @@ ModbusDataStore* dataStore();                        // Widget 读取用于两�
 - 类型一致性：`PollSpec`/`SlaveTarget`/`DeviceTargets`（任务1）被任务2 `PollTarget.spec`、任务3 模型、任务4 后端逐字引用；`ModbusScheduler`/`ModbusDataStore` 签名在任务2定义、任务3/4使用一致；`makeTargetId`/`addressLabel` 单一定义点。
 - 审查重点 6 条均已挂测试。
 - 比例：约 4 任务 / 规格 115 行为骨架 + 关键算法行，未抄函数体。
+
+---
+
+## 实施勘误（任务 4 落地后回填）
+
+权威明细见规格 `docs/superpowers/specs/2026-10-08-modbus-tool-redesign-design.md` §8；此处按任务接口块登记偏差。
+
+- **任务 1**：`load` 命中新记录（含空 `targets`）即不回退旧 `modbus.slave`（裁决 6）；`migrateLegacySlaves` 跳过已有新记录的设备（复审修复）
+- **任务 2**：`PollTarget` 增 `enabled` 字段；`onResult` 增 `nowMs` 参；新增 `connInBackoff`（裁决 5）；`nextDueMs` 推进时机由"派发弹队首"改为**入队即推进**（裁决 2 缺陷修复，配套回归测试 `noDuplicateEnqueueWhileInFlight` / `timeoutAlternatesWithCommErrorBackoff`）；队列容器 `QVector`（示意 `QDeque`）
+- **任务 3**：`setTarget` 增 `PollSpec` 参；清单模型增 `allIndexOfTarget` / `setBackoffProbe`；端口编辑为端点列 delegate 就地 `QLineEdit`（objectName `mbPortEdit`），非 `QInputDialog`；`statusColor` 改 `refresh` 时缓存（裁决 4）；`setSampleMeta` 收敛可视区纪律（裁决 3）
+- **任务 4**：`ResultCallback` 首参改 `const QString& targetId`（裁决 1，废弃 ip 语义）；`setSchedulerCallbacks()` 收为私有；新增 `inTargetBackoff` / `isPolling`；驱动 timer 固定 250ms（简报允许的最简口径，`nextWakeMs` 动态唤醒未实施）；`toolVersion` 2.1.0→2.2.0；根 `CMakeLists.txt` 补 `ModbusScheduler.cpp`（裁决 7）；`setupModbusClusterTab` 注入 registry + `onToolStart` 一次性 `migrateLegacySlaves`（裁决 7）
+- **环回口径**：`QModbusTcpServer` 无公开 listen/端口 getter——QTcpServer 探测空闲端口后让渡（"127.0.0.1:0"等价）；简报 `server.close()` 为 protected，公开等价 `disconnectDevice()`；多从站仅调度器层覆盖（简报原文），环回补线圈 0x05 单例
+- **回归补充**：`tst_task_center_e2e::modbusEndpointProfileRoutingUnaffected` 实测确认 `TaskDeviceOutcome.address` 为 v2.11"首端点展示"口径（modbus 端点置首时显示 :502），与部署/命令路由无关，断言以路由完成为准

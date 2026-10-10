@@ -104,6 +104,37 @@
 
 建议 4 任务：T1 数据模型+持久化+迁移（含①）→ T2 调度器+store（含②）→ T3 双栏 UI+两模型+写路径（含④）→ T4 环回集成+主窗口接线+回归+文档（含③）。每任务 TDD 红灯先行、独立提交、`--no-ff` 合回。
 
+## 8. 实施勘误（v2.12 任务 1-4 落地后回填，任务 4）
+
+实现与本文/计划接口块的偏离以代码为准，逐条登记如下（符号锚点，非行号）。
+
+### 8.1 接口签名偏离（计划 R1-R4 任务接口块 ↔ 实际头文件）
+
+- **R1（任务 1）**：`ModbusTargetStore::load` 语义收窄——计划"缺记录回退读旧 `modbus.slave`"之外，实际命中**新记录（含空 `targets` 数组）即不回退**（裁决 6 定稿：空记录 = 删除全部目标的落库形态）；`migrateLegacySlaves` 对**已有新记录的设备跳过**（任务 1 复审修复，防重迁覆盖用户数据）
+- **R2（任务 2）**：`PollTarget` 增 `bool enabled` 字段（调度器据此过滤，`SlaveTarget.enabled` 由调用方带入）；`onResult(connKey, outcome)` 增第三参 `qint64 nowMs`（退避门限计算必需当前时钟，假时钟可测口径的极小扩展）；新增 `connInBackoff(connKey, nowMs)` 公开查询（裁决 5 退避黄接线点）；连接队列实现用 `QVector`（计划示意 `QDeque`），FIFO/插队首语义不变
+- **R3（任务 3）**：`ModbusPointModel::setTarget` 实际为 `setTarget(targetId, spec, prev, cur)`——增 `PollSpec` 参（模型须自持行重建上下文）；`ModbusTargetListModel` 公开面增 `allIndexOfTarget`（裁决 1 全集归位）与 `setBackoffProbe`（裁决 5 注入点）；端口编辑实现为端点列 delegate 就地 `QLineEdit`（objectName `mbPortEdit`），非计划步骤示意的 `QInputDialog`；搜索过滤在模型内 `m_allRows→m_rows` 二段式实现（计划允许 QSortFilterProxyModel 或 refresh 内过滤二选一）
+- **R4（任务 4）**：后端结果回调签名改为 `ResultCallback(const QString& targetId, values, elapsedMs, const QString& errorMsg)`（裁决 1：`deviceId#slaveId` 精确交付，废弃旧 `std::string device` ip 语义）；`setSchedulerCallbacks()` 收为**私有**（简报接口块列在公开面，实际纯内部接线）；新增 `inTargetBackoff(targetId)` / `isPolling()`（清单退避黄探针 / Widget 指纹重启判定）；`toolVersion` 2.1.0→2.2.0；驱动 timer 采用简报明示可接受的**固定 250ms**（`nextWakeMs` 动态唤醒为可选优化，未实施，注释已说明）
+
+### 8.2 测试口径勘误（§5.3 环回）
+
+- `QModbusTcpServer` 无公开 `listen()`/实际端口 getter：简报"127.0.0.1:0 自动端口"以 **QTcpServer 先探测空闲端口再让渡**给 `connectDevice()` 等价实现
+- 简报"`server.close()`"：`QModbusTcpServer::close()` 为 protected，公开等价 = `disconnectDevice()`（同一实现）
+- 多从站串行如简报只在调度器纯逻辑层覆盖（Qt TCP 服务器模拟多单元支持有限），环回仅单从站 + 线圈 0x05 补例
+
+### 8.3 控制者裁决 1-7 落点
+
+1. 结果携带 `targetId` 精确交付：`ModbusBackend::ResultCallback` + `ModbusWidget::handleBackendResult`（`allIndexOfTarget` 全集定位，废弃 ip 前缀匹配）
+2. 调度器重复入队缺陷：`onTick` **入队即推进 `nextDueMs`**（派发侧不再记账）；回归测试 `tst_modbus_scheduler::noDuplicateEnqueueWhileInFlight`、`timeoutAlternatesWithCommErrorBackoff`；`PollTarget` 注释固化 targetId 唯一性契约（后端 `startPolling` 有重复剔除兜底）
+3. `setSampleMeta` 可视区纪律：`ModbusPointModel::flushMetaInRange` + `metaDirty` 滚入补发（同 `applyUpdate` 虚拟化口径）
+4. `statusColor` 缓存：`ModbusTargetListModel::cacheThemeColors()` 在 `refresh` 取一次，`data()` 不再查库
+5. 退避黄：`ModbusScheduler::connInBackoff` → `ModbusBackend::inTargetBackoff` → `ModbusTargetListModel::setBackoffProbe`，色值复用既有琴色 token `#F0A030`（不新增色值）
+6. 删除语义：删空目标 = `save` 空 `targets` 记录；`load` 命中空记录不回退旧行；清单侧空记录不合成默认从站行（测试 `emptyTargetsRecordBeatsLegacyFallback` / `emptyTargetRecordShowsNoRows`）
+7. 主窗口注入：`DeviceForge::setupModbusClusterTab` 在 `setGlobalLogCallback` 后 `setRegistry(m_deviceRegistry.get())`；`ModbusWidget::onToolStart` 调 `migrateLegacySlaves` 一次（store 内 exists 判重幂等）；根 `CMakeLists.txt` SOURCES 补 `ModbusScheduler.cpp`
+
+### 8.4 回归面补充发现（§6 之外）
+
+- 任务中心 e2e 新增 `modbusEndpointProfileRoutingUnaffected`：modbus 端点置首时部署/命令路由不受影响（ftp/telnet 链路全通），但 `TaskDeviceOutcome.address` 呈现为**首端点** ip:port（v2.11 既有展示口径，与路由无关）——该字段语义未变，回归断言以 uploads/commands 完成为准
+
 ---
 
 ### 附录 A：验收签核清单（人工）
