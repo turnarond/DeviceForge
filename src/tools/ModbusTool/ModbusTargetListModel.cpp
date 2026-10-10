@@ -182,6 +182,9 @@ void ModbusTargetListModel::fillSampleFields(TargetRow& row) const
     } else {
         row.detail = QStringLiteral("耗时 %1 ms").arg(sample->elapsedMs);
     }
+    // 终审 I-2（规格 §2.3）：调度器轮询溢出跳过计数外露——>0 才追加，不制造噪声
+    if (sample->skippedCount > 0)
+        row.detail += QStringLiteral(" 跳过%1").arg(sample->skippedCount);
 }
 
 int ModbusTargetListModel::refresh()
@@ -299,10 +302,13 @@ bool ModbusTargetListModel::applyPortEdit(const QString& deviceId, int newPort, 
         return false;
     }
     bool edited = false;
+    // 终审 Minor①：只改首个 modbus 端点——与 collectDevices/findModbusEndpoint 的
+    // "首个 modbus 端点即连接端点"口径一致，多端点档案不误改后备端点
     for (auto& endpoint : profile->endpoints) {
         if (endpoint.protocol == "modbus") {
             endpoint.port = newPort;
             edited = true;
+            break;
         }
     }
     if (!edited) {

@@ -9,11 +9,13 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -22,6 +24,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QSpinBox>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QTableView>
@@ -173,6 +176,156 @@ private:
     QVector<LabelledId> m_otherDevices;
 };
 
+// 终审 Critical（规格 §4 线框"编辑弹窗含端口/从站/段/周期/enabled"）：目标编辑对话框。
+// 端口编辑沿用清单端点列就地 delegate（mbPortEdit → saveReplacing 档案写回），
+// 本弹窗覆盖其余字段：从站号 1..247、寄存器段四选一（registerTypeFromComboIndex 口径）、
+// 起始地址 0..65535、数量按 maxReadCountForType 动态钳、周期 500..60000、enabled 复选。
+// 无模态，parented → 测试经 findChild("mbTargetEditor") 观察。
+class TargetEditorDialog : public QDialog {
+public:
+    TargetEditorDialog(const QString& deviceLabel, const modbus::SlaveTarget& initial,
+                       QWidget* parent)
+        : QDialog(parent)
+    {
+        setObjectName(QStringLiteral("mbTargetEditor"));
+        setWindowTitle(QStringLiteral("编辑目标 — %1").arg(deviceLabel));
+        auto* lay = new QFormLayout(this);
+
+        m_slave = new QSpinBox(this);
+        m_slave->setObjectName(QStringLiteral("mbEdSlave"));
+        m_slave->setRange(1, 247);
+        m_slave->setValue(qBound(1, initial.slaveId, 247));
+
+        m_regType = new QComboBox(this);
+        m_regType->setObjectName(QStringLiteral("mbEdRegType"));
+        m_regType->addItems({ QStringLiteral("保持寄存器（4xxxx）"),
+                              QStringLiteral("输入寄存器（3xxxx）"),
+                              QStringLiteral("线圈（0xxxx）"),
+                              QStringLiteral("离散输入（1xxxx）") });
+        m_regType->setCurrentIndex(comboIndexFromRegisterType(initial.poll.regType));
+
+        m_start = new QSpinBox(this);
+        m_start->setObjectName(QStringLiteral("mbEdStart"));
+        m_start->setRange(0, 65535);
+        m_start->setValue(qBound(0, initial.poll.startAddr, 65535));
+
+        m_count = new QSpinBox(this);
+        m_count->setObjectName(QStringLiteral("mbEdCount"));
+
+        m_interval = new QSpinBox(this);
+        m_interval->setObjectName(QStringLiteral("mbEdInterval"));
+        m_interval->setRange(500, 60000);
+        m_interval->setSingleStep(100);
+        m_interval->setValue(qBound(500, initial.poll.intervalMs, 60000));
+
+        m_enabled = new QCheckBox(this);
+        m_enabled->setObjectName(QStringLiteral("mbEdEnabled"));
+        m_enabled->setText(QStringLiteral("启用该目标轮询"));
+        m_enabled->setChecked(initial.enabled);
+
+        applyCountLimit(m_regType->currentIndex(), initial.poll.count);
+        connect(m_regType, &QComboBox::currentIndexChanged, this,
+                [this](int idx) { applyCountLimit(idx, m_count->value()); });
+
+        lay->addRow(QStringLiteral("从站号:"), m_slave);
+        lay->addRow(QStringLiteral("寄存器段:"), m_regType);
+        lay->addRow(QStringLiteral("起始地址:"), m_start);
+        lay->addRow(QStringLiteral("数量:"), m_count);
+        lay->addRow(QStringLiteral("周期 (ms):"), m_interval);
+        lay->addRow(QString(), m_enabled);
+
+        auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
+        box->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+        connect(box, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        lay->addWidget(box);
+    }
+
+    modbus::SlaveTarget currentTarget() const
+    {
+        modbus::SlaveTarget t;
+        t.slaveId = m_slave->value();
+        t.enabled = m_enabled->isChecked();
+        t.poll.regType = registerTypeFromComboIndex(m_regType->currentIndex());
+        t.poll.startAddr = m_start->value();
+        t.poll.count = m_count->value();
+        t.poll.intervalMs = m_interval->value();
+        return t;
+    }
+
+private:
+    // 下拉顺序与 registerTypeFromComboIndex 严格互逆：0=保持/1=输入/2=线圈/3=离散
+    static int comboIndexFromRegisterType(QModbusDataUnit::RegisterType type)
+    {
+        switch (type) {
+        case QModbusDataUnit::HoldingRegisters: return 0;
+        case QModbusDataUnit::InputRegisters:   return 1;
+        case QModbusDataUnit::Coils:            return 2;
+        default:                                return 3;   // DiscreteInputs
+        }
+    }
+    // 数量上限按段动态钳制（寄存器 125 / 位 2000，maxReadCountForType 口径）
+    void applyCountLimit(int comboIndex, int desired)
+    {
+        const int max = maxReadCountForType(registerTypeFromComboIndex(comboIndex));
+        m_count->setRange(1, max);
+        m_count->setValue(qBound(1, desired, max));
+    }
+
+    QSpinBox* m_slave = nullptr;
+    QComboBox* m_regType = nullptr;
+    QSpinBox* m_start = nullptr;
+    QSpinBox* m_count = nullptr;
+    QSpinBox* m_interval = nullptr;
+    QCheckBox* m_enabled = nullptr;
+};
+
+// 终审 Critical（写地址解锁）：单点写对话框。地址 0..65535 自由输入——双击数值行
+// 预填该行地址仅为便利，不再锁 spec.startAddr+row 区间；值域按段钳制
+// （线圈 0/1 钳保留，寄存器 0..65535）。确认后走既有写通道
+// （shouldConfirmWrite/confirmWrite → backend.enqueueWriteTarget）。
+class PointWriteDialog : public QDialog {
+public:
+    PointWriteDialog(QModbusDataUnit::RegisterType regType, int prefillAddr, int prefillValue,
+                     QWidget* parent)
+        : QDialog(parent)
+    {
+        setObjectName(QStringLiteral("mbWriteDialog"));
+        setWindowTitle(QStringLiteral("写入 — %1")
+                           .arg(modbus::addressLabel(regType, qBound(0, prefillAddr, 65535))));
+        const bool coil = regType == QModbusDataUnit::Coils;
+        auto* lay = new QFormLayout(this);
+        lay->addRow(QStringLiteral("寄存器段:"),
+                    new QLabel(modbus::ModbusTargetListModel::registerTypeName(regType), this));
+        m_addr = new QSpinBox(this);
+        m_addr->setObjectName(QStringLiteral("mbWriteAddr"));
+        m_addr->setRange(0, 65535);
+        m_addr->setValue(qBound(0, prefillAddr, 65535));
+        m_value = new QSpinBox(this);
+        m_value->setObjectName(QStringLiteral("mbWriteValue"));
+        m_value->setRange(0, coil ? 1 : 65535);   // 线圈 0/1 钳（全局约束）
+        m_value->setValue(qBound(0, prefillValue, coil ? 1 : 65535));
+        if (coil)
+            m_value->setToolTip(QStringLiteral("线圈：0=断开，1=闭合"));
+        lay->addRow(QStringLiteral("地址:"), m_addr);
+        lay->addRow(QStringLiteral("值:"), m_value);
+        auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("写入"));
+        box->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+        connect(box, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        lay->addWidget(box);
+    }
+
+    int address() const { return m_addr->value(); }
+    int value() const { return m_value->value(); }
+
+private:
+    QSpinBox* m_addr = nullptr;
+    QSpinBox* m_value = nullptr;
+};
+
 } // namespace
 
 // ── ModbusWidget ────────────────────────────────────────────────────
@@ -204,20 +357,29 @@ void ModbusWidget::setupUi()
     auto* toolbar = new QHBoxLayout();
     m_addTargetBtn = new QPushButton(QStringLiteral("＋ 添加目标"), left);
     m_addTargetBtn->setObjectName(QStringLiteral("mbAddTarget"));
+    m_editTargetBtn = new QPushButton(QStringLiteral("编辑目标"), left);
+    m_editTargetBtn->setObjectName(QStringLiteral("mbEditTarget"));
+    m_removeTargetBtn = new QPushButton(QStringLiteral("删除目标"), left);
+    m_removeTargetBtn->setObjectName(QStringLiteral("mbRemoveTarget"));
     m_pauseBtn = new QPushButton(QStringLiteral("暂停轮询"), left);
     m_pauseBtn->setObjectName(QStringLiteral("mbPauseToggle"));
     m_pauseBtn->setCheckable(true);
     m_readOnceBtn = new QPushButton(QStringLiteral("立即读取"), left);
     m_readOnceBtn->setObjectName(QStringLiteral("mbReadOnce"));
-    m_searchEdit = new QLineEdit(left);
-    m_searchEdit->setObjectName(QStringLiteral("mbSearch"));
-    m_searchEdit->setPlaceholderText(QStringLiteral("搜索名称/IP"));
     toolbar->addWidget(m_addTargetBtn);
+    toolbar->addWidget(m_editTargetBtn);
+    toolbar->addWidget(m_removeTargetBtn);
     toolbar->addWidget(m_pauseBtn);
     toolbar->addWidget(m_readOnceBtn);
     toolbar->addStretch();
-    toolbar->addWidget(m_searchEdit);
+    // 终审波加两个按钮后搜索框独立一行，避免左栏（320~460px）五钮挤压
+    auto* searchRow = new QHBoxLayout();
+    m_searchEdit = new QLineEdit(left);
+    m_searchEdit->setObjectName(QStringLiteral("mbSearch"));
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索名称/IP"));
+    searchRow->addWidget(m_searchEdit);
     leftLayout->addLayout(toolbar);
+    leftLayout->addLayout(searchRow);
 
     m_targetModel = new modbus::ModbusTargetListModel(&m_targetStore, &m_dataStore, this);
     m_targetView = new QTableView(left);
@@ -286,6 +448,8 @@ void ModbusWidget::setupUi()
 
     // 信号接线
     connect(m_addTargetBtn, &QPushButton::clicked, this, &ModbusWidget::onAddTargetClicked);
+    connect(m_editTargetBtn, &QPushButton::clicked, this, &ModbusWidget::onEditTargetClicked);
+    connect(m_removeTargetBtn, &QPushButton::clicked, this, &ModbusWidget::onRemoveTargetClicked);
     connect(m_pauseBtn, &QPushButton::toggled, this, &ModbusWidget::onPauseToggled);
     connect(m_readOnceBtn, &QPushButton::clicked, this, &ModbusWidget::onReadOnceClicked);
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -298,6 +462,8 @@ void ModbusWidget::setupUi()
     });
     connect(m_targetView->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &ModbusWidget::onTargetSelectionChanged);
+    // 终审 Critical：清单行双击 = 编辑目标入口（端点列例外，归端口就地编辑）
+    connect(m_targetView, &QTableView::doubleClicked, this, &ModbusWidget::onTargetDoubleClicked);
     connect(m_pointView, &QTableView::doubleClicked, this, &ModbusWidget::onPointDoubleClicked);
     connect(m_targetModel, &modbus::ModbusTargetListModel::portEditFailed,
             this, &ModbusWidget::onPortEditFailed);
@@ -435,10 +601,12 @@ void ModbusWidget::handleBackendResult(const QString& targetId, const QVector<qu
     const qint64 wall = QDateTime::currentMSecsSinceEpoch();
     QVector<quint16> prev;
     if (const auto s = m_dataStore.sample(targetId)) prev = s->values;
+    // 终审 I-2：落库时把调度器溢出计数填入 Sample（单写者口径，后端仅透传查询）
+    const int skipped = m_backend ? m_backend->skippedFor(targetId) : 0;
     if (!error.isEmpty()) {
         m_dataStore.updateError(targetId, error, elapsedMs);  // 保留末知值（裁决 1 store 语义）
     } else if (!values.isEmpty()) {
-        m_dataStore.updatePoll(targetId, values, elapsedMs);
+        m_dataStore.updatePoll(targetId, values, elapsedMs, skipped);
     }
     // values 空且无错误 = 写成功回执：不更新数值
     m_wallMsByTarget.insert(targetId, wall);
@@ -516,6 +684,128 @@ void ModbusWidget::ensureDefaultTarget(const QString& deviceId, bool createEndpo
     refreshTargets();
 }
 
+// ── 终审 Critical：编辑/删除目标（规格 §4 线框补齐） ───────────────
+
+void ModbusWidget::onEditTargetClicked()
+{
+    openTargetEditor();
+}
+
+void ModbusWidget::onTargetDoubleClicked(const QModelIndex& index)
+{
+    if (!index.isValid()) return;
+    // 端点列双击归端口就地编辑（mbPortEdit delegate），不开编辑弹窗
+    if (index.column() == modbus::ModbusTargetListModel::ColEndpoint) return;
+    openTargetEditor();
+}
+
+void ModbusWidget::openTargetEditor()
+{
+    if (findChild<QDialog*>(QStringLiteral("mbTargetEditor"))) return;  // 防重复开窗
+    const auto* row = m_targetModel->rowAt(m_targetView->selectionModel()->currentIndex().row());
+    if (!row) {
+        appendLog(QStringLiteral("请先在左侧清单选择目标行（编辑需选中行）"));
+        return;
+    }
+    modbus::SlaveTarget initial;
+    initial.slaveId = row->slaveId;
+    initial.enabled = row->enabled;
+    initial.poll = row->poll;
+    auto* dlg = new TargetEditorDialog(
+        QStringLiteral("%1（从站 %2）").arg(row->name).arg(row->slaveId), initial, this);
+    const QString deviceId = row->deviceId;   // 拷出值：save 后 refresh 会重建行、指针失效
+    const int originalSlaveId = row->slaveId;
+    connect(dlg, &QDialog::accepted, this, [this, dlg, deviceId, originalSlaveId]() {
+        const modbus::SlaveTarget edited = dlg->currentTarget();
+        dlg->deleteLater();
+        applyTargetEdit(deviceId, originalSlaveId, edited);
+    });
+    connect(dlg, &QDialog::rejected, dlg, &QObject::deleteLater);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
+}
+
+void ModbusWidget::applyTargetEdit(const QString& deviceId, int originalSlaveId,
+                                   const modbus::SlaveTarget& edited)
+{
+    modbus::DeviceTargets dt;
+    if (!m_targetStore.load(deviceId.toStdString(), &dt))
+        dt = modbus::DeviceTargets{};   // 未命中（回退模式合成行/无记录）= 新记录自编辑项起
+    dt.deviceId = deviceId.toStdString();
+    if (edited.slaveId == originalSlaveId) {
+        bool replaced = false;
+        for (auto& item : dt.targets) {
+            if (item.slaveId == originalSlaveId) {
+                item = edited;
+                replaced = true;
+            }
+        }
+        if (!replaced)
+            dt.targets.push_back(edited);
+    } else {
+        // 从站号改动 = 新增从站：向 targets 追加条目（原目标保留，可另行删除）；
+        // 与既有从站号冲突则拒绝（一 device 一记录的键内唯一性）
+        for (const auto& item : dt.targets) {
+            if (item.slaveId == edited.slaveId) {
+                appendLog(QStringLiteral("保存失败：设备 %1 已存在从站 %2 目标")
+                              .arg(deviceId).arg(edited.slaveId));
+                return;
+            }
+        }
+        dt.targets.push_back(edited);
+    }
+    if (!m_targetStore.save(dt)) {
+        appendLog(QStringLiteral("目标保存失败：%1 从站 %2").arg(deviceId).arg(edited.slaveId));
+        return;
+    }
+    appendLog(QStringLiteral("已保存目标 %1 从站 %2（轮询在跑时按指纹自动重启调度）")
+                  .arg(deviceId).arg(edited.slaveId));
+    refreshTargets();   // modelReset → syncPollingTargets 指纹比对 → startPolling 整组重启
+}
+
+void ModbusWidget::onRemoveTargetClicked()
+{
+    const auto* row = m_targetModel->rowAt(m_targetView->selectionModel()->currentIndex().row());
+    if (!row) {
+        appendLog(QStringLiteral("请先在左侧清单选择目标行（删除需选中行）"));
+        return;
+    }
+    const QString removedId = row->targetId;
+    const QString deviceId = row->deviceId;
+    const int slaveId = row->slaveId;
+    if (!m_registry) {
+        // 回退模式清单行来自 device.list 合成（无目标记录可删），语义与"删除=改记录"不匹配
+        appendLog(QStringLiteral("删除目标需设备档案模式（回退模式清单来自 device.list，无目标记录）"));
+        return;
+    }
+    modbus::DeviceTargets dt;
+    if (!m_targetStore.load(deviceId.toStdString(), &dt) || dt.targets.isEmpty()) {
+        appendLog(QStringLiteral("目标记录缺失，无法删除：%1").arg(removedId));
+        return;
+    }
+    const int before = dt.targets.size();
+    dt.targets.removeIf([slaveId](const modbus::SlaveTarget& t) { return t.slaveId == slaveId; });
+    if (dt.targets.size() == before) {
+        appendLog(QStringLiteral("目标记录缺失，无法删除：%1").arg(removedId));
+        return;
+    }
+    dt.deviceId = deviceId.toStdString();
+    if (!m_targetStore.save(dt)) {
+        appendLog(QStringLiteral("目标删除保存失败：%1").arg(removedId));
+        return;
+    }
+    m_dataStore.clear(removedId);            // 样本随目标移除，防重添加后残留旧值
+    m_wallMsByTarget.remove(removedId);
+    appendLog(dt.targets.isEmpty()
+        ? QStringLiteral("已删除目标 %1（空记录保留，不回退旧配置）").arg(removedId)
+        : QStringLiteral("已删除目标 %1").arg(removedId));
+    refreshTargets();
+    if (m_pointModel->targetId() == removedId) {
+        m_pointModel->setTarget(QString(), modbus::PollSpec{}, {}, {});
+        m_pointTitle->setText(QStringLiteral("未选择目标"));
+    }
+}
+
 void ModbusWidget::onPauseToggled(bool checked)
 {
     m_pauseBtn->setText(checked ? QStringLiteral("恢复轮询") : QStringLiteral("暂停轮询"));
@@ -590,7 +880,7 @@ void ModbusWidget::restartPolling()
     if (!m_backend) return;
     const QVector<modbus::PollTarget> targets = pollTargetList();
     m_polledSignature = pollTargetsSignature(targets);
-    m_backend->startPolling(targets, &m_targetStore, &m_dataStore);
+    m_backend->startPolling(targets);
 }
 
 void ModbusWidget::syncPollingTargets()
@@ -601,7 +891,7 @@ void ModbusWidget::syncPollingTargets()
     const QString signature = pollTargetsSignature(targets);
     if (signature == m_polledSignature) return;
     m_polledSignature = signature;
-    m_backend->startPolling(targets, &m_targetStore, &m_dataStore);
+    m_backend->startPolling(targets);
 }
 
 void ModbusWidget::onPointDoubleClicked(const QModelIndex& index)
@@ -617,36 +907,43 @@ void ModbusWidget::onPointDoubleClicked(const QModelIndex& index)
         appendLog(QStringLiteral("请先在左侧清单选择目标"));
         return;
     }
+    if (findChild<QDialog*>(QStringLiteral("mbWriteDialog"))) return;  // 防重复开窗
     const modbus::PollSpec spec = row->poll;
-    const bool coil = spec.regType == QModbusDataUnit::Coils;
-    const int addr = spec.startAddr + index.row();
+    // 终审 Critical：写地址解锁——0..65535 自由输入（PointWriteDialog），
+    // 双击行预填该行地址仅为便利，不再锁 spec.startAddr+index.row() 区间；
+    // 线圈 0/1 钳保留（写弹窗值上限按段钳制）
+    const int prefillAddr = qBound(0, spec.startAddr + index.row(), 65535);
     const int currentValue = m_pointModel->data(
         m_pointModel->index(index.row(), modbus::ModbusPointModel::ColDecimal),
         Qt::DisplayRole).toInt();
-
-    bool ok = false;
-    const int maxValue = coil ? 1 : 65535;  // 线圈写 0/1（全局约束）
-    const int v = QInputDialog::getInt(this,
-        QStringLiteral("写入 %1").arg(modbus::addressLabel(spec.regType, addr)),
-        coil ? QStringLiteral("值（线圈：0=断开，1=闭合）") : QStringLiteral("值:"),
-        qBound(0, currentValue, maxValue), 0, maxValue, 1, &ok);
-    if (!ok) return;
-    const quint16 value = static_cast<quint16>(v);
-
-    if (shouldConfirmWrite(targetId, addr, value) && !confirmWrite(targetId, addr, value)) {
-        appendLog(QStringLiteral("写入已取消：%1 地址 %2").arg(targetId).arg(addr));
-        return;
-    }
-    if (!m_backend) {
-        appendLog(QStringLiteral("后端未就绪，写入未发出"));
-        return;
-    }
-    // 任务 4 接线：写经调度器插该连接队首（永不丢弃；同端点读写在途串行）
-    m_backend->enqueueWriteTarget(targetId, addr, value);
-    appendLog(QStringLiteral("已入写队列: %1 从站%2 %3 地址=%4 值=%5")
-                  .arg(targetId).arg(row->slaveId)
-                  .arg(modbus::ModbusTargetListModel::registerTypeName(spec.regType))
-                  .arg(addr).arg(value));
+    const modbus::PollSpec specCopy = spec;
+    const QString targetName = row->name;
+    const int slaveId = row->slaveId;
+    auto* dlg = new PointWriteDialog(spec.regType, prefillAddr, currentValue, this);
+    connect(dlg, &QDialog::accepted, this, [this, dlg, targetId, targetName, slaveId, specCopy]() {
+        const int addr = dlg->address();
+        const int v = dlg->value();
+        dlg->deleteLater();
+        const quint16 value = static_cast<quint16>(v);
+        if (shouldConfirmWrite(targetId, addr, value) && !confirmWrite(targetId, addr, value)) {
+            appendLog(QStringLiteral("写入已取消：%1 地址 %2").arg(targetId).arg(addr));
+            return;
+        }
+        if (!m_backend) {
+            appendLog(QStringLiteral("后端未就绪，写入未发出"));
+            return;
+        }
+        // 任务 4 接线：写经调度器插该连接队首（终审 I-4：队列满则拒绝，
+        // 后端转一次错误回调/日志，UI 经既有错误通道提示）
+        m_backend->enqueueWriteTarget(targetId, addr, value);
+        appendLog(QStringLiteral("已入写队列: %1 从站%2 %3 地址=%4 值=%5")
+                      .arg(targetName).arg(slaveId)
+                      .arg(modbus::ModbusTargetListModel::registerTypeName(specCopy.regType))
+                      .arg(addr).arg(value));
+    });
+    connect(dlg, &QDialog::rejected, dlg, &QObject::deleteLater);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
 }
 
 bool ModbusWidget::shouldConfirmWrite(const QString& targetId, int addr, quint16 value)

@@ -87,12 +87,18 @@ QVector<Dispatch> ModbusScheduler::onTick(qint64 nowMs)
     return out;
 }
 
-void ModbusScheduler::enqueueWrite(const QString& targetId, int addr, quint16 value)
+bool ModbusScheduler::enqueueWrite(const QString& targetId, int addr, quint16 value)
 {
     const int ti = targetIndex(targetId);
     if (ti < 0)
-        return;   // 未知目标无连接可归属：忽略（调用方保证先 reset 后写）
+        return false;   // 未知目标无连接可归属：拒绝交付（调用方保证先 reset 后写）
     const PollTarget& t = m_targets[ti].target;
+    Conn& conn = m_conns[t.connKey];
+
+    // 终审 I-4 背压：写项插队首永不丢弃 ≠ 无限收——队列已满（尺寸达 kQueueCap）时
+    // 本次写不入队、返回 false，规格 §3"满则直接报错提示"（写项自身致超即拒）
+    if (conn.queue.size() >= kQueueCap)
+        return false;
 
     Dispatch d;
     d.targetId = t.targetId;
@@ -102,7 +108,8 @@ void ModbusScheduler::enqueueWrite(const QString& targetId, int addr, quint16 va
     d.poll = t.spec;
     d.writeAddr = addr;
     d.writeValue = value;
-    m_conns[t.connKey].queue.push_front(d);   // 插队首，永不丢弃、不计 skipped
+    conn.queue.push_front(d);   // 插队首，永不丢弃、不计 skipped
+    return true;
 }
 
 void ModbusScheduler::onDispatched(const QString& connKey)

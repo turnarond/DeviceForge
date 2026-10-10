@@ -129,7 +129,9 @@ inline std::optional<DeviceTargets> decodeDeviceTargets(const QVariantMap& recor
         const int count = item.value(QStringLiteral("count"), 1).toInt();
         target.poll.count = count > 0 ? count : 1;
         const int intervalMs = item.value(QStringLiteral("intervalMs"), 1000).toInt();
-        target.poll.intervalMs = intervalMs > 0 ? intervalMs : 1000;
+        // 终审 Minor②：全局约束 intervalMs ≥ 500（规格 §1/计划全局约束），
+        // 旧记录/畸形数据低于下界一律钳起，勿回退为任意小周期
+        target.poll.intervalMs = intervalMs > 0 ? qMax(500, intervalMs) : 1000;
 
         targets.targets.push_back(target);
     }

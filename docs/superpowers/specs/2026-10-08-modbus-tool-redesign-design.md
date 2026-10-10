@@ -135,12 +135,25 @@
 
 - 任务中心 e2e 新增 `modbusEndpointProfileRoutingUnaffected`：modbus 端点置首时部署/命令路由不受影响（ftp/telnet 链路全通），但 `TaskDeviceOutcome.address` 呈现为**首端点** ip:port（v2.11 既有展示口径，与路由无关）——该字段语义未变，回归断言以 uploads/commands 完成为准
 
+### 8.5 终审修复波（2026-10-11，1 Critical + 5 Important + 2 Minor）
+
+- **Critical（§4 线框"编辑弹窗含端口/从站/段/周期/enabled"补齐实现）**：`ModbusWidget` 新增 `mbEditTarget` 按钮 + 清单行双击（端点列除外，归端口编辑）打开 `mbTargetEditor`——从站号 1..247、寄存器段四选一（`registerTypeFromComboIndex` 口径）、起始地址 0..65535、数量按 `maxReadCountForType` 动态钳、周期 500..60000、enabled 复选；保存 = `ModbusTargetStore::save` 全量重写 → `pollTargetsSignature` 指纹自动重启调度。**从站号改为新号并保存 = 追加第二从站目标**（原目标保留，另删即可）；新增 `mbRemoveTarget`（删空=空 `targets` 记录，裁决 6；回退模式无记录可删、按钮拒绝）。写路径：`QInputDialog` 锁段口径废除，`mbWriteDialog`（`mbWriteAddr` 0..65535 自由输入，双击行地址仅预填便利；线圈值 0/1 钳保留）
+- **I-2**：`ModbusDataStore::Sample` 增 `skippedCount`（兑现 §2.3）；`updatePoll` 第 4 参（默认 0）由 `ModbusBackend::skippedFor`（调度器透传）在 Widget 单写者落库时填入；清单 Detail 列 >0 追加"跳过N"
+- **I-3（契约就实，不新增时钟参数）**：`updatePoll/updateError` 第三参 `elapsedMs` = 本轮耗时（注释与语义一致化）；`Sample.timestampMs` 语义定为**最后成功落库时刻**——落库发生在 Widget 单写者调用点，`updatePoll` 在该点以真实墙钟记录；`tst_modbus_scheduler::storeUpdateAndReadback` 按墙钟区间断言
+- **I-4（§3"满则报错"落地）**：`ModbusScheduler::enqueueWrite` 返回 `bool`——该连接待发队列已达 `kQueueCap`（8）→ 不入队返回 false（未知目标同 false）；`ModbusBackend::enqueueWriteTarget` 将 false 转**一次**错误回调 + 日志（"操作过多，请稍后"），UI 经既有错误通道呈现，不新增风暴
+- **I-5（死参清理）**：`startPolling` 收为单参 `(targets)`；后端移除 `m_store/m_data` 成员与 `dataStore()` 透传（§4 计划接口块该声明作废）；环回删除 `QCOMPARE(dataStore(),&m_data)` 自证断言，真实数据流证明由"回调→单写者落库→样本比对"承担
+- **I-6**：`.gitignore` 补 `build_mb/`
+- **Minor**：`applyPortEdit` 只改**首个** modbus 端点（与 `findModbusEndpoint`/`collectDevices` 口径一致）；`decodeDeviceTargets`/`parseLegacyRows` 对 `intervalMs` 钳下界 500（全局约束）——旧测试 250 用例随之调整（`saveLoadRemove` 改合法值 600；迁移 `slave:1`=250 断言钳后 500），新增 `intervalMsClampedToGlobalFloor`
+
 ---
 
 ### 附录 A：验收签核清单（人工）
 - [ ] 端口编辑：清单改端口 → 重启后档案生效、旧行不复活
+- [ ] 编辑目标：双击清单行改段/地址/数量/周期/enabled → 保存即生效、轮询按新参自动重启
+- [ ] 多从站新增：从站号改新号=追加目标（清单两行/记录两条）；删除目标=空记录不回退旧配置
+- [ ] 写地址 0..65535 自由输入（双击行仅预填）；线圈值为 0/1；待发队列满时提示"操作过多，请稍后"
 - [ ] 多从站：同主机 slave 1/3/4 并行轮询互不吞
 - [ ] 性能：20 目标×200 点@1s 交互不卡
-- [ ] 变化高亮与 4xxxx 编址显示正确
+- [ ] 变化高亮与 4xxxx 编址显示正确；溢出"跳过N"呈现
 - [ ] 写确认默认取消；线圈写为 0/1
 - [ ] 旧 `modbus.slave` 配置迁移无感、失败不崩

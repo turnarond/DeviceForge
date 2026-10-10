@@ -4,10 +4,14 @@
 // 写确认默认取消（含 shouldConfirmWrite 纯函数）、搜索过滤纯函数、
 // 端口编辑写回档案（saveReplacing 同步全行）、异常保留末值置灰、2000 行宽容限性能、
 // 后端结果入 store 不受搜索过滤影响（轮1 发现 1）、逐寄存器可视区抑制与滚入补发（轮1 发现 2）、
-// 后端→队列→Widget→模型全链路变化高亮（轮2 发现 I-1，真实 QModbusTcpServer 环回）。
+// 后端→队列→Widget→模型全链路变化高亮（轮2 发现 I-1，真实 QModbusTcpServer 环回）、
+// 终审波：编辑弹窗落库+调度重启、改从站号=追加第二从站、删除目标=空记录不回退、
+// 写地址解锁 0..65535 自由输入（线圈 0/1 钳保留）、skippedCount 外露 Detail 列。
 #include <QtTest>
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QHeaderView>
@@ -17,6 +21,7 @@
 #include <QModbusTcpServer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QTcpServer>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -750,7 +755,7 @@ private slots:
         t.enabled = true;
         t.spec = listRow->poll;
         t.spec.intervalMs = 500;  // 仅加速周期，区/址/点数与清单行一致
-        backend.startPolling({t}, w.targetStore(), w.dataStore());
+        backend.startPolling({t});
 
         auto* pm = w.pointModel();
         QCOMPARE(pm->targetId(), targetId);
@@ -778,6 +783,396 @@ private slots:
         backend.stopPolling();
         backend.OnStop();
         w.hide();
+    }
+
+    // ── 终审 Critical①：编辑弹窗改数量/周期 → store 落库 + 调度重启（真实数据流）──
+    // 缺陷形态：UI 无编辑入口，轮询参数锁死在默认值。修后口径：双击清单行开
+    // mbTargetEditor（从站/段/起始/数量/周期/enabled），保存走 ModbusTargetStore::save
+    // 全量重写 → pollTargetsSignature 指纹自动重启调度 → 新一轮样本按新数量到达。
+    void editTargetCountIntervalPersistsAndReschedules()
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        const quint16 port = probe.serverPort();
+        probe.close();
+
+        QModbusTcpServer server;
+        QModbusDataUnitMap map;
+        map.insert(QModbusDataUnit::HoldingRegisters,
+                   QModbusDataUnit(QModbusDataUnit::HoldingRegisters, 0, 8));
+        QVERIFY(server.setMap(map));
+        QVERIFY(server.setData(QModbusDataUnit::HoldingRegisters, quint16(0), quint16(777)));
+        server.setServerAddress(1);
+        server.setConnectionParameter(QModbusDevice::NetworkAddressParameter,
+                                      QStringLiteral("127.0.0.1"));
+        server.setConnectionParameter(QModbusDevice::NetworkPortParameter, int(port));
+        QVERIFY(server.connectDevice());
+
+        const QString endpoint = QStringLiteral("127.0.0.1:%1").arg(port);
+        const QString targetId = endpoint + QStringLiteral("#1");
+        QVariantMap row;
+        row.insert(QStringLiteral("ip"), QStringLiteral("127.0.0.1"));
+        row.insert(QStringLiteral("port"), int(port));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"), endpoint, row));
+
+        ModbusWidget w;
+        w.setRegistry(nullptr);   // 回退模式：身份 = ip:port
+        auto* tm = w.targetModel();
+        const TargetRow* listRow = tm->rowByTargetId(targetId);
+        QVERIFY(listRow);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(0);
+
+        ModbusBackend backend;
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        w.setBackend(&backend);
+        modbus::PollTarget t;
+        t.targetId = targetId;
+        t.connKey = listRow->endpoint;
+        t.slaveId = listRow->slaveId;
+        t.enabled = true;
+        t.spec = listRow->poll;
+        t.spec.intervalMs = 500;
+        backend.startPolling({t});
+
+        QTRY_VERIFY_WITH_TIMEOUT(
+            w.dataStore()->sample(targetId).has_value()
+                && w.dataStore()->sample(targetId)->values.size() == 1
+                && w.dataStore()->sample(targetId)->ok,
+            15000);
+
+        // 双击清单行名称格 → 编辑弹窗（端点列双击归端口编辑，不在此触发）。
+        // 注：Qt 6.11 下裸 mouseDClick（无先行 press/release）不进 QAbstractItemView
+        // 的 doubleClicked 路径（实测 spy=0），故按真实用户序列先单击再双击。
+        const QPoint targetCellPos =
+            tv->visualRect(tm->index(0, ModbusTargetListModel::ColName)).center();
+        QTest::mouseClick(tv->viewport(), Qt::LeftButton, Qt::NoModifier, targetCellPos);
+        QTest::mouseDClick(tv->viewport(), Qt::LeftButton, Qt::NoModifier, targetCellPos);
+        auto* dlg = w.findChild<QDialog*>(QStringLiteral("mbTargetEditor"));
+        QVERIFY2(dlg, "双击清单行必须打开编辑目标弹窗 mbTargetEditor");
+        auto* slaveSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdSlave"));
+        auto* typeCombo = dlg->findChild<QComboBox*>(QStringLiteral("mbEdRegType"));
+        auto* startSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdStart"));
+        auto* countSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdCount"));
+        auto* intervalSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdInterval"));
+        auto* enabledCheck = dlg->findChild<QCheckBox*>(QStringLiteral("mbEdEnabled"));
+        QVERIFY2(slaveSpin && typeCombo && startSpin && countSpin && intervalSpin && enabledCheck,
+                 "编辑弹窗字段不全（从站/段/起始/数量/周期/enabled）");
+        QCOMPARE(slaveSpin->minimum(), 1);
+        QCOMPARE(slaveSpin->maximum(), 247);
+        QCOMPARE(startSpin->minimum(), 0);
+        QCOMPARE(startSpin->maximum(), 65535);
+        QCOMPARE(countSpin->maximum(), 125);        // 保持寄存器动态钳（maxReadCountForType）
+        QCOMPARE(intervalSpin->minimum(), 500);
+        QCOMPARE(intervalSpin->maximum(), 60000);
+        typeCombo->setCurrentIndex(2);              // 线圈：口径=registerTypeFromComboIndex
+        QCOMPARE(countSpin->maximum(), 2000);       // 位区动态钳
+        typeCombo->setCurrentIndex(0);              // 回保持
+        countSpin->setValue(3);
+        intervalSpin->setValue(700);
+        dlg->accept();
+        QCoreApplication::processEvents();          // accepted→deleteLater 回收弹窗
+
+        // ① store 落库：modbus.target 记录按编辑值全量重写
+        ModbusTargetStore verify;
+        DeviceTargets got;
+        QVERIFY2(verify.load(endpoint.toStdString(), &got), "编辑须落 modbus.target 记录");
+        QCOMPARE(got.targets.size(), 1);
+        QCOMPARE(int(got.targets.at(0).poll.regType), int(QModbusDataUnit::HoldingRegisters));
+        QCOMPARE(got.targets.at(0).poll.count, 3);
+        QCOMPARE(got.targets.at(0).poll.intervalMs, 700);
+
+        // ② 调度重启（指纹）→ 真实数据流：新一轮样本按新数量交付 3 值
+        QTRY_VERIFY_WITH_TIMEOUT(
+            w.dataStore()->sample(targetId).has_value()
+                && w.dataStore()->sample(targetId)->values.size() == 3
+                && w.dataStore()->sample(targetId)->ok,
+            15000);
+
+        backend.stopPolling();
+        backend.OnStop();
+        server.disconnectDevice();
+        w.hide();
+    }
+
+    // ── 终审 Critical②：编辑弹窗改从站号 = 向 targets 追加第二从站（清单两行/记录两条）──
+    void editorSlaveIdChangeAppendsSecondSlave()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-plc-b"), QStringLiteral("PLC-B"),
+                                          QStringLiteral("modbus"), QStringLiteral("10.0.0.2"), 502)));
+        ModbusWidget w;
+        w.setRegistry(&registry);
+        w.show();
+        QCoreApplication::processEvents();
+
+        // 先经"添加目标"落从站 1 记录
+        auto* add = w.findChild<QPushButton*>(QStringLiteral("mbAddTarget"));
+        QVERIFY(add);
+        add->click();
+        QCoreApplication::processEvents();
+        auto* pick = w.findChild<QDialog*>(QStringLiteral("mbAddTargetDialog"));
+        QVERIFY(pick);
+        auto* pickList = pick->findChild<QListWidget*>(QStringLiteral("mbAddTargetList"));
+        QVERIFY(pickList);
+        clickListRow(&w, pickList, QStringLiteral("PLC-B"));
+        QCoreApplication::processEvents();
+        auto* tm = w.targetModel();
+        QVERIFY(tm->rowByTargetId(QStringLiteral("dev-plc-b#1")));
+        QCOMPARE(tm->allRowCount(), 1);
+
+        // mbEditTarget 按钮入口（与双击行等价）→ 改从站号为 3、数量 5 → 保存
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(0);
+        auto* editBtn = w.findChild<QPushButton*>(QStringLiteral("mbEditTarget"));
+        QVERIFY2(editBtn, "编辑目标按钮 mbEditTarget 缺失");
+        editBtn->click();
+        QCoreApplication::processEvents();
+        auto* dlg = w.findChild<QDialog*>(QStringLiteral("mbTargetEditor"));
+        QVERIFY2(dlg, "mbEditTarget 未打开编辑弹窗");
+        auto* slaveSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdSlave"));
+        auto* countSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbEdCount"));
+        QVERIFY(slaveSpin && countSpin);
+        slaveSpin->setValue(3);
+        countSpin->setValue(5);
+        dlg->accept();
+        QCoreApplication::processEvents();
+
+        // 清单两行：原从站 1 保留 + 新增从站 3；记录两条 targets
+        QVERIFY(tm->rowByTargetId(QStringLiteral("dev-plc-b#1")));
+        QVERIFY2(tm->rowByTargetId(QStringLiteral("dev-plc-b#3")), "新增从站须出现在清单");
+        QCOMPARE(tm->allRowCount(), 2);
+        ModbusTargetStore verify;
+        DeviceTargets got;
+        QVERIFY(verify.load("dev-plc-b", &got));
+        QCOMPARE(got.targets.size(), 2);
+        const modbus::SlaveTarget* s1 = nullptr;
+        const modbus::SlaveTarget* s3 = nullptr;
+        for (const auto& item : got.targets) {
+            if (item.slaveId == 1) s1 = &item;
+            if (item.slaveId == 3) s3 = &item;
+        }
+        QVERIFY(s1 && s3);
+        QCOMPARE(s1->poll.count, 1);   // 原目标未被编辑动作改写
+        QCOMPARE(s3->poll.count, 5);
+        w.hide();
+    }
+
+    // ── 终审 Critical③：删除目标 → 空 targets 记录（裁决 6），旧行不回退复活 ──
+    void removeTargetLeavesEmptyRecordWithoutLegacyRevive()
+    {
+        QVariantMap legacy;
+        legacy.insert(QStringLiteral("slaveId"), 1);
+        legacy.insert(QStringLiteral("regType"), 0);
+        legacy.insert(QStringLiteral("startAddr"), 0);
+        legacy.insert(QStringLiteral("count"), 10);
+        legacy.insert(QStringLiteral("intervalMs"), 1000);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("modbus.slave"),
+                                             QStringLiteral("slave:1"), legacy));
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-plc-d"), QStringLiteral("PLC-D"),
+                                          QStringLiteral("modbus"), QStringLiteral("10.0.0.4"), 502)));
+
+        ModbusWidget w;
+        w.setRegistry(&registry);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* add = w.findChild<QPushButton*>(QStringLiteral("mbAddTarget"));
+        QVERIFY(add);
+        add->click();
+        QCoreApplication::processEvents();
+        auto* pick = w.findChild<QDialog*>(QStringLiteral("mbAddTargetDialog"));
+        QVERIFY(pick);
+        auto* pickList = pick->findChild<QListWidget*>(QStringLiteral("mbAddTargetList"));
+        QVERIFY(pickList);
+        clickListRow(&w, pickList, QStringLiteral("PLC-D"));
+        QCoreApplication::processEvents();
+        auto* tm = w.targetModel();
+        QVERIFY(tm->rowByTargetId(QStringLiteral("dev-plc-d#1")));
+
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(0);
+        auto* removeBtn = w.findChild<QPushButton*>(QStringLiteral("mbRemoveTarget"));
+        QVERIFY2(removeBtn, "删除目标按钮 mbRemoveTarget 缺失");
+        removeBtn->click();
+        QCoreApplication::processEvents();
+
+        // 空记录保留（裁决 6 落库形态）；清单零行且旧 modbus.slave 不回退合成
+        ModbusTargetStore verify;
+        DeviceTargets got;
+        QVERIFY2(verify.load("dev-plc-d", &got), "删除后须保留空 modbus.target 记录");
+        QCOMPARE(got.targets.size(), 0);
+        QCOMPARE(tm->allRowCount(), 0);
+        QCOMPARE(tm->rowCount(), 0);
+        w.hide();
+    }
+
+    // ── 终审 Critical④：写地址解锁 0..65535 自由输入（区间外真交付）+ 线圈 0/1 钳保留 ──
+    void writeDialogAllowsAddressOutsidePollRange()
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        const quint16 port = probe.serverPort();
+        probe.close();
+
+        QModbusTcpServer server;
+        QModbusDataUnitMap map;
+        map.insert(QModbusDataUnit::HoldingRegisters,
+                   QModbusDataUnit(QModbusDataUnit::HoldingRegisters, 0, 256));
+        QVERIFY(server.setMap(map));
+        QVERIFY(server.setData(QModbusDataUnit::HoldingRegisters, quint16(0), quint16(100)));
+        server.setServerAddress(1);
+        server.setConnectionParameter(QModbusDevice::NetworkAddressParameter,
+                                      QStringLiteral("127.0.0.1"));
+        server.setConnectionParameter(QModbusDevice::NetworkPortParameter, int(port));
+        QVERIFY(server.connectDevice());
+
+        const QString endpoint = QStringLiteral("127.0.0.1:%1").arg(port);
+        const QString targetId = endpoint + QStringLiteral("#1");
+        QVariantMap row;
+        row.insert(QStringLiteral("ip"), QStringLiteral("127.0.0.1"));
+        row.insert(QStringLiteral("port"), int(port));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"), endpoint, row));
+
+        ModbusWidget w;
+        QStringList pageLog;   // 诊断取证：失败时 dump 工具日志
+        w.setGlobalLogCallback([&pageLog](const QString& line) { pageLog << line; });
+        w.setRegistry(nullptr);
+        auto* tm = w.targetModel();
+        const TargetRow* listRow = tm->rowByTargetId(targetId);
+        QVERIFY(listRow);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(0);
+
+        ModbusBackend backend;
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        w.setBackend(&backend);
+        modbus::PollTarget t;
+        t.targetId = targetId;
+        t.connKey = listRow->endpoint;
+        t.slaveId = listRow->slaveId;
+        t.enabled = true;
+        t.spec = listRow->poll;      // 保持 40001×1：轮询区间锁死在地址 0
+        t.spec.intervalMs = 500;
+        backend.startPolling({t});
+        QTRY_VERIFY_WITH_TIMEOUT(
+            w.dataStore()->sample(targetId).has_value() && w.dataStore()->sample(targetId)->ok,
+            15000);
+
+        // 布防：写确认弹窗自动点"写入"（默认取消语义由 writeConfirmDefaultsCancel 另行锁定）。
+        // 注：QMessageBox 下 QDialog::accept() 的 done(0) 不等于 QMessageBox::Ok，必须点按钮
+        QTimer::singleShot(50, [] {
+            const auto tops = QApplication::topLevelWidgets();
+            for (QWidget* top : tops) {
+                auto* box = qobject_cast<QMessageBox*>(top);
+                if (box && box->objectName() == QStringLiteral("mbWriteConfirm")) {
+                    if (auto* okBtn = box->button(QMessageBox::Ok))
+                        okBtn->click();
+                    return;
+                }
+            }
+        });
+        auto* pt = tableByObjectName(&w, "mbPointTable");
+        QVERIFY(pt);
+        auto* pm = w.pointModel();
+        // 同清单视图：真实序列=单击落点后再双击（裸 mouseDClick 不进 doubleClicked 路径）
+        const QPoint pointCellPos =
+            pt->visualRect(pm->index(0, ModbusPointModel::ColDecimal)).center();
+        QTest::mouseClick(pt->viewport(), Qt::LeftButton, Qt::NoModifier, pointCellPos);
+        QTest::mouseDClick(pt->viewport(), Qt::LeftButton, Qt::NoModifier, pointCellPos);
+        auto* dlg = w.findChild<QDialog*>(QStringLiteral("mbWriteDialog"));
+        QVERIFY2(dlg, "双击数值行必须打开写弹窗 mbWriteDialog");
+        auto* addrSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbWriteAddr"));
+        auto* valueSpin = dlg->findChild<QSpinBox*>(QStringLiteral("mbWriteValue"));
+        QVERIFY(addrSpin && valueSpin);
+        QCOMPARE(addrSpin->minimum(), 0);          // 解锁：自由输入 0..65535
+        QCOMPARE(addrSpin->maximum(), 65535);
+        QCOMPARE(addrSpin->value(), 0);            // 便利：双击行预填该行地址
+        QCOMPARE(valueSpin->maximum(), 65535);     // 寄存器区 16 位值域
+        addrSpin->setValue(200);                   // 轮询区间（仅地址 0）之外
+        valueSpin->setValue(4321);
+        dlg->accept();
+
+        auto serverHoldingIs200 = [&server]() {
+            quint16 v = 0;
+            return server.data(QModbusDataUnit::HoldingRegisters, quint16(200), &v) && v == 4321;
+        };
+        {
+            qint64 waited = 0;
+            while (waited < 15000 && !serverHoldingIs200()) {
+                QTest::qWait(100);
+                waited += 100;
+            }
+        }
+        QVERIFY2(serverHoldingIs200(), qPrintable(QStringLiteral("写地址200未生效，日志: ")
+                                                  + pageLog.join(QLatin1Char('|'))));
+
+        // 线圈目标：写弹窗 0/1 钳保留（把目标记录改为线圈区后重刷新）
+        ModbusTargetStore store;
+        DeviceTargets coil;
+        coil.deviceId = endpoint.toStdString();
+        SlaveTarget st;
+        st.slaveId = 1;
+        st.poll.regType = QModbusDataUnit::Coils;
+        st.poll.count = 2;
+        coil.targets.push_back(st);
+        QVERIFY(store.save(coil));
+        w.setRegistry(nullptr);   // 触发重刷新（回退模式），清单行呈现线圈段
+        tv->selectRow(tm->rowIndexOfTarget(targetId));
+        const QPoint coilCellPos =
+            pt->visualRect(pm->index(0, ModbusPointModel::ColDecimal)).center();
+        QTest::mouseClick(pt->viewport(), Qt::LeftButton, Qt::NoModifier, coilCellPos);
+        QTest::mouseDClick(pt->viewport(), Qt::LeftButton, Qt::NoModifier, coilCellPos);
+        auto* dlg2 = w.findChild<QDialog*>(QStringLiteral("mbWriteDialog"));
+        QVERIFY2(dlg2, "线圈目标双击数值行同样开写弹窗");
+        auto* value2 = dlg2->findChild<QSpinBox*>(QStringLiteral("mbWriteValue"));
+        QVERIFY(value2);
+        QCOMPARE(value2->maximum(), 1);            // 线圈 0/1 钳
+        dlg2->reject();
+        QCoreApplication::processEvents();
+
+        backend.stopPolling();
+        backend.OnStop();
+        server.disconnectDevice();
+        w.hide();
+    }
+
+    // ── 终审 I-2：Sample.skippedCount 外露——落库时填入，Detail 列 >0 追加"跳过N" ──
+    void skippedCountSurfacesInDetailColumn()
+    {
+        QVariantMap a;
+        a.insert(QStringLiteral("ip"), QStringLiteral("10.0.0.8"));
+        a.insert(QStringLiteral("port"), 502);
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.0.0.8:502"), a));
+        const QString targetId = QStringLiteral("10.0.0.8:502#1");
+        ModbusTargetStore store;
+        ModbusDataStore data;
+        data.updatePoll(targetId, {1, 2}, 30, 5);   // 第四参=溢出跳过计数（透传调度器）
+        ModbusTargetListModel m(&store, &data);
+        QCOMPARE(m.refresh(), 1);
+        const QString withSkip = cellData(&m, 0, ModbusTargetListModel::ColDetail).toString();
+        QVERIFY2(withSkip.contains(QStringLiteral("耗时 30 ms")), qPrintable(withSkip));
+        QVERIFY2(withSkip.contains(QStringLiteral("跳过5")),
+                 qPrintable(QStringLiteral("Detail 列须追加跳过计数，实际: %1").arg(withSkip)));
+        data.updatePoll(targetId, {1, 2}, 30, 0);   // 0 = 不追加（无噪声）
+        m.syncSamples();
+        const QString clean = cellData(&m, 0, ModbusTargetListModel::ColDetail).toString();
+        QVERIFY2(!clean.contains(QStringLiteral("跳过")), qPrintable(clean));
+
+        // 后端透传口：未知目标恒 0、不崩（未轮询态）
+        ModbusBackend backend;
+        QCOMPARE(backend.skippedFor(QStringLiteral("ghost#1")), 0);
     }
 };
 

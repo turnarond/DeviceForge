@@ -210,9 +210,25 @@ private slots:
         comparePoll(decoded->targets[0].poll, QModbusDataUnit::HoldingRegisters, 0, 1, 1000);
     }
 
-    // ConfigStore 持久化 round-trip：save → load → allDeviceIds → remove
-    void saveLoadRemove()
+    // 终审 Minor②：全局约束 intervalMs≥500——解码低于下界一律钳起
+    // （迁移路径的钳制由 migrateLegacySlavesBackfills 的 slave:1=250→500 锁定）
+    void intervalMsClampedToGlobalFloor()
     {
+        QVariantMap item;
+        item.insert(QStringLiteral("slaveId"), 1);
+        item.insert(QStringLiteral("intervalMs"), 100);
+        QVariantList list;
+        list.append(item);
+        QVariantMap record;
+        record.insert(QStringLiteral("deviceId"), QStringLiteral("plc-clamp"));
+        record.insert(QStringLiteral("targets"), list);
+        const auto decoded = modbus::decodeDeviceTargets(record);
+        QVERIFY(decoded.has_value());
+        QCOMPARE(decoded->targets.at(0).poll.intervalMs, 500);
+    }
+
+    // ConfigStore 持久化 round-trip：save → load → allDeviceIds → remove
+    void saveLoadRemove()    {
         modbus::ModbusTargetStore store;
         modbus::DeviceTargets dt;
         dt.deviceId = "dev-9";
@@ -220,7 +236,9 @@ private slots:
         modbus::SlaveTarget t;
         t.slaveId = 3;
         t.enabled = true;
-        t.poll = {QModbusDataUnit::InputRegisters, 12, 4, 250};
+        // 终审 Minor②：全局约束 intervalMs≥500——旧值 250 已不可表示（解码钳至 500），
+        // round-trip 用例改用合法值 600
+        t.poll = {QModbusDataUnit::InputRegisters, 12, 4, 600};
         dt.targets.push_back(t);
 
         QVERIFY(store.save(dt));
@@ -229,7 +247,7 @@ private slots:
         QCOMPARE(got.deviceId, std::string("dev-9"));
         QCOMPARE(got.targets.size(), 1);
         QCOMPARE(got.targets[0].slaveId, 3);
-        comparePoll(got.targets[0].poll, QModbusDataUnit::InputRegisters, 12, 4, 250);
+        comparePoll(got.targets[0].poll, QModbusDataUnit::InputRegisters, 12, 4, 600);
 
         const auto ids = store.allDeviceIds();
         QCOMPARE(ids.size(), std::size_t(1));
@@ -263,6 +281,7 @@ private slots:
     void migrateLegacySlavesBackfills()
     {
         // 旧口径 regType 为下拉索引：0=保持寄存器、1=输入寄存器
+        // slave:1 行故意带非法小周期 250：终审 Minor② 全局约束钳至 500
         seedLegacySlaveRow(QStringLiteral("slave:1"), 0, 4, 8, 1, 250);
         seedLegacySlaveRow(QStringLiteral("slave:3"), 1, 0, 2, 3, 1000);
 
@@ -281,7 +300,7 @@ private slots:
         const auto* t1 = findTarget(out, 1);
         QVERIFY(t1 != nullptr);
         QCOMPARE(t1->enabled, true);
-        comparePoll(t1->poll, QModbusDataUnit::HoldingRegisters, 4, 8, 250);
+        comparePoll(t1->poll, QModbusDataUnit::HoldingRegisters, 4, 8, 500);
         const auto* t3 = findTarget(out, 3);
         QVERIFY(t3 != nullptr);
         QCOMPARE(t3->enabled, true);

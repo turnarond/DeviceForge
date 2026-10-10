@@ -10,11 +10,6 @@
 #include <QVector>
 #include <functional>
 
-namespace modbus {
-class ModbusDataStore;
-class ModbusTargetStore;
-}
-
 // 界面下拉索引 → QModbusDataUnit 寄存器类型映射
 // （与 ModbusWidget 下拉顺序一致：Holding/Input/Coils/Discrete Inputs）
 inline QModbusDataUnit::RegisterType registerTypeFromComboIndex(int idx)
@@ -46,9 +41,11 @@ inline int maxReadCountForType(QModbusDataUnit::RegisterType type)
 // 250ms 驱动 tick → 派发 QModbusTcpClient 读(0x03/0x02/0x01/0x02)/写(0x06/0x05)
 // → 响应归位 scheduler.onResult + 结果回调。
 // 轮2 审查 I-1：本类不写 ModbusDataStore——store 单写者 = Widget 侧
-// handleBackendResult（先读 prev 再落库，↑/↓ 变化高亮依赖旧值）；
-// dataStore() 仅透传注入句柄。轮2 审查 I-2：轮询态 readOnce 手工派发经
-// scheduler.onDispatched 记账，与 onResult 三路（reply/设备错误/failDispatch）对称。
+// handleBackendResult（先读 prev 再落库，↑/↓ 变化高亮依赖旧值）；终审 I-5 后
+// 后端连 dataStore 注入句柄都不再持有（死参与透传一并删除）。轮2 审查 I-2：轮询态写路径经
+// scheduler.enqueueWrite 记账，readOnce 手工派发经 scheduler.onDispatched 记账，
+// 与 onResult 三路（reply/设备错误/failDispatch）对称；终审 I-4：写队列满时
+// enqueueWrite 拒绝入队，本类转一次错误回调+日志（"操作过多，请稍后"）。
 // 结果交付携带 targetId（deviceId#slaveId）精确归位（裁决 1）。
 class ModbusBackend : public ToolBackend {
 public:
@@ -77,18 +74,19 @@ public:
     void setLogCallback(LogCallback cb) { m_logCb = std::move(cb); }
     void setResultCallback(ResultCallback cb) { m_resultCb = std::move(cb); }
 
-    // ── 简报任务 4 接口块（供 Widget 驱动）──
-    // 全量重建轮询目标集并启动驱动 timer（重复调用 = 先停后起，调度器 reset 清零在途/队列）
-    void startPolling(const QVector<modbus::PollTarget>&, modbus::ModbusTargetStore*,
-                      modbus::ModbusDataStore*);
+    // ── 简报任务 4 接口块（供 Widget 驱动；终审 I-5 死参清理）──
+    // 全量重建轮询目标集并启动驱动 timer（重复调用 = 先停后起，调度器 reset 清零在途/队列）。
+    // 终审 I-5：旧签名的 store/data 两参从未参与调度与落库（store 单写者=Widget，裁决 1 后
+    // 结果按 targetId 精确交付），已删除——dataStore 归 Widget 所有，后端不再持有句柄。
+    void startPolling(const QVector<modbus::PollTarget>&);
     // 停 tick → 清队列/在途/手动读挂起 → 逐 client 先断信号后关（死锁规避口径）
     void stopPolling();
     // 立即读取一次选中目标：轮询中挂入待办（≤250ms 补发）；已停轮询则一次性直发
     void requestReadOnce(const QString& targetId);
-    // 用户写：转 scheduler.enqueueWrite（插队首永不丢弃）；已停轮询则一次性直发
+    // 用户写：转 scheduler.enqueueWrite（插队首，队列满则拒绝并经错误通道提示一次）
     void enqueueWriteTarget(const QString& targetId, int addr, quint16 value);
-    // 注入的数据表句柄透传（Widget 两模型读取；后端不写库——轮2 审查 I-1 单写者口径）
-    modbus::ModbusDataStore* dataStore() { return m_data; }
+    // 某目标的轮询溢出丢弃计数透传（终审 I-2：Widget 单写者落库时填入 Sample.skippedCount）
+    int skippedFor(const QString& targetId) const { return m_scheduler.skippedCount(targetId); }
     // 目标所属连接是否处于退避等待（裁决 5"退避黄"判定；未轮询恒 false）
     bool inTargetBackoff(const QString& targetId) const;
     bool isPolling() const { return m_polling; }
@@ -121,14 +119,12 @@ private:
 
     modbus::ModbusScheduler m_scheduler;
     QTimer* m_driver = nullptr;                    // 固定 250ms 驱动节拍（见 startPolling 注释）
-    QElapsedTimer m_clock;                         // 调度器/dataStore 同源的单调时钟
+    QElapsedTimer m_clock;                         // 与调度器/退避门限同源的单调时钟
     QHash<QString, modbus::PollTarget> m_pollById; // targetId → 目标（readOnce/退避查询）
     QHash<QString, QModbusTcpClient*> m_clients;   // connKey(ip:port) → 连接池
     QHash<QString, ActiveRequest> m_active;        // connKey → 在途（单连接一在途）
     QHash<QString, modbus::Dispatch> m_pendingSend;// connKey → 等连接就绪的待发派发
     QSet<QString> m_readOnce;                      // 待补发的立即读取 targetId
-    modbus::ModbusDataStore* m_data = nullptr;     // 仅注入句柄透传：落库归 Widget 单写者（轮2 I-1）
-    modbus::ModbusTargetStore* m_store = nullptr;  // 简报接口保留（配置热重载预留位）
     bool m_polling = false;
     LogCallback m_logCb;
     ResultCallback m_resultCb;

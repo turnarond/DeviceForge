@@ -1,5 +1,7 @@
 #include <QtTest/QtTest>
 
+#include <QDateTime>
+
 #include "tools/ModbusTool/ModbusDataStore.h"
 #include "tools/ModbusTool/ModbusScheduler.h"
 
@@ -75,7 +77,7 @@ private slots:
     {
         ModbusScheduler s;
         s.reset({ makeTarget(QStringLiteral("dev"), 1, QStringLiteral("connA"), 500) }, 0);
-        s.enqueueWrite(QStringLiteral("dev#1"), 7, quint16(0x1234));
+        QVERIFY(s.enqueueWrite(QStringLiteral("dev#1"), 7, quint16(0x1234)));   // 队列有空位必受理（I-4）
 
         const auto d = s.onTick(0);
         QCOMPARE(d.size(), 1);
@@ -98,7 +100,7 @@ private slots:
         const auto d0 = s.onTick(0);              // 入队 10 > cap 8：最旧两条轮询被弹
         QCOMPARE(d0.size(), 1);
         QCOMPARE(d0.first().kind, Kind::Poll);
-        s.enqueueWrite(QStringLiteral("dev#4"), 99, quint16(1));   // 写插队首
+        QVERIFY(s.enqueueWrite(QStringLiteral("dev#4"), 99, quint16(1)));   // 队列 7<8：写插队首
 
         QCOMPARE(s.onTick(500).size(), 0);        // 在途：只入队溢出，不派发
         QVERIFY(s.skippedCount(QStringLiteral("dev#1")) > 0);      // 最旧轮询确有丢弃
@@ -216,39 +218,88 @@ private slots:
         QCOMPARE(s.nextWakeMs(w3), w3 + 1000);
     }
 
-    // 数据表：updatePoll 写入后读回全字段；clear 后即消失
+    // 终审 I-4（规格 §3"满则报错"）：连接队列已达容量上限 kQueueCap 时写项不入队、
+    // 返回 false 交调用方提示；未满受理、未知目标同样 false（不入队）。
+    void writeRejectedWhenConnQueueFullBackpressure()
+    {
+        ModbusScheduler s;
+        QVector<PollTarget> targets;
+        for (int i = 1; i <= 10; ++i)
+            targets << makeTarget(QStringLiteral("dev"), i, QStringLiteral("connA"), 500);
+        s.reset(targets, 0);
+
+        QCOMPARE(s.onTick(0).size(), 1);           // 入队 10 溢出弹 2、弹队首派发 → 队列 7、在途
+        QVERIFY(!s.enqueueWrite(QStringLiteral("dev#13"), 1, quint16(0)));   // 未知目标：false
+        QVERIFY(s.enqueueWrite(QStringLiteral("dev#4"), 5, quint16(1)));     // 7→8 受理
+        QVERIFY(!s.enqueueWrite(QStringLiteral("dev#5"), 6, quint16(1)));    // 8==cap：拒绝、不入队
+
+        s.onResult(QStringLiteral("connA"), Outcome::Ok, 10);
+        const auto d1 = s.onTick(10);
+        QCOMPARE(d1.size(), 1);                    // 在途归位后弹队首
+        QCOMPARE(d1.first().kind, Kind::Write);    // 被受理的写仍在队首
+        QCOMPARE(d1.first().writeAddr, 5);
+        s.onResult(QStringLiteral("connA"), Outcome::Ok, 10);
+
+        // 清空剩余队列逐项排干：被拒绝的写（addr=6）绝不出现在任何派发中
+        bool sawRejectedWrite = false;
+        int guard = 0;
+        for (;;) {
+            const auto d = s.onTick(20);
+            if (d.isEmpty()) break;
+            for (const Dispatch& item : d)
+                if (item.kind == Kind::Write && item.writeAddr == 6) sawRejectedWrite = true;
+            s.onResult(QStringLiteral("connA"), Outcome::Ok, 20);
+            QVERIFY2(++guard < 64, "排干循环失控");
+        }
+        QVERIFY2(!sawRejectedWrite, "背压拒绝的写项不得进入派发队列");
+    }
+
+    // 数据表：updatePoll 写入后读回全字段；clear 后即消失。
+    // 终审 I-3 契约就实（新口径）：第三参 elapsedMs = 本轮耗时；
+    // timestampMs = 最后成功落库时刻（落库单写者=Widget 调用点，store 记真实墙钟）。
     void storeUpdateAndReadback()
     {
         ModbusDataStore store;
         const QVector<quint16> values{ 11, 22, 33 };
+        const qint64 wallBefore = QDateTime::currentMSecsSinceEpoch();
         store.updatePoll(QStringLiteral("dev#1"), values, 1000);
+        const qint64 wallAfter = QDateTime::currentMSecsSinceEpoch();
 
         const auto smp = store.sample(QStringLiteral("dev#1"));
         QVERIFY(smp.has_value());
         QCOMPARE(smp->values, values);
         QVERIFY(smp->ok);
         QVERIFY(smp->error.isEmpty());
-        QCOMPARE(smp->timestampMs, qint64(1000));
-        QCOMPARE(smp->elapsedMs, qint64(1000));
+        QCOMPARE(smp->elapsedMs, qint64(1000));      // 耗时原样记账
+        QVERIFY2(smp->timestampMs >= wallBefore && smp->timestampMs <= wallAfter,
+                 qPrintable(QStringLiteral("timestampMs 应为最后成功落库时刻（墙钟区间 [%1,%2]，实际 %3）")
+                                .arg(wallBefore).arg(wallAfter).arg(smp->timestampMs)));
+        QCOMPARE(smp->skippedCount, 0);              // 终审 I-2：缺省无跳过
+
+        // 终审 I-2：落库单写者（Widget/环回代位）填调度器透传的溢出跳过计数
+        store.updatePoll(QStringLiteral("dev#2"), values, 900, 4);
+        QCOMPARE(store.sample(QStringLiteral("dev#2"))->skippedCount, 4);
 
         store.clear(QStringLiteral("dev#1"));
         QVERIFY(!store.sample(QStringLiteral("dev#1")).has_value());
         QVERIFY(!store.sample(QStringLiteral("不存在")).has_value());
     }
 
-    // 数据表：updateError 保留旧 values 与旧 timestampMs（及旧 ok 语义），只更新 error/elapsedMs
+    // 数据表：updateError 保留旧 values 与旧 timestampMs（及旧 ok 语义），只更新 error 与
+    // 本轮耗时 elapsedMs（终审 I-3 新口径：elapsedMs 非时钟）
     void storeErrorKeepsOldSampleTimestamp()
     {
         ModbusDataStore store;
         const QVector<quint16> values{ 44, 55 };
         store.updatePoll(QStringLiteral("dev#1"), values, 1000);
+        const qint64 savedTs = store.sample(QStringLiteral("dev#1"))->timestampMs;
         store.updateError(QStringLiteral("dev#1"), QStringLiteral("通讯超时"), 5000);
 
         const auto smp = store.sample(QStringLiteral("dev#1"));
         QVERIFY(smp.has_value());
         QCOMPARE(smp->values, values);            // 旧数据保留供 UI 显示
-        QCOMPARE(smp->timestampMs, qint64(1000)); // 最后成功时刻不被错误覆盖
-        QCOMPARE(smp->elapsedMs, qint64(5000));   // 时间字段更新到本次响应
+        QCOMPARE(smp->timestampMs, savedTs);      // 最后成功落库时刻不被错误覆盖
+        QCOMPARE(smp->elapsedMs, qint64(5000));   // 耗时字段更新到本次响应
         QCOMPARE(smp->error, QStringLiteral("通讯超时"));
 
         store.updatePoll(QStringLiteral("dev#1"), values, 6000);   // 成功后 error 清空

@@ -18,11 +18,9 @@
 #include "tools/ModbusTool/ModbusBackend.h"
 #include "tools/ModbusTool/ModbusDataStore.h"
 #include "tools/ModbusTool/ModbusScheduler.h"
-#include "tools/ModbusTool/ModbusTargetStore.h"
 #include "tools/ModbusTool/ModbusTargetTypes.h"
 
 using modbus::ModbusDataStore;
-using modbus::ModbusTargetStore;
 using modbus::PollTarget;
 
 namespace {
@@ -50,7 +48,6 @@ private:
     QModbusTcpServer m_server;
     ModbusBackend m_backend;
     ModbusDataStore m_data;
-    ModbusTargetStore m_store;
     QString m_connKey;
     quint16 m_listenPort = 0;
     QStringList m_observedIds;   // 裁决 1：结果交付应恒携带精确 targetId
@@ -211,8 +208,10 @@ private slots:
         const PollTarget t = makeTarget(QStringLiteral("plc"), 1, m_connKey,
                                         QModbusDataUnit::HoldingRegisters, 0, 2, 500);
         m_observedIds.clear();
-        m_backend.startPolling({t}, &m_store, &m_data);
-        QCOMPARE(m_backend.dataStore(), &m_data);
+        m_backend.startPolling({t});
+        // 终审 I-5：旧 `QCOMPARE(backend.dataStore(), &m_data)` 为自证断言（注入句柄
+        // 回读注入值），随 startPolling 死参一并删除；真实数据流证明由后续
+        // "回调→单写者落库→sampleOk" 链路断言承担（样本确实到达 m_data）。
 
         // 首个读取用带诊断的等待（失败时给出 store 内错误文本；其余断言保持 QTRY）
         qint64 waitedMs = 0;
@@ -243,7 +242,7 @@ private slots:
     {
         const PollTarget t = makeTarget(QStringLiteral("plc"), 1, m_connKey,
                                         QModbusDataUnit::Coils, 0, 4, 500);
-        m_backend.startPolling({t}, &m_store, &m_data);
+        m_backend.startPolling({t});
         qint64 waitedMs = 0;
         // 位区读回数量由 Qt 按字节打包（实测 4 线圈回 8 值），只约束"至少覆盖请求位数"
         while (waitedMs < 10000 && !sampleCoilsOk(t.targetId, 4)) {
@@ -266,7 +265,7 @@ private slots:
     {
         const PollTarget t = makeTarget(QStringLiteral("plc"), 1, m_connKey,
                                         QModbusDataUnit::HoldingRegisters, 0, 1, 500);
-        m_backend.startPolling({t}, &m_store, &m_data);
+        m_backend.startPolling({t});
         QTRY_VERIFY_WITH_TIMEOUT(sampleOk(t.targetId, 1, 1234), 10000);
 
         // 掉线：错误文本入 store（末值保留由 tst_modbus_scheduler::storeErrorKeeps… 锁定；
@@ -309,7 +308,7 @@ private slots:
         const QString fakeKey = QStringLiteral("127.0.0.1:%1").arg(port);
         const PollTarget t = makeTarget(QStringLiteral("fake"), 1, fakeKey,
                                         QModbusDataUnit::HoldingRegisters, 0, 1, 500);
-        m_backend.startPolling({t}, &m_store, &m_data);
+        m_backend.startPolling({t});
 
         // ① 首个到期 tick 派发周期读 P1 → 应答 111（基线送达）
         QTRY_COMPARE_WITH_TIMEOUT(m_plcRequests.size(), 1, 5000);

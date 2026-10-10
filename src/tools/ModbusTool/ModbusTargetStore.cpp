@@ -57,7 +57,8 @@ QVector<modbus::SlaveTarget> parseLegacyRows(const QList<QVariantMap>& rows)
         target.poll.count = count > 0 ? count : 1;
         const QVariant intervalValue = row.value(QStringLiteral("intervalMs"));
         const int intervalMs = intervalValue.isValid() ? intervalValue.toInt() : 1000;
-        target.poll.intervalMs = intervalMs > 0 ? intervalMs : 1000;
+        // 终审 Minor②：全局约束 intervalMs ≥ 500，旧行低于下界一律钳起
+        target.poll.intervalMs = intervalMs > 0 ? qMax(500, intervalMs) : 1000;
         targets.push_back(target);
     }
     return targets;

@@ -1,9 +1,11 @@
 #pragma once
 
 // v2.12 MODBUS 重构 Task 2：轮询样本内存数据表（namespace modbus，纯内存、非线程安全，
-// GUI 线程独占）。时间语义：elapsedMs 参数与调度器 nowMs 同源的单调时钟（毫秒），
-// updatePoll 以它记 timestampMs（最后成功时刻）；updateError 保留旧 values/timestampMs/ok，
-// 只更新 error 与 elapsedMs——UI 据此可显示末次已知值并叠加通讯异常标注。
+// GUI 线程独占）。时间契约（终审 I-3 就实）：updatePoll/updateError 第三参 elapsedMs
+// = 本轮耗时（毫秒，非时钟）；Sample.timestampMs = 最后成功落库时刻——落库单写者是
+// Widget 侧 handleBackendResult（规格 §3/裁决 1），updatePoll 在该调用点以真实墙钟记录，
+// updateError 保留旧 values/timestampMs/ok，只更新 error 与耗时——UI 据此可显示
+// 末次已知值并叠加通讯异常标注。
 
 #include <QHash>
 #include <QString>
@@ -13,21 +15,26 @@
 
 namespace modbus {
 
-// 单目标最近一次观测：寄存器值 + 时刻 + 错误 + 成功标志
+// 单目标最近一次观测：寄存器值 + 最后成功落库时刻 + 本轮耗时 + 错误 + 成功标志
 struct Sample {
     QVector<quint16> values;
-    qint64 timestampMs = 0;
-    qint64 elapsedMs = 0;
+    qint64 timestampMs = 0;   // 最后成功落库时刻（墙钟毫秒，updatePoll 落库点记录）
+    qint64 elapsedMs = 0;     // 最近一轮耗时（毫秒）
     QString error;
     bool ok = false;
+    // 终审 I-2（规格 §2.3 兑现）：轮询溢出跳过累计（调度器计数，落库时由单写者填入）
+    int skippedCount = 0;
 };
 
 class ModbusDataStore {
 public:
-    // 轮询成功：整条覆盖 values，ok 置真、清 error，timestampMs/elapsedMs 记本次时钟
-    void updatePoll(const QString& targetId, const QVector<quint16>& values, qint64 elapsedMs);
+    // 轮询成功：整条覆盖 values，ok 置真、清 error；elapsedMs=本轮耗时，
+    // timestampMs 记本次落库时刻（真实墙钟）；skippedCount=调度器溢出计数透传（I-2）
+    void updatePoll(const QString& targetId, const QVector<quint16>& values, qint64 elapsedMs,
+                    int skippedCount = 0);
 
-    // 轮询/写失败：保留旧 values/timestampMs/ok；无旧档则新建空值档（ok=false）
+    // 轮询/写失败：保留旧 values/timestampMs/ok；无旧档则新建空值档（ok=false）；
+    // elapsedMs=本轮耗时
     void updateError(const QString& targetId, const QString& err, qint64 elapsedMs);
 
     // 读回；未知目标返回 nullopt

@@ -204,3 +204,12 @@ ModbusDataStore* dataStore();                        // Widget 读取用于两�
 - **任务 4**：`ResultCallback` 首参改 `const QString& targetId`（裁决 1，废弃 ip 语义）；`setSchedulerCallbacks()` 收为私有；新增 `inTargetBackoff` / `isPolling`；驱动 timer 固定 250ms（简报允许的最简口径，`nextWakeMs` 动态唤醒未实施）；`toolVersion` 2.1.0→2.2.0；根 `CMakeLists.txt` 补 `ModbusScheduler.cpp`（裁决 7）；`setupModbusClusterTab` 注入 registry + `onToolStart` 一次性 `migrateLegacySlaves`（裁决 7）
 - **环回口径**：`QModbusTcpServer` 无公开 listen/端口 getter——QTcpServer 探测空闲端口后让渡（"127.0.0.1:0"等价）；简报 `server.close()` 为 protected，公开等价 `disconnectDevice()`；多从站仅调度器层覆盖（简报原文），环回补线圈 0x05 单例
 - **回归补充**：`tst_task_center_e2e::modbusEndpointProfileRoutingUnaffected` 实测确认 `TaskDeviceOutcome.address` 为 v2.11"首端点展示"口径（modbus 端点置首时显示 :502），与部署/命令路由无关，断言以路由完成为准
+
+## 实施勘误（终审修复波 2026-10-11 追加）
+
+整分支终审（1 Critical + 5 Important）补齐与清理，权威明细见规格 §8.5：
+
+- **任务 3 漏步补齐（Critical）**：§4 线框"编辑弹窗含端口/从站/段/周期/enabled"从未分配到任务 1-4 步骤——终审波落地 `mbTargetEditor`（`mbEditTarget` 按钮/清单行双击入口）与 `mbRemoveTarget`；从站号改动=追加第二从站条目；保存全量重写记录、指纹自动重启调度；写对话框 `mbWriteDialog` 地址 0..65535 自由输入（旧 `QInputDialog` 锁 `startAddr+row` 口径作废，双击仅预填；线圈 0/1 钳保留）
+- **任务 2 接口块修订**：`enqueueWrite` 返回 `bool`（§3"满则报错"背压：达 `kQueueCap` 不入队）；`updatePoll` 增默认参 `skippedCount`；`Sample.timestampMs` 语义=最后成功落库时刻（墙钟，落库单写者调用点记录），`elapsedMs` 一律=本轮耗时（契约就实，未新增时钟参数）
+- **任务 4 接口块作废项**：`startPolling(targets, store, data)` 收为 `startPolling(targets)`；`ModbusDataStore* dataStore()` 透传删除（dataStore 归 Widget 所有）；环回 `QCOMPARE(dataStore(),&m_data)` 自证断言删除，改以"回调→单写者落库→样本比对"证明真实数据流；新增 `skippedFor(targetId)` 调度器透传
+- **全局约束落地小修**：`decodeDeviceTargets`/`parseLegacyRows` intervalMs 钳下界 500（旧测试 250 值随之调整）；`applyPortEdit` 只改首个 modbus 端点；`.gitignore` 补 `build_mb/`

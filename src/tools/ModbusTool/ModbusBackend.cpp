@@ -3,8 +3,6 @@
 // 线程口径：本类全部 IO 与回调在 GUI 线程（规格 §1 规模 B）；ServiceTask 壳仅维持
 // 生命周期一致性，svc() 不触碰任何 Qt 对象。
 #include "ModbusBackend.h"
-#include "ModbusDataStore.h"
-#include "ModbusTargetStore.h"
 
 #include <QDebug>
 #include <QLatin1Char>
@@ -79,13 +77,11 @@ void ModbusBackend::applyConfig(const lwserverbase::config::ConfigValue& /*confi
 
 // ── 轮询生命周期 ────────────────────────────────────────────────────
 
-void ModbusBackend::startPolling(const QVector<modbus::PollTarget>& targets,
-                                 modbus::ModbusTargetStore* store,
-                                 modbus::ModbusDataStore* data)
+void ModbusBackend::startPolling(const QVector<modbus::PollTarget>& targets)
 {
     stopPolling();   // 重复调用 = 重配目标集（调度器 reset 语义：在途/队列/退避清零）
-    m_store = store;
-    m_data = data;
+                     // 终审 I-5：旧签名 store/data 死参删除——落库归 Widget 单写者（轮2 I-1），
+                     // 后端不再持有任何注入句柄
 
     m_pollById.clear();
     QVector<modbus::PollTarget> valid;
@@ -282,8 +278,17 @@ void ModbusBackend::requestReadOnce(const QString& targetId)
 void ModbusBackend::enqueueWriteTarget(const QString& targetId, int addr, quint16 value)
 {
     if (m_polling) {
-        m_scheduler.enqueueWrite(targetId, addr, value);   // 插队首永不丢弃（规格 §3）；
-        return;                                            // 未知目标由调度器忽略
+        // 插队首永不丢弃（规格 §3）；终审 I-4"满则报错"：调度器拒绝入队
+        // （队列达容量上限/目标未知）→ 转一次错误回调 + 日志，UI 经既有错误通道
+        // 提示一次，不新增风暴、不静默吞动作
+        if (m_scheduler.enqueueWrite(targetId, addr, value))
+            return;
+        const QString err = m_pollById.contains(targetId)
+            ? QStringLiteral("操作过多，请稍后（写请求超出连接待发队列上限）")
+            : QStringLiteral("写入丢弃：未知目标 %1（轮询中）").arg(targetId);
+        if (m_resultCb) m_resultCb(targetId, {}, 0, err);
+        if (m_logCb) m_logCb(err.toStdString());
+        return;
     }
     const auto it = m_pollById.constFind(targetId);
     if (it == m_pollById.constEnd()) {

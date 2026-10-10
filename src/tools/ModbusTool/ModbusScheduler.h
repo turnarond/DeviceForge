@@ -59,8 +59,11 @@ public:
     // ②每个空闲、非空、过门限的连接弹队首进入返回值并置在途
     QVector<Dispatch> onTick(qint64 nowMs);
 
-    // 用户写插该连接队首：永不丢弃、不计入 skippedCount；targetId 未知则忽略
-    void enqueueWrite(const QString& targetId, int addr, quint16 value);
+    // 用户写插该连接队首：写项永不丢弃、不计入 skippedCount（规格 §3）。
+    // 终审 I-4（§3"满则报错"落地）：入队会使该连接队列超容量上限 kQueueCap 时
+    // 不入队、返回 false（由调用方转一次错误提示，不静默吞动作）；
+    // targetId 未知同样不入队返回 false。成功入队返回 true。
+    bool enqueueWrite(const QString& targetId, int addr, quint16 value);
 
     // 标记该连接在途（onTick 弹出时已自动置位；驱动侧重复调用幂等）
     void onDispatched(const QString& connKey);
