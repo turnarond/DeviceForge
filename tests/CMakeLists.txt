@@ -747,3 +747,98 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
+
+# --- MODBUS 目标数据模型、持久化与旧配置迁移测试（v2.12 Task 1）---
+# 编入产品源码 ModbusTargetStore.cpp（纯头文件数据模型 ModbusTargetTypes.h 随含）+
+#     ConfigStore.cpp（SQLite 持久化）+ DeviceRegistry/Codec（迁移读取设备档案端点）；
+#     ModbusTargetStore.cpp 经 ModbusBackend.h 复用寄存器类型映射，需链 SerialBus/lwserverbase。
+add_executable(tst_modbus_target_store
+    modbus/tst_modbus_target_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_modbus_target_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_modbus_target_store PRIVATE
+    Qt6::Core Qt6::SerialBus Qt6::Sql Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_target_store COMMAND tst_modbus_target_store)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_target_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- MODBUS 轮询调度器 + 内存数据表纯逻辑测试（v2.12 Task 2）---
+# 仿 tst_ws_event_types 注册块：假时钟经参数注入、派发经返回值，无 IO 无事件循环；
+# 编入产品源码 ModbusScheduler.cpp/ModbusDataStore.cpp。ModbusTargetTypes.h 引用
+# QModbusDataUnit（RegisterType 枚举来自 SerialBus 头），故在 Core/Test 之外加链 SerialBus。
+add_executable(tst_modbus_scheduler
+    modbus/tst_modbus_scheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+)
+target_include_directories(tst_modbus_scheduler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_modbus_scheduler PRIVATE
+    Qt6::Core Qt6::SerialBus Qt6::Test
+)
+add_test(NAME tst_modbus_scheduler COMMAND tst_modbus_scheduler)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_scheduler PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- MODBUS 双栏页面布局回归（v2.12 Task 3）---
+# 仿 tst_ws_page_layout 注册块（Widget 组装层直测）：编入 ModbusWidget/Backend 与两视图模型
+# 及其数据源；SerialBus（QModbusDataUnit/QModbusTcpClient）+ lwserverbase（ServiceTask）
+# 链接闭包沿用既有 Modbus 后端与 ws 块口径，Sql 覆盖 ConfigStore/DeviceRegistry。
+add_executable(tst_modbus_page
+    modbus/tst_modbus_page.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetListModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusPointModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusTargetStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/framework/ToolWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+)
+target_include_directories(tst_modbus_page PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_modbus_page PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::SerialBus Qt6::Sql Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_page COMMAND tst_modbus_page)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_page PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- MODBUS 本机环回集成（v2.12 Task 4）：QModbusTcpServer 真轮询/写生效/掉线恢复 ---
+# 编入产品源码 ModbusBackend.cpp（调度器驱动的传输执行器）+ ModbusScheduler.cpp +
+#     ModbusDataStore.cpp；QModbusTcpClient/Server 经 SerialBus，ServiceTask 壳经
+#     lwserverbase（含 lwlog 引用）；无 Widget/QPA，GUILESS 事件循环即可。
+add_executable(tst_modbus_loopback
+    modbus/tst_modbus_loopback.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ModbusTool/ModbusDataStore.cpp
+)
+target_include_directories(tst_modbus_loopback PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_modbus_loopback PRIVATE
+    Qt6::Core Qt6::Network Qt6::SerialBus Qt6::Test
+    lwserverbase
+)
+add_test(NAME tst_modbus_loopback COMMAND tst_modbus_loopback)
+if(_qt_bin_dir)
+    set_tests_properties(tst_modbus_loopback PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()

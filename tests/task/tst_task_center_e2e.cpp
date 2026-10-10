@@ -943,6 +943,75 @@ private slots:
         QCOMPARE(fixture->uploadsFor(QStringLiteral("10.0.0.21")).size(), std::size_t{0});
         QVERIFY(fixture->executedCommands(QStringLiteral("10.0.0.21")).empty());
     }
+
+    // §6 回归面（v2.12 MODBUS 重构）：含 modbus 端点档案不得影响任务中心部署/命令
+    // 路由——modbus 端点置于首位以检验端点选择顺序：deployRouteFor/isCommandProtocol
+    // 均不认 modbus，路由仍按 ftp/telnet 端点走完全链路。
+    // 注意：TaskDeviceOutcome.address 是 v2.11 既有"档案首端点 ip:port"展示口径
+    //（TaskExecutionEngine 逐字如此），与部署/命令路由选择无关——modbus 置首时
+    // 快照地址即 502，回归核心断言是 Succeeded + uploads/commands 走 ftp/telnet 链路。
+    void modbusEndpointProfileRoutingUnaffected()
+    {
+        DeviceProfile profile = makeProfile("device-mb", QStringLiteral("含MODBUS控制器"),
+                                            QStringLiteral("10.0.0.90"));
+        profile.endpoints.insert(profile.endpoints.begin(),
+                                 DeviceEndpoint{"modbus", "10.0.0.90", 502, std::string()});
+        DeviceRegistry registry;
+        QVERIFY(registry.save(profile));
+
+        TaskTemplateStore templates;
+        TaskTemplate task;
+        task.templateId = "template-e2e-modbus-routing";
+        task.name = "MODBUS 端点共存路由";
+        task.version = 1;
+        task.deviceIds = {"device-mb"};
+        task.steps = {
+            makeStep(TaskStepType::DeployFiles,
+                     deployParameters({{m_fileA, QStringLiteral("/apps/m.bin")}})),
+            makeStep(TaskStepType::RunCommands, commandParameters({QStringLiteral("c1")})),
+        };
+        QVERIFY2(templates.save(task), "含 modbus 端点档案的模板必须通过校验并落库");
+
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        const auto loaded = templates.load("template-e2e-modbus-routing");
+        QVERIFY(loaded.has_value());
+        const auto devices = resolveTargetsByIds(reloaded, *loaded);
+        QCOMPARE(devices.size(), std::size_t{1});
+
+        TaskExecutionRequest request;
+        request.task = *loaded;
+        request.devices = devices;
+        request.authResolver = [](const DeviceProfile&) {
+            AuthInfo auth;
+            auth.user = "e2e-user";
+            auth.password = "e2e-secret-勿落库";
+            return auth;
+        };
+
+        auto fixture = std::make_shared<E2EFixture>();
+        TaskRunStore runs;
+        CenterHarness harness(&runs);
+        TaskExecutionEngine engine(makeDependencies(fixture));
+
+        const std::string storeRunId = runs.begin(request);
+        QVERIFY(!storeRunId.empty());
+        harness.installActiveRun(storeRunId, request.devices);
+        QVERIFY(!engine.start(request, harness.makeCallbacks()).empty());
+        QTRY_VERIFY_WITH_TIMEOUT(harness.runProcessed(), 30000);
+
+        // 部署与命令照常完成（端点选择跳过 modbus，路由按 ftp ip:21 / telnet 执行）
+        QCOMPARE(harness.lastStatus(), TaskRunStatus::Succeeded);
+        QCOMPARE(fixture->uploadsFor(QStringLiteral("10.0.0.90")),
+                 (std::vector<QString>{QStringLiteral("/apps/m.bin")}));
+        QCOMPARE(fixture->executedCommands(QStringLiteral("10.0.0.90")),
+                 (std::vector<QString>{QStringLiteral("c1")}));
+        const auto records = runs.query({});
+        const TaskRunRecord* record = findRecord(records, storeRunId);
+        QVERIFY(record != nullptr);
+        QCOMPARE(record->status, TaskRunStatus::Succeeded);
+        QCOMPARE(record->devices[0].address, std::string("10.0.0.90:502"));  // 首端点展示口径（非路由）
+    }
 };
 
 QTEST_MAIN(TstTaskCenterE2E)

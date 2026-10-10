@@ -285,6 +285,9 @@ void DeviceForge::setupModbusClusterTab()
 
     widget->setBackend(backend.get());
     widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
+    // v2.12 MODBUS 重构（任务 4）：注入设备档案注册表——名称优先/端点唯一真源/端口写回；
+    // m_deviceRegistry 已在构造函数早于本 Tab 建立（见 setupUi 后的初始化段）
+    widget->setRegistry(m_deviceRegistry.get());
     widget->onToolStart();
     m_modbusBackend = backend;
     m_modbusWidget = widget;

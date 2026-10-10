@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-39 个测试目标，**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+39 个测试目标（v2.12 MODBUS 重构 +4 = 43），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -12,6 +12,10 @@
 | deploy/ | tst_deploy_loop | IDeployable 部署循环 | 协议化逻辑 |
 | file_source/ | tst_file_source | IFileSource Local 实现 | 文件系统 |
 | modbus/ | tst_modbus_mapping | Modbus 地址映射 | 纯逻辑 |
+| modbus/ | tst_modbus_target_store | ModbusTargetStore 持久化/迁移（临时库） | SQLite 持久化 |
+| modbus/ | tst_modbus_scheduler | ModbusScheduler/ModbusDataStore（假时钟） | 纯逻辑调度 |
+| modbus/ | tst_modbus_page | ModbusWidget 双栏 + 两视图模型 | QtTest UI 回归 |
+| modbus/ | tst_modbus_loopback | ModbusBackend↔QModbusTcpServer 本机环回 | 环回集成（GUILESS） |
 | opcua_encode/ | tst_opcua_encode(.c) / tst_opcua_loopback | open62541 编解码 | C 语言直测 |
 | panel_async/ | tst_panel_async | FileBrowserPanel 异步加载 | 异步竞态回归（代际令牌） |
 | remote_model/ sftp/ telnet/ theme/ | 各自 tst_* | 远程模型/SFTP 计划/Telnet 超时/QSS 像素 | 见各子目录 |
