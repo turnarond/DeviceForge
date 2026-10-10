@@ -167,6 +167,11 @@ void ModbusBackend::onTick()
         const QString& connKey = it->connKey;
         if (m_active.contains(connKey) || m_pendingSend.contains(connKey))
             continue;
+        // 轮2 审查 I-2：手工派发同样必须进调度器在途记账——旧缺陷是不置 inFlight，
+        // 下一到期 tick 的周期派发经 sendDispatch 顶掉 m_active 槽位，手工结果被
+        // 代际守卫静默丢弃。onResult（handleReply/handleDeviceError/failDispatch
+        // 三路）对称清除；轮询态写路径经 enqueueWrite 弹队首时调度器自动置位，无旁路。
+        m_scheduler.onDispatched(connKey);
         dispatchScheduled(makePollDispatch(*it));
         done.insert(targetId);
     }
@@ -321,8 +326,11 @@ void ModbusBackend::handleReply(const QString& connKey, QModbusReply* reply)
 
     if (reply->error() == QModbusDevice::NoError) {
         if (isPoll) {
+            // 轮2 审查 I-1：后端只回调不写 store——单写者=Widget 侧 handleBackendResult
+            // （先读 prev 再 updatePoll，↑/↓ 判定依赖旧值；旧双写在回调前预写 store，
+            // 队列后到时 prev==cur，高亮静默失效）。store 语义不变：过滤期隐藏行也经
+            // 回调入 store。
             const QVector<quint16> values = reply->result().values();
-            if (m_data) m_data->updatePoll(active.targetId, values, elapsed);
             if (m_resultCb) m_resultCb(active.targetId, values, elapsed, QString());
         } else {
             // 写成功：不改动数值档案（下轮轮询自然刷新），仅回执 + 复位退避
@@ -334,8 +342,7 @@ void ModbusBackend::handleReply(const QString& connKey, QModbusReply* reply)
     } else {
         const QString err = modbusErrorText(isPoll ? QStringLiteral("读取失败")
                                                    : QStringLiteral("写入失败"), reply);
-        if (m_data) m_data->updateError(active.targetId, err, elapsed);   // 末值保留（裁决 1 store 语义）
-        if (m_resultCb) m_resultCb(active.targetId, {}, elapsed, err);
+        if (m_resultCb) m_resultCb(active.targetId, {}, elapsed, err);   // store 由单写者落（I-1）
         if (m_logCb) m_logCb(err.toStdString());
         m_scheduler.onResult(connKey, outcomeForDeviceError(reply->error()), now);
     }
@@ -355,8 +362,7 @@ void ModbusBackend::handleDeviceError(const QString& connKey, QModbusDevice::Err
         m_active.erase(ait);
         const qint64 now = m_clock.elapsed();
         const QString err = QStringLiteral("Modbus 通讯错误: %1").arg(client->errorString());
-        if (m_data) m_data->updateError(active.targetId, err, now - active.startedMs);
-        if (m_resultCb) m_resultCb(active.targetId, {}, now - active.startedMs, err);
+        if (m_resultCb) m_resultCb(active.targetId, {}, now - active.startedMs, err);   // store 由单写者落（I-1）
         if (m_logCb) m_logCb(err.toStdString());
         m_scheduler.onResult(connKey, outcomeForDeviceError(error), now);
         return;
@@ -373,8 +379,7 @@ void ModbusBackend::handleDeviceError(const QString& connKey, QModbusDevice::Err
 void ModbusBackend::failDispatch(const modbus::Dispatch& d, const QString& errText)
 {
     const qint64 now = m_clock.isValid() ? m_clock.elapsed() : 0;
-    if (m_data) m_data->updateError(d.targetId, errText, 0);
-    if (m_resultCb) m_resultCb(d.targetId, {}, 0, errText);
+    if (m_resultCb) m_resultCb(d.targetId, {}, 0, errText);   // store 由单写者落（I-1）
     if (m_logCb) m_logCb(errText.toStdString());
     // 调度器侧：弹队首已置在途 → onResult 清在途并推进退避；未知连接为无害幂等
     m_scheduler.onResult(d.connKey, modbus::Outcome::CommError, now);

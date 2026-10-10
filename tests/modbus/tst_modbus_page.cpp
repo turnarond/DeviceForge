@@ -3,7 +3,8 @@
 // 逐寄存器 4xxxx 编址、十/十六进制切换、变化标记仅增量、两表列宽 Interactive、
 // 写确认默认取消（含 shouldConfirmWrite 纯函数）、搜索过滤纯函数、
 // 端口编辑写回档案（saveReplacing 同步全行）、异常保留末值置灰、2000 行宽容限性能、
-// 后端结果入 store 不受搜索过滤影响（轮1 发现 1）、逐寄存器可视区抑制与滚入补发（轮1 发现 2）。
+// 后端结果入 store 不受搜索过滤影响（轮1 发现 1）、逐寄存器可视区抑制与滚入补发（轮1 发现 2）、
+// 后端→队列→Widget→模型全链路变化高亮（轮2 发现 I-1，真实 QModbusTcpServer 环回）。
 #include <QtTest>
 
 #include <QApplication>
@@ -13,8 +14,10 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QModbusTcpServer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -24,6 +27,7 @@
 #include "config/ConfigStore.h"
 #include "device/DeviceProfile.h"
 #include "device/DeviceRegistry.h"
+#include "tools/ModbusTool/ModbusBackend.h"
 #include "tools/ModbusTool/ModbusDataStore.h"
 #include "tools/ModbusTool/ModbusPointModel.h"
 #include "tools/ModbusTool/ModbusTargetListModel.h"
@@ -688,6 +692,92 @@ private slots:
         ModbusTargetListModel m(&store, &data);
         m.setRegistry(&registry);          // 注入即触发 refresh
         QCOMPARE(m.rowCount(), 0);         // 空记录不合成"默认从站 1"展示行
+    }
+
+    // ── 审查发现 I-1（轮2）：生产链路"变化高亮"必须真实可达 ──────────────
+    // 缺陷形态：后端 handleReply 回调前先写 store，结果经队列后到时
+    // handleBackendResult 读到的 prev 已是新值 → applyUpdate(prev==cur) → ↑/↓ 恒缺失。
+    // 修法口径：store 归 Widget 侧单写者（先读 prev 再落库）。本例走
+    // 后端回调→QueuedConnection→widget→模型 全通路（真实 QModbusTcpServer 环回），
+    // 断言 ↑ 与 ↓ 顺次出现——旧双写实现下此断言必红。
+    void backendToWidgetChainMarksChangeArrows()
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        const quint16 port = probe.serverPort();
+        probe.close();
+
+        QModbusTcpServer server;
+        QModbusDataUnitMap map;
+        map.insert(QModbusDataUnit::HoldingRegisters,
+                   QModbusDataUnit(QModbusDataUnit::HoldingRegisters, 0, 4));
+        QVERIFY(server.setMap(map));
+        QVERIFY(server.setData(QModbusDataUnit::HoldingRegisters, quint16(0), quint16(100)));
+        server.setServerAddress(1);
+        server.setConnectionParameter(QModbusDevice::NetworkAddressParameter,
+                                      QStringLiteral("127.0.0.1"));
+        server.setConnectionParameter(QModbusDevice::NetworkPortParameter, int(port));
+        QVERIFY(server.connectDevice());
+
+        // device.list 回退模式：目标行身份 = "ip:port#1"（同 backendResultReaches…口径）
+        const QString endpoint = QStringLiteral("127.0.0.1:%1").arg(port);
+        const QString targetId = endpoint + QStringLiteral("#1");
+        QVariantMap row;
+        row.insert(QStringLiteral("ip"), QStringLiteral("127.0.0.1"));
+        row.insert(QStringLiteral("port"), int(port));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"), endpoint, row));
+
+        ModbusWidget w;
+        w.setRegistry(nullptr);
+        auto* tm = w.targetModel();
+        QCOMPARE(tm->allIndexOfTarget(targetId), 0);
+        const TargetRow* listRow = tm->rowByTargetId(targetId);
+        QVERIFY(listRow);
+        w.show();
+        QCoreApplication::processEvents();
+        auto* tv = tableByObjectName(&w, "mbTargetTable");
+        QVERIFY(tv);
+        tv->selectRow(0);   // → showTargetDetail：pointModel 挂上该目标（默认 40001×1）
+
+        ModbusBackend backend;
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        w.setBackend(&backend);   // 真实接线：结果经 QueuedConnection 投递 handleBackendResult
+
+        modbus::PollTarget t;
+        t.targetId = targetId;
+        t.connKey = listRow->endpoint;
+        t.slaveId = listRow->slaveId;
+        t.enabled = true;
+        t.spec = listRow->poll;
+        t.spec.intervalMs = 500;  // 仅加速周期，区/址/点数与清单行一致
+        backend.startPolling({t}, w.targetStore(), w.dataStore());
+
+        auto* pm = w.pointModel();
+        QCOMPARE(pm->targetId(), targetId);
+
+        // 首轮样本经全链路入 store；prev 空 → 基线无标记
+        QTRY_VERIFY_WITH_TIMEOUT(
+            w.dataStore()->sample(targetId).has_value()
+                && w.dataStore()->sample(targetId)->values.value(0) == 100,
+            15000);
+        QVERIFY2(cellData(pm, 0, ModbusPointModel::ColChanged).toString().isEmpty(),
+                 "首轮基线样本不得产生变化标记");
+
+        // 值上跳 → 下一轮全链路回调 → prev(100)/cur(200) 比对 → ↑
+        QVERIFY(server.setData(QModbusDataUnit::HoldingRegisters, quint16(0), quint16(200)));
+        QTRY_COMPARE_WITH_TIMEOUT(cellData(pm, 0, ModbusPointModel::ColChanged).toString(),
+                                  QStringLiteral("↑"), 10000);
+        QCOMPARE(cellData(pm, 0, ModbusPointModel::ColDecimal).toString(),
+                 QStringLiteral("200"));
+
+        // 值下跳 → ↓（双向锁定单写者 prev 有效性）
+        QVERIFY(server.setData(QModbusDataUnit::HoldingRegisters, quint16(0), quint16(50)));
+        QTRY_COMPARE_WITH_TIMEOUT(cellData(pm, 0, ModbusPointModel::ColChanged).toString(),
+                                  QStringLiteral("↓"), 10000);
+
+        backend.stopPolling();
+        backend.OnStop();
+        w.hide();
     }
 };
 

@@ -44,7 +44,11 @@ inline int maxReadCountForType(QModbusDataUnit::RegisterType type)
 // 旧"全局广播读 + 每客户端 1 挂起槽"已废除：目标集/队列/退避全在纯逻辑
 // ModbusScheduler（入队即推进 nextDueMs，裁决 2），本类只做
 // 250ms 驱动 tick → 派发 QModbusTcpClient 读(0x03/0x02/0x01/0x02)/写(0x06/0x05)
-// → 响应归位 ModbusDataStore + scheduler.onResult + 结果回调。
+// → 响应归位 scheduler.onResult + 结果回调。
+// 轮2 审查 I-1：本类不写 ModbusDataStore——store 单写者 = Widget 侧
+// handleBackendResult（先读 prev 再落库，↑/↓ 变化高亮依赖旧值）；
+// dataStore() 仅透传注入句柄。轮2 审查 I-2：轮询态 readOnce 手工派发经
+// scheduler.onDispatched 记账，与 onResult 三路（reply/设备错误/failDispatch）对称。
 // 结果交付携带 targetId（deviceId#slaveId）精确归位（裁决 1）。
 class ModbusBackend : public ToolBackend {
 public:
@@ -83,14 +87,15 @@ public:
     void requestReadOnce(const QString& targetId);
     // 用户写：转 scheduler.enqueueWrite（插队首永不丢弃）；已停轮询则一次性直发
     void enqueueWriteTarget(const QString& targetId, int addr, quint16 value);
-    // 注入的数据表句柄（Widget 两模型读取；未 startPolling 为空）
+    // 注入的数据表句柄透传（Widget 两模型读取；后端不写库——轮2 审查 I-1 单写者口径）
     modbus::ModbusDataStore* dataStore() { return m_data; }
     // 目标所属连接是否处于退避等待（裁决 5"退避黄"判定；未轮询恒 false）
     bool inTargetBackoff(const QString& targetId) const;
     bool isPolling() const { return m_polling; }
 
 private:
-    // 内部接线：驱动 timer → onTick（派发→send 与 reply→onResult+dataStore 的挂接点；
+    // 内部接线：驱动 timer → onTick（派发→send 与 reply→onResult+结果回调 的挂接点；
+    // store 落库归 Widget 单写者，见类注释 I-1 口径；
     // client 侧信号在 getOrCreateClient 创建处以 client 为 context 挂一次）
     void setSchedulerCallbacks();
 
@@ -122,7 +127,7 @@ private:
     QHash<QString, ActiveRequest> m_active;        // connKey → 在途（单连接一在途）
     QHash<QString, modbus::Dispatch> m_pendingSend;// connKey → 等连接就绪的待发派发
     QSet<QString> m_readOnce;                      // 待补发的立即读取 targetId
-    modbus::ModbusDataStore* m_data = nullptr;
+    modbus::ModbusDataStore* m_data = nullptr;     // 仅注入句柄透传：落库归 Widget 单写者（轮2 I-1）
     modbus::ModbusTargetStore* m_store = nullptr;  // 简报接口保留（配置热重载预留位）
     bool m_polling = false;
     LogCallback m_logCb;
