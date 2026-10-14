@@ -11,6 +11,8 @@
 #include "transfer/TransferEvents.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
 #include "ui/DirCompare.h"
+#include "ui/FileEditorDialog.h"
+#include "ui/FileEncoding.h"
 
 class QTableView;
 class QLineEdit;
@@ -24,6 +26,7 @@ class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class IFileSource;
+class FileEditorDialog;
 
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
@@ -46,6 +49,12 @@ public:
     // 目录对比（v2.12）：宿主计算对齐行后注入/清除；行色由模型 BackgroundRole 承担
     void applyCompareRows(const QVector<AlignedRow>& rows, const QString& gapCaption);
     void clearCompareView();
+
+    // F4 预览/编辑（v2.12）：异步读→探测→对话框；保存经冲突检查后异步回传
+    void openEditorForSelectedFile();
+    // 测试缝：编辑器打开计数与对话框访问（冒烟/单测断言路由，不进产品逻辑）
+    int editorOpenCount() const { return m_editorOpenCount; }
+    FileEditorDialog* editorForTest() const { return m_editor.data(); }
 
     // --- Task 3：面板源选择器 ---
     void setSourceChooserVisible(bool visible);          // 源选择器整行显示/隐藏
@@ -75,6 +84,8 @@ signals:
     void directoryActivated(const FtpFileInfo& info);
     // 列表内容刷新落定（含重连重试成功路径）；宿主据此退出目录对比态
     void filesChanged();
+    // 编辑器保存成功（脱敏：仅路径+字节数），宿主路由到全局日志
+    void fileSavedForLog(const QString& path, quint64 bytes);
     // 源选择器变化（仅用户操作发射；程序化设置 blockSignals 不发射）：proto = local/ftp/sftp
     void sourceChooserChanged(const QString& proto, const QString& device);
     void transferSnapshotApplied();
@@ -111,6 +122,23 @@ private:
     void applyTransferEvent(const TransferEvent& event);
     // 拖拽来源面板判定：来源必须是另一个 FileBrowserPanel（含其表格视口），否则返回 nullptr
     FileBrowserPanel* dragSourcePanel(const QDropEvent* event) const;
+    // --- F4 编辑链路（v2.12）---
+    void openEditorForRow(int row);
+    void ensureEditor();
+    void finishEditorOpen(const QByteArray& raw);
+    void openReadonlyEditor(const QString& reason);
+    void startEditorSave(bool skipConflictCheck);
+    void redecodeEditor(const QString& newCodec);
+    void reopenEditorForCurrentRow();
+
+    QPointer<FileEditorDialog> m_editor;
+    int m_editorOpenCount = 0;
+    quint64 m_editGeneration = 0;      // 编辑器在途读/写代际令牌（导航/刷新/换源推进）
+    FtpFileInfo m_editInfo;
+    QString m_editPath;
+    QString m_editCodec;
+    QByteArray m_editRaw;
+    ConflictSnapshot m_editSnap;
 
     std::shared_ptr<IFileSource> m_source;
     FileBrowserPanel* m_peerPanel = nullptr;   // 对面面板（宿主注入）

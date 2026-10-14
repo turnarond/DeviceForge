@@ -173,6 +173,13 @@ void FtpDeployWidget::setupUi()
     connect(m_leftPanel, &FileBrowserPanel::filesChanged, this, exitOnListChange);
     connect(m_rightPanel, &FileBrowserPanel::filesChanged, this, exitOnListChange);
 
+    // 编辑器保存成功 → 全局日志（脱敏：只报路径与字节数，不记内容）
+    auto logEditSave = [this](const QString& path, quint64 bytes) {
+        appendLog(QStringLiteral("[编辑] %1 已保存（%2 字节）").arg(path).arg(bytes));
+    };
+    connect(m_leftPanel, &FileBrowserPanel::fileSavedForLog, this, logEditSave);
+    connect(m_rightPanel, &FileBrowserPanel::fileSavedForLog, this, logEditSave);
+
     // 跨双栏目录对比工具条（splitter 上方）与汇总条（splitter 下方）
     setupCompareBar(mainLayout);
 

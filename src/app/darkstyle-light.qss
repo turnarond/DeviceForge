@@ -78,19 +78,29 @@ QPushButton:disabled {
 }
 
 /* 主操作按钮 = 琴色填充（全局仅少数，"最该点的那个"） */
-QPushButton#btnPrimary {
+QPushButton#btnPrimary,
+QPushButton#feSave {
     background-color: #D48820;
     border: 1px solid #B87A1A;
     color: #2A2F38;
 }
 
-QPushButton#btnPrimary:hover {
+QPushButton#btnPrimary:hover,
+QPushButton#feSave:hover {
     background-color: #F0A030;
     border-color: #D48820;
 }
 
-QPushButton#btnPrimary:pressed {
+QPushButton#btnPrimary:pressed,
+QPushButton#feSave:pressed {
     background-color: #B87A1A;
+}
+
+QPushButton#btnPrimary:disabled,
+QPushButton#feSave:disabled {
+    background-color: #E4E8EE;
+    border-color: #D0D5DD;
+    color: #9AA1AD;
 }
 
 /* 危险按钮 */
@@ -815,4 +825,40 @@ QPushButton#mbHexToggle:checked {
     border: 1px solid #D48820;
     color: #D48820;
     font-weight: 600;
+}
+
+/* ===== 文件管理增强（v2.12）：目录对比工具条 + F4 预览编辑器 ===== */
+QPushButton#mbDirCompare:checked {
+    border: 1px solid #D48820;
+    color: #D48820;
+    font-weight: 600;
+}
+
+QLabel#mbCompareSummary {
+    color: #6B7280;
+}
+
+QLabel#feTitle {
+    color: #2A2F38;
+    font-weight: 700;
+    font-size: 10pt;
+}
+
+QLabel#fePath, QLabel#feStatus {
+    color: #6B7280;
+}
+
+QLabel#feBadge {
+    color: #D48820;
+    border: 1px solid #D48820;
+    border-radius: 4px;
+    padding: 1px 8px;
+}
+
+QPlainTextEdit#fileEditorText {
+    font-family: "Consolas", "Monaco", monospace;
+    font-size: 10pt;
+    background-color: #FFFFFF;
+    color: #2A2F38;
+    border: 1px solid #D0D5DD;
 }

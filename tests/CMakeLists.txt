@@ -327,6 +327,9 @@ add_executable(tst_panel_async
     panel_async/tst_panel_async.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/FileBrowserPanel.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/LocalFileSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DirCompare.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileEncoding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileEditorDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
 )
 target_include_directories(tst_panel_async PRIVATE
@@ -519,6 +522,22 @@ target_link_libraries(tst_dir_compare PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME tst_dir_compare COMMAND tst_dir_compare)
 if(_qt_bin_dir)
     set_tests_properties(tst_dir_compare PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- 编码探测/转换与冲突谓词纯逻辑测试（v2.12 F4 预览编辑器，Win32 CP 解码）---
+add_executable(tst_file_encoding
+    file_encoding/tst_file_encoding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileEncoding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DirCompare.cpp
+)
+target_include_directories(tst_file_encoding PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_file_encoding PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME tst_file_encoding COMMAND tst_file_encoding)
+if(_qt_bin_dir)
+    set_tests_properties(tst_file_encoding PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 

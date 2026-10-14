@@ -9,6 +9,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -19,6 +20,8 @@
 
 #include "ui/IFileSource.h"
 #include "ui/FileBrowserPanel.h"
+#include "ui/FileEditorDialog.h"
+#include "ui/FileEncoding.h"
 #include "ui/LocalFileSource.h"
 #include "transfer/TransferEvents.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
@@ -1080,6 +1083,84 @@ private slots:
             QVERIFY2(src->listCalls.load() >= 2,
                      "worker 未执行——用例未命中在途场景");
         }
+    }
+    // ---- v2.12 F4 预览编辑器：路由 / 限界读 / 代际丢弃 / 保存回传 ----
+
+    void editor_opensBoundedReadAndShowsText()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("conf.txt"), makeInfo("sub", true) };
+        src->filesByPath["/conf.txt"] = "port=8090\n";
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int row = rowForName(panel, "conf.txt");
+        QVERIFY(row >= 0);
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(row, 0));
+        panel.openEditorForSelectedFile();
+
+        QTRY_VERIFY_WITH_TIMEOUT(src->readCalls.load() >= 1, 5000);
+        QCOMPARE(src->lastReadPath, QStringLiteral("/conf.txt"));
+        QCOMPARE(src->lastReadMax, kMaxEditBytes);          // 编辑上限随请求下发
+        QTRY_VERIFY_WITH_TIMEOUT(panel.editorOpenCount() == 1, 5000);
+        auto* dlg = panel.editorForTest();
+        QVERIFY(dlg);
+        auto* edit = dlg->findChild<QPlainTextEdit*>("fileEditorText");
+        QVERIFY(edit);
+        QCOMPARE(edit->toPlainText(), QStringLiteral("port=8090\n"));
+    }
+
+    void editor_staleGenerationDiscardsResult()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("conf.txt") };
+        src->filesByPath["/conf.txt"] = "abc";
+        src->blockRead = true;
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int row = rowForName(panel, "conf.txt");
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(row, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(src->readCalls.load() >= 1, 5000);   // worker 卡在 mock 读
+
+        panel.refresh();                                             // 推进编辑代际 → 在途读过期
+        src->blockRead = false;
+        QTRY_VERIFY_WITH_TIMEOUT(src->listCalls.load() >= 2, 5000);  // 刷新自身的 list 落定
+        QTest::qWait(100);                                           // 给过期回调投递+丢弃留窗口
+        QCOMPARE(panel.editorOpenCount(), 0);                        // 过期结果不得开对话框
+    }
+
+    void editor_saveWritesBackAndSignalsLog()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("conf.txt") };
+        src->filesByPath["/conf.txt"] = "abc";
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int row = rowForName(panel, "conf.txt");
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(row, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(panel.editorOpenCount() == 1, 5000);
+        auto* dlg = panel.editorForTest();
+        QVERIFY(dlg);
+        dlg->findChild<QPlainTextEdit*>("fileEditorText")->setPlainText("changed!");
+
+        QSignalSpy spy(&panel, &FileBrowserPanel::fileSavedForLog);
+        dlg->findChild<QPushButton*>("feSave")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(src->writeCalls.load() >= 1, 5000);
+        QCOMPARE(src->filesByPath["/conf.txt"], std::string("changed!"));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+        QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("/conf.txt"));
+        QVERIFY(spy.at(0).at(1).toULongLong() > 0);        // 脱敏日志：只报字节数
+        QVERIFY(!dlg->isDirty());
     }
 };
 QTEST_MAIN(TstPanelAsync)

@@ -1,4 +1,5 @@
 #include "ui/FileBrowserPanel.h"
+#include "ui/FileEditorDialog.h"
 #include "ui/IFileSource.h"
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 #include <QVBoxLayout>
@@ -19,6 +20,7 @@
 #include <QEvent>
 #include <QShortcut>
 #include <QInputDialog>
+#include <QDateTime>
 #include <QMenu>
 #include <QMessageBox>
 #include <QApplication>
@@ -179,10 +181,14 @@ void FileBrowserPanel::setupUi()
     setAcceptDrops(true);   // 面板级兜底：非表格区域（路径栏/面包屑）也能接收拖入
 
     // 面板快捷键（TC 风格，面板焦点内生效）：
-    //   F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板
+    //   F2 重命名 / F4 预览编辑 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板
     auto* f2Shortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
     f2Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
     connect(f2Shortcut, &QShortcut::activated, this, &FileBrowserPanel::renameSelected);
+
+    auto* f4Shortcut = new QShortcut(QKeySequence(Qt::Key_F4), this);
+    f4Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(f4Shortcut, &QShortcut::activated, this, &FileBrowserPanel::openEditorForSelectedFile);
 
     auto* f5Shortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
     f5Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -288,6 +294,7 @@ void FileBrowserPanel::setSourceDevices(const QStringList& devices)
 void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
 {
     ++m_loadGeneration;   // 源切换/置空也作废在途加载（连接失败 detach 旧源等）
+    ++m_editGeneration;   // 在途编辑器读/写同样作废（v2.12 F4 链路）
     m_source = std::move(source);
     m_pathEdit->clear();
     m_currentPath.clear();
@@ -342,6 +349,7 @@ void FileBrowserPanel::loadDirectory(const QString& path)
         return;
     }
     const quint64 gen = ++m_loadGeneration;   // 代际令牌
+    ++m_editGeneration;                       // 导航/刷新作废在途编辑器读写（v2.12）
     if (m_restoreSelectionGeneration != 0 && m_restoreSelectionGeneration != gen) {
         m_restoreSelectionName.clear();
         m_restoreSelectionGeneration = 0;
@@ -470,7 +478,10 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
         navigateToParent();
         return;
     }
-    if (!fi.isDir) return;
+    if (!fi.isDir) {
+        openEditorForRow(index.row());   // v2.12：双击文件 = 预览/编辑（TC F3/F4 合并入口）
+        return;
+    }
     QString newPath = m_currentPath;
     if (!newPath.endsWith('/')) newPath += '/';
     newPath += QString::fromStdString(fi.name);
@@ -882,6 +893,8 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
 
     QMenu menu(this);
     auto* enterAct   = menu.addAction(tr("进入"));           // 目录 / .. 进入
+    auto* editAct    = menu.addAction(tr("预览/编辑"));       // 文件（F4 同义，v2.12）
+    editAct->setEnabled(singleSel && !selIsDir);
     menu.addSeparator();
     auto* mkdirAct   = menu.addAction(tr("新建目录..."));
     auto* renameAct  = menu.addAction(tr("重命名..."));
@@ -919,6 +932,8 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
             navigateTo(newPath);
             emit directoryActivated(f);
         }
+    } else if (chosen == editAct) {
+        openEditorForSelectedFile();
     } else if (chosen == mkdirAct) {
         bool ok = false;
         const QString name = QInputDialog::getText(this, tr("新建目录"),
@@ -1134,4 +1149,231 @@ FileBrowserPanel::DropRoute FileBrowserPanel::handleDrop(
     if (submitTransferTask(std::move(task), nullptr, this).isNull())
         return DropRoute::Rejected;
     return DropRoute::SystemUpload;
+}
+
+// ============================================================
+// F4 预览/编辑（v2.12 文件管理增强）
+// 读/写/冲突检查全部经 QtConcurrent + 代际令牌，GUI 线程零阻塞；
+// 与 loadDirectory 同一 QPointer+gen 竞态模式。
+// ============================================================
+
+void FileBrowserPanel::openEditorForSelectedFile()
+{
+    QModelIndex index = m_table->currentIndex();
+    if (!index.isValid() && m_table->selectionModel()) {
+        const auto rows = m_table->selectionModel()->selectedRows();
+        if (!rows.isEmpty())
+            index = rows.front();
+    }
+    if (index.isValid())
+        openEditorForRow(index.row());
+}
+
+void FileBrowserPanel::openEditorForRow(int row)
+{
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (!model || row < 0 || row >= model->rowCount({}))
+        return;
+    if (model->isPlaceholderAt(row))
+        return;
+    const FtpFileInfo fi = model->fileAt(row);
+    if (fi.isDir || fi.name == "." || fi.name == "..")
+        return;
+    if (!m_source)
+        return;
+
+    QString dir = m_currentPath;
+    if (!dir.endsWith(QLatin1Char('/')))
+        dir += QLatin1Char('/');
+    m_editInfo = fi;
+    m_editPath = dir + QString::fromStdString(fi.name);
+    m_editSnap = ConflictSnapshot{ fi.size, QString::fromStdString(fi.dateTime), true };
+
+    if (fi.size > kMaxEditBytes) {
+        openReadonlyEditor(tr("文件超过大小上限（2 MB），建议下载后本地编辑"));
+        return;
+    }
+
+    auto source = m_source;
+    const quint64 gen = m_editGeneration;
+    const QString path = m_editPath;
+    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source, path]() {
+        std::string bytes;
+        QString err;
+        const bool ok = source->readFile(path, bytes, kMaxEditBytes);
+        if (!ok)
+            err = source->lastError();
+        QByteArray ba(bytes.data(), static_cast<int>(bytes.size()));
+        if (!guard)
+            return;
+        QMetaObject::invokeMethod(this, [this, gen, ok, err, ba]() {
+            if (gen != m_editGeneration) return;   // 过期（导航/刷新）：丢弃
+            if (!ok) {
+                QMessageBox::warning(this, tr("打开失败"), err);
+                return;
+            }
+            finishEditorOpen(ba);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FileBrowserPanel::ensureEditor()
+{
+    if (m_editor)
+        return;
+    m_editor = new FileEditorDialog(this);
+    connect(m_editor, &FileEditorDialog::saveRequested, this, [this]() { startEditorSave(false); });
+    connect(m_editor, &FileEditorDialog::codecChangedRequest, this, &FileBrowserPanel::redecodeEditor);
+    m_editor->setDiscardGuard([this]() {
+        if (!m_editor || !m_editor->isDirty())
+            return true;
+        return QMessageBox::question(this, tr("未保存的修改"),
+                   tr("丢弃未保存的修改并关闭？"),
+                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+    });
+}
+
+void FileBrowserPanel::openReadonlyEditor(const QString& reason)
+{
+    ensureEditor();
+    m_editor->bind(QString::fromStdString(m_editInfo.name), m_editPath, QString(),
+                   { QStringLiteral("UTF-8") }, QStringLiteral("UTF-8"),
+                   QStringLiteral("LF"), false, tr("不可编辑"), true, reason);
+    ++m_editorOpenCount;
+    m_editor->show();
+    m_editor->raise();
+    m_editor->activateWindow();
+}
+
+void FileBrowserPanel::finishEditorOpen(const QByteArray& raw)
+{
+    m_editRaw = raw;
+    const TextProbe probe = probeTextBuffer(raw);
+    if (probe.looksBinary) {
+        openReadonlyEditor(tr("二进制文件不可编辑"));
+        return;
+    }
+    QString text, err;
+    QString codec = probe.codec;
+    if (!decodeText(raw, codec, text, err)) {
+        text = QString::fromUtf8(raw);
+        text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+        codec = QStringLiteral("UTF-8");
+    }
+    m_editCodec = codec;
+    ensureEditor();
+    const QString note = QStringLiteral("%1 · %2 · %3 字节%4")
+        .arg(codec, probe.eol)
+        .arg(raw.size())
+        .arg(probe.fromBom ? QStringLiteral(" · BOM") : QString());
+    m_editor->bind(QString::fromStdString(m_editInfo.name), m_editPath, text,
+                   suggestedCodecs(codec), codec, probe.eol, probe.fromBom,
+                   note, false, QString());
+    ++m_editorOpenCount;
+    m_editor->show();
+    m_editor->raise();
+    m_editor->activateWindow();
+}
+
+void FileBrowserPanel::redecodeEditor(const QString& newCodec)
+{
+    if (!m_editor)
+        return;
+    if (m_editor->isDirty()) {
+        if (QMessageBox::question(this, tr("切换编码"),
+                tr("切换编码将丢弃未保存的修改，继续？"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+            m_editor->setCodecSilently(m_editCodec);
+            return;
+        }
+    }
+    QString text, err;
+    if (!decodeText(m_editRaw, newCodec, text, err)) {
+        QMessageBox::warning(this, tr("解码失败"), err);
+        m_editor->setCodecSilently(m_editCodec);
+        return;
+    }
+    m_editCodec = newCodec;
+    const TextProbe probe = probeTextBuffer(m_editRaw);
+    m_editor->bind(QString::fromStdString(m_editInfo.name), m_editPath, text,
+                   suggestedCodecs(newCodec), newCodec, probe.eol, probe.fromBom,
+                   tr("已按 %1 重解码").arg(newCodec), false, QString());
+}
+
+void FileBrowserPanel::startEditorSave(bool skipConflictCheck)
+{
+    if (!m_editor || !m_source)
+        return;
+    const QByteArray bytes = m_editor->currentBytes();
+    m_editor->setBusy(true);
+    auto source = m_source;
+    QPointer<FileEditorDialog> dlg = m_editor;
+    const QString path = m_editPath;
+    const ConflictSnapshot snap = m_editSnap;
+    const bool local = source->sourceId() == QLatin1String("local");
+    const quint64 gen = m_editGeneration;
+    const std::string data(bytes.toStdString());
+
+    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source, dlg,
+                       path, data, local, snap, skipConflictCheck, bytes]() {
+        QString err;
+        bool conflict = false;
+        // R4 退化口径：无任何可比字段则跳过检查；否则重拉远端目录比对同名条目
+        if (!local && !skipConflictCheck && (snap.hasSize || !snap.mtime.isEmpty())) {
+            const int slash = path.lastIndexOf(QLatin1Char('/'));
+            const QString parent = slash >= 0 ? path.left(slash + 1) : QStringLiteral("/");
+            const std::string name = (slash >= 0 ? path.mid(slash + 1) : path).toStdString();
+            for (const auto& e : source->list(parent)) {
+                if (e.name == name) {
+                    conflict = remoteChanged(snap, e);
+                    break;
+                }
+            }
+        }
+        if (!conflict && !source->writeFile(path, data))
+            err = source->lastError();
+        if (!guard)
+            return;
+        QMetaObject::invokeMethod(this, [this, gen, dlg, conflict, err, bytes, path]() {
+            if (gen != m_editGeneration) { if (dlg) dlg->setBusy(false); return; }
+            if (!dlg)
+                return;
+            dlg->setBusy(false);
+            if (conflict) {
+                const auto r = QMessageBox::question(this, tr("远端文件已变化"),
+                    tr("打开后远端同名文件已被其他方改动。\n\n"
+                       "覆盖将丢失对方修改。仍要覆盖，还是放弃本地修改并重新拉取最新内容？"),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                if (r == QMessageBox::Yes)
+                    startEditorSave(true);
+                else
+                    reopenEditorForCurrentRow();
+                return;
+            }
+            if (!err.isEmpty()) {
+                QMessageBox::warning(this, tr("保存失败"), err);
+                return;
+            }
+            dlg->markSaved();
+            dlg->setStatusNote(tr("已保存 %1（%2 字节）")
+                .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                .arg(bytes.size()));
+            emit fileSavedForLog(path, static_cast<quint64>(bytes.size()));
+            refresh();   // 回传成功刷新目录（对比态经 filesChanged 自动失效，属预期）
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FileBrowserPanel::reopenEditorForCurrentRow()
+{
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (model) {
+        for (int row = 0; row < model->rowCount({}); ++row) {
+            if (!model->isPlaceholderAt(row) && model->fileAt(row).name == m_editInfo.name) {
+                openEditorForRow(row);
+                return;
+            }
+        }
+    }
+    QMessageBox::warning(this, tr("刷新失败"), tr("文件已不在当前目录，无法重新拉取"));
 }
