@@ -10,6 +10,7 @@
 #include <vector>
 #include "transfer/TransferEvents.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
+#include "ui/DirCompare.h"
 
 class QTableView;
 class QLineEdit;
@@ -40,6 +41,11 @@ public:
     QString currentPath() const { return m_currentPath; }
     QTableView* fileTable() const { return m_table; }
     std::vector<FtpFileInfo> selectedFiles() const;
+    std::vector<FtpFileInfo> fileList() const;   // 当前目录完整列表（模型 base，对比态不变源）
+
+    // 目录对比（v2.12）：宿主计算对齐行后注入/清除；行色由模型 BackgroundRole 承担
+    void applyCompareRows(const QVector<AlignedRow>& rows, const QString& gapCaption);
+    void clearCompareView();
 
     // --- Task 3：面板源选择器 ---
     void setSourceChooserVisible(bool visible);          // 源选择器整行显示/隐藏
@@ -67,6 +73,8 @@ signals:
     void currentPathChanged(const QString& path);
     void selectionChanged();
     void directoryActivated(const FtpFileInfo& info);
+    // 列表内容刷新落定（含重连重试成功路径）；宿主据此退出目录对比态
+    void filesChanged();
     // 源选择器变化（仅用户操作发射；程序化设置 blockSignals 不发射）：proto = local/ftp/sftp
     void sourceChooserChanged(const QString& proto, const QString& device);
     void transferSnapshotApplied();

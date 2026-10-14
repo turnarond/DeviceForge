@@ -456,6 +456,7 @@ void FileBrowserPanel::applyFileList(const QString& path,
     m_breadcrumb->setText(path);
     m_pathEdit->setText(path);
     emit currentPathChanged(path);
+    emit filesChanged();
 }
 
 void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
@@ -463,6 +464,7 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
     if (!index.isValid()) return;
     auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
     if (!model) return;
+    if (model->isPlaceholderAt(index.row())) return;   // 对比态占位行不可激活
     const auto& fi = model->fileAt(index.row());
     if (fi.name == "..") {
         navigateToParent();
@@ -531,8 +533,31 @@ std::vector<FtpFileInfo> FileBrowserPanel::selectedFiles() const
     auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
     if (!model) return result;
     const auto sel = m_table->selectionModel()->selectedRows();
-    for (const auto& idx : sel) result.push_back(model->fileAt(idx.row()));
+    for (const auto& idx : sel) {
+        if (model->isPlaceholderAt(idx.row())) continue;   // 占位行防御（不可选，双保险）
+        result.push_back(model->fileAt(idx.row()));
+    }
     return result;
+}
+
+std::vector<FtpFileInfo> FileBrowserPanel::fileList() const
+{
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    return model ? model->files() : std::vector<FtpFileInfo>{};
+}
+
+void FileBrowserPanel::applyCompareRows(const QVector<AlignedRow>& rows, const QString& gapCaption)
+{
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (model)
+        model->setCompareView(model->files(), rows, gapCaption);
+}
+
+void FileBrowserPanel::clearCompareView()
+{
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (model)
+        model->exitCompareView();
 }
 
 // ============================================================

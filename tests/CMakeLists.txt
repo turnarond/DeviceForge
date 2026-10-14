@@ -507,6 +507,21 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 目录对比纯逻辑测试（v2.12 文件管理增强：元数据口径分类/对齐/收缩）---
+add_executable(tst_dir_compare
+    dir_compare/tst_dir_compare.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DirCompare.cpp
+)
+target_include_directories(tst_dir_compare PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_dir_compare PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_dir_compare COMMAND tst_dir_compare)
+if(_qt_bin_dir)
+    set_tests_properties(tst_dir_compare PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- 部署报告数据结构与 CSV/HTML 渲染纯函数测试（v2.8 并行批量部署 Task 1）---
 # 编入产品源码 DeployReport.cpp（仅标准库，无 Qt/网络依赖；QtTest 仅作测试壳）
 add_executable(tst_deploy_report

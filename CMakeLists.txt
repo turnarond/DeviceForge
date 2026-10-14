@@ -232,6 +232,7 @@ set(SOURCES
     src/ui/FileBrowserPanel.cpp
     src/ui/LocalFileSource.cpp
     src/ui/RemoteFileSource.cpp
+    src/ui/DirCompare.cpp
 
     # Tool 实现
     src/tools/ModbusTool/ModbusBackend.cpp

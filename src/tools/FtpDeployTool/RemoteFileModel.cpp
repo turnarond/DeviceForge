@@ -13,6 +13,85 @@
 #include <QColor>
 #include <algorithm>
 
+namespace {
+
+// 对比态行色板（琴色信号族：diff 淡一档、only 深一档；占位行石墨比表格底更深）
+// 值与 UI 稿 mockups/2026-10-14-file-mgmt-ui.html 一致
+struct RowPalette { QColor diff; QColor only; QColor gap; };
+RowPalette paletteFor(bool light)
+{
+    if (light)
+        return { QColor(0xEA, 0xE5, 0xDE), QColor(0xE8, 0xDE, 0xD1), QColor(0xE2, 0xE6, 0xEC) };
+    return { QColor(0x1F, 0x1A, 0x10), QColor(0x2A, 0x22, 0x14), QColor(0x08, 0x0B, 0x10) };
+}
+
+} // namespace
+
+const FtpFileInfo& RemoteFileModel::gapSentinel()
+{
+    static const FtpFileInfo gap{ "__gap__", false, 0, {}, {}, {} };
+    return gap;
+}
+
+const FtpFileInfo& RemoteFileModel::rowFile(int row) const
+{
+    if (m_compareMode) {
+        if (row < 0 || row >= static_cast<int>(m_viewRows.size()))
+            return gapSentinel();
+        return m_viewRows[row].placeholder ? gapSentinel() : m_viewRows[row].info;
+    }
+    if (row < 0 || row >= static_cast<int>(m_files.size()))
+        return gapSentinel();
+    return m_files[row];
+}
+
+bool RemoteFileModel::isPlaceholderAt(int row) const
+{
+    return m_compareMode && row >= 0 && row < static_cast<int>(m_viewRows.size())
+        && m_viewRows[row].placeholder;
+}
+
+void RemoteFileModel::setCompareView(const std::vector<FtpFileInfo>& source,
+                                     const QVector<AlignedRow>& rows,
+                                     const QString& gapCaption)
+{
+    beginResetModel();
+    m_viewRows.clear();
+    m_gapCaption = gapCaption;
+    m_viewRows.reserve(rows.size());
+    for (const auto& r : rows) {
+        ViewRow vr;
+        vr.cls = r.cls;
+        if (r.sourceRow < 0 || r.sourceRow >= static_cast<int>(source.size()))
+            vr.placeholder = true;
+        else
+            vr.info = source[r.sourceRow];
+        m_viewRows.push_back(std::move(vr));
+    }
+    m_compareMode = true;
+    endResetModel();
+}
+
+void RemoteFileModel::exitCompareView()
+{
+    if (!m_compareMode)
+        return;
+    beginResetModel();
+    m_compareMode = false;
+    m_viewRows.clear();
+    endResetModel();
+}
+
+void RemoteFileModel::setThemeLight(bool light)
+{
+    if (m_lightTheme == light)
+        return;
+    m_lightTheme = light;
+    const int rows = rowCount();
+    if (rows > 0)
+        emit dataChanged(index(0, 0), index(rows - 1, ColCount - 1));
+}
+
 RemoteFileModel::RemoteFileModel(QObject* parent)
     : QAbstractTableModel(parent) {}
 
@@ -43,6 +122,8 @@ void RemoteFileModel::clear()
     m_files.clear();
     m_syncedNames.clear();
     m_diffNames.clear();
+    m_compareMode = false;
+    m_viewRows.clear();
     endResetModel();
 }
 
@@ -73,7 +154,9 @@ void RemoteFileModel::setLocalFilesForCompare(const std::vector<LocalFileInfo>& 
 
 int RemoteFileModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : static_cast<int>(m_files.size());
+    if (parent.isValid()) return 0;
+    return m_compareMode ? static_cast<int>(m_viewRows.size())
+                         : static_cast<int>(m_files.size());
 }
 
 int RemoteFileModel::columnCount(const QModelIndex& parent) const
@@ -83,10 +166,37 @@ int RemoteFileModel::columnCount(const QModelIndex& parent) const
 
 QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || index.row() >= static_cast<int>(m_files.size()))
+    const int rows = rowCount();
+    if (!index.isValid() || index.row() >= rows)
         return {};
 
-    const auto& fi = m_files[index.row()];
+    // 对比态：占位行与分类行色优先接管（非对比态维持旧绿/黄自动着色）
+    if (m_compareMode && role == Qt::BackgroundRole) {
+        const auto& vr = m_viewRows[index.row()];
+        const auto pal = paletteFor(m_lightTheme);
+        if (vr.placeholder)
+            return pal.gap;
+        if (vr.cls == CompareClass::Diff)
+            return pal.diff;
+        if (vr.cls == CompareClass::OnlyLeft || vr.cls == CompareClass::OnlyRight)
+            return pal.only;
+        return {};   // Same：不着色
+    }
+    if (!m_compareMode && role == Qt::BackgroundRole) {
+        if (m_syncedNames.count(m_files[index.row()].name))
+            return QColor(34, 80, 50);   // 深绿底 = 已同步
+        if (m_diffNames.count(m_files[index.row()].name))
+            return QColor(80, 70, 30);   // 深黄底 = 有差异
+    }
+
+    // 占位行实体展示：仅名称列给"对面独有"提示，其余列留空
+    if (m_compareMode && m_viewRows[index.row()].placeholder) {
+        if (role == Qt::DisplayRole && index.column() == ColName)
+            return m_gapCaption;
+        return {};
+    }
+
+    const auto& fi = rowFile(index.row());
 
     if (role == Qt::DisplayRole) {
         // 缺失值统一显示长破折号 —（U+2014）：目录无大小、Windows 格式 FTP 无权限/属主等
@@ -99,13 +209,6 @@ QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
         case ColPermissions: return fi.permissions.empty() ? kMissing : QString::fromStdString(fi.permissions);
         case ColOwner:       return fi.owner.empty() ? kMissing : QString::fromStdString(fi.owner);
         }
-    }
-
-    if (role == Qt::BackgroundRole) {
-        if (m_syncedNames.count(fi.name))
-            return QColor(34, 80, 50);   // 深绿底 = 已同步
-        if (m_diffNames.count(fi.name))
-            return QColor(80, 70, 30);   // 深黄底 = 有差异
     }
 
     if (role == Qt::ForegroundRole) {
@@ -123,6 +226,14 @@ QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
     }
 
     return {};
+}
+
+Qt::ItemFlags RemoteFileModel::flags(const QModelIndex& index) const
+{
+    const auto f = QAbstractTableModel::flags(index);
+    if (index.isValid() && isPlaceholderAt(index.row()))
+        return f & ~(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsEditable);
+    return f;
 }
 
 QVariant RemoteFileModel::headerData(int section, Qt::Orientation orientation, int role) const
@@ -143,6 +254,8 @@ QVariant RemoteFileModel::headerData(int section, Qt::Orientation orientation, i
 
 void RemoteFileModel::sort(int column, Qt::SortOrder order)
 {
+    // 对比态禁排：对齐行序即语义（占位与配对关系不得被打乱）
+    if (m_compareMode) return;
     if (m_files.empty()) return;
 
     // 分离 . 和 .. （始终置顶）

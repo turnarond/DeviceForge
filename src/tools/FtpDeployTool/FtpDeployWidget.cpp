@@ -17,6 +17,7 @@
 #include "FtpDeployBackend.h"
 #include "MultiProgressWidget.h"
 #include "DeployReport.h"
+#include "RemoteFileModel.h"
 #include "framework/DeviceInfo.h"
 #include "ui/DeviceBusWidget.h"
 #include "ui/FileBrowserPanel.h"
@@ -33,6 +34,8 @@
 #include "transfer/TransferScheduler.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QShortcut>
+#include <QTableView>
 #include <QFrame>
 #include <QLabel>
 #include <QTimer>
@@ -164,14 +167,123 @@ void FtpDeployWidget::setupUi()
     connect(m_leftPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
     connect(m_rightPanel, &FileBrowserPanel::selectionChanged, this, emitDirection);
 
+    // 对比态失效钩子：任一侧列表刷新（导航/重连重试/编辑回传/上传删除）→ 退出对比，
+    // 避免拿旧快照着色误导（规格 §3.1）
+    auto exitOnListChange = [this]() { if (m_compareActive) exitDirectoryCompare(); };
+    connect(m_leftPanel, &FileBrowserPanel::filesChanged, this, exitOnListChange);
+    connect(m_rightPanel, &FileBrowserPanel::filesChanged, this, exitOnListChange);
+
+    // 跨双栏目录对比工具条（splitter 上方）与汇总条（splitter 下方）
+    setupCompareBar(mainLayout);
+
     m_splitter->addWidget(m_leftPanel);
     m_splitter->addWidget(m_rightPanel);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 1);
     mainLayout->addWidget(m_splitter, 1);
 
+    setupCompareSummary(mainLayout);
+
     setupBottomBar(mainLayout);
     connectBackendSignals();
+}
+
+// ============================================================
+// 目录对比（v2.12 文件管理增强）
+// ============================================================
+
+void FtpDeployWidget::setupCompareBar(QVBoxLayout* mainLayout)
+{
+    auto* row = new QHBoxLayout();
+    row->setSpacing(8);
+
+    m_dirCompareBtn = new QPushButton(QStringLiteral("目录对比  Ctrl+M"), this);
+    m_dirCompareBtn->setObjectName(QStringLiteral("mbDirCompare"));
+    m_dirCompareBtn->setCheckable(true);
+
+    m_diffOnlyCheck = new QCheckBox(QStringLiteral("仅显示差异"), this);
+    m_diffOnlyCheck->setObjectName(QStringLiteral("mbDiffOnly"));
+    m_diffOnlyCheck->setEnabled(false);   // 仅对比态可用
+
+    connect(m_dirCompareBtn, &QPushButton::toggled, this, [this](bool on) {
+        if (on) updateDirectoryCompare();
+        else exitDirectoryCompare();
+    });
+    connect(m_diffOnlyCheck, &QCheckBox::toggled, this, [this]() {
+        if (m_compareActive) updateDirectoryCompare();   // 重算收缩
+    });
+
+    row->addWidget(m_dirCompareBtn);
+    row->addWidget(m_diffOnlyCheck);
+    row->addStretch();
+    mainLayout->addLayout(row);
+
+    auto* sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+M")), this);
+    connect(sc, &QShortcut::activated, this, [this]() { m_dirCompareBtn->toggle(); });
+}
+
+void FtpDeployWidget::setupCompareSummary(QVBoxLayout* mainLayout)
+{
+    m_compareSummary = new QLabel(this);
+    m_compareSummary->setObjectName(QStringLiteral("mbCompareSummary"));
+    m_compareSummary->setHidden(true);
+    mainLayout->addWidget(m_compareSummary);
+}
+
+void FtpDeployWidget::updateDirectoryCompare()
+{
+    const auto left = m_leftPanel->fileList();
+    const auto right = m_rightPanel->fileList();
+    if (left.empty() || right.empty()) {
+        // 未连接/空目录不进入对比态（旧快照误导防线）
+        QSignalBlocker blocker(m_dirCompareBtn);
+        m_dirCompareBtn->setChecked(false);
+        m_compareSummary->setText(QStringLiteral("目录对比：需两侧均已加载非空目录"));
+        m_compareSummary->setVisible(true);
+        return;
+    }
+
+    m_compareEntries.clear();
+    const auto s = compareDirectories(left, right, &m_compareEntries);
+    const bool diffOnly = m_diffOnlyCheck && m_diffOnlyCheck->isChecked();
+
+    m_leftPanel->applyCompareRows(buildSideRows(m_compareEntries, /*leftSide=*/true, diffOnly),
+                                  QStringLiteral("远端独有"));
+    m_rightPanel->applyCompareRows(buildSideRows(m_compareEntries, /*leftSide=*/false, diffOnly),
+                                   QStringLiteral("本地独有"));
+
+    // 行色板按主题切换（appearance.theme == "light"；对比态重进时刷新）
+    const bool light = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() == QStringLiteral("light");
+    for (auto* panel : { m_leftPanel, m_rightPanel }) {
+        if (auto* model = qobject_cast<RemoteFileModel*>(panel->fileTable()->model()))
+            model->setThemeLight(light);
+    }
+
+    m_compareActive = true;
+    m_diffOnlyCheck->setEnabled(true);
+    m_compareSummary->setText(QStringLiteral("对比结果：差异 %1 · 仅左 %2 · 仅右 %3 · 相同 %4")
+                                  .arg(s.diff).arg(s.onlyLeft).arg(s.onlyRight).arg(s.same));
+    m_compareSummary->setVisible(true);
+}
+
+void FtpDeployWidget::exitDirectoryCompare()
+{
+    m_compareActive = false;
+    m_compareEntries.clear();
+    if (m_leftPanel) m_leftPanel->clearCompareView();
+    if (m_rightPanel) m_rightPanel->clearCompareView();
+    if (m_diffOnlyCheck) {
+        m_diffOnlyCheck->setEnabled(false);
+        QSignalBlocker b(m_diffOnlyCheck);
+        m_diffOnlyCheck->setChecked(false);
+    }
+    if (m_dirCompareBtn) {
+        QSignalBlocker b(m_dirCompareBtn);
+        m_dirCompareBtn->setChecked(false);
+    }
+    if (m_compareSummary) m_compareSummary->setHidden(true);
 }
 
 void FtpDeployWidget::setupTransferScheduler()
