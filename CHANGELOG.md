@@ -1,3 +1,17 @@
+## [2.12.0] — 2026-10-14
+
+### Added
+- **WebSocket 双栏控制台重构**：上部连接/操作区 + 下部事件流（2000 行环形、方向/对端/字节数/内容预览，UTF-8 截断安全）；事件模型 `WsEventTypes` 纯逻辑独立可测；Token 凭证迁移 DPAPI 存储，写路径落盘时清扫旧明文行。
+- **MODBUS 工具重构（多 PLC 主看偶写）**：设备身份统一至 DeviceRegistry 档案（档案含 modbus 端点=能力开关），目标档案持久化 `modbus.target`（旧 `modbus.slave` 一次性自动迁移、幂等跳过）；250ms 单驱动轮询调度器（每连接 FIFO 队列、写插队、在途保护、指数退避重连）；双栏目标清单 + 逐寄存器视图（变化高亮、跳过计数、退避着色）；QModbusTcpServer 本机环回集成测试。
+- **文件管理增强（FTP/SFTP 部署双栏）**：元数据列（所有者/修改时间/权限，缺失显示 `—`；创建时间 FTP/SFTP 协议不可得，不设该列）；Ctrl+M 目录对比（元数据口径：size 主判 + 修改时间分钟辅助，差异着色 + 行对齐 + 占位行 + 仅显示差异过滤 + 汇总条，刷新自动退出）；F4 预览编辑器（UTF-8/GBK/UTF-16 BOM 自动探测 + 手动切换重解码、>2MB/二进制/混合行尾只读、保存保持原行尾、异步回传含远端变化冲突确认"仍要覆盖/放弃并刷新"）；libcurl/libssh2 内存读写原语（无临时文件中转，SylixOS 句柄纪律与既有传输一致）。
+
+### Fixed
+- WebSocket 评审修复波：后端错误路径连接悬挂致 UAF（onClientError 断链清理 + 析构无条件收尾）、字节计数口径修正为原始字节、Legacy 明文 Token 行清扫。
+- 文件管理评审修复波：编辑器双开串包（打开即推进代际 + 路径/内容值对绑定回传，杜绝"甲内容写进乙路径"误覆盖）、同对话框二次保存假冲突（保存成功续用快照）、读侧超限转只读横幅、协议不支持时错误原因不被空覆盖清空、对比态中刷新退出后恢复名称排序、同名"目录↔文件"判差异、内存传输补齐 `CURLOPT_FTP_USE_EPSV=0`。
+
+### Tests
+- 全量 CTest 45 目标：WebSocket +3（`tst_ws_event_types` / `tst_ws_page_layout` / `tst_ws_loopback`）、MODBUS +4（`tst_modbus_target_store` / `tst_modbus_scheduler` / `tst_modbus_page` / `tst_modbus_loopback`）、文件管理 +2（`tst_dir_compare` / `tst_file_encoding`）。
+
 ## [2.11.1] — 2026-10-08
 
 ### Fixed（现场反馈可用性补丁）
