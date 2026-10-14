@@ -138,3 +138,11 @@ hex 预览、外部编辑器关联、行号栏、命名修改权限（chmod）�
 4. 编辑期间用另一台机器改远端同名文件→保存时弹冲突确认，选"放弃并刷新"看到最新内容。
 5. 打开 2.1MB 日志→只读横幅；打开二进制→只读横幅；关闭有未保存修改→丢弃确认。
 6. 断连瞬间编辑器打开中→不崩溃、旧回调丢弃、界面提示错误。
+
+## 11 · 实施勘误（2026-10-14，随实现落定）
+
+- **R1 异步契约就实**：§2.3 的回调式接口调整为**同步原语**（`IFileSource::readFile/writeFile`），异步与代际令牌守卫沿用 `FileBrowserPanel` 既有 QtConcurrent 通道（`m_editGeneration`），"GUI 线程零阻塞"约束不变、通道与 `list()` 归一。
+- **R2 本地 owner 口径**：`std::filesystem` 无 owner API，`LocalFileSource::list` 改用 `QFileInfo::owner()`（取不到留空显示 `—`）。
+- **R3 对比态行模型**：占位行不进 `FtpFileInfo` 语义，模型层 `ModelRow{info,placeholder,cls}` + `isPlaceholderAt()` 守卫（双击/选中/复制移动全部跳过）。
+- **R4 冲突检查退化**：mtime 缺失侧仅比 size；完全不可比则跳过检查（编辑器状态栏注明快照）。
+- **R5 汇总条简化**：§3.3 "点击分类数字切换过滤" 降级为「仅显示差异」checkbox + 汇总 QLabel（数字仅展示），YAGNI。
