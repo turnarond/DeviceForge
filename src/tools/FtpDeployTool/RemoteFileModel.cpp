@@ -89,12 +89,15 @@ QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
     const auto& fi = m_files[index.row()];
 
     if (role == Qt::DisplayRole) {
+        // 缺失值统一显示长破折号 —（U+2014）：目录无大小、Windows 格式 FTP 无权限/属主等
+        static const QString kMissing{QChar(0x2014)};
         switch (index.column()) {
         case ColIcon:        return fi.isDir ? QString("\U0001F4C1") : QString("\U0001F4C4");
         case ColName:        return QString::fromStdString(fi.name);
-        case ColSize:        return fi.isDir ? QString() : formatSize(fi.size);
-        case ColDateTime:    return QString::fromStdString(fi.dateTime);
-        case ColPermissions: return QString::fromStdString(fi.permissions);
+        case ColSize:        return fi.isDir ? kMissing : formatSize(fi.size);
+        case ColDateTime:    return fi.dateTime.empty() ? kMissing : QString::fromStdString(fi.dateTime);
+        case ColPermissions: return fi.permissions.empty() ? kMissing : QString::fromStdString(fi.permissions);
+        case ColOwner:       return fi.owner.empty() ? kMissing : QString::fromStdString(fi.owner);
         }
     }
 
@@ -133,6 +136,7 @@ QVariant RemoteFileModel::headerData(int section, Qt::Orientation orientation, i
     case ColSize:        return QStringLiteral("大小");
     case ColDateTime:    return QStringLiteral("修改时间");
     case ColPermissions: return QStringLiteral("权限");
+    case ColOwner:       return QStringLiteral("所有者");
     }
     return {};
 }
@@ -166,6 +170,7 @@ void RemoteFileModel::sort(int column, Qt::SortOrder order)
             case ColSize:          less = a.size < b.size; eq = a.size == b.size; break;
             case ColDateTime:      less = a.dateTime < b.dateTime; eq = a.dateTime == b.dateTime; break;
             case ColPermissions:   less = a.permissions < b.permissions; eq = a.permissions == b.permissions; break;
+            case ColOwner:         less = a.owner < b.owner; eq = a.owner == b.owner; break;
             default:               less = a.name < b.name; eq = a.name == b.name; break;
             }
             // 相等键：升序/降序均返回 false（严格弱序不可反身性，旧降序分支 comp(a,b) 与 comp(b,a) 双向 true 系 UB）

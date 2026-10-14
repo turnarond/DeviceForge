@@ -54,6 +54,20 @@ private slots:
         QVERIFY(src.connect({}, {}));
         QVERIFY(src.isConnected());
     }
+    // v2.12 文件管理增强：本地条目填充 owner（与 QFileInfo::owner 口径一致；
+    // 平台取不到时允许为空串——面板显示 —，但不得崩溃）
+    void local_list_fillsOwner() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile f(dir.filePath("o.txt"));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("x"); f.close();
+        LocalFileSource src;
+        auto entries = src.list(dir.path());
+        QCOMPARE(entries.size(), 1);
+        const QFileInfo qi(dir.filePath("o.txt"));
+        QCOMPARE(QString::fromStdString(entries[0].owner), qi.owner());
+    }
 };
 QTEST_MAIN(TstFileSource)
 #include "tst_file_source.moc"

@@ -116,6 +116,11 @@ bool FtpListParser::tryParseUnixLine(const std::string& line, FtpFileInfo& out)
 
     out.dateTime = normalizeUnixDateTime(tokens[dateIdx], tokens[dateIdx + 1], tokens[dateIdx + 2]);
 
+    // 属主：标准 ls -l 布局 perms/links/user/group/size/… 中 user 固定第 3 个 token；
+    // dateIdx>=5 说明 size 之前确有 links+user+group 三字段，越界的畸形行不猜（留空→显示 —）
+    if (dateIdx >= 5 && tokens.size() > 2)
+        out.owner = tokens[2];
+
     // 文件名从日期第三字段之后开始，可能含空格。
     // 按 token 序推进到第 dateIdx+2 个字段末尾——容忍任意空格数与 tab
     // （标准 ls -l 对单数字日右对齐补双空格，旧实现用单空格拼接子串做精确查找会整行丢失）。

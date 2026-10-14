@@ -19,6 +19,7 @@ struct FtpFileInfo {
     uint64_t    size = 0;
     std::string permissions;  // Unix: "rw-r--r--", Windows: ""
     std::string dateTime;     // ISO 8601 "2026-07-20 14:30:00"
+    std::string owner;        // Unix LIST user 列 / SFTP uid 十进制；空=协议不可得（显示 —）
 };
 
 // 本地文件信息 — 用于与远程文件进行精确对比（size + 时间戳）

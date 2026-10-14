@@ -7,7 +7,7 @@
  * Author: turnarond
  *
  * Description: 远程 FTP 目录表格数据模型 — QAbstractTableModel 子类，
- *              提供 5 列视图（图标/名称/大小/修改时间/权限），
+ *              提供 6 列视图（图标/名称/大小/修改时间/权限/所有者），
  *              支持与本地文件列表对比着色（绿=已同步/黄=有差异）。
  */
 
@@ -22,7 +22,7 @@ class RemoteFileModel : public QAbstractTableModel {
     Q_OBJECT
 
 public:
-    enum Column { ColIcon = 0, ColName, ColSize, ColDateTime, ColPermissions, ColCount };
+    enum Column { ColIcon = 0, ColName, ColSize, ColDateTime, ColPermissions, ColOwner, ColCount };
 
     explicit RemoteFileModel(QObject* parent = nullptr);
 

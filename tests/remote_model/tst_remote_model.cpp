@@ -81,6 +81,41 @@ private slots:
         }
         QCOMPARE(szDups, 2);
     }
+    void ownerColumn_endToEnd() {
+        RemoteFileModel model;
+        std::vector<FtpFileInfo> files;
+        FtpFileInfo withOwner; withOwner.name = "a.txt"; withOwner.owner = "0";
+        FtpFileInfo noOwner;   noOwner.name = "b.txt";   // owner 留空
+        files.push_back(withOwner);
+        files.push_back(noOwner);
+        model.setFileList(files);
+
+        // 列序扩展：所有者列在权限之后，ColCount 随之 +1
+        QCOMPARE(RemoteFileModel::ColCount, 6);
+        QCOMPARE(model.headerData(RemoteFileModel::ColOwner, Qt::Horizontal, Qt::DisplayRole)
+                     .toString(), QStringLiteral("所有者"));
+        QCOMPARE(model.columnCount(), 6);
+
+        const int ownerCol = RemoteFileModel::ColOwner;
+        QCOMPARE(model.data(model.index(0, ownerCol), Qt::DisplayRole).toString(),
+                 QStringLiteral("0"));
+        // 不可得统一显示 —（U+2014）
+        QCOMPARE(model.data(model.index(1, ownerCol), Qt::DisplayRole).toString(),
+                 QString(QChar(0x2014)));
+    }
+
+    void sort_ownerColumn_ordersByOwner() {
+        RemoteFileModel model;
+        std::vector<FtpFileInfo> files;
+        auto mk = [](std::string n, std::string o) {
+            FtpFileInfo f; f.name = n; f.owner = o; return f;
+        };
+        files.push_back(mk("a.txt", "root"));
+        files.push_back(mk("b.txt", "admin"));
+        model.setFileList(files);
+        model.sort(RemoteFileModel::ColOwner, Qt::AscendingOrder);
+        QCOMPARE(QString::fromStdString(model.fileAt(0).name), QStringLiteral("b.txt"));
+    }
 };
 QTEST_MAIN(TstRemoteModel)
 #include "tst_remote_model.moc"

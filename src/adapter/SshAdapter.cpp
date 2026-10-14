@@ -328,6 +328,10 @@ std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remote
             ? QDateTime::fromSecsSinceEpoch(attrs.mtime).toString("yyyy-MM-dd HH:mm:ss").toStdString()
             : "";
 
+        // 属主：uid 取十进制数字直显（工业设备多为 root=0；不做名字反查，避免依赖远端 /etc/passwd）
+        if (attrs.flags & LIBSSH2_SFTP_ATTR_UIDGID)
+            fi.owner = std::to_string(attrs.uid);
+
         // 权限：八进制 → rwx 字符串
         if (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) {
             unsigned int p = attrs.permissions & 0777;

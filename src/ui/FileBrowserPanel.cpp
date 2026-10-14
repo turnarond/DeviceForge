@@ -404,6 +404,21 @@ void FileBrowserPanel::applyFileList(const QString& path,
     if (!model) {
         model = new RemoteFileModel(m_table);
         m_table->setModel(model);
+        // 列宽定型（v2.12 元数据列）：名称吃满剩余宽度，其余固定像素；仅建模型时设置一次
+        {
+            auto* hh = m_table->horizontalHeader();
+            hh->setSectionResizeMode(RemoteFileModel::ColIcon, QHeaderView::Fixed);
+            hh->setSectionResizeMode(RemoteFileModel::ColName, QHeaderView::Stretch);
+            hh->setSectionResizeMode(RemoteFileModel::ColSize, QHeaderView::Fixed);
+            hh->setSectionResizeMode(RemoteFileModel::ColDateTime, QHeaderView::Fixed);
+            hh->setSectionResizeMode(RemoteFileModel::ColPermissions, QHeaderView::Fixed);
+            hh->setSectionResizeMode(RemoteFileModel::ColOwner, QHeaderView::Fixed);
+            m_table->setColumnWidth(RemoteFileModel::ColIcon, 28);
+            m_table->setColumnWidth(RemoteFileModel::ColSize, 76);
+            m_table->setColumnWidth(RemoteFileModel::ColDateTime, 130);
+            m_table->setColumnWidth(RemoteFileModel::ColPermissions, 84);
+            m_table->setColumnWidth(RemoteFileModel::ColOwner, 72);
+        }
         // setModel 会重建 selection model（setupUi 时连接会失效），必须在设模型之后连接
         if (auto* selModel = m_table->selectionModel()) {
             connect(selModel, &QItemSelectionModel::selectionChanged, this,

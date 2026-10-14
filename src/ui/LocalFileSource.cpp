@@ -1,5 +1,6 @@
 ﻿#include "ui/LocalFileSource.h"
 #include <QDateTime>
+#include <QFileInfo>
 #include <filesystem>
 #include <system_error>
 
@@ -78,6 +79,15 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
         std::error_code timeec;
         const auto ft = entry.last_write_time(timeec);
         if (!timeec) info.dateTime = formatFileTime(ft).toStdString();
+
+        // 属主（勘误 R2 口径）：std::filesystem 无 owner API，借 QFileInfo::owner()。
+        // 路径经 u8string + fromUtf8(char*,len) 转换——跨 DLL 只传裸指针/长度，
+        // 不经 std::wstring 值边界（本文件头注释的 CRT 分配器错配教训）。
+        {
+            const std::string u8 = entry.path().u8string();
+            const QString qiPath = QString::fromUtf8(u8.c_str(), static_cast<int>(u8.size()));
+            info.owner = QFileInfo(qiPath).owner().toStdString();
+        }
 
         result.push_back(std::move(info));
     }
