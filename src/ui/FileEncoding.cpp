@@ -28,7 +28,7 @@ QString normalizedCrlf(const QString& s)
     return out;
 }
 
-QString codecFromUtf16Bytes(const QByteArray& raw, bool bigEndian, QString& outText)
+void codecFromUtf16Bytes(const QByteArray& raw, bool bigEndian, QString& outText)
 {
     // 输入已过 BOM 判定；此处剥离可能存在的 BOM 后按端序两两成对
     int off = 0;
@@ -47,7 +47,6 @@ QString codecFromUtf16Bytes(const QByteArray& raw, bool bigEndian, QString& outT
                              : (static_cast<ushort>(lo) | static_cast<ushort>(hi) << 8);
     }
     outText = normalizedCrlf(QString::fromUtf16(units.constData(), n));
-    return outText.isEmpty() && n > 0 ? QString() : QStringLiteral("ok");
 }
 
 } // namespace

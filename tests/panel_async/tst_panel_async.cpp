@@ -66,7 +66,7 @@ public:
         }
         auto it = filesByPath.find(path.toStdString());
         if (it == filesByPath.end()) { m_err = QStringLiteral("mock: no such file"); out.clear(); return false; }
-        if (it->second.size() > maxBytes) { m_err = QStringLiteral("mock: exceeds limit"); out.clear(); return false; }
+        if (it->second.size() > maxBytes) { m_err = QStringLiteral("mock: 文件超过大小上限"); out.clear(); return false; }
         out = it->second; m_err.clear();
         return true;
     }
@@ -74,6 +74,13 @@ public:
         ++writeCalls; lastWritePath = path;
         if (failNextWrite.exchange(false)) { m_err = QStringLiteral("mock: write failed"); return false; }
         filesByPath[path.toStdString()] = data; m_err.clear();
+        // 同步列表条目大小：贴近真实远端（保存后重列与二次保存冲突判定都依赖刷新后的 size）
+        const std::string p = path.toStdString();
+        for (auto& e : m_files) {
+            const std::string full = (e.name == ".." || e.name == ".")
+                ? std::string() : ("/" + e.name);
+            if (full == p) e.size = data.size();
+        }
         return true;
     }
     bool connect(const DeviceInfo&, const AuthInfo&) override { return true; }
@@ -1161,6 +1168,95 @@ private slots:
         QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("/conf.txt"));
         QVERIFY(spy.at(0).at(1).toULongLong() > 0);        // 脱敏日志：只报字节数
         QVERIFY(!dlg->isDirty());
+    }
+
+    // 评审 C-1 回归：慢链路连开两文件，先发起的读回得再晚也必须被代际丢弃，
+    // 编辑器不得出现"甲内容+乙路径"串包
+    void editor_doubleOpenLateCallbackDiscarded()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("a.txt"), makeInfo("b.txt") };
+        src->filesByPath["/a.txt"] = "AAA";
+        src->filesByPath["/b.txt"] = "BBB";
+        src->blockRead = true;
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        auto* model = qobject_cast<RemoteFileModel*>(panel.fileTable()->model());
+        const int rowA = rowForName(panel, "a.txt");
+        const int rowB = rowForName(panel, "b.txt");
+        QVERIFY(rowA >= 0 && rowB >= 0);
+
+        panel.fileTable()->setCurrentIndex(model->index(rowA, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(src->readCalls.load() >= 1, 5000);
+        panel.fileTable()->setCurrentIndex(model->index(rowB, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(src->readCalls.load() >= 2, 5000);
+        src->blockRead = false;
+
+        QTRY_VERIFY_WITH_TIMEOUT(panel.editorOpenCount() == 1, 5000);
+        QTest::qWait(150);                                 // 给乱序晚到的过期回调留投递窗口
+        QCOMPARE(panel.editorOpenCount(), 1);
+        auto* dlg = panel.editorForTest();
+        QVERIFY(dlg);
+        QCOMPARE(dlg->findChild<QLabel*>("fePath")->text(), QStringLiteral("/b.txt"));
+        QCOMPARE(dlg->findChild<QPlainTextEdit*>("fileEditorText")->toPlainText(),
+                 QStringLiteral("BBB"));
+    }
+
+    // 评审 I-1 回归：同一对话框二次保存不得拿打开时旧快照误报"远端已变化"
+    void editor_secondSaveNoFalseConflict()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("conf.txt") };           // 列表 size 0
+        src->filesByPath["/conf.txt"] = "abc";
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int row = rowForName(panel, "conf.txt");
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(row, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(panel.editorOpenCount() == 1, 5000);
+        auto* dlg = panel.editorForTest();
+        auto* edit = dlg->findChild<QPlainTextEdit*>("fileEditorText");
+        QVERIFY(edit);
+
+        edit->setPlainText("12345678");                    // 8 字节：首存按打开快照(0==0)放行
+        dlg->findChild<QPushButton*>("feSave")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(src->writeCalls.load() >= 1, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(!dlg->isDirty(), 5000);
+
+        edit->setPlainText("12345678x");                   // 二次保存：修复前拿旧快照 0 vs 远端 8 → 假冲突阻塞
+        dlg->findChild<QPushButton*>("feSave")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(src->writeCalls.load() >= 2, 5000);
+        QCOMPARE(src->filesByPath["/conf.txt"], std::string("12345678x"));
+        QVERIFY(!dlg->isDirty());
+    }
+
+    // 评审 I-2 回归：混合行尾文件按只读打开（保存会擅自统一行尾，违背规格）
+    void editor_mixedEolOpensReadonly()
+    {
+        auto src = std::make_shared<MockDelayedSource>();
+        src->m_files = { makeInfo("mix.txt") };
+        src->filesByPath["/mix.txt"] = "a\r\nb\n";
+        FileBrowserPanel panel;
+        panel.show();
+        panel.setSource(src);
+        settleInitialLoad(panel);
+
+        const int row = rowForName(panel, "mix.txt");
+        panel.fileTable()->setCurrentIndex(panel.fileTable()->model()->index(row, 0));
+        panel.openEditorForSelectedFile();
+        QTRY_VERIFY_WITH_TIMEOUT(panel.editorOpenCount() == 1, 5000);
+        auto* dlg = panel.editorForTest();
+        QVERIFY(dlg);
+        QVERIFY(!dlg->findChild<QPushButton*>("feSave")->isEnabled());
+        QVERIFY(dlg->findChild<QLabel*>("feBadge")->isVisible());
     }
 };
 QTEST_MAIN(TstPanelAsync)
