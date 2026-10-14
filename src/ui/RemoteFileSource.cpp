@@ -225,6 +225,46 @@ bool RemoteFileSource::download(const QString& remotePath, const QString& localP
     return ok;
 }
 
+bool RemoteFileSource::readFile(const QString& path, std::string& out, uint64_t maxBytes)
+{
+    QMutexLocker locker(&m_mutex);
+    if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
+    const std::string p = path.toStdString();
+    bool ok = false;
+    if (auto* ftp = asFtp(m_adapter))
+        ok = ftp->readFileToMemory(p, out, maxBytes);
+    else if (auto* ssh = asSsh(m_adapter))
+        ok = ssh->sftpReadFileToMemory(p, out, maxBytes);
+    else
+        m_lastError = QStringLiteral("协议 %1 不支持远程文件操作").arg(m_protocol);
+    if (!ok) {
+        m_lastError = adapterLastError(m_adapter);
+        out.clear();
+    } else {
+        m_lastError.clear();
+    }
+    return ok;
+}
+
+bool RemoteFileSource::writeFile(const QString& path, const std::string& data)
+{
+    QMutexLocker locker(&m_mutex);
+    // 持锁期间适配器进度回调同线程执行——同 upload/download 的死锁注记，
+    // 编辑器路径不设进度回调（读写字节量有上限），约束相同。
+    if (!m_adapter) { m_lastError = QStringLiteral("远程源未连接"); return false; }
+    const std::string p = path.toStdString();
+    bool ok = false;
+    if (auto* ftp = asFtp(m_adapter))
+        ok = ftp->writeFileFromMemory(p, data);
+    else if (auto* ssh = asSsh(m_adapter))
+        ok = ssh->sftpWriteFileFromMemory(p, data);
+    else
+        m_lastError = QStringLiteral("协议 %1 不支持远程文件操作").arg(m_protocol);
+    if (!ok) m_lastError = adapterLastError(m_adapter);
+    else m_lastError.clear();
+    return ok;
+}
+
 void RemoteFileSource::setProgressCallback(std::function<void(int)> cb)
 {
     QMutexLocker locker(&m_mutex);

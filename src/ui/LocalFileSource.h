@@ -15,6 +15,8 @@ public:
     bool clearDirectory(const QString& path) override;
     bool upload(const QString& localPath, const QString& remotePath) override;   // 本地源：复制
     bool download(const QString& remotePath, const QString& localPath) override; // 本地源：复制
+    bool readFile(const QString& path, std::string& out, uint64_t maxBytes) override;
+    bool writeFile(const QString& path, const std::string& data) override;
     bool connect(const DeviceInfo&, const AuthInfo&) override { return true; }   // no-op
     bool isConnected() const override { return true; }
     QString lastError() const override { return m_lastError; }

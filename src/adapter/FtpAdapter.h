@@ -55,6 +55,10 @@ public:
     bool uploadFile(const std::string& localPath, const std::string& remotePath);
     bool uploadFolder(const std::string& localPath, const std::string& remotePath);
     bool downloadFile(const std::string& remotePath, const std::string& localPath);
+    // 内存直读/直写（v2.12 在线编辑）：不经临时文件，句柄配置与文件版传输逐选项对齐；
+    // readFileToMemory 超过 maxBytes 立即断流失败；writeFileFromMemory 为 STOR 覆盖语义。
+    bool readFileToMemory(const std::string& remotePath, std::string& out, uint64_t maxBytes);
+    bool writeFileFromMemory(const std::string& remotePath, const std::string& data);
     bool listDirectory(const std::string& remotePath, std::string& outJsonList);
     // 结构化列目录（解析 LIST 原始输出为 FtpFileInfo 列表，便于 UI 渲染）
     // 依赖 FtpListParser (src/tools/FtpDeployTool/FtpListParser.h)

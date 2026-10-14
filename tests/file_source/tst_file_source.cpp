@@ -68,6 +68,35 @@ private slots:
         const QFileInfo qi(dir.filePath("o.txt"));
         QCOMPARE(QString::fromStdString(entries[0].owner), qi.owner());
     }
+    // v2.12 内存读写原语（本地实现，异步语义由面板层保证）：往返 + 超限拒绝
+    void local_readFile_roundtripAndLimit() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString p = dir.filePath("payload.bin");
+        std::string body(4096, 'x');
+        LocalFileSource src;
+        QVERIFY(src.writeFile(p, body));
+        std::string out;
+        QVERIFY(src.readFile(p, out, 2 * 1024 * 1024));
+        QCOMPARE(out.size(), size_t(4096));
+        out.clear();
+        QVERIFY(!src.readFile(p, out, 1024));         // 超限拒绝
+        QVERIFY(!src.lastError().isEmpty());          // 且有原因
+    }
+    void local_writeFile_missingParentDir_reportsError() {
+        QTemporaryDir dir;
+        LocalFileSource src;
+        std::string body("a");
+        QVERIFY(!src.writeFile(dir.filePath("no-such-dir/f.txt"), body));
+        QVERIFY(!src.lastError().isEmpty());
+    }
+    void local_readFile_missingFile_reportsError() {
+        QTemporaryDir dir;
+        LocalFileSource src;
+        std::string out;
+        QVERIFY(!src.readFile(dir.filePath("ghost.bin"), out, 1024));
+        QVERIFY(!src.lastError().isEmpty());
+    }
 };
 QTEST_MAIN(TstFileSource)
 #include "tst_file_source.moc"

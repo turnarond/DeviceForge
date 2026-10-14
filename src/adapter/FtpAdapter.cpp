@@ -525,6 +525,139 @@ bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& 
     return false;
 }
 
+namespace {
+// 内存写回调（带上限守卫）：超限返回 0 触发 CURLE_WRITE_ERROR 立即断流
+struct MemSink { std::string* buf; uint64_t cap; bool overflow; };
+size_t writeBoundedCallback(void* ptr, size_t size, size_t nmemb, void* up)
+{
+    auto* s = static_cast<MemSink*>(up);
+    const size_t total = size * nmemb;
+    if (s->buf->size() + total > s->cap) {
+        s->overflow = true;
+        return 0;
+    }
+    s->buf->append(static_cast<char*>(ptr), total);
+    return total;
+}
+// 内存读回调：向 curl 供给内存块（EOF 返回 0，与 fread 语义一致）
+struct MemSource { const std::string* data; size_t off; };
+size_t readFromMemoryCallback(void* ptr, size_t size, size_t nmemb, void* up)
+{
+    auto* s = static_cast<MemSource*>(up);
+    const size_t remain = s->data->size() - s->off;
+    const size_t want = (size * nmemb < remain) ? size * nmemb : remain;
+    memcpy(ptr, s->data->data() + s->off, want);
+    s->off += want;
+    return want;
+}
+} // namespace
+
+bool FtpAdapter::readFileToMemory(const std::string& remotePath, std::string& out, uint64_t maxBytes)
+{
+    out.clear();
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    std::string url = m_impl->buildUrl(remotePath);
+    SecureString userPwd = m_impl->userPwd();
+
+    std::string buffer;
+    MemSink sink{ &buffer, maxBytes, false };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeBoundedCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    // 与 downloadFile 同一序列：闲置判定替代总时长（issue #20）、协议白名单、FTPS 分支；
+    // EPSV=0 显式补齐（SylixOS 三条纪律；旧 downloadFile 未设属历史遗漏，此处不回退纪律）
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
+    if (m_impl->m_useFtps) {
+        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    }
+
+    m_impl->m_cancelled = false;
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (sink.overflow) {
+        m_impl->m_lastError = "文件超过读取上限: " + remotePath;
+        return false;
+    }
+    if (res != CURLE_OK) {
+        m_impl->m_lastError = std::string("读取文件失败: ") + curl_easy_strerror(res);
+        return false;
+    }
+    out = std::move(buffer);
+    m_impl->m_lastError.clear();
+    return true;
+}
+
+bool FtpAdapter::writeFileFromMemory(const std::string& remotePath, const std::string& data)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        m_impl->m_lastError = "curl_easy_init() 失败";
+        return false;
+    }
+
+    std::string url = m_impl->buildUrl(remotePath);
+    SecureString userPwd = m_impl->userPwd();
+
+    MemSource src{ &data, 0 };
+    std::string response;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, readFromMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_READDATA, &src);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(data.size()));
+    // 与 uploadFile 同一序列（闲置限时 / EPSV=0 / 协议白名单 / FTPS / 进度取消）
+    curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
+    if (m_impl->m_useFtps) {
+        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    }
+
+    m_impl->m_cancelled = false;
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, m_impl.get());
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, Impl::progressCallback);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        m_impl->m_lastError = std::string("写入远端文件失败: ") + curl_easy_strerror(res);
+        return false;
+    }
+    m_impl->m_lastError.clear();
+    return true;
+}
+
 bool FtpAdapter::listDirectory(const std::string& remotePath, std::string& outJsonList) {
     CURL* curl = curl_easy_init();
     if (!curl) {

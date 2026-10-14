@@ -48,6 +48,10 @@ public:
     std::vector<FtpFileInfo> sftpListDirectory(const std::string& remotePath);
     bool sftpUploadFile(const std::string& localPath, const std::string& remotePath);
     bool sftpDownloadFile(const std::string& remotePath, const std::string& localPath);
+    // 内存直读/直写（v2.12 在线编辑）：不经临时文件；read 超 maxBytes 立即失败，
+    // write 为 WRITE|CREAT|TRUNC 覆盖语义（与文件版传输同一取消/进度惯例）。
+    bool sftpReadFileToMemory(const std::string& remotePath, std::string& out, uint64_t maxBytes);
+    bool sftpWriteFileFromMemory(const std::string& remotePath, const std::string& data);
     bool sftpDeleteFile(const std::string& remotePath);
     bool sftpDeleteDirectory(const std::string& remotePath);
     bool sftpRename(const std::string& oldPath, const std::string& newPath);

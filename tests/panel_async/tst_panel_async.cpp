@@ -53,6 +53,26 @@ public:
     bool clearDirectory(const QString&) override { return true; }
     bool upload(const QString&, const QString&) override { ++uploadCalls; return true; }
     bool download(const QString&, const QString&) override { ++downloadCalls; return true; }
+    // v2.12 内存读写 Mock：内容表 filesByPath 可控，读可门控阻塞（竞态用例），
+    // 记录调用次数与上次 maxBytes（编辑器链路上限断言用）
+    bool readFile(const QString& path, std::string& out, uint64_t maxBytes) override {
+        ++readCalls; lastReadPath = path; lastReadMax = maxBytes;
+        if (blockRead.load()) {
+            while (blockRead.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        auto it = filesByPath.find(path.toStdString());
+        if (it == filesByPath.end()) { m_err = QStringLiteral("mock: no such file"); out.clear(); return false; }
+        if (it->second.size() > maxBytes) { m_err = QStringLiteral("mock: exceeds limit"); out.clear(); return false; }
+        out = it->second; m_err.clear();
+        return true;
+    }
+    bool writeFile(const QString& path, const std::string& data) override {
+        ++writeCalls; lastWritePath = path;
+        if (failNextWrite.exchange(false)) { m_err = QStringLiteral("mock: write failed"); return false; }
+        filesByPath[path.toStdString()] = data; m_err.clear();
+        return true;
+    }
     bool connect(const DeviceInfo&, const AuthInfo&) override { return true; }
     bool reconnect() override {
         ++reconnectCalls;
@@ -75,6 +95,14 @@ public:
     std::atomic<int> uploadCalls{0};
     std::atomic<int> downloadCalls{0};
     std::atomic<int> removeCalls{0};
+    std::atomic<int> readCalls{0};
+    std::atomic<int> writeCalls{0};
+    QString lastReadPath;
+    QString lastWritePath;
+    uint64_t lastReadMax = 0;
+    std::map<std::string, std::string> filesByPath;   // readFile/writeFile 内容表
+    std::atomic<bool> blockRead{false};
+    std::atomic<bool> failNextWrite{false};
     std::atomic<bool> blockList{false};
     std::atomic<bool> failNextList{false};
     std::atomic<bool> failReconnect{false};

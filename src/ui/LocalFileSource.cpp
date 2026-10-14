@@ -2,6 +2,7 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <filesystem>
+#include <fstream>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -189,4 +190,49 @@ bool LocalFileSource::download(const QString& remotePath, const QString& localPa
 {
     // 本地源语义：download = 从 "远程"（实为另一本地路径）复制到本地
     return upload(remotePath, localPath);
+}
+
+bool LocalFileSource::readFile(const QString& path, std::string& out, uint64_t maxBytes)
+{
+    out.clear();
+    std::error_code ec;
+    const auto sz = fs::file_size(toFsPath(path), ec);
+    if (ec) {
+        m_lastError = QStringLiteral("读取失败: %1").arg(QString::fromStdString(ec.message()));
+        return false;
+    }
+    if (sz > maxBytes) {
+        m_lastError = QStringLiteral("文件超过大小上限（%1 字节）").arg(sz);
+        return false;
+    }
+    std::ifstream in(toFsPath(path), std::ios::binary);
+    if (!in) {
+        m_lastError = QStringLiteral("无法打开文件: %1").arg(path);
+        return false;
+    }
+    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (in.bad()) {
+        m_lastError = QStringLiteral("读取中断: %1").arg(path);
+        out.clear();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool LocalFileSource::writeFile(const QString& path, const std::string& data)
+{
+    std::ofstream os(toFsPath(path), std::ios::binary | std::ios::trunc);
+    if (!os) {
+        m_lastError = QStringLiteral("无法写入文件: %1").arg(path);
+        return false;
+    }
+    os.write(data.data(), static_cast<std::streamsize>(data.size()));
+    os.close();
+    if (os.fail()) {
+        m_lastError = QStringLiteral("写入中断: %1").arg(path);
+        return false;
+    }
+    m_lastError.clear();
+    return true;
 }
