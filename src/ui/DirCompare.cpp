@@ -64,18 +64,25 @@ CompareSummary compareDirectories(const std::vector<FtpFileInfo>& left,
             const auto& r = right[it->second];
             rightMatched[it->second] = true;
             e.rightRow = static_cast<int>(it->second);
-            if (l.isDir || r.isDir) {
+            if (l.isDir != r.isDir) {
+                // 评审 M1：同名一侧目录一侧文件——类型都变了不是"同"
+                e.cls = CompareClass::Diff;
+                ++s.diff;
+            } else if (l.isDir) {
                 // 目录只判存在性（同名目录 size 天然不同，不比时间）
                 e.cls = CompareClass::Same;
+                ++s.same;
             } else if (l.size != r.size) {
                 e.cls = CompareClass::Diff;
+                ++s.diff;
             } else if (!l.dateTime.empty() && !r.dateTime.empty()
                        && !mtimeMinuteEqual(l.dateTime, r.dateTime)) {
                 e.cls = CompareClass::Diff;
+                ++s.diff;
             } else {
                 e.cls = CompareClass::Same;
+                ++s.same;
             }
-            if (e.cls == CompareClass::Same) ++s.same; else ++s.diff;
         }
         if (alignedOut)
             alignedOut->append(e);

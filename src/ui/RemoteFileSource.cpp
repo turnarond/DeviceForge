@@ -238,7 +238,10 @@ bool RemoteFileSource::readFile(const QString& path, std::string& out, uint64_t 
     else
         m_lastError = QStringLiteral("协议 %1 不支持远程文件操作").arg(m_protocol);
     if (!ok) {
-        m_lastError = adapterLastError(m_adapter);
+        // 评审 I-4b：适配器未置错时保留本源原因（未连接/不支持），避免空文案警告
+        const QString adapterErr = adapterLastError(m_adapter);
+        if (!adapterErr.isEmpty())
+            m_lastError = adapterErr;
         out.clear();
     } else {
         m_lastError.clear();
@@ -260,8 +263,13 @@ bool RemoteFileSource::writeFile(const QString& path, const std::string& data)
         ok = ssh->sftpWriteFileFromMemory(p, data);
     else
         m_lastError = QStringLiteral("协议 %1 不支持远程文件操作").arg(m_protocol);
-    if (!ok) m_lastError = adapterLastError(m_adapter);
-    else m_lastError.clear();
+    if (!ok) {
+        const QString adapterErr = adapterLastError(m_adapter);
+        if (!adapterErr.isEmpty())
+            m_lastError = adapterErr;
+    } else {
+        m_lastError.clear();
+    }
     return ok;
 }
 

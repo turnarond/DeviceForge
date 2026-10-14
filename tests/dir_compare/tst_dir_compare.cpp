@@ -74,6 +74,15 @@ private slots:
         QCOMPARE(s.diff, 0);
     }
 
+    void compare_dirVsFileIsDiff()
+    {
+        // 评审 M1：同名一侧是目录一侧是文件——类型变化即差异，不得判同
+        auto s = compareDirectories({mk("x", 4096, "2026-01-01 00:00:00", true)},
+                                    {mk("x", 10, "2026-01-01 00:00:00")});
+        QCOMPARE(s.diff, 1);
+        QCOMPARE(s.same, 0);
+    }
+
     void compare_dotsSkipped()
     {
         auto s = compareDirectories({mk("..", 0, "", true), mk("a", 1)},

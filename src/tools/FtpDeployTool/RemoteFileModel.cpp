@@ -99,6 +99,10 @@ void RemoteFileModel::setFileList(const std::vector<FtpFileInfo>& files)
 {
     beginResetModel();
     m_files = files;
+    // 评审 I-3：刷新即出对比态——否则对比模式下的 sort() 被守卫吞掉、
+    // applyFileList 的名称排序不生效，退出对比后列表以服务器原始乱序呈现
+    m_compareMode = false;
+    m_viewRows.clear();
 
     // 重建对比着色索引
     m_syncedNames.clear();

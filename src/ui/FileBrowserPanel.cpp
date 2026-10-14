@@ -1185,9 +1185,15 @@ void FileBrowserPanel::openEditorForRow(int row)
     QString dir = m_currentPath;
     if (!dir.endsWith(QLatin1Char('/')))
         dir += QLatin1Char('/');
+    const QString path = dir + QString::fromStdString(fi.name);
+    const ConflictSnapshot snap{ fi.size, QString::fromStdString(fi.dateTime), true };
+
+    // 评审 C-1：每次打开推进编辑代际，作废更早的在途读——慢链路上连点两个文件时，
+    // 先发起的读回晚也会被丢弃，杜绝"甲内容+乙路径"串包后经保存误写远端。
+    const quint64 gen = ++m_editGeneration;
     m_editInfo = fi;
-    m_editPath = dir + QString::fromStdString(fi.name);
-    m_editSnap = ConflictSnapshot{ fi.size, QString::fromStdString(fi.dateTime), true };
+    m_editPath = path;
+    m_editSnap = snap;
 
     if (fi.size > kMaxEditBytes) {
         openReadonlyEditor(tr("文件超过大小上限（2 MB），建议下载后本地编辑"));
@@ -1195,9 +1201,9 @@ void FileBrowserPanel::openEditorForRow(int row)
     }
 
     auto source = m_source;
-    const quint64 gen = m_editGeneration;
-    const QString path = m_editPath;
-    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source, path]() {
+    // 评审 C-1：info/path/snap 随 worker 值捕获成对回传，回调只在仍是最新目标时落成员
+    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source,
+                       path, fi, snap]() {
         std::string bytes;
         QString err;
         const bool ok = source->readFile(path, bytes, kMaxEditBytes);
@@ -1206,10 +1212,17 @@ void FileBrowserPanel::openEditorForRow(int row)
         QByteArray ba(bytes.data(), static_cast<int>(bytes.size()));
         if (!guard)
             return;
-        QMetaObject::invokeMethod(this, [this, gen, ok, err, ba]() {
-            if (gen != m_editGeneration) return;   // 过期（导航/刷新）：丢弃
+        QMetaObject::invokeMethod(this, [this, gen, ok, err, ba, path, fi, snap]() {
+            if (gen != m_editGeneration) return;   // 过期（导航/刷新/更新的打开）：丢弃
+            m_editInfo = fi;
+            m_editPath = path;
+            m_editSnap = snap;
             if (!ok) {
-                QMessageBox::warning(this, tr("打开失败"), err);
+                // 评审 I-4a：size 未知、读侧硬断超限 → 与已知超限同口径转只读
+                if (err.contains(QStringLiteral("上限")))
+                    openReadonlyEditor(err);
+                else
+                    QMessageBox::warning(this, tr("打开失败"), err);
                 return;
             }
             finishEditorOpen(ba);
@@ -1251,6 +1264,12 @@ void FileBrowserPanel::finishEditorOpen(const QByteArray& raw)
     const TextProbe probe = probeTextBuffer(raw);
     if (probe.looksBinary) {
         openReadonlyEditor(tr("二进制文件不可编辑"));
+        return;
+    }
+    if (probe.eol == QStringLiteral("mixed")) {
+        // 评审 I-2：混合行尾无法在"编辑器统一 LF 模型"下无损还原——
+        // 按只读打开而非擅自整改写行尾（规格 §4.3"保存保持原行尾"的就实边界）
+        openReadonlyEditor(tr("行尾混用（CRLF/LF），为避免保存时擅自改写行尾，已按只读打开"));
         return;
     }
     QString text, err;
@@ -1358,6 +1377,9 @@ void FileBrowserPanel::startEditorSave(bool skipConflictCheck)
             dlg->setStatusNote(tr("已保存 %1（%2 字节）")
                 .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
                 .arg(bytes.size()));
+            // 评审 I-1：己方保存后续用快照（写入大小为准，mtime 本地不可知则清空），
+            // 同一对话框二次保存不再拿打开时的陈旧快照误判"远端已变化"
+            m_editSnap = ConflictSnapshot{ static_cast<uint64_t>(bytes.size()), QString(), true };
             emit fileSavedForLog(path, static_cast<quint64>(bytes.size()));
             refresh();   // 回传成功刷新目录（对比态经 filesChanged 自动失效，属预期）
         }, Qt::QueuedConnection);
