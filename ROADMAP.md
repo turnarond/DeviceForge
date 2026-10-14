@@ -2,19 +2,19 @@
 
 > 本文件描述 DeviceForge 的发展方向。计划会随社区反馈调整——**如果你正好需要某个功能,欢迎在 [Issues](../../issues) 提出或 👍,这会直接影响优先级。**
 
-**当前版本**：v2.11.1 · **平台**：Windows（x64）· **许可**：MIT License
+**当前版本**：v2.12.0 · **平台**：Windows（x64）· **许可**：MIT License
 
 ---
 
-## 已交付（至 v2.11.1）
+## 已交付（至 v2.12.0）
 
 | 模块 | 能力 |
 |------|------|
-| 文件部署 | FTP/FTPS + **SFTP** 批量部署（并发度 1–8、逐设备进度、报告导出、失败重试；IDeployable 统一部署循环），TLS 加密，双栏远程文件管理 |
+| 文件部署 | FTP/FTPS + **SFTP** 批量部署（并发度 1–8、逐设备进度、报告导出、失败重试；IDeployable 统一部署循环），TLS 加密，双栏远程文件管理；**元数据列（所有者/修改时间/权限）+ Ctrl+M 目录对比（差异着色/行对齐/仅差异过滤）+ F4 在线预览编辑回传（编码探测/冲突确认）** |
 | SFTP 文件管理 | 列目录/上传/下载/删除/重命名/新建目录，双栏 FTP/SFTP 协议一键切换（端口自动 21/22） |
 | 批量命令 | Telnet / **SSH**（libssh2，密码认证 + TOFU）批量 Shell 命令 |
-| Modbus 测试 | Modbus TCP 批量读写寄存器 |
-| WebSocket 通信 | Server/Client，Token 认证 |
+| Modbus 测试 | **多 PLC 主看偶写重构（v2.12）**：档案身份 + modbus.target 目标档案（旧从站自动迁移）、250ms 轮询调度器（写插队/指数退避）、双栏目标清单 + 逐寄存器变化视图、本机环回集成测试 |
+| WebSocket 通信 | **双栏控制台重构（v2.12）**：连接操作区 + 2000 行实时事件流（方向/对端/字节数/预览），Token DPAPI 加密存储 |
 | **网络调试中继** | TCP/UDP/**组播** 透明中继旁路抓包 + 流量录制（`.nrec`）+ 按原始时序回放 + 组播回灌 |
 | **OPC UA 客户端** | open62541 客户端：连接（None+匿名）+ 批量读/写节点 + DataChange 订阅 + 地址空间浏览 |
 | **OTA 在线更新** | 主程序内检查 + 独立 Updater.exe 双进程替换（备份/回滚/重启） |
@@ -35,10 +35,12 @@
 - **v2.9**（2026-09-16，补丁 09-26）：传输可靠性内核——双栏/批量部署统一重试、SHA-256 校验、原子提交、取消与已交付文件恢复跳过
 - **v2.10**（2026-09-29）：统一批量命令下发内核（BatchCommandRunner）+ 部署后成功设备重启闭环（重启断开按预期成功）+ 重启参数持久化
 - **v2.11**（2026-10-08）：设备任务中心——统一设备档案 + 任务模板库 + 编排执行引擎（阶段恢复）+ 执行记录持久化 + 三栏任务中心页
+- **v2.11.1**（2026-10-08）：现场反馈可用性补丁——设备编辑器协议/凭据下拉与就地新建、综合日志折叠记忆、批量命令结果列宽可拖动
+- **v2.12**（2026-10-14）：三大界面重构——WebSocket 双栏控制台 + 事件流、MODBUS 多 PLC 主看偶写重构、文件管理增强（元数据列/目录对比/F4 在线编辑回传）
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + IDeployable 部署能力接口 + 工业仪表盘深色主题（「琴色是动词」体系）。
 产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
-测试：34 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e）。
+测试：45 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e；v2.12 新增 tst_batch_result_header / tst_log_panel_state / tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback / tst_modbus_target_store / tst_modbus_scheduler / tst_modbus_page / tst_modbus_loopback / tst_dir_compare / tst_file_encoding）。
 
 ---
 
