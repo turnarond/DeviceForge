@@ -91,6 +91,26 @@ private slots:
         QCOMPARE(QString::fromStdString(e->dateTime), curYear() + QStringLiteral("-08-15 09:05:00"));
     }
 
+    // v2.12 文件管理增强：Unix 行 user 列提取为 owner（此前被解析器丢弃）
+    void unix_ownerExtraction()
+    {
+        auto v = FtpListParser::parse(
+            "-rw-r--r-- 1 admin staff 1234 Jul 20 14:30 app.conf\n");
+        QCOMPARE(v.size(), size_t{1});
+        QVERIFY(findEntry(v, "app.conf") != nullptr);
+        QCOMPARE(findEntry(v, "app.conf")->owner, std::string("admin"));
+    }
+
+    // Windows dir 格式无属主信息 → owner 保持空（显示口径为 —）
+    void windows_ownerEmpty()
+    {
+        auto v = FtpListParser::parse(
+            "07/20/2026  02:30 PM         1,234,567 setup.exe\n");
+        QCOMPARE(v.size(), size_t{1});
+        QVERIFY(findEntry(v, "setup.exe") != nullptr);
+        QVERIFY(findEntry(v, "setup.exe")->owner.empty());
+    }
+
     // 标准 ls -l 对单数字日右对齐补空格（"Jul  5"）——修复前该行被静默丢弃
     void unix_singleDigitDay()
     {

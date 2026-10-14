@@ -16,6 +16,7 @@
 #pragma once
 #include "framework/ToolWidget.h"
 #include "framework/DeviceInfo.h"
+#include "ui/DirCompare.h"
 #include <memory>
 #include <atomic>
 #include <functional>
@@ -87,6 +88,11 @@ private:
     void setupUi();
     void setupToolbar(QVBoxLayout* mainLayout);
     void setupBottomBar(QVBoxLayout* mainLayout);
+    // 目录对比（v2.12 文件管理增强）：跨双栏工具条 + 汇总条 + Ctrl+M 快捷键
+    void setupCompareBar(QVBoxLayout* mainLayout);
+    void setupCompareSummary(QVBoxLayout* mainLayout);
+    void updateDirectoryCompare();
+    void exitDirectoryCompare();
     void appendLog(const QString& msg);
     std::vector<std::string> collectLocalFiles() const;
     void connectBackendSignals();
@@ -180,6 +186,13 @@ private:
 
     // 分割器
     QSplitter* m_splitter = nullptr;
+
+    // 目录对比态（瞬态，不入库）：工具条控件 + 对齐条目缓存
+    QPushButton* m_dirCompareBtn = nullptr;
+    QCheckBox*   m_diffOnlyCheck = nullptr;
+    QLabel*      m_compareSummary = nullptr;
+    QVector<CompareEntry> m_compareEntries;
+    bool m_compareActive = false;
 
     // 双栏只持有提交/取消函数和事件快照；worker 及协议对象均归
     // Scheduler 所有。凭证以短期引用键与任务 ID 关联，终态立即擦除。

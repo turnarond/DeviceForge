@@ -1,6 +1,7 @@
 #include <QtTest/QtTest>
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 #include "tools/FtpDeployTool/FtpFileInfo.h"
+#include "ui/DirCompare.h"
 
 // RemoteFileModel::sort 语义锁定：
 // . / .. 置顶 → 目录优先 → 名称不区分大小写排序
@@ -80,6 +81,86 @@ private slots:
             ++szDups;
         }
         QCOMPARE(szDups, 2);
+    }
+    void ownerColumn_endToEnd() {
+        RemoteFileModel model;
+        std::vector<FtpFileInfo> files;
+        FtpFileInfo withOwner; withOwner.name = "a.txt"; withOwner.owner = "0";
+        FtpFileInfo noOwner;   noOwner.name = "b.txt";   // owner 留空
+        files.push_back(withOwner);
+        files.push_back(noOwner);
+        model.setFileList(files);
+
+        // 列序扩展：所有者列在权限之后，ColCount 随之 +1
+        QCOMPARE(RemoteFileModel::ColCount, 6);
+        QCOMPARE(model.headerData(RemoteFileModel::ColOwner, Qt::Horizontal, Qt::DisplayRole)
+                     .toString(), QStringLiteral("所有者"));
+        QCOMPARE(model.columnCount(), 6);
+
+        const int ownerCol = RemoteFileModel::ColOwner;
+        QCOMPARE(model.data(model.index(0, ownerCol), Qt::DisplayRole).toString(),
+                 QStringLiteral("0"));
+        // 不可得统一显示 —（U+2014）
+        QCOMPARE(model.data(model.index(1, ownerCol), Qt::DisplayRole).toString(),
+                 QString(QChar(0x2014)));
+    }
+
+    void sort_ownerColumn_ordersByOwner() {
+        RemoteFileModel model;
+        std::vector<FtpFileInfo> files;
+        auto mk = [](std::string n, std::string o) {
+            FtpFileInfo f; f.name = n; f.owner = o; return f;
+        };
+        files.push_back(mk("a.txt", "root"));
+        files.push_back(mk("b.txt", "admin"));
+        model.setFileList(files);
+        model.sort(RemoteFileModel::ColOwner, Qt::AscendingOrder);
+        QCOMPARE(QString::fromStdString(model.fileAt(0).name), QStringLiteral("b.txt"));
+    }
+    void compareView_placeholderAndColors() {
+        RemoteFileModel model;
+        std::vector<FtpFileInfo> files;
+        FtpFileInfo a; a.name = "a.txt"; a.size = 10;
+        FtpFileInfo l; l.name = "l.txt"; l.size = 5;
+        files.push_back(a); files.push_back(l);
+        model.setFileList(files);
+
+        // 左栏视角：a=Same，l=OnlyLeft（金中），对面 OnlyRight 条目展开为占位行
+        QVector<AlignedRow> rows;
+        rows.append(AlignedRow{0, CompareClass::Same});
+        rows.append(AlignedRow{1, CompareClass::OnlyLeft});
+        rows.append(AlignedRow{-1, CompareClass::OnlyRight});
+        model.setCompareView(files, rows, QStringLiteral("远端独有"));
+
+        QCOMPARE(model.rowCount(), 3);
+        QVERIFY(!model.isPlaceholderAt(0));
+        QVERIFY(!model.isPlaceholderAt(1));
+        QVERIFY(model.isPlaceholderAt(2));
+        // 占位行不可选不可用（双击/复制移动必须跳过）
+        QVERIFY(!(model.flags(model.index(2, 0)) & Qt::ItemIsSelectable));
+        QVERIFY(!!(model.flags(model.index(1, 0)) & Qt::ItemIsSelectable));
+        // 名称列：占位行显示对面独有提示
+        QCOMPARE(model.data(model.index(2, RemoteFileModel::ColName), Qt::DisplayRole).toString(),
+                 QStringLiteral("远端独有"));
+        // 对比态行色（深色主题）：Same 不着色 / OnlyLeft 金中 / 占位石墨
+        QVERIFY(!model.data(model.index(0, RemoteFileModel::ColName), Qt::BackgroundRole).isValid());
+        QCOMPARE(model.data(model.index(1, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
+                 QColor(0x2A, 0x22, 0x14));
+        QCOMPARE(model.data(model.index(2, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
+                 QColor(0x08, 0x0B, 0x10));
+        // Diff 行色
+        model.setCompareView(files, {AlignedRow{0, CompareClass::Diff}}, QStringLiteral("—"));
+        QCOMPARE(model.data(model.index(0, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
+                 QColor(0x1F, 0x1A, 0x10));
+
+        // 退出对比态：恢复普通视图与旧绿/黄自动着色路径
+        model.exitCompareView();
+        QCOMPARE(model.rowCount(), 2);
+        QVERIFY(!model.isPlaceholderAt(0));
+        LocalFileInfo li; li.name = "a.txt"; li.size = 99;
+        model.setLocalFilesForCompare({li});   // 旧行为：同名异 size → 黄
+        QCOMPARE(model.data(model.index(0, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
+                 QColor(80, 70, 30));
     }
 };
 QTEST_MAIN(TstRemoteModel)

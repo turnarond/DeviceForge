@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-39 个测试目标（v2.12 MODBUS 重构 +4 = 43），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+45 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -10,7 +10,9 @@
 | NetRelayTool/ | tst_relay_addr | NetRelayTypes.h | 纯逻辑（仅头文件） |
 | config/ | tst_config_store / tst_dpapi_crypto | ConfigStore / DpapiCrypto | SQLite 持久化 / DPAPI |
 | deploy/ | tst_deploy_loop | IDeployable 部署循环 | 协议化逻辑 |
-| file_source/ | tst_file_source | IFileSource Local 实现 | 文件系统 |
+| file_source/ | tst_file_source | IFileSource Local 实现 + readFile/writeFile 原语 | 文件系统 |
+| dir_compare/ | tst_dir_compare | DirCompare.h/.cpp 目录对比纯逻辑（分类/对齐/分钟精度） | 纯逻辑 |
+| file_encoding/ | tst_file_encoding | FileEncoding 编码探测/转换/冲突谓词（Win32 CP，禁 QTextCodec） | 纯逻辑 |
 | modbus/ | tst_modbus_mapping | Modbus 地址映射 | 纯逻辑 |
 | modbus/ | tst_modbus_target_store | ModbusTargetStore 持久化/迁移（临时库） | SQLite 持久化 |
 | modbus/ | tst_modbus_scheduler | ModbusScheduler/ModbusDataStore（假时钟） | 纯逻辑调度 |

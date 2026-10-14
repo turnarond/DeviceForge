@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DeviceForge 文件管理增强 · UI 稿（目录对比 + F4 编辑器）</title>
+<style>
+  :root{
+    /* 深色主题 token —— 与 darkstyle.qss 一致 */
+    --bg:#0B0E14; --panel:#141820; --table:#0E1219; --alt:#12161E;
+    --line:#252A33; --line2:#333B48; --head:#1A2030;
+    --text:#C8CCD4; --muted:#7B8494; --bright:#E4E7EC; --white:#FFFFFF;
+    --gold:#F0A030; --gold-dim:rgba(240,160,48,.10); --gold-mid:rgba(240,160,48,.18);
+    --gold-sel:#2A2518; --teal:#40C8A0;
+    --btn:#232A36; --btn-line:#333B48;
+    /* 亮色主题 token —— 与 darkstyle-light.qss 一致 */
+    --l-bg:#F5F6F8; --l-panel:#FFFFFF; --l-table:#ECEFF3; --l-alt:#E4E8EE;
+    --l-line:#D5DAE2; --l-head:#E4E8EE; --l-text:#2A2F38; --l-muted:#6B7280;
+    --l-gold:#D48820; --l-gold-dim:rgba(212,136,32,.10); --l-gold-mid:rgba(212,136,32,.16);
+    --l-sel:#F5E3C8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#05070B;color:var(--text);font:12px/1.5 "Microsoft YaHei","Segoe UI",sans-serif;padding:28px 34px 60px}
+  h1{font-size:17px;color:var(--white);letter-spacing:.5px}
+  h1 small{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
+  .sec{margin-top:34px}
+  .sec>h2{font-size:13px;color:var(--gold);margin-bottom:4px}
+  .sec>p.note{color:var(--muted);font-size:11px;margin-bottom:12px}
+  .mono{font-family:Consolas,Monaco,monospace}
+
+  /* ── 主窗体壳 ─────────────────────────── */
+  .win{background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden;max-width:1180px}
+  .tabbar{display:flex;gap:2px;background:var(--bg);padding:8px 10px 0;border-bottom:1px solid var(--line)}
+  .tab{background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;padding:7px 18px;color:#A8ACB8;font-size:12px}
+  .tab.on{color:var(--gold);border-bottom:2px solid var(--gold);background:var(--bg)}
+
+  /* ── 对比工具条 ─────────────────────────── */
+  .cmpbar{display:flex;align-items:center;gap:10px;background:var(--panel);border-bottom:1px solid var(--line);padding:7px 12px}
+  .tb{background:var(--btn);border:1px solid var(--btn-line);border-radius:5px;padding:3px 12px;color:var(--bright);font-size:12px;white-space:nowrap}
+  .tb.pri{background:var(--gold);border-color:var(--gold);color:#141007;font-weight:600}
+  .tb.on{background:var(--gold-dim);border-color:var(--gold);color:var(--gold);font-weight:600}
+  .tb.ghost{background:transparent;border-color:var(--btn-line);color:var(--muted)}
+  .chk{display:flex;align-items:center;gap:6px;color:var(--text);font-size:12px}
+  .box{width:13px;height:13px;border:1px solid var(--line2);border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--bg);background:var(--gold);border-color:var(--gold)}
+  .kbd{border:1px solid var(--line2);border-radius:3px;padding:0 5px;font-size:10px;color:var(--muted);font-family:Consolas,monospace}
+  .spacer{flex:1}
+
+  /* ── 双栏 ─────────────────────────── */
+  .panes{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+  .pane{background:var(--bg);display:flex;flex-direction:column}
+  .crumb{padding:6px 12px;color:var(--muted);font-size:11px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .crumb b{color:var(--text);font-weight:500}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  th{background:var(--head);color:var(--text);font-weight:600;font-size:11px;text-align:left;padding:6px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line2)}
+  td{padding:4px 8px;font-size:11.5px;border-bottom:1px solid #1A1F28;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  tr.alt td{background:var(--alt)}
+  .c-s td,.c-m td{width:64px;text-align:right}
+  .c-d td{width:104px}
+  .c-p td{width:74px}
+  .c-o td{width:66px}
+  .dir .c-n td{color:var(--bright);font-weight:600}
+  .ic{display:inline-block;width:14px;text-align:center;color:var(--muted);margin-right:4px}
+  .dir .ic{color:var(--gold)}
+  /* 对比态行色 */
+  tr.diff td{background:var(--gold-dim)}
+  tr.only td{background:var(--gold-mid)}
+  tr.gap td{background:#080B10;color:#3A4150}
+  tr.gap td .sim{letter-spacing:3px;color:#2B3140}
+  tr.sel td{background:var(--gold-sel);box-shadow:inset 0 0 0 1px var(--gold)}
+  td.miss{color:var(--muted)}
+
+  /* ── 汇总条 ─────────────────────────── */
+  .summary{display:flex;gap:0;align-items:center;background:var(--panel);border-top:1px solid var(--line);padding:6px 12px;font-size:11.5px;color:var(--muted)}
+  .pill{border:1px solid var(--line2);border-radius:12px;padding:1px 10px;margin-right:8px;color:var(--text)}
+  .pill i{font-style:normal;color:var(--gold);font-weight:700;margin-right:3px}
+  .pill.active{border-color:var(--gold);color:var(--gold)}
+  .dot{width:9px;height:9px;border-radius:2px;display:inline-block;margin:0 5px 0 14px;vertical-align:-1px}
+
+  /* ── 编辑器对话框 ─────────────────────────── */
+  .dlgwrap{position:relative;max-width:980px}
+  .dim{position:absolute;inset:-40px -30px;background:rgba(4,6,9,.78);border-radius:8px;z-index:1}
+  .dlg{position:relative;z-index:2;background:var(--bg);border:1px solid var(--line2);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  .dlg-head{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .dlg-head .t{color:var(--white);font-weight:600}
+  .dlg-head .path{color:var(--muted);font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .combo{background:var(--btn);border:1px solid var(--btn-line);border-radius:4px;padding:2px 8px;color:var(--text);font-size:11px}
+  .combo b{color:var(--teal);font-weight:600}
+  .editor{background:var(--table);display:grid;grid-template-columns:34px 1fr;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.7}
+  .ln{color:#3A4150;text-align:right;padding:10px 8px 10px 0;border-right:1px solid var(--line);user-select:none}
+  .code{padding:10px 16px;color:#D8DEE9;white-space:pre}
+  .code .kw{color:var(--gold)} .code .st{color:var(--teal)} .code .cm{color:#57607A;font-style:italic}
+  .code .mod{background:rgba(240,160,48,.10);display:inline-block;width:calc(100% - 0px)}
+  .dlg-foot{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--line);background:var(--panel)}
+  .stat{font-size:11px;color:var(--muted);flex:1}
+  .stat b{color:var(--gold);font-weight:600}
+
+  /* ── 冲突弹窗 ─────────────────────────── */
+  .ask{max-width:460px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:16px 18px}
+  .ask .h{color:var(--white);font-weight:700;margin-bottom:6px}
+  .ask .h::before{content:"⚠ ";color:var(--gold)}
+  .ask p{font-size:11.5px;color:var(--text);margin-bottom:4px}
+  .ask p small{color:var(--muted)}
+  .ask .row{margin-top:12px;display:flex;justify-content:flex-end;gap:8px}
+
+  /* ── 亮色带 ─────────────────────────── */
+  .light{background:var(--l-bg);border:1px solid var(--l-line);border-radius:8px;max-width:1180px;overflow:hidden}
+  .light .cmpbar{background:var(--l-panel);border-bottom-color:var(--l-line)}
+  .light .tb{background:#fff;border-color:var(--l-line);color:var(--l-text)}
+  .light .tb.on{background:var(--l-gold-dim);border-color:var(--l-gold);color:var(--l-gold)}
+  .light .panes{background:var(--l-line)}
+  .light .pane{background:var(--l-bg)}
+  .light .crumb{color:var(--l-muted);border-bottom-color:var(--l-line)}
+  .light th{background:var(--l-head);color:var(--l-text);border-right-color:var(--l-line);border-bottom-color:#C7CDD8}
+  .light td{color:var(--l-text);border-bottom-color:#DDE2EA}
+  .light tr.alt td{background:var(--l-alt)}
+  .light tr.diff td{background:var(--l-gold-dim)}
+  .light tr.only td{background:var(--l-gold-mid)}
+  .light tr.gap td{background:#E2E6EC;color:#B7BDC8}
+  .light tr.sel td{background:var(--l-sel);box-shadow:inset 0 0 0 1px var(--l-gold)}
+  .light .dir .ic{color:var(--l-gold)}
+  .light .summary{background:var(--l-panel);border-top-color:var(--l-line)}
+  .legend{max-width:1180px;margin-top:14px;border:1px dashed var(--line2);border-radius:8px;padding:12px 16px;font-size:11.5px;color:var(--muted);line-height:2}
+  .legend b{color:var(--text)}
+</style>
+</head>
+<body>
+
+<h1>文件管理增强 · UI 稿<small>目录对比（元数据口径）+ 元数据列 + F4 预览编辑器 ｜ 色板取自 darkstyle.qss / darkstyle-light.qss，等宽为 Consolas</small></h1>
+
+<!-- ═══════════════ 1. 对比态双栏（深色） ═══════════════ -->
+<div class="sec">
+  <h2>① 目录对比态 —— 双栏行对齐 + 差异着色 + 仅显示差异 + 汇总条（深色主题）</h2>
+  <p class="note">工具栏「目录对比 (Ctrl+M)」进入对比态；差异琴色淡底、单侧独有更深一档、另一侧插占位行（石墨不可选）；任一侧重刷目录自动退出对比态。</p>
+
+  <div class="win">
+    <div class="tabbar">
+      <div class="tab">远程部署 FTP</div><div class="tab">远程部署 Telnet</div><div class="tab on">文件传输 FTP/SFTP</div><div class="tab">集群测试</div>
+    </div>
+
+    <div class="cmpbar">
+      <span class="tb">连接</span>
+      <span class="tb on">目录对比&nbsp;&nbsp;<span class="kbd">Ctrl+M</span></span>
+      <span class="chk"><span class="box">✓</span>仅显示差异</span>
+      <span class="spacer"></span>
+      <span style="color:var(--muted);font-size:11px">同步方向：本地 → 远程（对比态不改动任何文件）</span>
+    </div>
+
+    <div class="panes">
+      <!-- 左：本地 -->
+      <div class="pane">
+        <div class="crumb"><span>本地&nbsp; <b>D:\dist\sylix-patch</b></span><span>7 项</span></div>
+        <table>
+          <tr><th class="c-n" style="width:auto">名称</th><th class="c-s">大小</th><th class="c-d">修改时间</th><th class="c-p">权限</th><th class="c-o">所有者</th></tr>
+          <tr class="dir"><td><span class="ic">▸</span>etc</td><td class="c-m mono miss">—</td><td class="c-m mono miss">—</td><td class="mono miss">—</td><td class="mono miss">—</td></tr>
+          <tr class="alt"><td><span class="ic">·</span>rc.sh</td><td class="mono">1.2 KB</td><td class="mono">10-12 21:03</td><td class="mono">—</td><td class="mono">dong</td></tr>
+          <tr class="diff"><td><span class="ic">·</span>app.conf</td><td class="mono">3.4 KB</td><td class="mono">10-13 09:41</td><td class="mono">—</td><td class="mono">dong</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;远端独有</td></tr>
+          <tr class="only"><td><span class="ic">·</span>daemon.ini</td><td class="mono">812 B</td><td class="mono">10-11 15:20</td><td class="mono">—</td><td class="mono">dong</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;远端独有</td></tr>
+          <tr class="only sel"><td><span class="ic">·</span>patch_v2.bin</td><td class="mono">2.1 MB</td><td class="mono">10-09 18:55</td><td class="mono">—</td><td class="mono">dong</td></tr>
+        </table>
+      </div>
+
+      <!-- 右：远程 -->
+      <div class="pane">
+        <div class="crumb"><span>远程&nbsp; <b>/export/app&nbsp;·&nbsp;192.168.3.44&nbsp;(SFTP)</b></span><span>7 项</span></div>
+        <table>
+          <tr><th class="c-n" style="width:auto">名称</th><th class="c-s">大小</th><th class="c-d">修改时间</th><th class="c-p">权限</th><th class="c-o">所有者</th></tr>
+          <tr class="dir"><td><span class="ic">▸</span>etc</td><td class="mono">—</td><td class="mono">—</td><td class="mono">rwxr-xr-x</td><td class="mono">0</td></tr>
+          <tr class="alt"><td><span class="ic">·</span>rc.sh</td><td class="mono">1.2 KB</td><td class="mono">10-12 21:03</td><td class="mono">rw-r--r--</td><td class="mono">0</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;本地独有</td></tr>
+          <tr class="alt"><td><span class="ic">·</span>app.conf</td><td class="mono">3.4 KB</td><td class="mono">10-14 08:02</td><td class="mono">rw-r--r--</td><td class="mono">0</td></tr>
+          <tr class="only sel"><td><span class="ic">·</span>alarm.log</td><td class="mono">44 KB</td><td class="mono">10-14 07:59</td><td class="mono">rw-r--r--</td><td class="mono">0</td></tr>
+          <tr class="diff"><td><span class="ic">·</span>daemon.ini</td><td class="mono">907 B</td><td class="mono">10-12 10:07</td><td class="mono">rw-r--rw-</td><td class="mono">0</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;本地独有</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="summary">
+      对比结果：
+      <span class="pill active"><i>4</i>差异</span>
+      <span class="pill"><i>1</i>仅左</span>
+      <span class="pill"><i>1</i>仅右</span>
+      <span class="pill"><i>2</i>相同</span>
+      <span class="dot" style="background:var(--gold-dim);border:1px solid var(--gold-mid)"></span>同名内容有差（size/mtime）
+      <span class="dot" style="background:var(--gold-mid)"></span>仅单侧存在
+      <span class="dot" style="background:#080B10;border:1px solid var(--line)"></span>占位行（不可选）
+      <span class="spacer"></span><span style="font-size:11px">点击分类数字 = 快速过滤</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 2. F4 编辑器（深色） ═══════════════ -->
+<div class="sec">
+  <h2>② F4 预览 / 编辑器 —— 远程文本文件（深色主题，非模态大对话框）</h2>
+  <p class="note">顶栏：路径 + 编码下拉（自动探测预选，手动切换即重解码）；正文 Consolas；底部状态 = 已探测编码 / 行尾 / 修改标记 / 上传结果。二进制或 &gt;2MB → 顶栏出现只读横幅且保存禁用（见③）。</p>
+
+  <div class="dlgwrap">
+    <div class="dim"></div>
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t">app.conf</span>
+        <span class="path mono">/export/app/app.conf · 192.168.3.44 (SFTP)</span>
+        <span class="combo">编码&nbsp;<b>UTF-8</b>&nbsp;▾</span>
+        <span class="combo">探测：UTF-8（无 BOM）</span>
+      </div>
+      <div class="editor">
+        <div class="ln mono">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10</div>
+        <div class="code"><span class="cm"># SylixOS 采集服务配置（F4 编辑 · 保存即回传原路径）</span>
+<span class="kw">[server]</span>
+port        = <span class="st">8090</span>
+listen_addr = <span class="st">"0.0.0.0"</span>
+<span class="mod"><span class="kw">[modbus]</span></span>
+<span class="mod">slave_base  = <span class="st">1</span>            # 新增段（本行系修改，保存前有差即整段回传）</span>
+poll_ms     = <span class="st">1000</span>
+<span class="kw">[log]</span>
+level       = <span class="st">"info"</span>
+path        = <span class="st">"/export/app/alarm.log"</span></div>
+      </div>
+      <div class="dlg-foot">
+        <span class="stat">UTF-8 · LF · <b>已修改 ●</b> · 3.4 KB / 上限 2 MB · 打开时快照 size=3.4KB mtime=10-13 09:41</span>
+        <span class="tb ghost">另存本地…</span>
+        <span class="tb">关闭</span>
+        <span class="tb pri">保存并上传</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 3. 拒绝态 + 冲突弹窗 ═══════════════ -->
+<div class="sec">
+  <h2>③ 异常态 —— 二进制只读横幅 & 保存前远端冲突确认</h2>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+    <div class="dlg" style="max-width:560px">
+      <div class="dlg-head">
+        <span class="t">patch_v2.bin</span>
+        <span class="path mono">/export/app/patch_v2.bin</span>
+        <span class="combo" style="border-color:var(--gold);color:var(--gold)">只读 · 二进制（NUL@0x1F）</span>
+      </div>
+      <div class="editor" style="height:110px"><div class="ln mono">0000h<br>0010h<br>0020h</div><div class="code" style="color:#57607A">预览不可用：二进制文件拒绝编辑。
+建议：右键「下载」后本地查看（hex 预览列入待办）。
+</div></div>
+      <div class="dlg-foot"><span class="stat">2.1 MB · 不可编辑</span><span class="tb" style="opacity:.35">保存并上传</span></div>
+    </div>
+
+    <div class="ask">
+      <div class="h">远端文件已变化</div>
+      <p>你打开 <b>app.conf</b> 之后，远端文件被其他方改动：</p>
+      <p class="mono" style="font-size:11px">打开时&nbsp;size=3.4 KB&nbsp;mtime=10-13 09:41<br>当前远端&nbsp;size=3.6 KB&nbsp;mtime=10-14 08:02</p>
+      <p><small>直接覆盖将丢失远端改动，请确认。</small></p>
+      <div class="row"><span class="tb ghost">放弃并刷新</span><span class="tb">仍要覆盖</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 4. 亮色主题带 ═══════════════ -->
+<div class="sec">
+  <h2>④ 同一对比态 —— 亮色主题（信号色降档为 #D48820 系）</h2>
+  <div class="light">
+    <div class="cmpbar">
+      <span class="tb">连接</span><span class="tb on">目录对比&nbsp;&nbsp;<span class="kbd">Ctrl+M</span></span>
+      <span class="chk" style="color:var(--l-text)"><span class="box">✓</span>仅显示差异</span>
+      <span class="spacer"></span>
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <div class="crumb"><span>本地&nbsp; <b style="color:var(--l-text)">D:\dist\sylix-patch</b></span></div>
+        <table>
+          <tr><th style="width:auto">名称</th><th class="c-s">大小</th><th class="c-d">修改时间</th><th class="c-p">权限</th><th class="c-o">所有者</th></tr>
+          <tr class="dir"><td><span class="ic">▸</span>etc</td><td class="mono" style="color:var(--l-muted)">—</td><td class="mono" style="color:var(--l-muted)">—</td><td class="mono" style="color:var(--l-muted)">—</td><td class="mono" style="color:var(--l-muted)">—</td></tr>
+          <tr class="diff"><td><span class="ic">·</span>app.conf</td><td class="mono">3.4 KB</td><td class="mono">10-13 09:41</td><td class="mono" style="color:var(--l-muted)">—</td><td class="mono">dong</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;远端独有</td></tr>
+          <tr class="only"><td><span class="ic">·</span>daemon.ini</td><td class="mono">812 B</td><td class="mono">10-11 15:20</td><td class="mono" style="color:var(--l-muted)">—</td><td class="mono">dong</td></tr>
+        </table>
+      </div>
+      <div class="pane">
+        <div class="crumb"><span>远程&nbsp; <b style="color:var(--l-text)">/export/app · 192.168.3.44 (SFTP)</b></span></div>
+        <table>
+          <tr><th style="width:auto">名称</th><th class="c-s">大小</th><th class="c-d">修改时间</th><th class="c-p">权限</th><th class="c-o">所有者</th></tr>
+          <tr class="dir"><td><span class="ic">▸</span>etc</td><td class="mono">—</td><td class="mono">—</td><td class="mono">rwxr-xr-x</td><td class="mono">0</td></tr>
+          <tr class="gap"><td colspan="5"><span class="sim">· · · · · · · ·</span>&nbsp;本地独有</td></tr>
+          <tr class="diff"><td><span class="ic">·</span>app.conf</td><td class="mono">3.4 KB</td><td class="mono">10-14 08:02</td><td class="mono">rw-r--r--</td><td class="mono">0</td></tr>
+          <tr class="only"><td><span class="ic">·</span>daemon.ini</td><td class="mono">907 B</td><td class="mono">10-12 10:07</td><td class="mono">rw-r--rw-</td><td class="mono">0</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="summary" style="color:var(--l-muted)">
+      对比结果：<span class="pill" style="border-color:var(--l-line);color:var(--l-text)"><i style="color:var(--l-gold)">2</i>差异</span><span class="pill" style="border-color:var(--l-line);color:var(--l-text)"><i style="color:var(--l-gold)">0</i>仅左</span><span class="pill" style="border-color:var(--l-line);color:var(--l-text)"><i style="color:var(--l-gold)">0</i>仅右</span><span class="pill" style="border-color:var(--l-line);color:var(--l-text)"><i style="color:var(--l-gold)">1</i>相同</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 设计纪律说明 ═══════════════ -->
+<div class="legend">
+  <b>色彩纪律核对</b>：琴色只出现在信号态——对比差异行、主按钮、选中态、可点击汇总数；目录结构/表头/网格线全部石墨（#252A33/#333B48/#1A1F28）。差异淡底用同族 alpha 分层（diff 0.10 / only 0.18），不用第二色相，避免与"绿=相同"旧着色打架——旧自动绿/黄在对比态被接管替换，非对比态原样保留。占位行比表格底色更深一档（#080B10），配虚点纹理表明"此处无实体"。QSS 实现：行色全部经 model <span class="mono">Qt::BackgroundRole</span> brush，不进 QSS 选择器（QSS 无行级伪类）；亮深色两套主题各挂一组常量，落 <span class="mono">ThemeTokens</span> 一处定义。<br>
+  <b>列宽</b>：名称自适应（stretch）｜大小 右对齐 64px｜修改时间 104px（"MM-dd HH:mm"，跨年显示 yyyy）｜权限 74px｜所有者 66px；取不到一律弱化灰 <span class="mono">—</span>（远程权限仅 Unix-FTP/SFTP 有，Windows 格式 FTP 全空）。
+</div>
+
+</body>
+</html>

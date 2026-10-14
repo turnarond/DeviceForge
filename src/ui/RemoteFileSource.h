@@ -21,6 +21,8 @@ public:
     bool clearDirectory(const QString& path) override;
     bool upload(const QString& localPath, const QString& remotePath) override;
     bool download(const QString& remotePath, const QString& localPath) override;
+    bool readFile(const QString& path, std::string& out, uint64_t maxBytes) override;
+    bool writeFile(const QString& path, const std::string& data) override;
     bool connect(const DeviceInfo& device, const AuthInfo& auth) override;
     bool reconnect() override;              // disconnect + connect(上次缓存凭证)
     bool isConnected() const override;

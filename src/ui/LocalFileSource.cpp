@@ -1,6 +1,8 @@
 ﻿#include "ui/LocalFileSource.h"
 #include <QDateTime>
+#include <QFileInfo>
 #include <filesystem>
+#include <fstream>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -78,6 +80,15 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
         std::error_code timeec;
         const auto ft = entry.last_write_time(timeec);
         if (!timeec) info.dateTime = formatFileTime(ft).toStdString();
+
+        // 属主（勘误 R2 口径）：std::filesystem 无 owner API，借 QFileInfo::owner()。
+        // 路径经 u8string + fromUtf8(char*,len) 转换——跨 DLL 只传裸指针/长度，
+        // 不经 std::wstring 值边界（本文件头注释的 CRT 分配器错配教训）。
+        {
+            const std::string u8 = entry.path().u8string();
+            const QString qiPath = QString::fromUtf8(u8.c_str(), static_cast<int>(u8.size()));
+            info.owner = QFileInfo(qiPath).owner().toStdString();
+        }
 
         result.push_back(std::move(info));
     }
@@ -179,4 +190,49 @@ bool LocalFileSource::download(const QString& remotePath, const QString& localPa
 {
     // 本地源语义：download = 从 "远程"（实为另一本地路径）复制到本地
     return upload(remotePath, localPath);
+}
+
+bool LocalFileSource::readFile(const QString& path, std::string& out, uint64_t maxBytes)
+{
+    out.clear();
+    std::error_code ec;
+    const auto sz = fs::file_size(toFsPath(path), ec);
+    if (ec) {
+        m_lastError = QStringLiteral("读取失败: %1").arg(QString::fromStdString(ec.message()));
+        return false;
+    }
+    if (sz > maxBytes) {
+        m_lastError = QStringLiteral("文件超过大小上限（%1 字节）").arg(sz);
+        return false;
+    }
+    std::ifstream in(toFsPath(path), std::ios::binary);
+    if (!in) {
+        m_lastError = QStringLiteral("无法打开文件: %1").arg(path);
+        return false;
+    }
+    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (in.bad()) {
+        m_lastError = QStringLiteral("读取中断: %1").arg(path);
+        out.clear();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool LocalFileSource::writeFile(const QString& path, const std::string& data)
+{
+    std::ofstream os(toFsPath(path), std::ios::binary | std::ios::trunc);
+    if (!os) {
+        m_lastError = QStringLiteral("无法写入文件: %1").arg(path);
+        return false;
+    }
+    os.write(data.data(), static_cast<std::streamsize>(data.size()));
+    os.close();
+    if (os.fail()) {
+        m_lastError = QStringLiteral("写入中断: %1").arg(path);
+        return false;
+    }
+    m_lastError.clear();
+    return true;
 }

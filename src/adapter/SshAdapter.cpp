@@ -328,6 +328,10 @@ std::vector<FtpFileInfo> SshAdapter::sftpListDirectory(const std::string& remote
             ? QDateTime::fromSecsSinceEpoch(attrs.mtime).toString("yyyy-MM-dd HH:mm:ss").toStdString()
             : "";
 
+        // 属主：uid 取十进制数字直显（工业设备多为 root=0；不做名字反查，避免依赖远端 /etc/passwd）
+        if (attrs.flags & LIBSSH2_SFTP_ATTR_UIDGID)
+            fi.owner = std::to_string(attrs.uid);
+
         // 权限：八进制 → rwx 字符串
         if (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) {
             unsigned int p = attrs.permissions & 0777;
@@ -457,6 +461,84 @@ bool SshAdapter::sftpDownloadFile(const std::string& remotePath, const std::stri
     libssh2_sftp_close(remoteFile);
     if (!ok && m_lastError.empty()) m_lastError = "SFTP 下载读取失败";
     return ok;
+}
+
+bool SshAdapter::sftpReadFileToMemory(const std::string& remotePath, std::string& out, uint64_t maxBytes)
+{
+    out.clear();
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    m_lastError.clear();
+
+    LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
+        LIBSSH2_FXF_READ, 0);
+    if (!remoteFile) { m_lastError = "SFTP 打开文件失败"; return false; }
+
+    // 预检文件大小（同 sftpDownloadFile 的 fstat 路径），超限不开读循环
+    LIBSSH2_SFTP_ATTRIBUTES attrs;
+    if (libssh2_sftp_fstat(remoteFile, &attrs) == 0
+        && (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) && attrs.filesize > maxBytes) {
+        libssh2_sftp_close(remoteFile);
+        m_lastError = "文件超过读取上限: " + remotePath;
+        return false;
+    }
+
+    std::string buffer;
+    char buf[8192];
+    bool ok = true;
+    while (true) {
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "读取已取消";
+            break;
+        }
+        ssize_t n = libssh2_sftp_read(remoteFile, buf, sizeof(buf));
+        if (n < 0) { ok = false; m_lastError = "SFTP 读取失败"; break; }
+        if (n == 0) break;
+        if (buffer.size() + static_cast<size_t>(n) > maxBytes) {
+            ok = false;
+            m_lastError = "文件超过读取上限: " + remotePath;
+            break;   // fstat 不可得的服务器走此兜底
+        }
+        buffer.append(buf, static_cast<size_t>(n));
+    }
+
+    libssh2_sftp_close(remoteFile);
+    if (!ok) return false;
+    out = std::move(buffer);
+    return true;
+}
+
+bool SshAdapter::sftpWriteFileFromMemory(const std::string& remotePath, const std::string& data)
+{
+    if (!m_sftpSession) { m_lastError = "SFTP 未初始化"; return false; }
+    m_lastError.clear();
+
+    LIBSSH2_SFTP_HANDLE* remoteFile = libssh2_sftp_open(m_sftpSession, remotePath.c_str(),
+        LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT | LIBSSH2_FXF_TRUNC,
+        LIBSSH2_SFTP_S_IRUSR | LIBSSH2_SFTP_S_IWUSR |
+        LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IROTH);
+    if (!remoteFile) { m_lastError = "SFTP 创建文件失败"; return false; }
+
+    uint64_t sent = 0;
+    bool ok = true;
+    while (sent < data.size()) {
+        if (adapter_internal::sftpTransferCancellationRequested(m_sftpCancelFlag)) {
+            ok = false;
+            m_lastError = "写入已取消";
+            break;
+        }
+        // libssh2_sftp_write 可能部分写入，循环直到本段全部写出（同 sftpUploadFile）
+        ssize_t rc = libssh2_sftp_write(remoteFile, data.data() + sent, data.size() - sent);
+        if (rc < 0) { ok = false; break; }
+        sent += static_cast<uint64_t>(rc);
+    }
+
+    libssh2_sftp_close(remoteFile);
+    if (!ok) {
+        if (m_lastError.empty()) m_lastError = "SFTP 写入失败";
+        return false;
+    }
+    return true;
 }
 
 bool SshAdapter::sftpDeleteFile(const std::string& remotePath)

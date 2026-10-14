@@ -40,6 +40,14 @@ public:
     virtual bool upload(const QString& localPath, const QString& remotePath) = 0;
     virtual bool download(const QString& remotePath, const QString& localPath) = 0;
 
+    // --- 内存读写原语（v2.12 在线编辑；同步语义与 list/upload 一致，
+    //     异步由面板层 QtConcurrent+代际令牌保证，勿在 GUI 线程直接调用）---
+    // readFile：整读文件到内存；超过 maxBytes 即失败（out 不保证为空），
+    //             lastError 置含"上限"原因。
+    // writeFile：覆盖写（远程 STOR/TRUNC 语义）；失败置 lastError。
+    virtual bool readFile(const QString& path, std::string& out, uint64_t maxBytes) = 0;
+    virtual bool writeFile(const QString& path, const std::string& data) = 0;
+
     // --- 连接生命周期 ---
     virtual bool connect(const DeviceInfo& device, const AuthInfo& auth) = 0;
     virtual bool isConnected() const = 0;
