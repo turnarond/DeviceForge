@@ -422,31 +422,48 @@ private slots:
         std::atomic<bool> cancel{false};
         const auto progress = [](const std::string&, int) {};
 
-        // 设备 1 只传 good；设备 2 传 good+bad；设备 3 只传 bad
-        std::vector<DeployJob::Params> params = makeParams(1, {m_goodFile});
-        DeployJob::Params mixed = params[0];
-        mixed.files = {m_goodFile, m_badFile};
-        params.push_back(mixed);
-        DeployJob::Params onlyBad = params[0];
-        onlyBad.files = {m_badFile};
-        params.push_back(onlyBad);
+        // 设备 1 只传 good；设备 2 传 good+bad；设备 3 只传 bad。
+        // #45：必须 makeParams(3) 逐台独立构造——每台的 channelFactory 闭包各自持有
+        // 独立的内存远端。曾用的 params[0] 拷贝会让三台共用同一 storage 且写同名
+        // 路径，触发 TransferExecutor「远端目标改变」并发保护（该保护在生产中正确：
+        // 两台设备是两台真机），使 d2 的 good.txt 以约 10% 概率被记为第二个失败。
+        std::vector<DeployJob::Params> params = makeParams(3, {m_goodFile});
+        params[1].files = {m_goodFile, m_badFile};
+        params[2].files = {m_badFile};
 
         DeployReport report = runner.run(params, 3, cancel, progress);
         QCOMPARE((int)report.results.size(), 3);
 
+        auto dumpReport = [&report] {
+            QString s = QStringLiteral(" || ");
+            for (size_t i = 0; i < report.results.size(); ++i) {
+                const DeviceResult& r = report.results[i];
+                QStringList fl;
+                for (const auto& f : r.failedFiles)
+                    fl << QString::fromStdString(f);
+                s += QStringLiteral("[%1 key=%2 state=%3 files=[%4] err=%5]")
+                        .arg(i)
+                        .arg(QString::fromStdString(r.deviceKey))
+                        .arg(static_cast<int>(r.state))
+                        .arg(fl.join(QLatin1Char(',')))
+                        .arg(QString::fromStdString(r.lastError));
+            }
+            return s;
+        };
+
         const DeviceResult& rGoodOnly = report.results[0];
-        QCOMPARE(rGoodOnly.state, DeviceResult::Ok);
-        QVERIFY(rGoodOnly.failedFiles.empty());
+        QVERIFY2(rGoodOnly.state == DeviceResult::Ok, qPrintable(QStringLiteral("rGoodOnly not Ok") + dumpReport()));
+        QVERIFY2(rGoodOnly.failedFiles.empty(), qPrintable(QStringLiteral("rGoodOnly files") + dumpReport()));
 
         const DeviceResult& rMixed = report.results[1];
         QCOMPARE(rMixed.state, DeviceResult::Failed);
-        QCOMPARE((int)rMixed.failedFiles.size(), 1);
+        QVERIFY2(static_cast<int>(rMixed.failedFiles.size()) == 1, qPrintable(QStringLiteral("rMixed size!=1") + dumpReport()));
         QCOMPARE(QString::fromStdString(rMixed.failedFiles.front()), QStringLiteral("bad.txt"));
         QVERIFY(!rMixed.lastError.empty());  // 失败摘要来自 adapter->lastError()
 
         const DeviceResult& rBadOnly = report.results[2];
         QCOMPARE(rBadOnly.state, DeviceResult::Failed);
-        QCOMPARE((int)rBadOnly.failedFiles.size(), 1);
+        QVERIFY2(static_cast<int>(rBadOnly.failedFiles.size()) == 1, qPrintable(QStringLiteral("rBadOnly size!=1") + dumpReport()));
         QCOMPARE(QString::fromStdString(rBadOnly.failedFiles.front()), QStringLiteral("bad.txt"));
     }
 
@@ -508,10 +525,9 @@ private slots:
         // 设备 1 传 1 个文件、设备 2 传 3 个文件（并发 2）：更新簇落在
         // ≈150/300/450ms——首簇必过闸（初值已开窗），后续簇以 150ms 间隔
         // 落入新开的节流窗口，保证 ≥1 次中程发射
-        std::vector<DeployJob::Params> params = makeParams(1, {m_goodFile});
-        DeployJob::Params multi = params[0];
-        multi.files = {m_goodFile, m_goodFile, m_goodFile};
-        params.push_back(std::move(multi));
+        // #45 同型修正：逐台独立 channelFactory/内存远端，杜绝跨设备同名路径竞争
+        std::vector<DeployJob::Params> params = makeParams(2, {m_goodFile});
+        params[1].files = {m_goodFile, m_goodFile, m_goodFile};
 
         runner.run(params, 2, cancel, progress);
 
