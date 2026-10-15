@@ -45,6 +45,7 @@
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QFile>
+#include <QSet>
 #include <QtConcurrent>
 #include <algorithm>
 
@@ -902,7 +903,12 @@ void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
     m_exportReportBtn->setEnabled(false);
     m_retryBtn->setEnabled(false);
 
-    m_multiProgress->setDeviceCount(static_cast<int>(devices.size()));
+    // #29：行键 "ip:port" 去重后计数，避免重复设备被面板吞行而文案仍报 N 台
+    QSet<QString> seenKeys;
+    for (const auto& d : devices)
+        seenKeys.insert(QString::fromStdString(d.ip) + ":" + QString::number(port));
+    const int uniqueCount = static_cast<int>(seenKeys.size());
+    m_multiProgress->setDeviceCount(uniqueCount);
     // 行键与 Runner 进度回调 / DeviceResult.deviceKey 严格同源："ip:port"。
     // 后端以工具栏端口覆盖全部设备端口（port 恒 >0），故此处行键端口
     // 直接取传入端口——否则 port=21 时行键缺端口段，终态回调将无法命中行
@@ -916,7 +922,10 @@ void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
         m_multiProgress->setDeviceInfo(key, name);
     }
 
-    appendLog(logPrefix + QString("开始部署到 %1 台设备...").arg(devices.size()));
+    if (uniqueCount < static_cast<int>(devices.size()))
+        appendLog(logPrefix + QString("检测到 %1 台同地址重复设备，已合并显示")
+                      .arg(static_cast<int>(devices.size()) - uniqueCount));
+    appendLog(logPrefix + QString("开始部署到 %1 台设备...").arg(uniqueCount));
 
     m_backend->startUpload(files,
         remotePath.toStdString(),
@@ -1011,15 +1020,22 @@ void FtpDeployWidget::onExportReportClicked()
         appendLog(QString("导出报告失败：无法写入 %1").arg(filePath));
         return;
     }
+    // #34：CSV 前置 UTF-8 BOM，Excel 双击打开不再中文乱码（渲染函数契约不动）
+    qint64 headerLen = 0;
+    if (!asHtml) {
+        headerLen = f.write("\xEF\xBB\xBF", 3);
+    }
     const qint64 written = f.write(content.data(), static_cast<qint64>(content.size()));
-    const bool complete =
-        written == static_cast<qint64>(content.size()) && f.flush();
+    const qint64 total = headerLen + written;
+    const qint64 expect = static_cast<qint64>(content.size()) + (asHtml ? 0 : 3);
+    const bool ok = total == expect && f.flush();
     f.close();
-    // 写盘结果核验：磁盘满/权限问题导致写入不完整时不得谎报导出成功
-    if (!complete) {
-        appendLog(QString("导出报告失败：%1 写入不完整（%2/%3 字节），请检查磁盘空间与写权限")
-                      .arg(filePath).arg(written)
-                      .arg(static_cast<qint64>(content.size())));
+    // 写盘结果核验：磁盘满/权限问题导致写入不完整时不得谎报导出成功；
+    // #37：失败路径删除半截文件，不留残留误导用户
+    if (!ok) {
+        QFile::remove(filePath);
+        appendLog(QString("导出报告失败：%1 写入不完整（%2/%3 字节，已清理残留文件），请检查磁盘空间与写权限")
+                      .arg(filePath).arg(total).arg(expect));
         return;
     }
     appendLog(QString("部署报告已导出：%1（%2 条记录）")

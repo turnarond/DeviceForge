@@ -179,8 +179,10 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     int concInit = ConfigStore::instance()
         .load(QStringLiteral("deploy"), QStringLiteral("concurrency"))
         .value(QStringLiteral("concurrency"), 1).toInt(&concOk);
-    if (!concOk || concInit < 1 || concInit > 8)
-        concInit = 1;   // 与后端 loadConcurrency 钳制规则一致
+    if (!concOk || concInit < 1)
+        concInit = 1;
+    else if (concInit > 8)
+        concInit = 8;   // #32：>8 钳到 8，与后端 loadConcurrency 的 std::min(n,8) 同口径
     m_deployConcurrencySlider->setValue(concInit);
     auto* concValueLabel = new QLabel(QString::number(concInit), this);
     concValueLabel->setMinimumWidth(16);
@@ -202,8 +204,13 @@ void SettingsDialog::accept()
     // 仅在显式确认路径写回（Esc/X 关闭视为取消，不落库）
     QVariantMap v;
     v.insert(QStringLiteral("concurrency"), m_deployConcurrencySlider->value());
-    ConfigStore::instance().save(
-        QStringLiteral("deploy"), QStringLiteral("concurrency"), v);
+    // #33：save 失败不再静默——与 import/export 错误处理同风格给出提示
+    if (!ConfigStore::instance().save(
+            QStringLiteral("deploy"), QStringLiteral("concurrency"), v)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+            QStringLiteral("并发度设置未能写入配置库（ConfigStore），本次修改不会生效。"));
+        return;
+    }
     QDialog::accept();
 }
 

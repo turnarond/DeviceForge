@@ -28,7 +28,9 @@ struct DeviceResult {
     enum State { Ok, Failed, Cancelled };
 
     std::string deviceKey;                  // ip:port
-    State state = Ok;
+    // #25：默认取失败向（Failed）——漏赋值的路径宁可显式报失败，
+    // 也不得静默以 Ok 外漏；所有产出路径本就显式赋值
+    State state = Failed;
     std::vector<std::string> failedFiles;   // 失败文件相对路径
     std::string lastError;                  // 适配器错误摘要
     long long durationMs = 0;

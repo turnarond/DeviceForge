@@ -160,13 +160,13 @@ private slots:
         backend.bindCredentials({"user", "pass"});
 
         std::vector<std::string> ok, fail;
-        bool finished = false;
+        std::atomic<bool> finished{false};
         backend.setFinishedCallback([&](bool, const std::vector<std::string>& s,
                                         const std::vector<std::string>& f) {
             finished = true; ok = s; fail = f;
         });
         backend.startUpload({m_fixtureFile}, "/apps", false, false, "mock");
-        QTRY_VERIFY_WITH_TIMEOUT(finished, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
         QCOMPARE(ok.size(), 2);   // 两台都成功
         QCOMPARE(fail.size(), 0);
         QCOMPARE(mock->uploadCalls.load(), 2);
@@ -185,13 +185,13 @@ private slots:
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"192.168.1.1", 0, "", "", ""}, {"192.168.1.2", 0, "", "", ""}});
         backend.bindCredentials({"u", "p"});
-        std::vector<std::string> ok, fail; bool finished = false;
+        std::vector<std::string> ok, fail; std::atomic<bool> finished{false};
         backend.setFinishedCallback([&](bool, const std::vector<std::string>& s,
                                         const std::vector<std::string>& f) {
             finished = true; ok = s; fail = f;
         });
         backend.startUpload({m_fixtureFile}, "/apps", false, false, "mock_fail");
-        QTRY_VERIFY_WITH_TIMEOUT(finished, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
         QCOMPARE(ok.size(), 0);
         QCOMPARE(fail.size(), 2);
         backend.OnStop();
@@ -206,7 +206,7 @@ private slots:
         QCOMPARE(backend.OnStart(0, nullptr), 0);
         backend.bindDevices({{"192.168.1.1", 0, "", "", ""}, {"192.168.1.2", 0, "", "", ""}});
         backend.bindCredentials({"u", "p"});
-        std::vector<std::string> ok, fail; bool finished = false;
+        std::vector<std::string> ok, fail; std::atomic<bool> finished{false};
         backend.setFinishedCallback([&](bool, const std::vector<std::string>& s,
                                         const std::vector<std::string>& f) {
             finished = true; ok = s; fail = f;
@@ -217,7 +217,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(mock->uploadCalls.load() >= 1, 5000);  // 第一台已进入上传（挂起中）
         backend.cancelUpload();
         mock->releaseGate = true;                                        // 放闸，第一台完成
-        QTRY_VERIFY_WITH_TIMEOUT(finished, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
         QCOMPARE(mock->uploadCalls.load(), 1);                           // 第二台被取消跳过
         QCOMPARE(ok.size(), 0);
         QCOMPARE(fail.size(), 0);
@@ -251,14 +251,14 @@ private slots:
         });
         backend.setProgressCallback([&](int) { ++overallEvents; });
 
-        std::vector<std::string> ok, fail; bool finished = false;
+        std::vector<std::string> ok, fail; std::atomic<bool> finished{false};
         backend.setFinishedCallback([&](bool, const std::vector<std::string>& s,
                                         const std::vector<std::string>& f) {
             finished = true; ok = s; fail = f;
         });
 
         backend.startUpload({m_fixtureFile}, "/apps", false, false, "mock_prog");
-        QTRY_VERIFY_WITH_TIMEOUT(finished, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
 
         {
             std::lock_guard<std::mutex> lock(mux);
