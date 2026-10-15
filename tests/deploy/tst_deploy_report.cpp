@@ -6,6 +6,7 @@
 //   的合法空表头。全部为纯函数直测，零网络依赖。
 
 #include <QtTest>
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 #include <string>
@@ -169,6 +170,37 @@ private slots:
         QVERIFY(html.contains(QStringLiteral("</table>")));
         QCOMPARE(countOccurrences(html, QStringLiteral("<th>")), 7);
         QVERIFY(!html.contains(QStringLiteral("<td>")));                 // 无数据行
+    }
+
+    // #24 断言 6：formatTimestamp 正时间路径——startedAt>0 时 CSV/HTML 的
+    // started_at 列为本地时间 "yyyy-MM-dd HH:mm:ss"（与 Qt 独立实现互证，
+    // 时区安全）；此前仅锁定过 startedAt=0 的空串路径
+    void timestamp_positivePath_renderedAsLocalTime()
+    {
+        DeviceResult r = makeOk("10.0.0.1:21");
+        const std::time_t t = 1755129600;   // 2025-08-14 前后某本地时刻
+        r.startedAt = t;
+        const QString expected = QDateTime::fromSecsSinceEpoch(static_cast<qint64>(t))
+                                     .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        QVERIFY2(!expected.isEmpty() && expected.at(4) == QLatin1Char('-'),
+                 qPrintable(expected));
+
+        const QString csv = QString::fromStdString(renderReportCsv(wrapOne(r)));
+        QVERIFY(csv.contains(expected));
+
+        const QString html = QString::fromStdString(renderReportHtml(wrapOne(r)));
+        QVERIFY(html.contains(expected));
+    }
+
+    // #24 断言 7：htmlMultiline 分支——多行 lastError 转义后换行渲染 <br/>；
+    // 此前三行 CSV 侧仅间接覆盖，HTML 用例的 lastError 均为单行走 htmlEscape
+    void html_multilineErrorRendersBrTags()
+    {
+        DeviceResult r = makeFailed("10.0.0.2:21");
+        r.lastError = "first line\nsecond <x>";
+        const QString html = QString::fromStdString(renderReportHtml(wrapOne(r)));
+        QVERIFY(html.contains(QStringLiteral("first line<br/>second &lt;x&gt;")));
+        QVERIFY(!html.contains(QStringLiteral("<a>")));
     }
 };
 

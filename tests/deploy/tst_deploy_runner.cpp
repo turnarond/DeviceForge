@@ -72,6 +72,9 @@ public:
     ProtocolCapability capability() const override { return {}; }
 
     bool uploadFile(const std::string& localPath, const std::string&) override {
+        // #27(a)：取证时刻=传输在途（Cleanup 收尾会合法把取消指针复位 nullptr，
+        // 末次 setCancelFlag 记录不能代表在途契约）
+        s_flagAtUpload.store(m_flag);
         // 并发峰值实测：先递增，再 CAS 抬高 peak，离开时递减
         const int now = ++s_active;
         for (int p = s_peak.load(); now > p && !s_peak.compare_exchange_weak(p, now);) {
@@ -121,17 +124,24 @@ public:
     }
     bool clearRemoteDirectory(const std::string&) override { ++s_clearCalls; return true; }
     void setProgressCallback(std::function<void(int)> cb) override { m_progressCb = std::move(cb); }
-    void setCancelFlag(std::atomic<bool>* flag) override { m_flag = flag; }
+    void setCancelFlag(std::atomic<bool>* flag) override {
+        m_flag = flag;
+        s_lastFlag.store(flag);   // #27(a)：记录 Runner/Job 注入的取消指针供断言
+    }
 
     std::string m_error;
     std::atomic<bool>* m_flag = nullptr;
     std::function<void(int)> m_progressCb;
+    static std::atomic<std::atomic<bool>*> s_lastFlag;
+    static std::atomic<std::atomic<bool>*> s_flagAtUpload;   // uploadFile 在途时刻捕获
 };
 
 std::atomic<int> MockDeployable::s_active{0};
 std::atomic<int> MockDeployable::s_peak{0};
 std::atomic<int> MockDeployable::s_uploadCalls{0};
 std::atomic<int> MockDeployable::s_connectCalls{0};
+std::atomic<std::atomic<bool>*> MockDeployable::s_lastFlag{nullptr};
+std::atomic<std::atomic<bool>*> MockDeployable::s_flagAtUpload{nullptr};
 int MockDeployable::s_uploadMs = 0;
 std::set<std::string> MockDeployable::s_failFiles;
 std::atomic<bool> MockDeployable::s_gate{true};
@@ -321,6 +331,8 @@ private slots:
         MockDeployable::s_progressBurst = 1;
         MockDeployable::s_transientFailures = 0;
         MockDeployable::s_clearCalls = 0;
+        MockDeployable::s_lastFlag = nullptr;
+        MockDeployable::s_flagAtUpload = nullptr;
         ProtocolRegistry::instance()->registerFactory("mockrun", [] {
             return std::shared_ptr<IProtocolAdapter>(new MockDeployable);
         });
@@ -390,6 +402,9 @@ private slots:
 
         QVERIFY2(elapsedMs < 1000,
                  qPrintable(QString("预检取消耗时 %1ms ≥ 1s，疑似仍调度了任务").arg(elapsedMs)));
+        // #27(b) 阈值说明：预检命中应毫秒级返回；1s 是刻意放宽的粗界（区分
+        // "调度了 vs 未调度"），慢 CI 机器余量优先——精确零调度证据由下方
+        // 零调用计数断言承担，本界不承担性能度量职责。
         QCOMPARE((int)report.results.size(), 10);
         for (const DeviceResult& r : report.results) {
             QCOMPARE(r.state, DeviceResult::Cancelled);
@@ -466,7 +481,7 @@ private slots:
     // 多个 ≥100ms 节流窗口：中程（强制末次之前）至少发射一次，且转发总数
     // 远小于注入数；全部完成后的强制末次保证 100% 必达。
     // 空转免疫：若门闸失效（如 lastEmit 初值与 now() 相减溢出导致永不发射），
-    // 中程计数为 0、仅剩 1 次强制末次——forwards>=2 断言即失败，缺陷无法被掩盖。
+    // 中程计数为 0、仅剩 1 次强制末次——midFlight>=1 断言即失败，缺陷无法被掩盖。
     void totalProgress_throttled_finalForced() {
         MockDeployable::s_uploadMs = 150;      // 单文件 150ms，使更新簇错峰跨窗口
         MockDeployable::s_progressBurst = 5;   // 每文件连发 5 次（同簇内仅首个可能过闸）
@@ -576,12 +591,17 @@ private slots:
     void bareJob_nullFlags_runsAndGivesAdapterNonNullFlag() {
         std::vector<DeployJob::Params> params = makeParams(1, {m_goodFile});
         params[0].globalCancel = nullptr;  // 双空：无 globalCancel、未 setCancel
+        MockDeployable::s_lastFlag.store(nullptr);  // #27(a)：本用例自足取证
 
         DeployJob job(std::move(params[0]));
         job.run();  // 同步直跑（Task 2 串行路径）
 
         QCOMPARE(job.result().state, DeviceResult::Ok);
         QVERIFY(MockDeployable::s_uploadCalls.load() == 1);
+        // #27(a)：兑现测试名承诺——传输在途时刻适配器实际持有的取消指针必须非空
+        // （DeployJob 内部哑标志兜底；收尾 Cleanup 复位 nullptr 属正常生命周期）
+        QVERIFY2(MockDeployable::s_flagAtUpload.load() != nullptr,
+                 "裸 Job 路径在途未向适配器注入非空取消指针，违反 IDeployable 契约");
     }
 };
 
