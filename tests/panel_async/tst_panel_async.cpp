@@ -1235,7 +1235,9 @@ private slots:
         dlg->findChild<QPushButton*>("feSave")->click();
         QTRY_VERIFY_WITH_TIMEOUT(src->writeCalls.load() >= 2, 5000);
         QCOMPARE(src->filesByPath["/conf.txt"], std::string("12345678x"));
-        QVERIFY(!dlg->isDirty());
+        // markSaved() 在写线程完成后的 QueuedConnection 回调里执行，
+        // writeCalls 自增发生在写线程入口，裸 QVERIFY 会跑在清脏位之前（抖动根因）
+        QTRY_VERIFY_WITH_TIMEOUT(!dlg->isDirty(), 5000);
     }
 
     // 评审 I-2 回归：混合行尾文件按只读打开（保存会擅自统一行尾，违背规格）
