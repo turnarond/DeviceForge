@@ -68,7 +68,6 @@ private:
     // 统一走此入口——「行数变化 rebuildUi」，n 为台数量级，全量重建成本可忽略）
     void rebuildUi();
 
-    int m_deviceCount = 0;
     std::vector<QString> m_keys;      // 行序 = 设备注册序（部署提交序）
     QMap<QString, DeviceRow> m_rows;  // key("ip:port") → 行控件
     QMap<QString, QString> m_names;   // key → 档案名称（v2.11：可空=仅地址）

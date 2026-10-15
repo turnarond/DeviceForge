@@ -19,9 +19,6 @@
 #include "DeployJob.h"
 #include "DeploymentRunner.h"
 #include "config/ConfigStore.h"
-#include "adapter/FtpAdapter.h"
-#include "adapter/IDeployable.h"
-#include "adapter/ProtocolRegistry.h"
 #include <QtConcurrent/QtConcurrent>
 #include <lwlog/lwlog.h>
 #include <algorithm>

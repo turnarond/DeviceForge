@@ -972,16 +972,28 @@ bool TaskCenterWidget::exportRunReport(const QString& storeRunId, const QString&
     if (!found)
         return false;
 
-    const std::string text = filePath.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive)
-        ? renderTaskRunHtml(*found)
-        : renderTaskRunCsv(*found);
+    const bool asHtml = filePath.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive);
+    const std::string text = asHtml ? renderTaskRunHtml(*found)
+                                    : renderTaskRunCsv(*found);
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
+    // #34：CSV 前置 UTF-8 BOM（Excel 双击不乱码），HTML 不加
+    qint64 headerLen = 0;
+    if (!asHtml)
+        headerLen = file.write("\xEF\xBB\xBF", 3);
     QTextStream stream(&file);
     stream << QString::fromUtf8(text.c_str());
-    file.flush();
+    stream.flush();
+    const bool ok = headerLen == (asHtml ? 0 : 3)
+        && stream.status() == QTextStream::Ok && file.flush();
+    file.close();
+    // #37：写盘不完整/失败时清理半截文件，不留残留
+    if (!ok) {
+        QFile::remove(filePath);
+        return false;
+    }
     return true;
 }
 

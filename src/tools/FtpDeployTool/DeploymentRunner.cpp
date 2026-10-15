@@ -14,6 +14,8 @@
 
 #include "DeploymentRunner.h"
 
+#include <QDebug>
+
 #include <algorithm>
 #include <chrono>
 #include <ctime>
@@ -23,7 +25,21 @@ DeploymentRunner::~DeploymentRunner()
     // 兜底（设计 §7 长稳审计点 2）：析构前 cancel-all + 等待池清空，
     // 杜绝后台线程仍持有 job/回调捕获的悬垂
     requestCancel();
-    m_pool.waitForDone();
+    waitPoolWithWatchdog();
+}
+
+// #26 中止策略：协作式取消 + 限时等待看门狗。适配器线程卡在无检查点的
+// 系统调用时，Qt 无法安全强杀，且提前放弃等待会让 run() 在 job 仍引用
+// 栈对象时返回（UAF）——故策略为「永不放弃但可见」：每 30s 出一条告警，
+// 长稳日志可直接定位卡死的适配器实现。
+void DeploymentRunner::waitPoolWithWatchdog()
+{
+    int round = 0;
+    while (!m_pool.waitForDone(30000)) {
+        ++round;
+        qWarning() << "[部署] 工作线程已" << round * 30
+                   << "s 未退出，继续等待（疑似适配器阻塞于无取消检查点的系统调用）";
+    }
 }
 
 void DeploymentRunner::requestCancel()
@@ -47,6 +63,8 @@ DeployReport DeploymentRunner::run(
     const std::function<void(const std::string& key, int pct)>& deviceProgress)
 {
     DeployReport report;
+    // 首元素口径：一批任务同协议（后端按协议分组提交），混合协议批次当前不可达；
+    // 若未来允许混批，此处需改为协议集合
     report.protocol = params.empty() ? std::string() : params.front().protocol;
 
     // 并发度钳制：<1 按 1；超出设备数按设备数收敛（多开线程无益）
@@ -153,7 +171,7 @@ DeployReport DeploymentRunner::run(
 
     // 阻塞等待全部完成——此后读 result()/state 即安全：
     // 每个 job 恰好执行一次且 run() 已完整返回（红线约束）
-    m_pool.waitForDone();
+    waitPoolWithWatchdog();
 
     // 强制末次总进度：不受节流窗口约束，保证完成态（全部 Ok 时即 100%）必达
     tryEmitOverall(true);

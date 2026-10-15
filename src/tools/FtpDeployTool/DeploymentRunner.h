@@ -72,6 +72,9 @@ public:
     void requestCancel();
 
 private:
+    // #26：限时等待看门狗——永不放弃等待（防 UAF），但每 30s 出一条告警使卡死可见
+    void waitPoolWithWatchdog();
+
     QThreadPool m_pool;
 
     // 保护下方三组在途状态；requestCancel 与 run 的注册/清理阶段互斥

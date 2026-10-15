@@ -10,6 +10,7 @@
  */
 
 #include "MultiProgressWidget.h"
+#include "config/ConfigStore.h"
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -19,8 +20,10 @@ namespace {
 // 行结构本身不着色）。与连接状态点用色同源。
 constexpr const char* kOkColor   = "#40C8A0";
 constexpr const char* kFailColor = "#E85848";
-// 取消终态中性灰（次要文字色）：取消既非成功亦非告警，不占信号态色
-constexpr const char* kCancelColor = "#7B8494";
+// 取消终态中性灰（次要文字色）：取消既非成功亦非告警，不占信号态色。
+// #36：随主题切换——暗色次要文字 #7B8494 / 亮色次要文字 #6B7480
+constexpr const char* kCancelColorDark  = "#7B8494";
+constexpr const char* kCancelColorLight = "#6B7480";
 
 // 状态文案：等待中 → 上传中（首个进度事件起）→ 成功/失败/已取消（终态）
 const QString kStatusPending = QStringLiteral("等待中");
@@ -107,7 +110,6 @@ void MultiProgressWidget::rebuildUi()
 
 void MultiProgressWidget::setDeviceCount(int count)
 {
-    m_deviceCount = count;
     setVisible(count > 0);
     m_keys.clear();
     m_names.clear();
@@ -169,8 +171,12 @@ void MultiProgressWidget::setDeviceCancelled(const QString& key)
         return;   // 未注册键（重试轮差集中的历史键等）：静默忽略
     }
     it->status->setText(QStringLiteral("已取消"));
+    const bool light = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() == QStringLiteral("light");
     it->status->setStyleSheet(
-        QStringLiteral("color: %1;").arg(QLatin1String(kCancelColor)));
+        QStringLiteral("color: %1;")
+            .arg(QLatin1String(light ? kCancelColorLight : kCancelColorDark)));
 }
 
 void MultiProgressWidget::setOverallProgress(int pct)
