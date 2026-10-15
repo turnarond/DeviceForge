@@ -45,12 +45,9 @@ REM ---------- Create build directory ----------
 echo.
 echo [2/4] Creating build directory: %BUILD_DIR%
 echo       Removing old build cache to avoid platform mismatch...
-if exist "%BUILD_DIR%\CMakeCache.txt" del /f /q "%BUILD_DIR%\CMakeCache.txt"
-if exist "%BUILD_DIR%\CMakeSettings.json" del /f /q "%BUILD_DIR%\CMakeSettings.json"
-if exist "%BUILD_DIR%\CMakeFiles" rmdir /s /q "%BUILD_DIR%\CMakeFiles"
-if exist "%BUILD_DIR%\.vs" rmdir /s /q "%BUILD_DIR%\.vs" 2>nul
-del /f /q "%BUILD_DIR%\*.vcxproj.user" 2>nul
-del /f /q "%BUILD_DIR%\*.sdf" 2>nul
+REM #43-①：整目录删除——只删 CMakeCache/CMakeFiles 会留下 build/tests 下
+REM 陈旧 .obj，类布局变更型提交后增量编译产生栈越位崩溃（CLAUDE.md 坑记录）
+if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
 REM ---------- CMake configuration ----------
@@ -59,6 +56,12 @@ echo [3/4] Running CMake configuration...
 cd /d "%BUILD_DIR%"
 cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="%QT_PREFIX%"
 set CMAKE_ERR=!ERRORLEVEL!
+REM #43-②：以产物判成败——cmake 配置成功但返回码非零（探测告警等）曾致误退出；
+REM CMakeCache.txt 与 .sln 均在即放行，仅告警
+if exist "%BUILD_DIR%\CMakeCache.txt" if exist "%BUILD_DIR%\DeviceForge.sln" (
+    if not !CMAKE_ERR! == 0 echo       [WARN] CMake exit code was !CMAKE_ERR! but artifacts look complete, continuing
+    goto :cmake_ok
+)
 if !CMAKE_ERR! NEQ 0 (
     echo.
     echo [ERROR] CMake configuration failed (exit code: !CMAKE_ERR!)
@@ -69,6 +72,7 @@ if !CMAKE_ERR! NEQ 0 (
     exit /b !CMAKE_ERR!
 )
 echo       CMake configuration succeeded
+:cmake_ok
 
 REM ---------- Build ----------
 echo.
