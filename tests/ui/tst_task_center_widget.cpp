@@ -1107,6 +1107,7 @@ private slots:
         legacy.insert(QStringLiteral("remoteDirectory"), QStringLiteral("/opt/app/"));
         const auto canon = TaskTemplateEditorDialog::canonicalDeployParameters(legacy);
         QVERIFY(!canon.contains(QStringLiteral("files")));
+        QVERIFY(!canon.contains(QStringLiteral("remoteDirectory")));
         const QVariantList items = canon.value(QStringLiteral("items")).toList();
         QCOMPARE(items.size(), 2);
         QCOMPARE(items[0].toMap().value(QStringLiteral("remotePath")).toString(),

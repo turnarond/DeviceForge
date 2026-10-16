@@ -506,6 +506,7 @@ QVariantMap TaskTemplateEditorDialog::canonicalDeployParameters(const QVariantMa
     }
     QVariantMap canon = params;
     canon.remove(QStringLiteral("files"));
+    canon.remove(QStringLiteral("remoteDirectory"));   // 契约：items 规范形态去 files/remoteDirectory 两键
     canon.insert(QStringLiteral("items"), items);
     return canon;
 }
