@@ -1076,6 +1076,8 @@ QString TaskCenterWidget::sanitizedTemplateFileName(const QString& name)
     cleaned = cleaned.mid(start, end - start);
     if (cleaned.isEmpty())
         return QStringLiteral("task-template.json");
+    if (cleaned.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive))   // #55：防 .json.json 双后缀
+        return cleaned;
     return cleaned + QStringLiteral(".json");
 }
 

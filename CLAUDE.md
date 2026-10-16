@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -427,6 +427,8 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 
 - **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend`（`src/tools/OpcUaClientTool/`）+ `OpcUaAdapter`（`src/adapter/`）。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩已随 2026-08-02 清理删除
+
+- **同名 remove 语义分叉（2026-10-16 #54 实录）**：`TaskTemplateStore::remove` 对不存在/空 id 返回 **false**（exists() 前置守卫）；`ConfigStore::remove` 对零行 DELETE 返回 **true**（exec 成功即真），`DeviceRegistry::remove` 因 `existed || storeRemoved` 组合对不存在 id 实际返回 **true**。新增 store 腿时先定口径、勿默认转发可证伪——UI 腿依赖 false 分支做"已被并行移除"复位。
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
