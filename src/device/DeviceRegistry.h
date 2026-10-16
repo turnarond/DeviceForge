@@ -36,6 +36,11 @@ public:
     // 重名不阻止保存；UI 可读取此提示并以名称加地址消歧。
     const std::vector<std::string>& warnings() const;
 
+    // #46 保存前同键检测：入站档案的端点若与「其他」档案（按 deviceId 排除自身）
+    // 存在协议+ip+port 全同的端点，逐条返回人读描述（"protocol://ip:port 与档案
+    // \"名称\"重复"）。只读查询不改状态；UI 保存入口据此弹确认，可保存但需确认。
+    std::vector<std::string> endpointConflicts(const DeviceProfile& incoming) const;
+
 private:
     static DeviceProfile normalize(const DeviceProfile& profile);
     static std::string stableId(const DeviceProfile& profile);

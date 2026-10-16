@@ -306,6 +306,29 @@ void DeviceRegistry::rebuildWarnings()
     }
 }
 
+std::vector<std::string> DeviceRegistry::endpointConflicts(const DeviceProfile& incoming) const
+{
+    const auto normalized = normalize(incoming);
+    std::vector<std::string> conflicts;
+    std::unordered_set<std::string> reported;
+    for (const auto& profile : m_profiles) {
+        // 编辑自身不算冲突；deviceId 为空的入站（新增路径）不排除任何档案
+        if (!normalized.deviceId.empty() && profile.deviceId == normalized.deviceId)
+            continue;
+        const std::string holder = profile.name.empty() ? profile.deviceId : profile.name;
+        for (const auto& endpoint : normalized.endpoints) {
+            const auto key = endpointKey(endpoint);
+            const bool hit = std::any_of(profile.endpoints.begin(), profile.endpoints.end(),
+                                         [&key](const DeviceEndpoint& item) {
+                                             return endpointKey(item) == key;
+                                         });
+            if (hit && reported.insert(key + "|" + profile.deviceId).second)
+                conflicts.push_back(key + " 与档案 \"" + holder + "\" 重复");
+        }
+    }
+    return conflicts;
+}
+
 bool DeviceRegistry::load()
 {
     m_profiles.clear();

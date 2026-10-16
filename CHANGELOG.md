@@ -51,6 +51,16 @@
 
 ## [未发布]
 
+### Added（2026-10-16，#46 设备档案端点同键校验）
+
+- **档案保存同键检测与确认**：`DeviceRegistry::endpointConflicts()` 新增只读查询——入站档案端点与其他档案存在协议+IP+端口全同的端点时逐条报冲突（归一化口径与存储一致；按 deviceId 排除编辑自身；跨协议同址不误报）。设备总线「添加/双击编辑」两保存入口接线确认框：可保存但需确认（默认「否」），放弃时回到编辑对话框不丢内容。堵 #29 遗留的源端空白（同址重复档案=同一目标，部署清目录互踩、任务串行重复操作）。
+- 测试：`tst_device_registry` +4 用例（冲突命中/排除自身/跨协议豁免/多冲突逐条），全量 CTest 45 目标绿。
+
+### 修复（2026-10-16，#45 测试抖动）
+
+- `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
+- `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
+
 ### 修复（2026-08-21，fix/v2.7-编译修复）
 
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
