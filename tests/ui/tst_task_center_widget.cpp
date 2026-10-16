@@ -27,8 +27,10 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTemporaryDir>
@@ -1142,6 +1144,26 @@ private slots:
                              .toList().front().toMap();
         QCOMPARE(row.value(QStringLiteral("localPath")).toString(), QStringLiteral("C:/tmp/b.bin"));
         QCOMPARE(row.value(QStringLiteral("overwrite")).toString(), QStringLiteral("skip"));
+    }
+
+    // ── ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令 + timeoutSec + protocol）──
+    void editorDialog_commandsPanelSplitsLinesAndClamps()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep step; step.type = TaskStepType::RunCommands;
+        step.parameters.insert(QStringLiteral("commands"),
+                               QStringList{QStringLiteral("ls"), QStringLiteral("pwd")});
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* edit = dlg.findChild<QPlainTextEdit*>(QStringLiteral("teCommands"));
+        QVERIFY(edit);                                             // 此前不存在 → 红
+        QCOMPARE(edit->toPlainText().split('\n').size(), 2);
+        edit->setPlainText(QStringLiteral("reboot\n\n # 注释行会被 trim 去空保留? 否——按行 trim 后仍保留非空"));
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto cmds = out.steps.front().parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(cmds.first(), QStringLiteral("reboot"));
+        auto* spin = dlg.findChild<QSpinBox*>(QStringLiteral("teTimeout"));
+        QCOMPARE(spin->value(), 10);                               // 默认 10
     }
 };
 

@@ -30,6 +30,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -94,6 +95,20 @@ TaskStepType typeForStackIndex(int index)
     case 3: return TaskStepType::Recover;
     default: return TaskStepType::DeployFiles;
     }
+}
+
+// 参数栈**页**索引（与类型下拉索引解耦）：run_commands 与 recover 引擎参数键完全
+// 一致（commands[]/timeoutSec），故共用同一个命令面板页（index1），recover 仅额外
+// 显示顶部说明 label；deploy=0 / reboot=2。栈仅 3 页。
+int pageIndexForType(TaskStepType type)
+{
+    switch (type) {
+    case TaskStepType::DeployFiles: return 0;
+    case TaskStepType::RunCommands:
+    case TaskStepType::Recover:     return 1;
+    case TaskStepType::Reboot:      return 2;
+    }
+    return 0;
 }
 
 // deploy 参数预检：复刻引擎 parseDeployItems 的文案口径（编辑器同口径；
@@ -281,12 +296,14 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
     m_pages = new QStackedWidget(this);
     m_pages->setObjectName(QStringLiteral("teStepPages"));
     // deploy 页由 setupDeployPage 填充 teRemoteDir/teItemList/teAddFiles/teAddDir（T3）；
-    // Task 4 在 commands 页填充 teCommands/teTimeout、recover 页填充恢复检查参数。
+    // Task 4 在共用命令页填充 teCommands/teTimeout（run_commands 与 recover 同页，
+    // recover 额外显示顶部说明 label）。reboot 页为静态说明。
     auto* deployPage = new QWidget(m_pages);
     deployPage->setObjectName(QStringLiteral("tePageDeploy"));
     setupDeployPage(deployPage);
     auto* commandsPage = new QWidget(m_pages);
     commandsPage->setObjectName(QStringLiteral("tePageCommands"));
+    setupCommandsLikePage(commandsPage);
     auto* rebootPage = new QWidget(m_pages);
     rebootPage->setObjectName(QStringLiteral("tePageReboot"));
     auto* rebootLayout = new QVBoxLayout(rebootPage);
@@ -296,12 +313,9 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
     rebootNote->setWordWrap(true);
     rebootLayout->addWidget(rebootNote);
     rebootLayout->addStretch();
-    auto* recoverPage = new QWidget(m_pages);
-    recoverPage->setObjectName(QStringLiteral("tePageRecover"));
     m_pages->addWidget(deployPage);
     m_pages->addWidget(commandsPage);
     m_pages->addWidget(rebootPage);
-    m_pages->addWidget(recoverPage);
     rightLayout->addWidget(m_pages, 1);
 
     // ── 底部按钮（QDialog 自动接线 accepted→accept()、rejected→reject()；
@@ -535,6 +549,73 @@ void TaskTemplateEditorDialog::flushDeployTable()
         step.parameters.insert(QStringLiteral("items"), items);
 }
 
+void TaskTemplateEditorDialog::setupCommandsLikePage(QWidget* page)
+{
+    auto* layout = new QVBoxLayout(page);
+    // recover 顶部说明 label：run_commands 与 recover 共用本页，仅 recover 时可见
+    //（绑定态由 bindCurrentStep 按步类型 setVisible 切换）
+    m_recoverNote = new QLabel(
+        QStringLiteral("重启后成功判定检测：命令全部成功返回即视为设备已恢复。"), page);
+    m_recoverNote->setObjectName(QStringLiteral("teRecoverNote"));
+    m_recoverNote->setWordWrap(true);
+    m_recoverNote->setVisible(false);
+    layout->addWidget(m_recoverNote);
+    layout->addWidget(new QLabel(QStringLiteral("命令（一行一条）"), page));
+    m_commandsEditor = new QPlainTextEdit(page);
+    m_commandsEditor->setObjectName(QStringLiteral("teCommands"));
+    m_commandsEditor->setPlaceholderText(QStringLiteral("ls\npwd\nreboot"));
+    layout->addWidget(m_commandsEditor, 1);
+    auto* timeoutRow = new QHBoxLayout();
+    timeoutRow->addWidget(new QLabel(QStringLiteral("单命令超时（秒）"), page));
+    m_commandsTimeout = new QSpinBox(page);
+    m_commandsTimeout->setObjectName(QStringLiteral("teTimeout"));
+    m_commandsTimeout->setRange(1, 600);   // 引擎 std::max(1, intParam(...,10))：1..600 覆盖
+    m_commandsTimeout->setValue(10);        // 缺省 10（引擎默认同值）
+    timeoutRow->addWidget(m_commandsTimeout);
+    timeoutRow->addStretch();
+    layout->addLayout(timeoutRow);
+
+    // 用户编辑即时写回当前步（同 deploy/teProtocol 纪律）：
+    // textChanged/valueChanged 仅在非绑定态触发写回；程序化灌值走 blockSignals 不写回。
+    connect(m_commandsEditor, &QPlainTextEdit::textChanged, this, [this] {
+        flushCommandsLike();
+    });
+    connect(m_commandsTimeout, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        flushCommandsLike();
+    });
+}
+
+void TaskTemplateEditorDialog::fillCommandsLike(const QVariantMap& params)
+{
+    m_commandsEditor->blockSignals(true);   // 程序化灌值不触发写回（m_binding 之外的双守卫）
+    m_commandsEditor->setPlainText(params.value(QStringLiteral("commands"))
+                                      .toStringList()
+                                      .join(QLatin1Char('\n')));
+    m_commandsTimeout->blockSignals(true);
+    const int seconds = params.contains(QStringLiteral("timeoutSec"))
+                            ? params.value(QStringLiteral("timeoutSec")).toInt()
+                            : 10;           // 缺省=引擎默认 10
+    m_commandsTimeout->setValue(std::clamp(seconds, 1, 600));
+    m_commandsTimeout->blockSignals(false);
+}
+
+void TaskTemplateEditorDialog::flushCommandsLike()
+{
+    if (m_binding || m_currentStep < 0 || m_currentStep >= static_cast<int>(m_steps.size()))
+        return;
+    TaskStep& step = m_steps[static_cast<std::size_t>(m_currentStep)];
+    if (step.type != TaskStepType::RunCommands && step.type != TaskStepType::Recover)
+        return;   // 仅命令类步骤写回（deploy/reboot 步不触碰本编辑器）
+    QStringList lines = m_commandsEditor->toPlainText().split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+    for (QString& line : lines)
+        line = line.trimmed();
+    lines.removeAll(QString());             // 逐行 trim 后去空（引擎执行期同口径取非空集合）
+    step.parameters.insert(QStringLiteral("commands"), lines);
+    // timeoutSec 恒写为 int（引擎 std::max(1, intParam(...,10)) 容忍其存在，含默认 10）
+    step.parameters.insert(QStringLiteral("timeoutSec"), m_commandsTimeout->value());
+    // protocol 键由共享 teProtocol 管理（flushProtocolFromCombo），此处不动
+}
+
 void TaskTemplateEditorDialog::moveStepRow(int delta)
 {
     const int from = m_currentStep;
@@ -591,10 +672,20 @@ void TaskTemplateEditorDialog::bindCurrentStep()
         const int protocolIndex = m_protocol->findData(protocol);
         // 表外协议值（如未来新增）→ 显示"不限"但不回写，避免静默改值
         m_protocol->setCurrentIndex(protocolIndex >= 0 ? protocolIndex : 0);
-        m_pages->setCurrentIndex(stackIndexForType(step.type));
+        m_pages->setCurrentIndex(pageIndexForType(step.type));
         // deploy 页绑定：items[] → 表格逐行灌入（blockSignals 双守卫，不触发写回）
         if (step.type == TaskStepType::DeployFiles)
             fillDeployTable(step.parameters);
+        // commands/recover 共用页绑定：commands[]/timeoutSec → 编辑器/自旋（同双守卫）；
+        // recover 额外显示顶部说明 label，run_commands 隐藏
+        else if (step.type == TaskStepType::RunCommands || step.type == TaskStepType::Recover)
+            fillCommandsLike(step.parameters);
+        if (m_recoverNote)
+            m_recoverNote->setVisible(step.type == TaskStepType::Recover);
+        // 顺带修（T3 遗留 minor）：非 deploy 步绑定即清除批量添加前缀，
+        // 防上一个 deploy 步的 teRemoteDir 暗套到别的步的批量添加（该键不持久化，清空无损）
+        if (step.type != TaskStepType::DeployFiles && m_remoteDir)
+            m_remoteDir->clear();
     } else {
         m_stepType->setCurrentIndex(-1);
         m_protocol->setCurrentIndex(0);
@@ -642,6 +733,24 @@ TaskTemplate TaskTemplateEditorDialog::assemble() const
             params.remove(QStringLiteral("items"));
         else
             params.insert(QStringLiteral("items"), items);
+    }
+    // commands/recover 共用页展示中：以可见编辑器快照兜底写回当前步 commands[]/timeoutSec
+    //（同 deploy 纪律；页索引 1 同时服务 run_commands 与 recover；protocol 由共享 combo
+    //  处理，此处不触碰）。逐行 trim 去空 → QStringList，timeoutSec 恒写 int。
+    if (m_commandsEditor && m_pages->currentIndex() == 1
+        && m_currentStep >= 0 && m_currentStep < static_cast<int>(candidate.steps.size())) {
+        const TaskStepType type = candidate.steps[static_cast<std::size_t>(m_currentStep)].type;
+        if (type == TaskStepType::RunCommands || type == TaskStepType::Recover) {
+            QVariantMap& params =
+                candidate.steps[static_cast<std::size_t>(m_currentStep)].parameters;
+            QStringList lines =
+                m_commandsEditor->toPlainText().split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+            for (QString& line : lines)
+                line = line.trimmed();
+            lines.removeAll(QString());
+            params.insert(QStringLiteral("commands"), lines);
+            params.insert(QStringLiteral("timeoutSec"), m_commandsTimeout->value());
+        }
     }
     candidate.unknownFields = m_unknownFields;
     return candidate;

@@ -10,22 +10,28 @@
 #include <vector>
 
 class QComboBox;
+class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
 class QTableWidget;
 
-// v2.13 #54 Task 2/3：任务模板编辑器对话框。
+// v2.13 #54 Task 2/3/4：任务模板编辑器对话框。
 // 纯「表单 ↔ TaskTemplate」双向映射：不触碰 ConfigStore/DeviceRegistry，
 // 设备档案以构造参数 knownDevices 快照注入（只读）。
 // Task 3 已落地 deploy 页（teRemoteDir + teItemList 4 列 items 表 + 批量添加）；
-// Task 4 将补齐 commands/recover 面板，未展示步骤的参数原样透传（collect 不丢失）。
+// Task 4 已补齐 commands/recover 面板（teCommands 多行 + teTimeout 1..600 + 共享
+// teProtocol），未展示步骤的参数原样透传（collect 不丢失）。
 // 共享协议过滤下拉 teProtocol 位于参数栈之外（裁决 1）：四种步骤类型读写同一
 // parameters["protocol"] 键，绑定当前步。
 // deploy 页裁决（控制器）：teRemoteDir 仅是批量添加的 UI 远端前缀辅助输入，
 // **不是**持久化参数键；参数只携带 items[]（canonicalDeployParameters 加载即归一）。
+// commands/recover 页裁决：run_commands 与 recover 引擎参数键完全一致（commands[]
+// +timeoutSec），但一页一控件（QStackedWidget 控件不能同属两页）；两页各持一套
+// teCommands/teTimeout，绑定/写回按当前步类型分派，recover 页顶部多一条说明 label。
 class TaskTemplateEditorDialog : public QDialog {
 public:
     // knownDevices：本机档案快照（目标设备列表 = knownDevices ∪ initial.deviceIds）
@@ -70,6 +76,18 @@ private:
     void appendDeployRow(const QString& localPath, const QString& remotePath,
                          const QString& direction, const QString& overwrite);
 
+    // ── commands / recover 共用页（Task 4）──
+    // run_commands 与 recover 引擎参数键完全一致，共用同一命令面板页（栈 index1）：
+    // teCommands(QPlainTextEdit 一行一条) + teTimeout(QSpinBox 1..600 默认 10)；
+    // 顶部 teRecoverNote 说明 label 仅在 recover 步可见。textChanged/valueChanged →
+    // flushCommandsLike 即时写回当前步（绑定守卫内不触发）。
+    void setupCommandsLikePage(QWidget* page);
+    // 参数 commands[]/timeoutSec → 编辑器/自旋（m_binding+blockSignals 双守卫，不写回）
+    void fillCommandsLike(const QVariantMap& params);
+    // 编辑器/自旋 → 当前步 commands[]（逐行 trim 去空）+timeoutSec(int 恒写) 写回；
+    // 仅当当前步为 run_commands/recover 时执行（protocol 由共享 combo 单独管理，不动）
+    void flushCommandsLike();
+
     QLineEdit* m_name = nullptr;             // teName
     QLineEdit* m_description = nullptr;      // teDescription
     QLineEdit* m_tags = nullptr;             // teTags（逗号分隔标签，映射 tagSelectors）
@@ -86,6 +104,9 @@ private:
     QTableWidget* m_itemTable = nullptr;     // teItemList（4 列：本地/远端/方向/覆盖，行=items）
     QPushButton* m_addFiles = nullptr;       // teAddFiles「添加文件…」（非原生多选）
     QPushButton* m_addDir = nullptr;         // teAddDir「添加目录…」（非原生目录选择）
+    QLabel* m_recoverNote = nullptr;         // teRecoverNote（recover 步可见的顶部说明）
+    QPlainTextEdit* m_commandsEditor = nullptr; // teCommands（run_commands/recover 共用，一行一条）
+    QSpinBox* m_commandsTimeout = nullptr;   // teTimeout（1..600，默认 10=引擎缺省）
 
     std::vector<TaskStep> m_steps;           // 内部步骤向量（顺序即模板顺序）
     QVariantMap m_unknownFields;             // 前向兼容未知字段：编辑器不显示、collect 原样携带
