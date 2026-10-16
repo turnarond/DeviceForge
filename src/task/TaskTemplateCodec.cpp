@@ -4,6 +4,8 @@
 #include "task/TaskTemplateCodec.h"
 
 #include <QLatin1String>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMetaType>
 #include <QStringList>
 #include <QVariantList>
@@ -173,5 +175,46 @@ std::optional<TaskTemplate> decodeTaskTemplate(const QVariantMap& row, QString* 
         if (isKnownFieldKey(it.key()) || isReservedRowKey(it.key())) continue;
         tmpl.unknownFields.insert(it.key(), it.value());
     }
+    return tmpl;
+}
+
+// ── Task 2：文件格式契约（v2.13 模板跨机迁移）──
+// 根对象 {format, formatVersion, template}；template 内剔除 templateId（跨机主键不外溢）。
+QByteArray encodeTemplateFile(const TaskTemplate& tmpl)
+{
+    QVariantMap record = encodeTaskTemplate(tmpl);
+    record.remove(QStringLiteral("templateId"));
+    QVariantMap root;
+    root.insert(QStringLiteral("format"), QString(kTemplateFileFormat));
+    root.insert(QStringLiteral("formatVersion"), kTemplateFileFormatVersion);
+    root.insert(QStringLiteral("template"), record);
+    return QJsonDocument(QJsonObject::fromVariantMap(root)).toJson(QJsonDocument::Indented);
+}
+
+// 四道校验按序：JSON 解析 → 魔数 → formatVersion（只认 1，过高给升级文案）→ 行解码（含敏感拒收）。
+// 行解码复用 decodeTaskTemplate：敏感键扫描（containsSensitiveKey）覆盖整行含未知键，不得削弱。
+std::optional<TaskTemplate> decodeTemplateFile(const QByteArray& data, QString* reason)
+{
+    const auto fail = [reason](const QString& message) {
+        if (reason) *reason = message; return std::nullopt; };
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+    // Qt6 移除了 QJsonDocument::isUndefined（并入 isNull），故只判 null + 解析错误码
+    if (doc.isNull() || parseError.error != QJsonParseError::NoError)
+        return fail(QStringLiteral("模板文件不是合法 JSON（偏移 %1）").arg(parseError.offset));
+    const QVariantMap root = doc.toVariant().toMap();
+    if (root.value(QStringLiteral("format")).toString() != QString(kTemplateFileFormat))
+        return fail(QStringLiteral("不是 DeviceForge 模板文件"));
+    const int formatVersion = root.value(QStringLiteral("formatVersion")).toInt();
+    if (!root.contains(QStringLiteral("formatVersion")) || formatVersion < 1)
+        return fail(QStringLiteral("模板文件缺少合法的 formatVersion"));
+    if (formatVersion > kTemplateFileFormatVersion)
+        return fail(QStringLiteral("模板文件版本(v%1)比本机程序更新，请升级 DeviceForge 后导入").arg(formatVersion));
+    const QVariantMap record = root.value(QStringLiteral("template")).toMap();
+    if (record.isEmpty()) return fail(QStringLiteral("模板文件缺少 template 对象"));
+    QString rowReason;
+    auto tmpl = decodeTaskTemplate(record, &rowReason);
+    if (!tmpl) return fail(rowReason);
+    tmpl->templateId.clear();          // 跨机 ID 语义归导入方
     return tmpl;
 }
