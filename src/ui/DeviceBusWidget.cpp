@@ -648,8 +648,15 @@ void DeviceBusWidget::editProfileFor(QPushButton* pill)
     if (dialog.exec() != QDialog::Accepted)
         return;
     DeviceProfile edited;
-    if (!dialog.collect(&edited))
-        return;
+    // #46：同键冲突默认拒绝，用户放弃时回到对话框继续改，不丢编辑内容
+    for (;;) {
+        if (!dialog.collect(&edited))
+            return;
+        if (confirmEndpointConflicts(edited))
+            break;
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+    }
 
     // 终审 Critical 1：编辑器收集的是「替换清单」——经 saveReplacing 以替换语义
     // 落库（未列出的既有端点删除 + 被取代旧 device.list 行清扫），
@@ -662,6 +669,26 @@ void DeviceBusWidget::editProfileFor(QPushButton* pill)
         persistLegacyRow(toDeviceInfo(saved, saved.endpoints.front()));
     refreshFromRegistry();
     emit deviceProfileEdited(saved);
+}
+
+// #46：保存入口源端同键校验——与他档同协议同键（协议+ip+port）端点重复时弹确认，
+// 可保存但需确认（默认"否"）；返回 false 表示用户放弃本次保存。
+bool DeviceBusWidget::confirmEndpointConflicts(const DeviceProfile& edited)
+{
+    if (!m_registry)
+        return true;
+    const auto conflicts = m_registry->endpointConflicts(edited);
+    if (conflicts.empty())
+        return true;
+    QStringList lines;
+    for (const auto& conflict : conflicts)
+        lines << QStringLiteral("・") + QString::fromStdString(conflict);
+    const auto ans = QMessageBox::question(this, tr("端点同键重复"),
+        tr("检测到以下端点与既有档案的同协议端点重复：\n\n%1\n\n"
+           "同地址重复档案实为同一目标：部署清目录会互相踩、任务按档案串行时会重复操作同一设备。\n"
+           "仍要保存吗？").arg(lines.join(QLatin1Char('\n'))),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    return ans == QMessageBox::Yes;
 }
 
 void DeviceBusWidget::persistLegacyRow(const DeviceInfo& device)
@@ -813,10 +840,18 @@ void DeviceBusWidget::onAddClicked()
         DeviceProfileEditorDialog dialog(DeviceProfile{}, this);
         if (dialog.exec() != QDialog::Accepted)
             return;
-        DeviceProfile edited;
-        if (!dialog.collect(&edited))
-            return;
-        const DeviceProfile saved = m_registry->upsert(edited);
+        DeviceProfile saved;
+        for (;;) {
+            DeviceProfile edited;
+            if (!dialog.collect(&edited))
+                return;
+            if (confirmEndpointConflicts(edited)) {
+                saved = m_registry->upsert(edited);
+                break;
+            }
+            if (dialog.exec() != QDialog::Accepted)
+                return;
+        }
         if (!m_registry->save(saved))
             qWarning("DeviceBus: 保存 device.profile 失败 deviceId=%s",
                      qPrintable(QString::fromStdString(saved.deviceId)));

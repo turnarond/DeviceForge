@@ -96,6 +96,9 @@ private:
     void editProfileFor(QPushButton* pill);
     // 旧 device.list ip:port 行写入/删除（回退兼容，registry 路径同样保留）
     void persistLegacyRow(const DeviceInfo& device);
+    // #46 保存入口源端校验：与他档同协议同键（协议+ip+port）端点重复时弹确认，
+    // 可保存但需确认（默认"否"）；返回 false 表示用户放弃本次保存
+    bool confirmEndpointConflicts(const DeviceProfile& edited);
 
     // 胶囊式设备栏
     QWidget*      m_pillContainer = nullptr;
