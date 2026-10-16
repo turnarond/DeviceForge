@@ -30,8 +30,9 @@ class QTableWidget;
 // deploy 页裁决（控制器）：teRemoteDir 仅是批量添加的 UI 远端前缀辅助输入，
 // **不是**持久化参数键；参数只携带 items[]（canonicalDeployParameters 加载即归一）。
 // commands/recover 页裁决：run_commands 与 recover 引擎参数键完全一致（commands[]
-// +timeoutSec），但一页一控件（QStackedWidget 控件不能同属两页）；两页各持一套
-// teCommands/teTimeout，绑定/写回按当前步类型分派，recover 页顶部多一条说明 label。
+// +timeoutSec），二者共享同一个命令面板页（栈 index1，pageIndexForType 分派）而非各持
+// 一套控件；绑定/写回按当前步类型分派，recover 步在页顶部额外显示一条说明 label
+// （teRecoverNote，run_commands 隐藏）。
 class TaskTemplateEditorDialog : public QDialog {
 public:
     // knownDevices：本机档案快照（目标设备列表 = knownDevices ∪ initial.deviceIds）
@@ -99,7 +100,7 @@ private:
     QPushButton* m_stepDownButton = nullptr;   // teStepDown
     QComboBox* m_stepType = nullptr;         // teStepType
     QComboBox* m_protocol = nullptr;         // teProtocol（共享，栈外）
-    QStackedWidget* m_pages = nullptr;       // 参数页栈：0 deploy / 1 commands / 2 reboot / 3 recover
+    QStackedWidget* m_pages = nullptr;       // 参数页栈：0 deploy / 1 commands+recover 共用 / 2 reboot
     QLineEdit* m_remoteDir = nullptr;        // teRemoteDir（批量添加 UI 前缀，不持久化）
     QTableWidget* m_itemTable = nullptr;     // teItemList（4 列：本地/远端/方向/覆盖，行=items）
     QPushButton* m_addFiles = nullptr;       // teAddFiles「添加文件…」（非原生多选）

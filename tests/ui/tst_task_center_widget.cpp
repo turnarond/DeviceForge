@@ -1165,6 +1165,39 @@ private slots:
         auto* spin = dlg.findChild<QSpinBox*>(QStringLiteral("teTimeout"));
         QCOMPARE(spin->value(), 10);                               // 默认 10
     }
+
+    // 评审 Critical 1 回归：fillCommandsLike 若在程序化灌值后不解除 blockSignals，
+    // 首次绑定后 teCommands 的 textChanged 永久封锁 → 用户编辑永不 flush 到 m_steps，
+    // 切步即静默丢改动。用 run_commands(C1)+recover(R1) 两步各自编辑并来回切换验证存活。
+    void editorDialog_commandEditsSurviveStepSwitch()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep c1; c1.type = TaskStepType::RunCommands;
+        c1.parameters.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("ls"), QStringLiteral("pwd")});
+        TaskStep r1; r1.type = TaskStepType::Recover;
+        r1.parameters.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("echo recovered")});
+        in.steps.push_back(c1);
+        in.steps.push_back(r1);
+        TaskTemplateEditorDialog dlg(in, {});
+
+        auto* list = dlg.findChild<QListWidget*>(QStringLiteral("teStepList"));
+        auto* edit = dlg.findChild<QPlainTextEdit*>(QStringLiteral("teCommands"));
+        QVERIFY(list && edit);
+
+        list->setCurrentRow(0);                                    // 绑定 C1
+        edit->setPlainText(QStringLiteral("edited-one\nedited-two")); // 信号应实时 flush 到 m_steps[0]
+
+        list->setCurrentRow(1);                                    // 切到 R1（fillCommandsLike 灌 R1）
+        list->setCurrentRow(0);                                    // 切回 C1：编辑器应显示已改内容
+
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto c1cmds = out.steps[0].parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(c1cmds, (QStringList{QStringLiteral("edited-one"), QStringLiteral("edited-two")}));
+        const auto r1cmds = out.steps[1].parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(r1cmds, (QStringList{QStringLiteral("echo recovered")})); // R1 自身内容不受扰动
+    }
 };
 
 QTEST_MAIN(TstTaskCenterWidget)

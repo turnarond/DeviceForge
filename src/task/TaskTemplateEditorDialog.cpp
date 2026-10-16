@@ -2,7 +2,7 @@
 // 设计裁决（控制器拍板，后续 Task 依赖）：
 // · teProtocol 为**全类型共享**的协议过滤下拉，置于 QStackedWidget 之外（栈上方），
 //   四种步骤类型读写同一 parameters["protocol"] 键；T3/T4 不再各自建 teProtocol。
-// · 参数栈页序：0=deploy（T3 已落地 items 表）/1=commands（T4）/2=reboot/3=recover（T4）。
+// · 参数栈页序：0=deploy（T3 已落地 items 表）/1=commands+recover 共用（T4）/2=reboot。
 //   空白页步骤的参数在 collect 时**原样透传**（内部 m_steps 保存真值）。
 // · teStepType 切换仅在用户主动操作（activated）时把参数替换为该类型的全新空映射；
 //   加载绑定绝不改参数。
@@ -591,6 +591,9 @@ void TaskTemplateEditorDialog::fillCommandsLike(const QVariantMap& params)
     m_commandsEditor->setPlainText(params.value(QStringLiteral("commands"))
                                       .toStringList()
                                       .join(QLatin1Char('\n')));
+    // 务必解除阻塞：QPlainTextEdit::textChanged 发在控件自身，若此处不 blockSignals(false)，
+    // 首次绑定后信号永久封锁 → 用户编辑永不 flush 到 m_steps → 切步即静默丢改动（评审 Critical 1）
+    m_commandsEditor->blockSignals(false);
     m_commandsTimeout->blockSignals(true);
     const int seconds = params.contains(QStringLiteral("timeoutSec"))
                             ? params.value(QStringLiteral("timeoutSec")).toInt()
@@ -735,12 +738,13 @@ TaskTemplate TaskTemplateEditorDialog::assemble() const
             params.insert(QStringLiteral("items"), items);
     }
     // commands/recover 共用页展示中：以可见编辑器快照兜底写回当前步 commands[]/timeoutSec
-    //（同 deploy 纪律；页索引 1 同时服务 run_commands 与 recover；protocol 由共享 combo
-    //  处理，此处不触碰）。逐行 trim 去空 → QStringList，timeoutSec 恒写 int。
-    if (m_commandsEditor && m_pages->currentIndex() == 1
-        && m_currentStep >= 0 && m_currentStep < static_cast<int>(candidate.steps.size())) {
+    //（同 deploy 纪律；页索引经 pageIndexForType 分派，run_commands 与 recover 同为 1；
+    //  protocol 由共享 combo 处理，此处不触碰）。逐行 trim 去空 → QStringList，timeoutSec 恒写 int。
+    if (m_commandsEditor && m_currentStep >= 0
+        && m_currentStep < static_cast<int>(candidate.steps.size())) {
         const TaskStepType type = candidate.steps[static_cast<std::size_t>(m_currentStep)].type;
-        if (type == TaskStepType::RunCommands || type == TaskStepType::Recover) {
+        if ((type == TaskStepType::RunCommands || type == TaskStepType::Recover)
+            && m_pages->currentIndex() == pageIndexForType(type)) {
             QVariantMap& params =
                 candidate.steps[static_cast<std::size_t>(m_currentStep)].parameters;
             QStringList lines =
