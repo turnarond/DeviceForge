@@ -721,6 +721,7 @@ endif()
 add_executable(tst_task_center_widget
     ui/tst_task_center_widget.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskCenterWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateEditorDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp

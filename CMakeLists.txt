@@ -212,6 +212,7 @@ set(SOURCES
     src/task/TaskExecutionEngine.cpp
     src/task/TaskRunStore.cpp
     src/task/TaskCenterWidget.cpp
+    src/task/TaskTemplateEditorDialog.cpp
 
     # 可靠传输内核
     src/transfer/TransferTypes.cpp

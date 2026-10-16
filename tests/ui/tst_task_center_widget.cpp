@@ -9,6 +9,8 @@
 // ⑧ v2.13 模板导出：公共 API 直写契约文件 + 按钮选中启用规则 + 文件名清洗口径；
 // ⑨ v2.13 模板导入：新建计数+悬空引用保留/同名三选（覆盖继承 ID 与版本、改名
 //    "(2)"、取消静默）/坏文件不落库。
+// ⑩ v2.13 #54 Task 2：模板编辑器对话框骨架——元信息/设备多选（含悬空档案展示与
+//    默认勾选）/步骤列表/reboot 参数页/validate+collect+canonicalDeployParameters。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -35,6 +37,7 @@
 #include "task/TaskCenterWidget.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
+#include "task/TaskTemplateEditorDialog.h"
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/MultiProgressWidget.h"
 #include "ui/DeviceBusWidget.h"
@@ -1060,6 +1063,54 @@ private slots:
         }
         QVERIFY(namedFound);
         QVERIFY(addressOnlyFound);
+    }
+
+    // ── ⑩ v2.13 #54 Task 2：编辑器对话框骨架 ──────────────────────
+    void editorDialog_metaAndDanglingRoundTrip()
+    {
+        TaskTemplate in;
+        in.name = "编辑器种子"; in.description = "d"; in.tagSelectors = {"A线"};
+        in.deviceIds = {"device-notexist"};                       // 悬空：knownDevices 不含
+        TaskStep step; step.type = TaskStepType::Reboot;
+        step.parameters.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+        in.steps.push_back(step);
+        in.unknownFields.insert(QStringLiteral("x_next"), 7);
+        TaskTemplateEditorDialog dlg(in, {});                     // 本机无档案
+        auto* devList = dlg.findChild<QListWidget*>(QStringLiteral("teDevices"));
+        QVERIFY(devList);
+        QVERIFY(devList->item(0)->text().contains(QStringLiteral("本机无档案")));
+        QVERIFY(devList->item(0)->checkState() == Qt::Checked);   // 默认保留
+        TaskTemplate out;
+        QVERIFY(dlg.collect(&out));
+        QCOMPARE(out.deviceIds, in.deviceIds);
+        QCOMPARE(out.unknownFields, in.unknownFields);
+        QCOMPARE(out.steps.front().parameters.value(QStringLiteral("protocol")).toString(),
+                 QStringLiteral("telnet"));
+        QCOMPARE(out.templateId, in.templateId);
+    }
+    void editorDialog_validateRejectsEmptyNameAndCommands()
+    {
+        TaskTemplate in; // 空模板
+        TaskTemplateEditorDialog dlg(in, {});
+        QVERIFY(!dlg.validate().isEmpty());                        // 缺名称
+        TaskTemplate seeded; seeded.name = "n";
+        TaskStep cmd; cmd.type = TaskStepType::RunCommands;
+        cmd.parameters.insert(QStringLiteral("commands"), QStringList{QStringLiteral("  ")});
+        seeded.steps.push_back(cmd);
+        TaskTemplateEditorDialog dlg2(seeded, {});
+        QVERIFY(dlg2.validate().contains(QStringLiteral("至少一条命令")));
+    }
+    void editorDialog_canonicalizeLegacyFilesShorthand()
+    {
+        QVariantMap legacy;
+        legacy.insert(QStringLiteral("files"), QStringList{"/local/a.bin", "/local/b.bin"});
+        legacy.insert(QStringLiteral("remoteDirectory"), QStringLiteral("/opt/app/"));
+        const auto canon = TaskTemplateEditorDialog::canonicalDeployParameters(legacy);
+        QVERIFY(!canon.contains(QStringLiteral("files")));
+        const QVariantList items = canon.value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 2);
+        QCOMPARE(items[0].toMap().value(QStringLiteral("remotePath")).toString(),
+                 QStringLiteral("/opt/app/a.bin"));               // 去尾斜杠拼接
     }
 };
 
