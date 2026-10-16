@@ -1,11 +1,15 @@
-// v2.13 #54 Task 2：任务模板编辑器对话框骨架实现。
+// v2.13 #54 Task 2/3：任务模板编辑器对话框（骨架 + deploy 步骤面板）。
 // 设计裁决（控制器拍板，后续 Task 依赖）：
 // · teProtocol 为**全类型共享**的协议过滤下拉，置于 QStackedWidget 之外（栈上方），
 //   四种步骤类型读写同一 parameters["protocol"] 键；T3/T4 不再各自建 teProtocol。
-// · 参数栈页序：0=deploy（T3 落地前空白）/1=commands（T4）/2=reboot/3=recover（T4）。
+// · 参数栈页序：0=deploy（T3 已落地 items 表）/1=commands（T4）/2=reboot/3=recover（T4）。
 //   空白页步骤的参数在 collect 时**原样透传**（内部 m_steps 保存真值）。
 // · teStepType 切换仅在用户主动操作（activated）时把参数替换为该类型的全新空映射；
 //   加载绑定绝不改参数。
+// · deploy 页（T3）：teRemoteDir 仅是批量添加的 UI 远端前缀，**不写入参数**；
+//   参数只携带 items[]（加载已经 canonicalDeployParameters 归一）。表格行=items 行，
+//   方向/覆盖列用单元格 QComboBox（itemData=引擎规范串 upload|download / overwrite|skip，
+//   缺省 upload/overwrite）；用户编辑即时写回 m_steps，collect 再从可见表格快照兜底。
 // · 目标设备列表 = knownDevices ∪ initial.deviceIds：在册条目文案
 //   「名称（无名称回退 deviceId） (首个端点 ip:port)」，被引用者默认勾选；
 //   不在册者文案「id（本机无档案）」，默认勾选（悬空引用保留，已拍板）。
@@ -16,10 +20,12 @@
 
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -27,6 +33,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -128,6 +135,36 @@ bool commandsEmptyAfterTrim(const QVariantMap& params)
             return false;
     }
     return true;
+}
+
+// 批量添加远端路径拼接：与 canonicalDeployParameters 同口径（去尾斜杠；
+// 空前缀=根目录 → "/"+名称，保证 remotePath 非空、validate 引擎契约不破）
+QString joinRemotePath(const QString& prefix, const QString& name)
+{
+    QString base = prefix.trimmed();
+    while (base.size() > 1 && base.endsWith(u'/'))
+        base.chop(1);
+    if (base.isEmpty() || base == QLatin1String("/"))
+        return QStringLiteral("/") + name;
+    return base + QLatin1Char('/') + name;
+}
+
+// 方向/覆盖单元格下拉：文案中文、itemData=引擎规范串（collect 只读 currentData）。
+// 规范值口径同引擎 parseDeployItems：direction 非 "download" 一律 upload，
+// overwrite 仅 "skip" 为跳过、其余覆盖。
+QComboBox* makeDeployChoiceCombo(const QString& canonicalValue, bool direction, QWidget* parent)
+{
+    auto* combo = new QComboBox(parent);
+    if (direction) {
+        combo->addItem(QStringLiteral("上传"), QStringLiteral("upload"));
+        combo->addItem(QStringLiteral("下载"), QStringLiteral("download"));
+    } else {
+        combo->addItem(QStringLiteral("覆盖"), QStringLiteral("overwrite"));
+        combo->addItem(QStringLiteral("跳过"), QStringLiteral("skip"));
+    }
+    const int index = combo->findData(canonicalValue);
+    combo->setCurrentIndex(index >= 0 ? index : 0);   // 表外值回退缺省项（引擎同口径）
+    return combo;
 }
 
 } // namespace
@@ -243,10 +280,11 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
 
     m_pages = new QStackedWidget(this);
     m_pages->setObjectName(QStringLiteral("teStepPages"));
-    // Task 3 在此页填充 teRemoteDir/teItemList/teAddFiles/teAddDir；
+    // deploy 页由 setupDeployPage 填充 teRemoteDir/teItemList/teAddFiles/teAddDir（T3）；
     // Task 4 在 commands 页填充 teCommands/teTimeout、recover 页填充恢复检查参数。
     auto* deployPage = new QWidget(m_pages);
     deployPage->setObjectName(QStringLiteral("tePageDeploy"));
+    setupDeployPage(deployPage);
     auto* commandsPage = new QWidget(m_pages);
     commandsPage->setObjectName(QStringLiteral("tePageCommands"));
     auto* rebootPage = new QWidget(m_pages);
@@ -348,6 +386,155 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
         bindCurrentStep();
 }
 
+void TaskTemplateEditorDialog::setupDeployPage(QWidget* page)
+{
+    auto* layout = new QVBoxLayout(page);
+
+    // 远端目录前缀：纯 UI 辅助（批量添加拼接用），不是持久化参数键（裁决）
+    auto* dirRow = new QHBoxLayout();
+    dirRow->addWidget(new QLabel(QStringLiteral("远端目录前缀"), page));
+    m_remoteDir = new QLineEdit(page);
+    m_remoteDir->setObjectName(QStringLiteral("teRemoteDir"));
+    m_remoteDir->setPlaceholderText(QStringLiteral("/opt/app（留空=根目录；不写入模板参数）"));
+    dirRow->addWidget(m_remoteDir, 1);
+    layout->addLayout(dirRow);
+
+    // items 表：行=items 条目；列 0/1 文本（本地/远端路径），列 2/3 单元格下拉
+    m_itemTable = new QTableWidget(0, 4, page);
+    m_itemTable->setObjectName(QStringLiteral("teItemList"));
+    m_itemTable->setHorizontalHeaderLabels(
+        {QStringLiteral("本地路径"), QStringLiteral("远端路径"),
+         QStringLiteral("方向"), QStringLiteral("覆盖")});
+    m_itemTable->verticalHeader()->setVisible(false);
+    m_itemTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_itemTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_itemTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_itemTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    layout->addWidget(m_itemTable, 1);
+    // 用户编辑路径单元格（含测试直接 setItem）→ 即时写回当前 deploy 步；
+    // 程序化灌表走 blockSignals + m_binding 双守卫，不触发写回（同 teProtocol 纪律）
+    connect(m_itemTable, &QTableWidget::cellChanged, this, [this](int, int) {
+        flushDeployTable();
+    });
+
+    auto* addRow = new QHBoxLayout();
+    m_addFiles = new QPushButton(QStringLiteral("添加文件…"), page);
+    m_addFiles->setObjectName(QStringLiteral("teAddFiles"));
+    m_addDir = new QPushButton(QStringLiteral("添加目录…"), page);
+    m_addDir->setObjectName(QStringLiteral("teAddDir"));
+    addRow->addWidget(m_addFiles);
+    addRow->addWidget(m_addDir);
+    addRow->addStretch();
+    layout->addLayout(addRow);
+
+    // 批量添加：非原生 QFileDialog（DontUseNativeDialog），每条/每个目录生成行；
+    // remotePath = teRemoteDir(去尾斜杠) + '/' + 文件/目录名，空前缀=根目录
+    connect(m_addFiles, &QPushButton::clicked, this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(
+            this, QStringLiteral("选择要部署的文件"), QString(),
+            QStringLiteral("所有文件 (*)"), nullptr,
+            QFileDialog::DontUseNativeDialog);
+        const QString prefix = m_remoteDir->text();
+        for (const QString& file : files) {
+            if (file.trimmed().isEmpty())
+                continue;
+            appendDeployRow(file,
+                            joinRemotePath(prefix, QFileInfo(file).fileName()),
+                            QStringLiteral("upload"), QStringLiteral("overwrite"));
+        }
+    });
+    connect(m_addDir, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("选择要部署的目录"), QString(),
+            QFileDialog::DontUseNativeDialog | QFileDialog::ShowDirsOnly);
+        if (dir.trimmed().isEmpty())
+            return;
+        const QString name = QFileInfo(dir).fileName();
+        if (name.isEmpty())
+            return;                       // 盘符根等无目录名路径：无法生成远端名，跳过
+        appendDeployRow(dir, joinRemotePath(m_remoteDir->text(), name),
+                        QStringLiteral("upload"), QStringLiteral("overwrite"));
+    });
+}
+
+void TaskTemplateEditorDialog::appendDeployRow(const QString& localPath, const QString& remotePath,
+                                               const QString& direction, const QString& overwrite)
+{
+    const int row = m_itemTable->rowCount();
+    m_itemTable->insertRow(row);
+    // 先挂下拉再写文本单元格：cellChanged 触发的 flush 读到完整行
+    auto* directionCombo = makeDeployChoiceCombo(direction, true, m_itemTable);
+    connect(directionCombo, &QComboBox::activated, this, [this](int) { flushDeployTable(); });
+    m_itemTable->setCellWidget(row, 2, directionCombo);
+    auto* overwriteCombo = makeDeployChoiceCombo(overwrite, false, m_itemTable);
+    connect(overwriteCombo, &QComboBox::activated, this, [this](int) { flushDeployTable(); });
+    m_itemTable->setCellWidget(row, 3, overwriteCombo);
+    m_itemTable->setItem(row, 0, new QTableWidgetItem(localPath));
+    m_itemTable->setItem(row, 1, new QTableWidgetItem(remotePath));
+}
+
+void TaskTemplateEditorDialog::fillDeployTable(const QVariantMap& params)
+{
+    m_itemTable->blockSignals(true);          // 程序化灌表不触发写回（m_binding 之外的双守卫）
+    m_itemTable->setRowCount(0);
+    const QVariantList items = params.value(QStringLiteral("items")).toList();
+    for (const QVariant& value : items) {
+        if (value.typeId() != QMetaType::QVariantMap)
+            continue;   // 结构非法条目不入表展示；validate 以引擎同口径文案拦截
+        const QVariantMap entry = value.toMap();
+        const QString direction =
+            entry.value(QStringLiteral("direction")).toString() == QLatin1String("download")
+                ? QStringLiteral("download") : QStringLiteral("upload");
+        const QString overwrite =
+            entry.value(QStringLiteral("overwrite")).toString() == QLatin1String("skip")
+                ? QStringLiteral("skip") : QStringLiteral("overwrite");
+        appendDeployRow(entry.value(QStringLiteral("localPath")).toString(),
+                        entry.value(QStringLiteral("remotePath")).toString(),
+                        direction, overwrite);
+    }
+    m_itemTable->blockSignals(false);
+}
+
+QVariantList TaskTemplateEditorDialog::deployItemsFromTable() const
+{
+    QVariantList items;
+    for (int row = 0; row < m_itemTable->rowCount(); ++row) {
+        const QTableWidgetItem* localCell = m_itemTable->item(row, 0);
+        const QTableWidgetItem* remoteCell = m_itemTable->item(row, 1);
+        const QString localPath = localCell ? localCell->text().trimmed() : QString();
+        const QString remotePath = remoteCell ? remoteCell->text().trimmed() : QString();
+        if (localPath.isEmpty() && remotePath.isEmpty())
+            continue;   // 全空占位行不入 items（引擎会拒绝缺路径条目）
+        const auto* directionCombo = qobject_cast<QComboBox*>(m_itemTable->cellWidget(row, 2));
+        const auto* overwriteCombo = qobject_cast<QComboBox*>(m_itemTable->cellWidget(row, 3));
+        QVariantMap entry;
+        entry.insert(QStringLiteral("localPath"), localPath);
+        entry.insert(QStringLiteral("remotePath"), remotePath);
+        entry.insert(QStringLiteral("direction"), directionCombo
+                         ? directionCombo->currentData().toString()
+                         : QStringLiteral("upload"));
+        entry.insert(QStringLiteral("overwrite"), overwriteCombo
+                         ? overwriteCombo->currentData().toString()
+                         : QStringLiteral("overwrite"));
+        items.push_back(entry);
+    }
+    return items;
+}
+
+void TaskTemplateEditorDialog::flushDeployTable()
+{
+    if (m_binding || m_currentStep < 0 || m_currentStep >= static_cast<int>(m_steps.size()))
+        return;
+    TaskStep& step = m_steps[static_cast<std::size_t>(m_currentStep)];
+    if (step.type != TaskStepType::DeployFiles || m_pages->currentIndex() != 0)
+        return;   // 仅 deploy 页展示时写回（teRemoteDir 不入参数；protocol 等键不动）
+    const QVariantList items = deployItemsFromTable();
+    if (items.isEmpty())
+        step.parameters.remove(QStringLiteral("items"));   // 空表回到「缺清单」原始拒绝文案
+    else
+        step.parameters.insert(QStringLiteral("items"), items);
+}
+
 void TaskTemplateEditorDialog::moveStepRow(int delta)
 {
     const int from = m_currentStep;
@@ -358,9 +545,15 @@ void TaskTemplateEditorDialog::moveStepRow(int delta)
         return;
     std::swap(m_steps[static_cast<std::size_t>(from)],
               m_steps[static_cast<std::size_t>(to)]);
+    // takeItem/insertItem 会瞬态重发 selection→currentRowChanged：blockSignals 压制，
+    // 落定后显式绑定（防以旧 m_currentStep 误读互换中的模型——T2 遗留 minor 就此修实）
+    m_stepList->blockSignals(true);
     QListWidgetItem* item = m_stepList->takeItem(from);
     m_stepList->insertItem(to, item);
-    m_stepList->setCurrentRow(to);                // 重新绑定移动后的当前步
+    m_stepList->setCurrentRow(to);
+    m_stepList->blockSignals(false);
+    m_currentStep = to;                         // 重新绑定移动后的当前步
+    bindCurrentStep();
     refreshStepRows();
 }
 
@@ -399,6 +592,9 @@ void TaskTemplateEditorDialog::bindCurrentStep()
         // 表外协议值（如未来新增）→ 显示"不限"但不回写，避免静默改值
         m_protocol->setCurrentIndex(protocolIndex >= 0 ? protocolIndex : 0);
         m_pages->setCurrentIndex(stackIndexForType(step.type));
+        // deploy 页绑定：items[] → 表格逐行灌入（blockSignals 双守卫，不触发写回）
+        if (step.type == TaskStepType::DeployFiles)
+            fillDeployTable(step.parameters);
     } else {
         m_stepType->setCurrentIndex(-1);
         m_protocol->setCurrentIndex(0);
@@ -434,6 +630,19 @@ TaskTemplate TaskTemplateEditorDialog::assemble() const
         }
     }
     candidate.steps = m_steps;                       // 空白页步骤参数原样透传
+    // deploy 页展示中：以可见表格实时快照兜底写回当前步 items[]
+    //（即时 flush 已保 m_steps 常新，这里覆盖未提交编辑的边界；仅当前步，其余步不动）
+    if (m_itemTable && m_pages->currentIndex() == 0
+        && m_currentStep >= 0 && m_currentStep < static_cast<int>(candidate.steps.size())
+        && candidate.steps[static_cast<std::size_t>(m_currentStep)].type
+               == TaskStepType::DeployFiles) {
+        QVariantMap& params = candidate.steps[static_cast<std::size_t>(m_currentStep)].parameters;
+        const QVariantList items = deployItemsFromTable();
+        if (items.isEmpty())
+            params.remove(QStringLiteral("items"));
+        else
+            params.insert(QStringLiteral("items"), items);
+    }
     candidate.unknownFields = m_unknownFields;
     return candidate;
 }

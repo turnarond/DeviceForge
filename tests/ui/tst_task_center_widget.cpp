@@ -11,6 +11,8 @@
 //    "(2)"、取消静默）/坏文件不落库。
 // ⑩ v2.13 #54 Task 2：模板编辑器对话框骨架——元信息/设备多选（含悬空档案展示与
 //    默认勾选）/步骤列表/reboot 参数页/validate+collect+canonicalDeployParameters。
+// ⑪ v2.13 #54 Task 3：deploy 步骤面板——teItemList 表格绑定 items[]、单元格编辑
+//    即时写回、方向/覆盖下拉规范串、collect 从可见表格快照。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -28,6 +30,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
@@ -1112,6 +1115,33 @@ private slots:
         QCOMPARE(items.size(), 2);
         QCOMPARE(items[0].toMap().value(QStringLiteral("remotePath")).toString(),
                  QStringLiteral("/opt/app/a.bin"));               // 去尾斜杠拼接
+    }
+
+    // ── ⑪ v2.13 #54 Task 3：deploy 步骤面板（items 表 + 批量添加口径）──
+    void editorDialog_deployPanelRoundTripsItems()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep step; step.type = TaskStepType::DeployFiles;
+        QVariantList items;
+        QVariantMap one;
+        one.insert(QStringLiteral("localPath"), QStringLiteral("C:/tmp/a.bin"));
+        one.insert(QStringLiteral("remotePath"), QStringLiteral("/opt/a.bin"));
+        one.insert(QStringLiteral("direction"), QStringLiteral("upload"));
+        one.insert(QStringLiteral("overwrite"), QStringLiteral("skip"));
+        items.push_back(one);
+        step.parameters.insert(QStringLiteral("items"), items);
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);                                            // 此前不存在 → 红
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 1)->text(), QStringLiteral("/opt/a.bin"));
+        table->setItem(0, 0, new QTableWidgetItem(QStringLiteral("C:/tmp/b.bin")));
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto row = out.steps.front().parameters.value(QStringLiteral("items"))
+                             .toList().front().toMap();
+        QCOMPARE(row.value(QStringLiteral("localPath")).toString(), QStringLiteral("C:/tmp/b.bin"));
+        QCOMPARE(row.value(QStringLiteral("overwrite")).toString(), QStringLiteral("skip"));
     }
 };
 

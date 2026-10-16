@@ -15,14 +15,17 @@ class QListWidget;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
+class QTableWidget;
 
-// v2.13 #54 Task 2：任务模板编辑器对话框骨架。
+// v2.13 #54 Task 2/3：任务模板编辑器对话框。
 // 纯「表单 ↔ TaskTemplate」双向映射：不触碰 ConfigStore/DeviceRegistry，
 // 设备档案以构造参数 knownDevices 快照注入（只读）。
-// Task 3/4 将在右侧参数栈补齐 deploy/commands/recover 面板；本阶段 deploy 与
-// recover/commands 页为空白 QWidget，未展示步骤的参数原样透传（collect 不丢失）。
+// Task 3 已落地 deploy 页（teRemoteDir + teItemList 4 列 items 表 + 批量添加）；
+// Task 4 将补齐 commands/recover 面板，未展示步骤的参数原样透传（collect 不丢失）。
 // 共享协议过滤下拉 teProtocol 位于参数栈之外（裁决 1）：四种步骤类型读写同一
 // parameters["protocol"] 键，绑定当前步。
+// deploy 页裁决（控制器）：teRemoteDir 仅是批量添加的 UI 远端前缀辅助输入，
+// **不是**持久化参数键；参数只携带 items[]（canonicalDeployParameters 加载即归一）。
 class TaskTemplateEditorDialog : public QDialog {
 public:
     // knownDevices：本机档案快照（目标设备列表 = knownDevices ∪ initial.deviceIds）
@@ -54,6 +57,19 @@ private:
     // 重建“步骤N · 类型中文名”行文案（增删/移动后保序），并同步按钮可用性
     void refreshStepRows();
 
+    // ── deploy 页（Task 3）──
+    // 构建 teRemoteDir/teItemList/teAddFiles/teAddDir 并接线（构造期调用一次）
+    void setupDeployPage(QWidget* page);
+    // 把参数 items[] 程序化灌入表格（m_binding+blockSignals 双守卫，不触发写回）
+    void fillDeployTable(const QVariantMap& params);
+    // 表格逐行读回 items[] 写入当前 deploy 步（仅当当前步为 deploy；缺省值写规范串）
+    void flushDeployTable();
+    // 表格 → items[] 快照（列 0/1 取文本，列 2/3 取下拉 currentData；跳过全空行）
+    QVariantList deployItemsFromTable() const;
+    // 追加一行（批量添加用；combo 走 currentData 规范串，默认 upload/overwrite）
+    void appendDeployRow(const QString& localPath, const QString& remotePath,
+                         const QString& direction, const QString& overwrite);
+
     QLineEdit* m_name = nullptr;             // teName
     QLineEdit* m_description = nullptr;      // teDescription
     QLineEdit* m_tags = nullptr;             // teTags（逗号分隔标签，映射 tagSelectors）
@@ -66,6 +82,10 @@ private:
     QComboBox* m_stepType = nullptr;         // teStepType
     QComboBox* m_protocol = nullptr;         // teProtocol（共享，栈外）
     QStackedWidget* m_pages = nullptr;       // 参数页栈：0 deploy / 1 commands / 2 reboot / 3 recover
+    QLineEdit* m_remoteDir = nullptr;        // teRemoteDir（批量添加 UI 前缀，不持久化）
+    QTableWidget* m_itemTable = nullptr;     // teItemList（4 列：本地/远端/方向/覆盖，行=items）
+    QPushButton* m_addFiles = nullptr;       // teAddFiles「添加文件…」（非原生多选）
+    QPushButton* m_addDir = nullptr;         // teAddDir「添加目录…」（非原生目录选择）
 
     std::vector<TaskStep> m_steps;           // 内部步骤向量（顺序即模板顺序）
     QVariantMap m_unknownFields;             // 前向兼容未知字段：编辑器不显示、collect 原样携带
