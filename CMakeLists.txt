@@ -208,6 +208,7 @@ set(SOURCES
 
     # 任务模板（v2.11 设备任务中心）
     src/task/TaskTemplateStore.cpp
+    src/task/TaskTemplateCodec.cpp
     src/task/TaskExecutionEngine.cpp
     src/task/TaskRunStore.cpp
     src/task/TaskCenterWidget.cpp

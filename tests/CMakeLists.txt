@@ -636,6 +636,7 @@ endif()
 add_executable(tst_task_template_store
     task/tst_task_template_store.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp
     ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
 )
 target_include_directories(tst_task_template_store PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -643,6 +644,20 @@ target_link_libraries(tst_task_template_store PRIVATE Qt6::Core Qt6::Sql Qt6::Te
 add_test(NAME tst_task_template_store COMMAND tst_task_template_store)
 if(_qt_bin_dir)
     set_tests_properties(tst_task_template_store PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- TaskTemplateCodec 行编解码往返守卫测试（v2.13 Task 1：外提重构，行为不变）---
+add_executable(tst_task_template_codec
+    task/tst_task_template_codec.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp
+)
+target_include_directories(tst_task_template_codec PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_template_codec PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_task_template_codec COMMAND tst_task_template_codec)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_template_codec PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
@@ -708,6 +723,7 @@ add_executable(tst_task_center_widget
     ${CMAKE_SOURCE_DIR}/src/task/TaskCenterWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
     ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
@@ -754,6 +770,7 @@ add_executable(tst_task_center_e2e
     task/tst_task_center_e2e.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp
     ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
     ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
