@@ -18,6 +18,7 @@
 #include "device/DeviceRegistry.h"
 #include "task/TaskExecutionEngine.h"
 #include "task/TaskRunStore.h"
+#include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/DeployReport.h"
 
@@ -271,17 +272,23 @@ void TaskCenterWidget::setupUi()
     m_exportButton->setObjectName(QStringLiteral("taskExportReportButton"));
     m_cloneButton = new QPushButton(QStringLiteral("复制为新模板"), rightBox);
     m_cloneButton->setObjectName(QStringLiteral("taskCloneTemplateButton"));
+    m_exportTemplateButton = new QPushButton(QStringLiteral("导出模板"), rightBox);
+    m_exportTemplateButton->setObjectName(QStringLiteral("taskExportTemplateButton"));
+    m_exportTemplateButton->setEnabled(false);   // 未选中禁用（onTemplateSelected 各路重算）
     buttonRow->addWidget(m_runButton);
     buttonRow->addWidget(m_cancelButton);
     buttonRow->addWidget(m_retryButton);
     buttonRow->addWidget(m_exportButton);
     buttonRow->addWidget(m_cloneButton);
+    buttonRow->addWidget(m_exportTemplateButton);
     rightLayout->addLayout(buttonRow);
     connect(m_runButton, &QPushButton::clicked, this, &TaskCenterWidget::onExecuteClicked);
     connect(m_cancelButton, &QPushButton::clicked, this, &TaskCenterWidget::onCancelClicked);
     connect(m_retryButton, &QPushButton::clicked, this, &TaskCenterWidget::onRetryClicked);
     connect(m_exportButton, &QPushButton::clicked, this, &TaskCenterWidget::onExportClicked);
     connect(m_cloneButton, &QPushButton::clicked, this, &TaskCenterWidget::onCloneClicked);
+    connect(m_exportTemplateButton, &QPushButton::clicked, this,
+            &TaskCenterWidget::onExportTemplateClicked);
 
     splitter->addWidget(leftBox);
     splitter->addWidget(middleBox);
@@ -767,6 +774,10 @@ void TaskCenterWidget::refreshTemplates()
     if (reselect) {
         m_templateList->setCurrentItem(reselect);
         onTemplateSelected();
+    } else {
+        // v2.13 Task 3：空列表复位路——currentItem 已为 null，走 onTemplateSelected 的
+        // 失选分支清除陈旧选中态（此前列表清空后 m_currentTemplateId 残留旧值）。
+        onTemplateSelected();
     }
 }
 
@@ -781,6 +792,7 @@ void TaskCenterWidget::onTemplateSelected()
         m_templateSteps->setRowCount(0);
         m_targetDevices->clear();
         m_runButton->setEnabled(false);
+        m_exportTemplateButton->setEnabled(false);
         return;
     }
     const QString templateId = item->data(Qt::UserRole).toString();
@@ -791,6 +803,7 @@ void TaskCenterWidget::onTemplateSelected()
         m_templateSteps->setRowCount(0);
         m_targetDevices->clear();
         m_runButton->setEnabled(false);
+        m_exportTemplateButton->setEnabled(false);
         return;
     }
     m_currentTemplate = *task;
@@ -816,6 +829,7 @@ void TaskCenterWidget::onTemplateSelected()
         deviceItem->setData(Qt::UserRole, fromUtf8Std(profile.deviceId));
     }
     m_runButton->setEnabled(!m_currentDevices.empty());
+    m_exportTemplateButton->setEnabled(!m_currentTemplateId.empty());
 }
 
 void TaskCenterWidget::onExecuteClicked()
@@ -995,6 +1009,83 @@ bool TaskCenterWidget::exportRunReport(const QString& storeRunId, const QString&
         return false;
     }
     return true;
+}
+
+// ── v2.13 Task 3：模板导出（文件格式契约见 TaskTemplateCodec）──
+QString TaskCenterWidget::sanitizedTemplateFileName(const QString& name)
+{
+    // 清洗口径（规格 §4，计划裁定手工循环更白话）：非法字符 <>:"/\|?* 逐一替换
+    // 为下划线 → 首尾点/空格去除 → 补 .json；空结果回退 "task-template.json"。
+    static const QString kIllegalChars = QStringLiteral("<>:\"/\\|?*");
+    QString cleaned;
+    cleaned.reserve(name.size());
+    for (const QChar ch : name)
+        cleaned.append(kIllegalChars.contains(ch) ? QLatin1Char('_') : ch);
+    int start = 0;
+    int end = cleaned.size();
+    while (start < end && (cleaned.at(start) == QLatin1Char('.') || cleaned.at(start) == QLatin1Char(' ')))
+        ++start;
+    while (end > start && (cleaned.at(end - 1) == QLatin1Char('.') || cleaned.at(end - 1) == QLatin1Char(' ')))
+        --end;
+    cleaned = cleaned.mid(start, end - start);
+    if (cleaned.isEmpty())
+        return QStringLiteral("task-template.json");
+    return cleaned + QStringLiteral(".json");
+}
+
+bool TaskCenterWidget::exportTemplateToFile(const QString& filePath)
+{
+    if (m_currentTemplateId.empty()) {
+        // 未选中属状态保护（按钮已禁用），直调方只拿 false + 日志，不打扰弹窗
+        emit logMessage(QStringLiteral("任务中心：未选中模板，无法导出"));
+        return false;
+    }
+    const QByteArray data = encodeTemplateFile(m_currentTemplate);
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::warning(this, QStringLiteral("导出模板"),
+            QStringLiteral("无法写入文件：\n%1\n\n原因：%2").arg(filePath, file.errorString()));
+        emit logMessage(QStringLiteral("任务中心：模板导出失败 → %1").arg(filePath));
+        return false;
+    }
+    const qint64 written = file.write(data);
+    const bool ok = written == data.size() && file.flush();
+    file.close();
+    if (!ok) {
+        QFile::remove(filePath);   // 不留半截文件（#37 同款收口口径）
+        QMessageBox::warning(this, QStringLiteral("导出模板"),
+            QStringLiteral("写入不完整，已清理：\n%1").arg(filePath));
+        emit logMessage(QStringLiteral("任务中心：模板导出失败 → %1").arg(filePath));
+        return false;
+    }
+    // 日志纪律：只带模板名与文件路径，不含任何凭据内容
+    emit logMessage(QStringLiteral("任务中心：模板「%1」已导出 → %2")
+        .arg(fromUtf8Std(m_currentTemplate.name), filePath));
+    return true;
+}
+
+void TaskCenterWidget::onExportTemplateClicked()
+{
+    if (m_currentTemplateId.empty()) {
+        emit logMessage(QStringLiteral("任务中心：请先选择要导出的模板"));
+        return;
+    }
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);   // 主题一致 + 测试可见
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setNameFilter(QStringLiteral("JSON 模板 (*.json)"));
+    dialog.selectFile(sanitizedTemplateFileName(fromUtf8Std(m_currentTemplate.name)));
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    const QStringList picked = dialog.selectedFiles();
+    const QString path = picked.isEmpty() ? QString() : picked.first();
+    if (path.isEmpty())
+        return;
+    // 失败框已由 exportTemplateToFile 弹出；成功弹信息框（规格 §4：含路径）
+    if (exportTemplateToFile(path))
+        QMessageBox::information(this, QStringLiteral("导出模板"),
+                                 QStringLiteral("模板已导出：\n%1").arg(path));
 }
 
 void TaskCenterWidget::onCloneClicked()

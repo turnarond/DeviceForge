@@ -85,6 +85,13 @@ public:
     // 按钮与测试直接调用。记录不存在或写盘失败返回 false。
     bool exportRunReport(const QString& storeRunId, const QString& filePath);
 
+    // ── v2.13 Task 3：模板导出（供宿主与测试直调，exportRunReport 同款缝）──
+    // 当前选中模板导出到 filePath；未选中/写盘失败返回 false（内部已弹中文错误框）
+    bool exportTemplateToFile(const QString& filePath);
+    // 文件名清洗：非法字符 <>:"/\|?* 替换为下划线，首尾点/空格去除；
+    // 空结果回退 "task-template.json"
+    static QString sanitizedTemplateFileName(const QString& name);
+
 signals:
     // 一轮执行（含阶段恢复）已启动，携带 TaskRunStore 记录 ID
     void runStarted(const QString& storeRunId);
@@ -105,6 +112,7 @@ private slots:
     void onCancelClicked();
     void onRetryClicked();
     void onExportClicked();
+    void onExportTemplateClicked();
     void onCloneClicked();
     void onHistorySelectionChanged();
 
@@ -174,6 +182,7 @@ private:
     QPushButton* m_cancelButton = nullptr;
     QPushButton* m_retryButton = nullptr;
     QPushButton* m_exportButton = nullptr;
+    QPushButton* m_exportTemplateButton = nullptr;
     QPushButton* m_cloneButton = nullptr;
     QHash<QString, QListWidgetItem*> m_stateRows;            // deviceId → 执行状态行
 };

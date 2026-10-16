@@ -5,7 +5,8 @@
 // ⑤ 执行前确认（含风险提示），拒绝则不启动引擎、不落执行记录；
 // ⑥ 校验失败运行收口后历史表出现「失败」行，选中后「从失败阶段重试」可用，
 // 点击走 TaskExecutionEngine::retryFailed 并产生第二条执行记录；
-// ⑦ MultiProgressWidget 行标签显示 名称 + 地址（单次部署无名称时保持原样）。
+// ⑦ MultiProgressWidget 行标签显示 名称 + 地址（单次部署无名称时保持原样）；
+// ⑧ v2.13 模板导出：公共 API 直写契约文件 + 按钮选中启用规则 + 文件名清洗口径。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -19,9 +20,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
 
@@ -77,6 +80,8 @@ class TstTaskCenterWidget : public QObject {
 private:
     QString m_workDir;
     QString m_dbPath;
+    // v2.13 Task 3：模板导出用例的临时目录（init() 逐用例重建）
+    QTemporaryDir m_tempDir;
     // 档案编辑对话框 RejectRole 按钮计数（布防定时器在对话框嵌套事件循环中写入，
     // -1 = 未命中对话框；回归：重复 addButton「取消」会计数 >1）
     int m_editorRejectButtonCount = -1;
@@ -117,7 +122,12 @@ private slots:
         QDir(m_workDir).removeRecursively();
     }
 
-    void init() { freshDb(); }
+    void init()
+    {
+        freshDb();
+        m_tempDir = QTemporaryDir();            // 每用例独立临时目录（模板导出落盘用）
+        QVERIFY2(m_tempDir.isValid(), qPrintable(m_tempDir.errorString()));
+    }
     void cleanup() { ConfigStore::instance().close(); }
 
     // ── ① 名称优先 + 端点详情悬浮 ────────────────────────────────
@@ -737,6 +747,61 @@ private slots:
             }
         }
         QCOMPARE(warnCount, 1);
+    }
+
+    // ── ⑧ v2.13 Task 3：模板导出——公共 API 直调 + 按钮选中启用 + 清洗口径 ──
+    void taskCenter_exportTemplate_writesContractFileAndDisabledWithoutSelection()
+    {
+        TaskTemplateStore store;
+        TaskTemplate tmpl; tmpl.name = "导出我"; tmpl.deviceIds = {"device-xxxx"};
+        TaskStep step; step.type = TaskStepType::Reboot; tmpl.steps.push_back(step);
+        QVERIFY(store.save(tmpl));
+        TaskCenterWidget center;
+        auto* exportBtn = center.findChild<QPushButton*>(QStringLiteral("taskExportTemplateButton"));
+        QVERIFY(exportBtn);
+        QVERIFY(!exportBtn->isEnabled());                    // 未选中禁用（尚无 store，亦无选中）
+        center.setStores(&store, nullptr);                   // 既有口径：刷新自动选中首行
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        list->setCurrentRow(0);
+        QVERIFY(exportBtn->isEnabled());                    // 选中即用
+        QCOMPARE(TaskCenterWidget::sanitizedTemplateFileName(QStringLiteral("A/B:*<>|\\?x")),
+                 QStringLiteral("A_B_______x.json"));        // 清洗口径钉死（8 个非法字符逐一替换）
+        const QString path = m_tempDir.filePath(QStringLiteral("t.json"));
+        QVERIFY(center.exportTemplateToFile(path));
+        QFile f(path); QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray content = f.readAll();
+        QVERIFY(content.contains("deviceforge.task-template"));
+        QVERIFY(content.contains(QString::fromUtf8("导出我").toUtf8()));
+        QVERIFY(!content.contains("template-"));             // ID 不外溢（store 生成的前缀不在文件中）
+
+        // 失败路径：非法盘符路径 → 返回 false 不崩；错误弹窗布防后自动关闭
+        //（QMessageBox::warning 的嵌套事件循环会触发定时器，沿用本文件布防做法）
+        QTimer::singleShot(50, &center, [&center] {
+            if (auto* box = center.findChild<QMessageBox*>())
+                box->done(QMessageBox::Ok);
+        });
+        QVERIFY(!center.exportTemplateToFile(QStringLiteral("Z:/nope.json")));
+    }
+
+    // ── ⑧b v2.13 Task 3：模板清空后刷新 → 陈旧选中态复位、导出按钮回禁用 ──
+    // 负对照：refreshTemplates 空列表分支若不复位，m_currentTemplateId 残留旧值，
+    // 按钮将保持启用（用例变红）。store 无状态（共用 ConfigStore 单例），清空走 freshDb。
+    void taskCenter_exportTemplateButtonResetsWhenSelectionCleared()
+    {
+        TaskTemplateStore store;
+        TaskTemplate tmpl; tmpl.name = "会被清库";
+        TaskStep step; step.type = TaskStepType::Reboot; tmpl.steps.push_back(step);
+        QVERIFY(store.save(tmpl));
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        auto* exportBtn = center.findChild<QPushButton*>(QStringLiteral("taskExportTemplateButton"));
+        QVERIFY(exportBtn);
+        QVERIFY(exportBtn->isEnabled());                     // 自动选中首行 → 启用
+        freshDb();                                           // 清库 → 模板列表转空
+        center.setStores(&store, nullptr);                   // 重绑刷新 → 走复位路
+        QVERIFY(!exportBtn->isEnabled());                    // 陈旧选中态必须清除
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QCOMPARE(list->count(), 0);
     }
 
     // ── ⑦ MultiProgressWidget：名称 + 地址；无名称保持原样 ────────
