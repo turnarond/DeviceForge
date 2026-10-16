@@ -134,6 +134,19 @@ std::optional<TaskTemplate> TaskTemplateStore::clone(const std::string& template
     return copy;
 }
 
+bool TaskTemplateStore::remove(const std::string& templateId)
+{
+    if (templateId.empty())
+        return false;
+    auto& store = ConfigStore::instance();
+    const QString key = QString::fromStdString(templateId);
+    // ConfigStore::remove 对不存在的 key 也返回 true（DELETE 成功但零行命中），
+    // 故先确认记录存在再转发删除结果，保证“不存在 → false”的删除语义（#54）。
+    if (!store.exists(kRecordType, key))
+        return false;
+    return store.remove(kRecordType, key);
+}
+
 std::vector<TaskTemplate> TaskTemplateStore::list() const
 {
     std::vector<TaskTemplate> templates;

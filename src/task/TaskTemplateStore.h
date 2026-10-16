@@ -28,6 +28,11 @@ public:
 
     // 全部可解码模板；损坏或含敏感字段的记录跳过并告警（回退读取不受阻断）。
     std::vector<TaskTemplate> list() const;
+
+    // 删除模板：仅移除 task.template 记录；执行历史为不可变快照不受影响（#54）。
+    // 空 templateId 直接 false 不碰库；记录不存在返回 false；
+    // 存在时转发 ConfigStore::remove 结果。
+    bool remove(const std::string& templateId);
 };
 
 // 校验结果：valid=false 时 error 为中文失败原因（供日志与 UI 提示）。
