@@ -1,3 +1,28 @@
+﻿# Changelog
+
+## [未发布]
+
+### 工具/文档（2026-10-16，#51）
+
+- **smoke.py 环境预检自动化**：启动前探测 Qt bin（QT_DIR → D:/Qt、C:/Qt 的 6.x msvc 目录）并前置注入 PATH，探测失败直接归因拒跑（不再以 0xC0000005 假崩面目出现）；主窗口查找改为**标题匹配 + 属于本次启动进程 PID** 双条件，外部同名实例不再劫持 WM_CLOSE/优雅退出超时判定——只报告外部实例（PID+路径）供人工分诊，绝不杀非自身进程。
+- 文件管理规格 §4.3 脏守卫措辞对齐实现裁定（R9：仅关闭守脏，导航不打断编辑），用户手册 F4 条同步补写。
+- CHANGELOG 结构归位 Keep-a-Changelog：唯一 `# Changelog` 顶题、[未发布] 置顶、版本小节降序（历史遗留的文中重复标题与错位 [未发布] 清除）。
+
+### Added（2026-10-16，#46 设备档案端点同键校验）
+
+- **档案保存同键检测与确认**：`DeviceRegistry::endpointConflicts()` 新增只读查询——入站档案端点与其他档案存在协议+IP+端口全同的端点时逐条报冲突（归一化口径与存储一致；按 deviceId 排除编辑自身；跨协议同址不误报）。设备总线「添加/双击编辑」两保存入口接线确认框：可保存但需确认（默认「否」），放弃时回到编辑对话框不丢内容。堵 #29 遗留的源端空白（同址重复档案=同一目标，部署清目录互踩、任务串行重复操作）。
+- 测试：`tst_device_registry` +4 用例（冲突命中/排除自身/跨协议豁免/多冲突逐条），全量 CTest 45 目标绿。
+
+### 修复（2026-10-16，#45 测试抖动）
+
+- `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
+- `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
+
+### 修复（2026-08-21，fix/v2.7-编译修复）
+
+- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
+- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
+
 ## [2.12.0] — 2026-10-14
 
 ### Added
@@ -40,31 +65,12 @@
 - 统一批量命令下发与部署后重启闭环，支持 Telnet/SSH、超时、重试、取消和成功设备筛选。
 - FTP 部署工具持久化重启参数配置。
 
-# Changelog
-
 ## [2.9.1] — 2026-09-26
 
 ### 修复
 
 - 修复 FTP `QUOTE` 操作默认写入 GUI 标准输出导致的 `CURLE_WRITE_ERROR`。
 - 批量部署遇到瞬时 FTP 响应写入错误时自动重连并重试当前文件。
-
-## [未发布]
-
-### Added（2026-10-16，#46 设备档案端点同键校验）
-
-- **档案保存同键检测与确认**：`DeviceRegistry::endpointConflicts()` 新增只读查询——入站档案端点与其他档案存在协议+IP+端口全同的端点时逐条报冲突（归一化口径与存储一致；按 deviceId 排除编辑自身；跨协议同址不误报）。设备总线「添加/双击编辑」两保存入口接线确认框：可保存但需确认（默认「否」），放弃时回到编辑对话框不丢内容。堵 #29 遗留的源端空白（同址重复档案=同一目标，部署清目录互踩、任务串行重复操作）。
-- 测试：`tst_device_registry` +4 用例（冲突命中/排除自身/跨协议豁免/多冲突逐条），全量 CTest 45 目标绿。
-
-### 修复（2026-10-16，#45 测试抖动）
-
-- `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
-- `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
-
-### 修复（2026-08-21，fix/v2.7-编译修复）
-
-- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
-- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
 
 ## [2.9.0] — 2026-09-16
 
@@ -141,7 +147,6 @@
 - 静态 known-hosts QSet 加静态 QMutex（原 Telnet SSH 批量 + FTP 面板 SFTP 并发数据竞争）
 
 **测试**：新增 **tst_modbus_mapping**（4 映射 + 4 上限断言）+ **tst_telnet_timeout**（本地 QTcpServer 空响应，断言失败路径）；回归 **15 目标全过**
-
 
 
 ### 双栏面板模块化（file-browser，TC 化交互）
