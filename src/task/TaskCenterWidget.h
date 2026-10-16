@@ -86,7 +86,9 @@ public:
     bool exportRunReport(const QString& storeRunId, const QString& filePath);
 
     // ── v2.13 Task 3：模板导出（供宿主与测试直调，exportRunReport 同款缝）──
-    // 当前选中模板导出到 filePath；未选中/写盘失败返回 false（内部已弹中文错误框）
+    // 当前选中模板导出到 filePath；未选中返回 false（仅记日志，不弹窗）；
+    // 写盘失败返回 false 并弹中文错误框；成功返回 true 并记日志
+    // （成功信息框由「导出模板」按钮流程弹出，API 本身无弹窗）
     bool exportTemplateToFile(const QString& filePath);
     // 文件名清洗：非法字符 <>:"/\|?* 替换为下划线，首尾点/空格去除；
     // 空结果回退 "task-template.json"
