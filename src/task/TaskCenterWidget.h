@@ -102,6 +102,14 @@ public:
     using ImportConflictResolver = std::function<int (const QString& name)>;
     void setImportConflictResolver(ImportConflictResolver resolver);   // 测试缝，仿 setRunConfirmer
 
+    // ── v2.13 #54 Task 5：编辑器结果落库编排（公共测试缝，仿 export/import 直调口径）──
+    // m_templates->save(tmpl)：成功 → refreshTemplates() 并按 id 回选（best-effort）
+    // + logMessage「已保存模板「%1」（%2 个步骤）」，返回 true；
+    // 存储未就绪或 save 拒绝（无效/降级/敏感）→ 非阻塞中文错误框 + logMessage，
+    // 返回 false。错误框刻意非模态：本缝供测试直调，不允许在无事件循环兜底的
+    // 用例里阻塞（对话框流内弹窗才走模态 exec）。
+    bool applyEditorResult(const TaskTemplate& tmpl);
+
 signals:
     // 一轮执行（含阶段恢复）已启动，携带 TaskRunStore 记录 ID
     void runStarted(const QString& storeRunId);
@@ -125,6 +133,10 @@ private slots:
     void onExportTemplateClicked();
     void onImportTemplateClicked();
     void onCloneClicked();
+    // v2.13 #54 Task 5：模板新建/编辑/删除入口（编辑器对话框 + 落库编排）
+    void onNewTemplateClicked();
+    void onEditTemplateClicked();
+    void onDeleteTemplateClicked();
     void onHistorySelectionChanged();
 
 private:
@@ -145,6 +157,8 @@ private:
     };
 
     void setupUi();
+    // v2.13 #54 Task 5：编辑器对话框的设备档案快照入参（无注册表时返回空表）
+    std::vector<DeviceProfile> registryDevices() const;
     std::vector<DeviceProfile> resolveTargets(const TaskTemplate& task) const;
     QString buildSummary(const TaskTemplate& task,
                          const std::vector<DeviceProfile>& devices,
@@ -197,5 +211,9 @@ private:
     QPushButton* m_exportTemplateButton = nullptr;
     QPushButton* m_importTemplateButton = nullptr;
     QPushButton* m_cloneButton = nullptr;
+    // v2.13 #54 Task 5：模板新建/编辑/删除入口按钮
+    QPushButton* m_newTemplateButton = nullptr;
+    QPushButton* m_editTemplateButton = nullptr;
+    QPushButton* m_deleteTemplateButton = nullptr;
     QHash<QString, QListWidgetItem*> m_stateRows;            // deviceId → 执行状态行
 };

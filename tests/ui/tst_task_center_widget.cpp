@@ -13,6 +13,10 @@
 //    默认勾选）/步骤列表/reboot 参数页/validate+collect+canonicalDeployParameters。
 // ⑪ v2.13 #54 Task 3：deploy 步骤面板——teItemList 表格绑定 items[]、单元格编辑
 //    即时写回、方向/覆盖下拉规范串、collect 从可见表格快照。
+// ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令/timeoutSec/共享 protocol）。
+// ⑬ v2.13 #54 Task 5：任务中心接线——新建/编辑/删除三按钮存在与启用态翻转、
+//    删除确认「否」不删/「是」删除并复位、applyEditorResult 公共编排缝
+//    （原位覆盖保 id / 新模板生成 id / 无效模板拒 save 返回 false）。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -1197,6 +1201,73 @@ private slots:
         QCOMPARE(c1cmds, (QStringList{QStringLiteral("edited-one"), QStringLiteral("edited-two")}));
         const auto r1cmds = out.steps[1].parameters.value(QStringLiteral("commands")).toStringList();
         QCOMPARE(r1cmds, (QStringList{QStringLiteral("echo recovered")})); // R1 自身内容不受扰动
+    }
+
+    // ── ⑬ v2.13 #54 Task 5：任务中心接线（新建/编辑/删除入口 + 删除三态）────
+    void taskCenter_newEditDeleteFlows()
+    {
+        TaskTemplateStore store;
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        // 新建：注入对话框太直白——经公共缝：直接构造编辑器+save 已是 Task2 覆盖，
+        // 本用例聚焦接线：三按钮存在 + 删除三态
+        auto* newBtn = center.findChild<QPushButton*>(QStringLiteral("taskNewTemplateButton"));
+        auto* editBtn = center.findChild<QPushButton*>(QStringLiteral("taskEditTemplateButton"));
+        auto* delBtn = center.findChild<QPushButton*>(QStringLiteral("taskDeleteTemplateButton"));
+        QVERIFY(newBtn && editBtn && delBtn);
+        QVERIFY(!editBtn->isEnabled());   // 未选中
+        QVERIFY(!delBtn->isEnabled());
+        QVERIFY(newBtn->isEnabled());     // 恒可用
+        // 种一份模板 → 选中 → 按钮态翻转 → 布防确认框点「否」→ 不删
+        TaskTemplate t; t.name = "接线票";
+        TaskStep s; s.type = TaskStepType::Reboot; t.steps.push_back(s);
+        QVERIFY(store.save(t));
+        // brief 顺序缺陷修正（其余逐字）：setStores 早于 save，而 store 直存不通知
+        // widget（TaskTemplateStore/ConfigStore 非 QObject 无变更信号），列表仍是空的，
+        // 不重绑则 setCurrentRow(0) 无行可选中。按 ⑧b「重绑刷新」既有口径补一刀。
+        center.setStores(&store, nullptr);
+        list->setCurrentRow(0);
+        QVERIFY(editBtn->isEnabled() && delBtn->isEnabled());
+        QTimer::singleShot(50, this, [this]{
+            for (auto* box : QApplication::topLevelWidgets())
+                if (auto* mb = qobject_cast<QMessageBox*>(box)) { mb->done(QMessageBox::No); return; }
+        });
+        delBtn->click();
+        QCOMPARE((int)store.list().size(), 1);                    // 取消 → 不删
+        QTimer::singleShot(50, this, [this]{
+            for (auto* box : QApplication::topLevelWidgets())
+                if (auto* mb = qobject_cast<QMessageBox*>(box)) { mb->done(QMessageBox::Yes); return; }
+        });
+        delBtn->click();
+        QVERIFY(store.list().empty());                            // 确认 → 删
+        QVERIFY(!delBtn->isEnabled());                            // 列表空 → 复位禁用
+    }
+
+    // ── ⑬ v2.13 #54 Task 5：applyEditorResult 公共编排缝（落库+刷新+回选）────
+    void taskCenter_editDialogAccepted_savesInPlaceKeepingId()
+    {
+        // 经 TaskTemplateEditorDialog 直构 + center 提供的公开编排缝：
+        // center.applyEditorResult(template) 返回 store 结果 + 刷新（接线复用 collect 流）
+        TaskTemplateStore store;
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        TaskTemplate t; t.name = "改前";
+        TaskStep s; s.type = TaskStepType::Reboot; t.steps.push_back(s);
+        QVERIFY(store.save(t));
+        TaskTemplate edited = store.list().front();
+        edited.name = "改后";
+        QVERIFY(center.applyEditorResult(edited));                // 原位覆盖（id 非空）
+        QCOMPARE(QString::fromStdString(store.list().front().name), QStringLiteral("改后"));
+        QCOMPARE((int)store.list().size(), 1);
+        TaskTemplate fresh; fresh.name = "新建";                  // id 空 → 生成
+        // brief 缺陷修正（其余逐字）：无步骤模板被 TaskTemplateStore::save 的
+        // validateTaskTemplate「至少一个有序步骤」契约拒绝，与接线缝无关，补一个步骤
+        TaskStep fs; fs.type = TaskStepType::Reboot; fresh.steps.push_back(fs);
+        QVERIFY(center.applyEditorResult(fresh));
+        QCOMPARE((int)store.list().size(), 2);
+        TaskTemplate invalid;                                     // 空名 → 拒
+        QVERIFY(!center.applyEditorResult(invalid));
     }
 };
 
