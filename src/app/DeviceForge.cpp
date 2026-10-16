@@ -202,7 +202,7 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 状态栏 TC 化（Task 5）：左侧常驻快捷键提示 + 中央部署方向指示
     // 左侧：快捷键提示条（TC 风格常驻；基色/内边距走双主题 QSS #shortcutHint，不用内联暗色）
     auto* shortcutHint = new QLabel(
-        QStringLiteral("F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏"), this);
+        QStringLiteral("F2 重命名 · F4 预览/编辑 · F5 复制 → · F6 移动 → · Tab 切栏 · Ctrl+M 目录对比"), this);
     shortcutHint->setObjectName("shortcutHint");
     statusBar()->addWidget(shortcutHint);
 
