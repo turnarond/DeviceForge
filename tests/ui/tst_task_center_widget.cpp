@@ -9,6 +9,17 @@
 // ⑧ v2.13 模板导出：公共 API 直写契约文件 + 按钮选中启用规则 + 文件名清洗口径；
 // ⑨ v2.13 模板导入：新建计数+悬空引用保留/同名三选（覆盖继承 ID 与版本、改名
 //    "(2)"、取消静默）/坏文件不落库。
+// ⑩ v2.13 #54 Task 2：模板编辑器对话框骨架——元信息/设备多选（含悬空档案展示与
+//    默认勾选）/步骤列表/reboot 参数页/validate+collect+canonicalDeployParameters。
+// ⑪ v2.13 #54 Task 3：deploy 步骤面板——teItemList 表格绑定 items[]、单元格编辑
+//    即时写回、方向/覆盖下拉规范串、collect 从可见表格快照。
+// ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令/timeoutSec/共享 protocol）。
+// ⑬ v2.13 #54 Task 5：任务中心接线——新建/编辑/删除三按钮存在与启用态翻转、
+//    删除确认「否」不删/「是」删除并复位、applyEditorResult 公共编排缝
+//    （原位覆盖保 id / 新模板生成 id / 无效模板拒 save 返回 false）。
+// ⑭ v2.13 #54 Task 6：e2e「新建→执行」链——编辑器 collect 产出的 deploy+reboot
+//    两步模板经 applyEditorResult 落库（store 生成 id）后 startTemplate 全链
+//    发起执行并收口落库（FTP-only 档案不触网，重启步骤必校验失败，模式同⑥）。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -23,9 +34,12 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
@@ -35,6 +49,7 @@
 #include "task/TaskCenterWidget.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
+#include "task/TaskTemplateEditorDialog.h"
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/MultiProgressWidget.h"
 #include "ui/DeviceBusWidget.h"
@@ -1060,6 +1075,304 @@ private slots:
         }
         QVERIFY(namedFound);
         QVERIFY(addressOnlyFound);
+    }
+
+    // ── ⑩ v2.13 #54 Task 2：编辑器对话框骨架 ──────────────────────
+    void editorDialog_metaAndDanglingRoundTrip()
+    {
+        TaskTemplate in;
+        in.name = "编辑器种子"; in.description = "d"; in.tagSelectors = {"A线"};
+        in.deviceIds = {"device-notexist"};                       // 悬空：knownDevices 不含
+        TaskStep step; step.type = TaskStepType::Reboot;
+        step.parameters.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+        in.steps.push_back(step);
+        in.unknownFields.insert(QStringLiteral("x_next"), 7);
+        TaskTemplateEditorDialog dlg(in, {});                     // 本机无档案
+        auto* devList = dlg.findChild<QListWidget*>(QStringLiteral("teDevices"));
+        QVERIFY(devList);
+        QVERIFY(devList->item(0)->text().contains(QStringLiteral("本机无档案")));
+        QVERIFY(devList->item(0)->checkState() == Qt::Checked);   // 默认保留
+        TaskTemplate out;
+        QVERIFY(dlg.collect(&out));
+        QCOMPARE(out.deviceIds, in.deviceIds);
+        QCOMPARE(out.unknownFields, in.unknownFields);
+        QCOMPARE(out.steps.front().parameters.value(QStringLiteral("protocol")).toString(),
+                 QStringLiteral("telnet"));
+        QCOMPARE(out.templateId, in.templateId);
+    }
+    void editorDialog_validateRejectsEmptyNameAndCommands()
+    {
+        TaskTemplate in; // 空模板
+        TaskTemplateEditorDialog dlg(in, {});
+        QVERIFY(!dlg.validate().isEmpty());                        // 缺名称
+        TaskTemplate seeded; seeded.name = "n";
+        TaskStep cmd; cmd.type = TaskStepType::RunCommands;
+        cmd.parameters.insert(QStringLiteral("commands"), QStringList{QStringLiteral("  ")});
+        seeded.steps.push_back(cmd);
+        TaskTemplateEditorDialog dlg2(seeded, {});
+        QVERIFY(dlg2.validate().contains(QStringLiteral("至少一条命令")));
+    }
+    void editorDialog_canonicalizeLegacyFilesShorthand()
+    {
+        QVariantMap legacy;
+        legacy.insert(QStringLiteral("files"), QStringList{"/local/a.bin", "/local/b.bin"});
+        legacy.insert(QStringLiteral("remoteDirectory"), QStringLiteral("/opt/app/"));
+        const auto canon = TaskTemplateEditorDialog::canonicalDeployParameters(legacy);
+        QVERIFY(!canon.contains(QStringLiteral("files")));
+        QVERIFY(!canon.contains(QStringLiteral("remoteDirectory")));
+        const QVariantList items = canon.value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 2);
+        QCOMPARE(items[0].toMap().value(QStringLiteral("remotePath")).toString(),
+                 QStringLiteral("/opt/app/a.bin"));               // 去尾斜杠拼接
+    }
+
+    // ── ⑪ v2.13 #54 Task 3：deploy 步骤面板（items 表 + 批量添加口径）──
+    void editorDialog_deployPanelRoundTripsItems()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep step; step.type = TaskStepType::DeployFiles;
+        QVariantList items;
+        QVariantMap one;
+        one.insert(QStringLiteral("localPath"), QStringLiteral("C:/tmp/a.bin"));
+        one.insert(QStringLiteral("remotePath"), QStringLiteral("/opt/a.bin"));
+        one.insert(QStringLiteral("direction"), QStringLiteral("upload"));
+        one.insert(QStringLiteral("overwrite"), QStringLiteral("skip"));
+        items.push_back(one);
+        step.parameters.insert(QStringLiteral("items"), items);
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);                                            // 此前不存在 → 红
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 1)->text(), QStringLiteral("/opt/a.bin"));
+        table->setItem(0, 0, new QTableWidgetItem(QStringLiteral("C:/tmp/b.bin")));
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto row = out.steps.front().parameters.value(QStringLiteral("items"))
+                             .toList().front().toMap();
+        QCOMPARE(row.value(QStringLiteral("localPath")).toString(), QStringLiteral("C:/tmp/b.bin"));
+        QCOMPARE(row.value(QStringLiteral("overwrite")).toString(), QStringLiteral("skip"));
+    }
+
+    // ── ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令 + timeoutSec + protocol）──
+    void editorDialog_commandsPanelSplitsLinesAndClamps()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep step; step.type = TaskStepType::RunCommands;
+        step.parameters.insert(QStringLiteral("commands"),
+                               QStringList{QStringLiteral("ls"), QStringLiteral("pwd")});
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* edit = dlg.findChild<QPlainTextEdit*>(QStringLiteral("teCommands"));
+        QVERIFY(edit);                                             // 此前不存在 → 红
+        QCOMPARE(edit->toPlainText().split('\n').size(), 2);
+        edit->setPlainText(QStringLiteral("reboot\n\n # 注释行会被 trim 去空保留? 否——按行 trim 后仍保留非空"));
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto cmds = out.steps.front().parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(cmds.first(), QStringLiteral("reboot"));
+        auto* spin = dlg.findChild<QSpinBox*>(QStringLiteral("teTimeout"));
+        QCOMPARE(spin->value(), 10);                               // 默认 10
+    }
+
+    // 评审 Critical 1 回归：fillCommandsLike 若在程序化灌值后不解除 blockSignals，
+    // 首次绑定后 teCommands 的 textChanged 永久封锁 → 用户编辑永不 flush 到 m_steps，
+    // 切步即静默丢改动。用 run_commands(C1)+recover(R1) 两步各自编辑并来回切换验证存活。
+    void editorDialog_commandEditsSurviveStepSwitch()
+    {
+        TaskTemplate in; in.name = "n";
+        TaskStep c1; c1.type = TaskStepType::RunCommands;
+        c1.parameters.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("ls"), QStringLiteral("pwd")});
+        TaskStep r1; r1.type = TaskStepType::Recover;
+        r1.parameters.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("echo recovered")});
+        in.steps.push_back(c1);
+        in.steps.push_back(r1);
+        TaskTemplateEditorDialog dlg(in, {});
+
+        auto* list = dlg.findChild<QListWidget*>(QStringLiteral("teStepList"));
+        auto* edit = dlg.findChild<QPlainTextEdit*>(QStringLiteral("teCommands"));
+        QVERIFY(list && edit);
+
+        list->setCurrentRow(0);                                    // 绑定 C1
+        edit->setPlainText(QStringLiteral("edited-one\nedited-two")); // 信号应实时 flush 到 m_steps[0]
+
+        list->setCurrentRow(1);                                    // 切到 R1（fillCommandsLike 灌 R1）
+        list->setCurrentRow(0);                                    // 切回 C1：编辑器应显示已改内容
+
+        TaskTemplate out; QVERIFY(dlg.collect(&out));
+        const auto c1cmds = out.steps[0].parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(c1cmds, (QStringList{QStringLiteral("edited-one"), QStringLiteral("edited-two")}));
+        const auto r1cmds = out.steps[1].parameters.value(QStringLiteral("commands")).toStringList();
+        QCOMPARE(r1cmds, (QStringList{QStringLiteral("echo recovered")})); // R1 自身内容不受扰动
+    }
+
+    // ── ⑬ v2.13 #54 Task 5：任务中心接线（新建/编辑/删除入口 + 删除三态）────
+    void taskCenter_newEditDeleteFlows()
+    {
+        TaskTemplateStore store;
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        // 新建：注入对话框太直白——经公共缝：直接构造编辑器+save 已是 Task2 覆盖，
+        // 本用例聚焦接线：三按钮存在 + 删除三态
+        auto* newBtn = center.findChild<QPushButton*>(QStringLiteral("taskNewTemplateButton"));
+        auto* editBtn = center.findChild<QPushButton*>(QStringLiteral("taskEditTemplateButton"));
+        auto* delBtn = center.findChild<QPushButton*>(QStringLiteral("taskDeleteTemplateButton"));
+        QVERIFY(newBtn && editBtn && delBtn);
+        QVERIFY(!editBtn->isEnabled());   // 未选中
+        QVERIFY(!delBtn->isEnabled());
+        QVERIFY(newBtn->isEnabled());     // 恒可用
+        // 种一份模板 → 选中 → 按钮态翻转 → 布防确认框点「否」→ 不删
+        TaskTemplate t; t.name = "接线票";
+        TaskStep s; s.type = TaskStepType::Reboot; t.steps.push_back(s);
+        QVERIFY(store.save(t));
+        // brief 顺序缺陷修正（其余逐字）：setStores 早于 save，而 store 直存不通知
+        // widget（TaskTemplateStore/ConfigStore 非 QObject 无变更信号），列表仍是空的，
+        // 不重绑则 setCurrentRow(0) 无行可选中。按 ⑧b「重绑刷新」既有口径补一刀。
+        center.setStores(&store, nullptr);
+        list->setCurrentRow(0);
+        QVERIFY(editBtn->isEnabled() && delBtn->isEnabled());
+        QTimer::singleShot(50, this, [this]{
+            for (auto* box : QApplication::topLevelWidgets())
+                if (auto* mb = qobject_cast<QMessageBox*>(box)) { mb->done(QMessageBox::No); return; }
+        });
+        delBtn->click();
+        QCOMPARE((int)store.list().size(), 1);                    // 取消 → 不删
+        QTimer::singleShot(50, this, [this]{
+            for (auto* box : QApplication::topLevelWidgets())
+                if (auto* mb = qobject_cast<QMessageBox*>(box)) { mb->done(QMessageBox::Yes); return; }
+        });
+        delBtn->click();
+        QVERIFY(store.list().empty());                            // 确认 → 删
+        QVERIFY(!delBtn->isEnabled());                            // 列表空 → 复位禁用
+    }
+
+    // ── ⑬ v2.13 #54 Task 5：applyEditorResult 公共编排缝（落库+刷新+回选）────
+    void taskCenter_editDialogAccepted_savesInPlaceKeepingId()
+    {
+        // 经 TaskTemplateEditorDialog 直构 + center 提供的公开编排缝：
+        // center.applyEditorResult(template) 返回 store 结果 + 刷新（接线复用 collect 流）
+        TaskTemplateStore store;
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        TaskTemplate t; t.name = "改前";
+        TaskStep s; s.type = TaskStepType::Reboot; t.steps.push_back(s);
+        QVERIFY(store.save(t));
+        TaskTemplate edited = store.list().front();
+        edited.name = "改后";
+        QVERIFY(center.applyEditorResult(edited));                // 原位覆盖（id 非空）
+        QCOMPARE(QString::fromStdString(store.list().front().name), QStringLiteral("改后"));
+        QCOMPARE((int)store.list().size(), 1);
+        TaskTemplate fresh; fresh.name = "新建";                  // id 空 → 生成
+        // brief 缺陷修正（其余逐字）：无步骤模板被 TaskTemplateStore::save 的
+        // validateTaskTemplate「至少一个有序步骤」契约拒绝，与接线缝无关，补一个步骤
+        TaskStep fs; fs.type = TaskStepType::Reboot; fresh.steps.push_back(fs);
+        QVERIFY(center.applyEditorResult(fresh));
+        QCOMPARE((int)store.list().size(), 2);
+        TaskTemplate invalid;                                     // 空名 → 拒
+        QVERIFY(!center.applyEditorResult(invalid));
+    }
+
+    // ── ⑭ v2.13 #54 Task 6：e2e「新建→执行」链（编辑器产物必须引擎可跑）────
+    // 全链走公共缝：TaskTemplateEditorDialog::collect（编辑器出厂两步 deploy+reboot）
+    // → applyEditorResult（落库 + store 生成新 id）→ startTemplate（resolveTargets
+    // → confirmer → TaskRunStore::begin → 引擎）。档案只给 FTP 端点（同⑥不触网口径）：
+    // 重启步骤必在 Validating 阶段校验失败——既证明模板两步真达引擎逐步校验
+    // （错误文本点名「步骤 2（重启）」），又保证收口确定且全程无网络/适配器依赖。
+    void taskCenter_editorProducedTemplate_executesFullChain()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(
+            QStringLiteral("dev-ed"), QStringLiteral("链式目标机"),
+            QStringLiteral("10.7.0.1"), 21)));                   // 仅 FTP 端点
+
+        TaskTemplateStore store;
+        TaskRunStore runs;
+
+        // ① 编辑器缝：初值两步模板 → collect（templateId 空 = 新建路）
+        TaskTemplate in;
+        in.name = "链式出厂";
+        in.tagSelectors = {"巡检线"};                             // 顺带补 T2 遗留：标签往返
+        in.deviceIds = {"dev-ed"};
+        TaskStep deploy; deploy.type = TaskStepType::DeployFiles;
+        QVariantList items;
+        QVariantMap one;
+        one.insert(QStringLiteral("localPath"), QStringLiteral("C:/ed/a.bin"));
+        one.insert(QStringLiteral("remotePath"), QStringLiteral("/opt/a.bin"));
+        items.push_back(one);
+        deploy.parameters.insert(QStringLiteral("items"), items);
+        TaskStep reboot; reboot.type = TaskStepType::Reboot;
+        in.steps.push_back(deploy);
+        in.steps.push_back(reboot);
+        TaskTemplateEditorDialog dlg(in, registry.list());
+        TaskTemplate produced;
+        QVERIFY(dlg.collect(&produced));
+        QVERIFY(produced.templateId.empty());                    // 新建：id 留给 store 生成
+        QCOMPARE(produced.tagSelectors, in.tagSelectors);
+        QCOMPARE(produced.deviceIds, in.deviceIds);
+        QCOMPARE(produced.steps.size(), std::size_t{2});
+
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&store, &runs);
+        int confirmCalls = 0;
+        center.setRunConfirmer([&](const QString& summary, bool risky) {
+            ++confirmCalls;
+            // 重启动作风险位与摘要行必须随编辑器产物一路传到确认缝
+            return risky && summary.contains(QStringLiteral("含重启动作"));
+        });
+
+        // ② 落库：applyEditorResult 生成新 id，两步模板一条不缺
+        QVERIFY(center.applyEditorResult(produced));
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{1});
+        const std::string newId = rows.front().templateId;
+        QVERIFY2(newId.rfind("template-", 0) == 0,
+                 qPrintable(QString::fromStdString(newId)));
+        const auto reloaded = store.load(newId);
+        QVERIFY(reloaded.has_value());
+        QCOMPARE(reloaded->steps.size(), std::size_t{2});
+
+        // ③ 执行：startTemplate 全链发起
+        QSignalSpy started(&center, &TaskCenterWidget::runStarted);
+        QVERIFY(started.isValid());
+        QSignalSpy finished(&center, &TaskCenterWidget::runFinished);
+        QVERIFY(finished.isValid());
+        QSignalSpy logs(&center, &TaskCenterWidget::logMessage);
+        QVERIFY(logs.isValid());
+        center.startTemplate(newId);
+        QCOMPARE(confirmCalls, 1);                               // 确认缝确实过了一遍
+        QCOMPARE(started.count(), 1);                            // 执行已发起（同步发射）
+
+        // 收口：重启步骤无 Telnet/SSH 端点 → 校验失败 → 历史落库一条不缺
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        const auto records = runs.query({});
+        QCOMPARE(records.size(), std::size_t{1});
+        QVERIFY(records.front().status == TaskRunStatus::Failed);
+        QCOMPARE(records.front().templateId, newId);             // 记录关联到编辑器产出的模板
+        QCOMPARE(records.front().devices.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(records.front().devices.front().deviceId),
+                 QStringLiteral("dev-ed"));
+        QCOMPARE(QString::fromStdString(records.front().devices.front().address),
+                 QStringLiteral("10.7.0.1:21"));                // begin 时快照的地址定格
+        QVERIFY(QString::fromStdString(records.front().devices.front().name)
+                    .contains(QStringLiteral("链式目标机")));     // 名称快照同理
+
+        // 引擎逐步骤校验证据链：错误日志点名「步骤 2（重启）缺少可用端点」——
+        // 该文本只可能来自编辑器产出的第二步被引擎 validateDeviceSteps 检查
+        bool stepValidationLog = false;
+        for (const QVariantList& args : logs) {
+            if (args.at(0).toString().contains(QStringLiteral("步骤 2（重启）缺少可用端点")))
+                stepValidationLog = true;
+        }
+        QVERIFY2(stepValidationLog, "未见引擎对第二步（重启）的校验失败日志");
+
+        // UI 历史表同步收口（同⑥口径：终态行出现即落库刷新完成）
+        auto* history = center.findChild<QTableWidget*>(QStringLiteral("taskRunHistory"));
+        QVERIFY(history);
+        QTRY_COMPARE_WITH_TIMEOUT(history->rowCount(), 1, 10000);
+        QCOMPARE(history->item(0, 2)->text(), QStringLiteral("失败"));
     }
 };
 

@@ -19,6 +19,7 @@
 #include "task/TaskExecutionEngine.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
+#include "task/TaskTemplateEditorDialog.h"
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/DeployReport.h"
 
@@ -194,6 +195,17 @@ void TaskCenterWidget::setupUi()
     auto* leftBox = new QGroupBox(QStringLiteral("任务模板"), splitter);
     leftBox->setObjectName(QStringLiteral("taskTemplateColumn"));
     auto* leftLayout = new QVBoxLayout(leftBox);
+    // v2.13 #54 Task 5：搜索行上方小工具条——新建（恒可用）+ 删除（选中启用）
+    auto* templateToolBar = new QHBoxLayout();
+    m_newTemplateButton = new QPushButton(QStringLiteral("新建模板"), leftBox);
+    m_newTemplateButton->setObjectName(QStringLiteral("taskNewTemplateButton"));
+    m_deleteTemplateButton = new QPushButton(QStringLiteral("删除模板"), leftBox);
+    m_deleteTemplateButton->setObjectName(QStringLiteral("taskDeleteTemplateButton"));
+    m_deleteTemplateButton->setEnabled(false);   // 未选中禁用（onTemplateSelected 各路重算）
+    templateToolBar->addWidget(m_newTemplateButton);
+    templateToolBar->addWidget(m_deleteTemplateButton);
+    templateToolBar->addStretch(1);
+    leftLayout->addLayout(templateToolBar);
     m_templateSearch = new QLineEdit(leftBox);
     m_templateSearch->setObjectName(QStringLiteral("templateSearch"));
     m_templateSearch->setPlaceholderText(QStringLiteral("搜索模板名称 / 标签…"));
@@ -205,6 +217,13 @@ void TaskCenterWidget::setupUi()
             &TaskCenterWidget::refreshTemplates);
     connect(m_templateList, &QListWidget::currentItemChanged, this,
             [this](QListWidgetItem*, QListWidgetItem*) { onTemplateSelected(); });
+    // 双击行 = 编辑（与「编辑模板」按钮同流；未选中行不会触发该信号）
+    connect(m_templateList, &QListWidget::itemDoubleClicked, this,
+            [this](QListWidgetItem*) { onEditTemplateClicked(); });
+    connect(m_newTemplateButton, &QPushButton::clicked, this,
+            &TaskCenterWidget::onNewTemplateClicked);
+    connect(m_deleteTemplateButton, &QPushButton::clicked, this,
+            &TaskCenterWidget::onDeleteTemplateClicked);
 
     // ── 中栏：模板摘要 + 步骤与执行参数 ──
     auto* middleBox = new QGroupBox(QStringLiteral("步骤与执行参数"), splitter);
@@ -214,6 +233,16 @@ void TaskCenterWidget::setupUi()
     m_templateSummaryLabel->setObjectName(QStringLiteral("templateSummaryLabel"));
     m_templateSummaryLabel->setWordWrap(true);
     middleLayout->addWidget(m_templateSummaryLabel);
+    // v2.13 #54 Task 5：摘要行下方编辑入口（选中启用）
+    auto* editRow = new QHBoxLayout();
+    m_editTemplateButton = new QPushButton(QStringLiteral("编辑模板"), middleBox);
+    m_editTemplateButton->setObjectName(QStringLiteral("taskEditTemplateButton"));
+    m_editTemplateButton->setEnabled(false);   // 未选中禁用（onTemplateSelected 各路重算）
+    editRow->addWidget(m_editTemplateButton);
+    editRow->addStretch(1);
+    middleLayout->addLayout(editRow);
+    connect(m_editTemplateButton, &QPushButton::clicked, this,
+            &TaskCenterWidget::onEditTemplateClicked);
     m_templateSteps = new QTableWidget(0, 3, middleBox);
     m_templateSteps->setObjectName(QStringLiteral("templateSteps"));
     m_templateSteps->setHorizontalHeaderLabels(
@@ -804,6 +833,8 @@ void TaskCenterWidget::onTemplateSelected()
         m_targetDevices->clear();
         m_runButton->setEnabled(false);
         m_exportTemplateButton->setEnabled(false);
+        m_editTemplateButton->setEnabled(false);
+        m_deleteTemplateButton->setEnabled(false);
         return;
     }
     const QString templateId = item->data(Qt::UserRole).toString();
@@ -815,6 +846,8 @@ void TaskCenterWidget::onTemplateSelected()
         m_targetDevices->clear();
         m_runButton->setEnabled(false);
         m_exportTemplateButton->setEnabled(false);
+        m_editTemplateButton->setEnabled(false);
+        m_deleteTemplateButton->setEnabled(false);
         return;
     }
     m_currentTemplate = *task;
@@ -841,6 +874,8 @@ void TaskCenterWidget::onTemplateSelected()
     }
     m_runButton->setEnabled(!m_currentDevices.empty());
     m_exportTemplateButton->setEnabled(!m_currentTemplateId.empty());
+    m_editTemplateButton->setEnabled(!m_currentTemplateId.empty());
+    m_deleteTemplateButton->setEnabled(!m_currentTemplateId.empty());
 }
 
 void TaskCenterWidget::onExecuteClicked()
@@ -1257,5 +1292,117 @@ void TaskCenterWidget::onCloneClicked()
         return;
     }
     emit logMessage(QStringLiteral("任务中心：已复制为新模板「%1」").arg(newName.trimmed()));
+    refreshTemplates();
+}
+
+// ── v2.13 #54 Task 5：模板新建/编辑/删除接线（编辑器对话框 + 落库编排）──
+
+std::vector<DeviceProfile> TaskCenterWidget::registryDevices() const
+{
+    // 编辑器设备多选入参：注册表快照；无注册表（测试/无设备层）返回空表
+    return m_registry ? m_registry->list() : std::vector<DeviceProfile>{};
+}
+
+bool TaskCenterWidget::applyEditorResult(const TaskTemplate& tmpl)
+{
+    if (!m_templates) {
+        emit logMessage(QStringLiteral("任务中心：模板存储未就绪，编辑结果未落库"));
+        return false;
+    }
+    if (!m_templates->save(tmpl)) {
+        // store.save 已对无效/降级/敏感 qWarning，这里补人读原因；
+        // 错误框刻意非阻塞（open）：本缝供测试直调，用例不布防模态兜底
+        const auto validation = validateTaskTemplate(tmpl);
+        const QString reason = validation.valid
+            ? QStringLiteral("保存失败：模板存储写入被拒（详见日志）")
+            : validation.error;
+        auto* box = new QMessageBox(QMessageBox::Warning, QStringLiteral("保存模板"),
+                                    reason, QMessageBox::Ok, this);
+        box->setObjectName(QStringLiteral("taskEditorSaveErrorBox"));
+        box->setAttribute(Qt::WA_DeleteOnClose);
+        box->open();
+        emit logMessage(QStringLiteral("任务中心：模板保存失败 — %1").arg(reason));
+        return false;
+    }
+    // 成功：刷新列表；既有选中/首行回选由 refreshTemplates 保证，
+    // 已落库模板（id 非空）再按 id 精确回选一次（best-effort，不打扰失败路径）
+    refreshTemplates();
+    if (!tmpl.templateId.empty()) {
+        const QString wantedId = fromUtf8Std(tmpl.templateId);
+        for (int row = 0; row < m_templateList->count(); ++row) {
+            if (m_templateList->item(row)->data(Qt::UserRole).toString() == wantedId) {
+                m_templateList->setCurrentRow(row);
+                break;
+            }
+        }
+    }
+    // 日志纪律：只带模板名与步骤数，不含任何凭据内容
+    emit logMessage(QStringLiteral("已保存模板「%1」（%2 个步骤）")
+                        .arg(fromUtf8Std(tmpl.name))
+                        .arg(static_cast<int>(tmpl.steps.size())));
+    return true;
+}
+
+void TaskCenterWidget::onNewTemplateClicked()
+{
+    // 新建不依赖选中态（按钮恒可用）；初值为空模板，id 由 store 生成
+    TaskTemplateEditorDialog dlg(TaskTemplate{}, registryDevices(), this);
+    dlg.setWindowTitle(QStringLiteral("新建任务模板"));
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    TaskTemplate out;
+    if (!dlg.collect(&out))
+        return;   // accept() 已被 validate 闸住，此处为防御性收口
+    applyEditorResult(out);
+}
+
+void TaskCenterWidget::onEditTemplateClicked()
+{
+    if (!m_templates || m_currentTemplateId.empty()) {
+        emit logMessage(QStringLiteral("任务中心：请先选择要编辑的模板"));
+        return;
+    }
+    // 以存储重载版为初值（选中后可能有导入/克隆改动），重载失败兜底内存快照
+    const auto reloaded = m_templates->load(m_currentTemplateId);
+    const TaskTemplate base = reloaded.value_or(m_currentTemplate);
+    TaskTemplateEditorDialog dlg(base, registryDevices(), this);
+    dlg.setWindowTitle(QStringLiteral("编辑任务模板"));
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    TaskTemplate out;
+    if (!dlg.collect(&out))
+        return;   // 同上，防御性收口
+    applyEditorResult(out);
+}
+
+void TaskCenterWidget::onDeleteTemplateClicked()
+{
+    if (!m_templates || m_currentTemplateId.empty()) {
+        emit logMessage(QStringLiteral("任务中心：请先选择要删除的模板"));
+        return;
+    }
+    const QString name = fromUtf8Std(m_currentTemplate.name);
+    const int stepCount = static_cast<int>(m_currentTemplate.steps.size());
+    QMessageBox box(QMessageBox::Question, QStringLiteral("删除模板"),
+        QStringLiteral("确定删除模板「%1」（%2 个步骤）？删除不影响历史执行记录。")
+            .arg(name)
+            .arg(stepCount),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setObjectName(QStringLiteral("taskDeleteConfirmBox"));
+    box.setDefaultButton(QMessageBox::No);   // 破坏性操作默认「否」（v2.11 确认框同款纪律）
+    if (box.exec() != QMessageBox::Yes) {
+        emit logMessage(QStringLiteral("任务中心：删除模板「%1」已取消").arg(name));
+        return;
+    }
+    // remove 语义（Task 1）：空/不存在 → false；存在 → 转发 ConfigStore::remove。
+    // false 说明记录已被并行路径移除（或存储异常），中文错误框后刷新对齐 UI。
+    if (!m_templates->remove(m_currentTemplateId)) {
+        QMessageBox::warning(this, QStringLiteral("删除模板"),
+            QStringLiteral("删除失败：模板「%1」不存在或已被移除").arg(name));
+        emit logMessage(QStringLiteral("任务中心：删除模板「%1」失败（记录不存在）").arg(name));
+        refreshTemplates();
+        return;
+    }
+    emit logMessage(QStringLiteral("已删除模板「%1」（%2 个步骤）").arg(name).arg(stepCount));
     refreshTemplates();
 }

@@ -57,4 +57,4 @@ cd build && ctest -C Release -R tst_nrec --output-on-failure # 单目标
 
 ## 已知覆盖空白
 
-FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。
+FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。模板编辑器对话框（v2.13 #54）的 tePageDeploy 文件选择器 leg（teAddFiles/teAddDir 弹 QFileDialog 选人）与新建/编辑按钮的模态对话框流程为人工冒烟覆盖，其余（validate/collect/面板往返/落库编排/e2e「新建→执行」链）均经 tst_task_center_widget 直调缝覆盖。

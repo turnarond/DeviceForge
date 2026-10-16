@@ -2,6 +2,11 @@
 
 ## [未发布]
 
+### Added（2026-10-16，#54 v2.13 任务模板编辑器）
+
+- **任务模板编辑器（新建/编辑/删除产品内正规入口）**：任务中心页左栏上方新增「新建模板/删除模板」小工具条（新建恒可用、删除选中启用，删除确认框默认「否」），中栏摘要行下方新增「编辑模板」（选中启用），模板列表双击行=编辑同款。编辑器对话框 `TaskTemplateEditorDialog`：元信息（名称/描述/标签/version 1..999 手动可编辑、不自动 bump）、目标设备多选（本机档案 ∪ 模板引用并集，悬空引用「（本机无档案）」保留展示且默认勾选——与导入的悬空口径一致，建好同端点档案后自动接上）、步骤列表（添加按 deploy→commands→reboot→recover 轮转/删除/上移下移/类型切换即重置该步参数）、deploy 页（items 4 列表格即时写回 + 「添加文件…/添加目录…」非原生批量添加；`teRemoteDir` 仅为批量拼接前缀的 UI 辅助、**不是持久化参数键**；旧 `files`+`remoteDirectory` 简写加载即经 `canonicalDeployParameters` 归一为 items[]）、commands/recover 共用面板（多行命令一行一条、空行忽略；timeoutSec 1..600 默认 10；recover 顶部说明 label）、reboot 静态说明页；共享 `teProtocol` 协议过滤下拉在参数栈外按步读写。保存闸=validate（必填+步骤参数预检，不过弹警告停留对话框）→ collect 组装（templateId/unknownFields 原样携带）→ 编辑原位覆盖保 id、新建由 store 生成 id；删除经 `TaskTemplateStore::remove`（本次一并落地存储腿），历史执行记录为不可变快照不受影响。兑现 v2.11 规格 §4「产品内产出模板」承诺（部署侧一键捕获转后续增强）。
+- 测试：`tst_task_template_store` +1 用例（remove 存储腿：删除生效/不存在 false/空 ID false）；`tst_task_center_widget` +9 用例（编辑器对话框 6：元信息与悬空引用往返/validate 拒绝空名空命令/简写归一/deploy 面板往返/commands 拆行与钳制/跨步切换改动存活〔含 Critical 修复回归〕；任务中心接线 2：三按钮存在与启用态+删除三态/applyEditorResult 落库编排；e2e 1：编辑器 collect 产物→applyEditorResult 落库生成 id→startTemplate 全链发起并收口落库，FTP-only 档案不触网口径）。全量 CTest 46 目标绿。
+
 ### Added（2026-10-16，v2.13 任务模板跨机迁移）
 
 - **任务模板导出/导入（单模板文件通道）**："一台机器调好的批量部署模板，U 盘带到另一条产线直接导入"。任务中心页右栏新增「导出模板/导入模板」按钮（`TaskCenterWidget::exportTemplateToFile`/`importTemplateFromFile`，未选中导出禁用、导入恒可用；默认文件名=模板名清洗非法字符+`.json`，空回退 `task-template.json`）。文件格式为公开契约：UTF-8 JSON、格式魔数 `deviceforge.task-template` + `formatVersion=1` 版本闸（更高版本明确拒绝并提示升级，不猜测解码）；**导出丢弃 templateId**（本机主键不外溢；新模板导入由 store 生成新 ID，覆盖同名模板时继承既有 ID，见下）、**文件零秘密值**（模板只存凭据引用；解码继承 store 的敏感字段拒收守卫，手工构造恶意文件同样被拒）。导入同名冲突三选「覆盖/改名/取消」（**默认按钮=改名**防回车误覆盖）：覆盖=原位覆写既有同名模板并继承其 ID 与版本（历史执行记录为不可变快照不受影响），改名=「名称 (2)」递增找空位不设上限；悬空 deviceIds **原样保留**并在成功框提示「建好同端点档案后自动接上」（档案 ID 由端点身份确定性派生，支持先带模板后建档）；解码四道校验（JSON/魔数/版本闸/行解码）全过才一次落库、不落半成品，拒绝原因中文弹窗。编解码外提 `src/task/TaskTemplateCodec.{h,cpp}`（store 行编码与文件通道同源，字段口径唯一）。

@@ -1,6 +1,7 @@
 // v2.11 Task 3：TaskTemplateStore 模板数据模型与持久化测试
 // 覆盖：必填字段校验、有序步骤 round-trip、版本化（保存/升级/拒绝降级）、
-// 克隆为新模板、未知未来字段前向兼容保留，
+// 克隆为新模板、删除模板存储腿（remove，v2.13 #54）、
+// 未知未来字段前向兼容保留，
 // 以及密码/私钥类敏感字段的拒绝（不落盘）与持久化记录不含任何凭据秘密值。
 #include <QtTest>
 
@@ -315,6 +316,20 @@ private slots:
         QVERIFY(!store.clone("tpl-missing", std::string(u8"副本")).has_value());
         QVERIFY(!store.clone("tpl-src", std::string("  ")).has_value());
         QCOMPARE(fresh.list().size(), size_t(2));
+    }
+
+    void remove_deletesTemplateAndReports()
+    {
+        TaskTemplateStore store;
+        TaskTemplate tmpl; tmpl.name = "删我";
+        TaskStep step; step.type = TaskStepType::Reboot; tmpl.steps.push_back(step);
+        QVERIFY(store.save(tmpl));
+        const auto saved = store.list().front();
+        QVERIFY(store.remove(saved.templateId));
+        QVERIFY(!store.load(saved.templateId).has_value());
+        QVERIFY(store.list().empty());
+        QVERIFY(!store.remove("template-not-exist"));   // 不存在 → false
+        QVERIFY(!store.remove(""));                     // 空 id → false
     }
 
     // 持久化记录不含任何凭据秘密值（合法模板保存后原文扫描）
