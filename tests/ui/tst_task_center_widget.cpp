@@ -17,6 +17,9 @@
 // ⑬ v2.13 #54 Task 5：任务中心接线——新建/编辑/删除三按钮存在与启用态翻转、
 //    删除确认「否」不删/「是」删除并复位、applyEditorResult 公共编排缝
 //    （原位覆盖保 id / 新模板生成 id / 无效模板拒 save 返回 false）。
+// ⑭ v2.13 #54 Task 6：e2e「新建→执行」链——编辑器 collect 产出的 deploy+reboot
+//    两步模板经 applyEditorResult 落库（store 生成 id）后 startTemplate 全链
+//    发起执行并收口落库（FTP-only 档案不触网，重启步骤必校验失败，模式同⑥）。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -1268,6 +1271,108 @@ private slots:
         QCOMPARE((int)store.list().size(), 2);
         TaskTemplate invalid;                                     // 空名 → 拒
         QVERIFY(!center.applyEditorResult(invalid));
+    }
+
+    // ── ⑭ v2.13 #54 Task 6：e2e「新建→执行」链（编辑器产物必须引擎可跑）────
+    // 全链走公共缝：TaskTemplateEditorDialog::collect（编辑器出厂两步 deploy+reboot）
+    // → applyEditorResult（落库 + store 生成新 id）→ startTemplate（resolveTargets
+    // → confirmer → TaskRunStore::begin → 引擎）。档案只给 FTP 端点（同⑥不触网口径）：
+    // 重启步骤必在 Validating 阶段校验失败——既证明模板两步真达引擎逐步校验
+    // （错误文本点名「步骤 2（重启）」），又保证收口确定且全程无网络/适配器依赖。
+    void taskCenter_editorProducedTemplate_executesFullChain()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(
+            QStringLiteral("dev-ed"), QStringLiteral("链式目标机"),
+            QStringLiteral("10.7.0.1"), 21)));                   // 仅 FTP 端点
+
+        TaskTemplateStore store;
+        TaskRunStore runs;
+
+        // ① 编辑器缝：初值两步模板 → collect（templateId 空 = 新建路）
+        TaskTemplate in;
+        in.name = "链式出厂";
+        in.tagSelectors = {"巡检线"};                             // 顺带补 T2 遗留：标签往返
+        in.deviceIds = {"dev-ed"};
+        TaskStep deploy; deploy.type = TaskStepType::DeployFiles;
+        QVariantList items;
+        QVariantMap one;
+        one.insert(QStringLiteral("localPath"), QStringLiteral("C:/ed/a.bin"));
+        one.insert(QStringLiteral("remotePath"), QStringLiteral("/opt/a.bin"));
+        items.push_back(one);
+        deploy.parameters.insert(QStringLiteral("items"), items);
+        TaskStep reboot; reboot.type = TaskStepType::Reboot;
+        in.steps.push_back(deploy);
+        in.steps.push_back(reboot);
+        TaskTemplateEditorDialog dlg(in, registry.list());
+        TaskTemplate produced;
+        QVERIFY(dlg.collect(&produced));
+        QVERIFY(produced.templateId.empty());                    // 新建：id 留给 store 生成
+        QCOMPARE(produced.tagSelectors, in.tagSelectors);
+        QCOMPARE(produced.deviceIds, in.deviceIds);
+        QCOMPARE(produced.steps.size(), std::size_t{2});
+
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&store, &runs);
+        int confirmCalls = 0;
+        center.setRunConfirmer([&](const QString& summary, bool risky) {
+            ++confirmCalls;
+            // 重启动作风险位与摘要行必须随编辑器产物一路传到确认缝
+            return risky && summary.contains(QStringLiteral("含重启动作"));
+        });
+
+        // ② 落库：applyEditorResult 生成新 id，两步模板一条不缺
+        QVERIFY(center.applyEditorResult(produced));
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{1});
+        const std::string newId = rows.front().templateId;
+        QVERIFY2(newId.rfind("template-", 0) == 0,
+                 qPrintable(QString::fromStdString(newId)));
+        const auto reloaded = store.load(newId);
+        QVERIFY(reloaded.has_value());
+        QCOMPARE(reloaded->steps.size(), std::size_t{2});
+
+        // ③ 执行：startTemplate 全链发起
+        QSignalSpy started(&center, &TaskCenterWidget::runStarted);
+        QVERIFY(started.isValid());
+        QSignalSpy finished(&center, &TaskCenterWidget::runFinished);
+        QVERIFY(finished.isValid());
+        QSignalSpy logs(&center, &TaskCenterWidget::logMessage);
+        QVERIFY(logs.isValid());
+        center.startTemplate(newId);
+        QCOMPARE(confirmCalls, 1);                               // 确认缝确实过了一遍
+        QCOMPARE(started.count(), 1);                            // 执行已发起（同步发射）
+
+        // 收口：重启步骤无 Telnet/SSH 端点 → 校验失败 → 历史落库一条不缺
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        const auto records = runs.query({});
+        QCOMPARE(records.size(), std::size_t{1});
+        QVERIFY(records.front().status == TaskRunStatus::Failed);
+        QCOMPARE(records.front().templateId, newId);             // 记录关联到编辑器产出的模板
+        QCOMPARE(records.front().devices.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(records.front().devices.front().deviceId),
+                 QStringLiteral("dev-ed"));
+        QCOMPARE(QString::fromStdString(records.front().devices.front().address),
+                 QStringLiteral("10.7.0.1:21"));                // begin 时快照的地址定格
+        QVERIFY(QString::fromStdString(records.front().devices.front().name)
+                    .contains(QStringLiteral("链式目标机")));     // 名称快照同理
+
+        // 引擎逐步骤校验证据链：错误日志点名「步骤 2（重启）缺少可用端点」——
+        // 该文本只可能来自编辑器产出的第二步被引擎 validateDeviceSteps 检查
+        bool stepValidationLog = false;
+        for (const QVariantList& args : logs) {
+            if (args.at(0).toString().contains(QStringLiteral("步骤 2（重启）缺少可用端点")))
+                stepValidationLog = true;
+        }
+        QVERIFY2(stepValidationLog, "未见引擎对第二步（重启）的校验失败日志");
+
+        // UI 历史表同步收口（同⑥口径：终态行出现即落库刷新完成）
+        auto* history = center.findChild<QTableWidget*>(QStringLiteral("taskRunHistory"));
+        QVERIFY(history);
+        QTRY_COMPARE_WITH_TIMEOUT(history->rowCount(), 1, 10000);
+        QCOMPARE(history->item(0, 2)->text(), QStringLiteral("失败"));
     }
 };
 
