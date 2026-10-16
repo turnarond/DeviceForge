@@ -30,7 +30,7 @@ private slots:
         QVERIFY(src.mkdir(dir.filePath("newdir")));   // 已存在 → 幂等成功（契约语义）
         QVERIFY(src.lastError().isEmpty());
         QFile f(dir.filePath("x.txt"));
-        f.open(QIODevice::WriteOnly); f.write("x"); f.close();
+        QVERIFY(f.open(QIODevice::WriteOnly)); f.write("x"); f.close();
         QVERIFY(src.rename(dir.filePath("x.txt"), dir.filePath("y.txt")));
         QVERIFY(!QFile::exists(dir.filePath("x.txt")));
         QVERIFY(QFile::exists(dir.filePath("y.txt")));
@@ -43,7 +43,7 @@ private slots:
         QTemporaryDir dir;
         LocalFileSource src;
         QFile f(dir.filePath("keep.txt"));
-        f.open(QIODevice::WriteOnly); f.write("k"); f.close();
+        QVERIFY(f.open(QIODevice::WriteOnly)); f.write("k"); f.close();
         QDir().mkpath(dir.filePath("inner"));
         QVERIFY(src.clearDirectory(dir.path()));
         QCOMPARE(QDir(dir.path()).entryList(QDir::NoDotAndDotDot | QDir::AllEntries).size(), 0);

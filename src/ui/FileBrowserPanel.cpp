@@ -362,7 +362,7 @@ void FileBrowserPanel::loadDirectory(const QString& path)
     // guard 在捕获列表用主线程（调度时 this 必然存活）构造 QPointer——若在 worker 内
     // 构造，worker 启动前面板已析构时读已释放 QObjectPrivate 即 UAF（与 Task 2
     // onRefreshRemote 的 guard 构造时机同模式）
-    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, p, source]() {
+    (void)QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, p, source]() {
         auto files = source->list(p);
         if (!guard) return;
         QMetaObject::invokeMethod(this, [this, gen, p, files, source]() {
@@ -380,7 +380,7 @@ void FileBrowserPanel::retryWithReconnect(quint64 gen, const QString& path,
 {
     // 异步重连重试一次（本地源 reconnect no-op 成功，仅多一次重试；对齐 v2.6 行为）。
     // guard 同 loadDirectory：主线程调度时构造（防 worker 启动前面板已析构的 UAF）
-    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, path, source]() {
+    (void)QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, path, source]() {
         bool ok = source->reconnect();
         auto files = ok ? source->list(path) : std::vector<FtpFileInfo>{};
         if (!guard) return;
@@ -1202,7 +1202,7 @@ void FileBrowserPanel::openEditorForRow(int row)
 
     auto source = m_source;
     // 评审 C-1：info/path/snap 随 worker 值捕获成对回传，回调只在仍是最新目标时落成员
-    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source,
+    (void)QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source,
                        path, fi, snap]() {
         std::string bytes;
         QString err;
@@ -1333,7 +1333,7 @@ void FileBrowserPanel::startEditorSave(bool skipConflictCheck)
     const quint64 gen = m_editGeneration;
     const std::string data(bytes.toStdString());
 
-    QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source, dlg,
+    (void)QtConcurrent::run([this, guard = QPointer<FileBrowserPanel>(this), gen, source, dlg,
                        path, data, local, snap, skipConflictCheck, bytes]() {
         QString err;
         bool conflict = false;
