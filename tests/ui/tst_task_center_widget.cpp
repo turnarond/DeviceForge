@@ -6,7 +6,9 @@
 // ⑥ 校验失败运行收口后历史表出现「失败」行，选中后「从失败阶段重试」可用，
 // 点击走 TaskExecutionEngine::retryFailed 并产生第二条执行记录；
 // ⑦ MultiProgressWidget 行标签显示 名称 + 地址（单次部署无名称时保持原样）；
-// ⑧ v2.13 模板导出：公共 API 直写契约文件 + 按钮选中启用规则 + 文件名清洗口径。
+// ⑧ v2.13 模板导出：公共 API 直写契约文件 + 按钮选中启用规则 + 文件名清洗口径；
+// ⑨ v2.13 模板导入：新建计数+悬空引用保留/同名三选（覆盖继承 ID 与版本、改名
+//    "(2)"、取消静默）/坏文件不落库。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -32,6 +34,7 @@
 #include "device/DeviceRegistry.h"
 #include "task/TaskCenterWidget.h"
 #include "task/TaskRunStore.h"
+#include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/MultiProgressWidget.h"
 #include "ui/DeviceBusWidget.h"
@@ -105,6 +108,51 @@ private:
         const auto pills = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
         return pills.isEmpty() ? nullptr : pills.first();
     }
+
+    // ── v2.13 Task 4：模板导入用例 helper ──
+    // 种子模板：name=「导入体」、1 步、1 个 device-dead 悬空引用（encodeTemplateFile 直造文件）
+    TaskTemplate makeExportableTemplate() const
+    {
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("导入体").toUtf8().toStdString();
+        tmpl.description = QStringLiteral("导入用例种子").toUtf8().toStdString();
+        tmpl.deviceIds = {"device-dead"};
+        TaskStep step;
+        step.type = TaskStepType::Reboot;
+        tmpl.steps.push_back(step);
+        return tmpl;
+    }
+
+    QString writeToTemp(const QByteArray& data)
+    {
+        const QString path = m_tempDir.filePath(QStringLiteral("template.json"));
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return QString();
+        f.write(data);
+        f.close();
+        return path;
+    }
+
+    // 布防-捕获模态对话框：exec 嵌套事件循环触发定时器 → 抓文案 + 关闭。
+    // 仅在「本用例必弹框」路径使用；静默路径（取消）布防会把定时器漏进后续用例。
+    // 负对照：未弹框则 m_dialogClosed 保持 false（center 析构后布防 lambda 随上下文销毁，不外溢）。
+    void armDialogCapture(TaskCenterWidget& center)
+    {
+        m_dialogText.clear();
+        m_dialogClosed = false;
+        QTimer::singleShot(50, &center, [this, &center] {
+            QMessageBox* box = center.findChild<QMessageBox*>();
+            if (!box)
+                return;
+            m_dialogText = box->text();
+            m_dialogClosed = true;
+            box->done(QMessageBox::Ok);
+        });
+    }
+
+    QString m_dialogText;
+    bool m_dialogClosed = false;
 
 private slots:
     void initTestCase()
@@ -802,6 +850,194 @@ private slots:
         QVERIFY(!exportBtn->isEnabled());                    // 陈旧选中态必须清除
         auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
         QCOMPARE(list->count(), 0);
+    }
+
+    // ── ⑨ v2.13 Task 4：模板导入——新建/覆盖/改名/取消/坏文件五路 ──────────
+    void taskCenter_import_newTemplate_countsUpAndKeepsDangling()
+    {
+        TaskTemplateStore store;
+        DeviceRegistry registry;                             // 空档案：device-dead 必计悬空
+        QVERIFY(registry.load());
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&store, nullptr);
+
+        auto* importBtn = center.findChild<QPushButton*>(QStringLiteral("taskImportTemplateButton"));
+        QVERIFY(importBtn);
+        QCOMPARE(importBtn->isEnabled(), true);              // 恒可用（规格 §4）
+
+        const QString path = writeToTemp(encodeTemplateFile(makeExportableTemplate()));
+        QVERIFY(!path.isEmpty());
+        const int before = static_cast<int>(store.list().size());
+        QSignalSpy logs(&center, &TaskCenterWidget::logMessage);
+        QVERIFY(logs.isValid());
+        armDialogCapture(center);
+
+        QVERIFY(center.importTemplateFromFile(path));
+        QVERIFY2(m_dialogClosed, "成功信息框未弹出（布防未命中）");
+        QCOMPARE(static_cast<int>(store.list().size()), before + 1);
+
+        // 悬空引用原样保留（不剥离）
+        const auto rows = store.list();
+        QCOMPARE(QString::fromStdString(rows.front().name), QStringLiteral("导入体"));
+        QCOMPARE(rows.front().deviceIds.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(rows.front().deviceIds.front()),
+                 QStringLiteral("device-dead"));
+
+        // 成功提示两行文案：步骤计数 + 悬空统计；logMessage 同文案
+        const QString expected = QStringLiteral(
+            "已导入模板「导入体」（1 个步骤）\n"
+            "引用了 1 个本机不存在的设备档案，建好同端点档案后自动接上");
+        QCOMPARE(m_dialogText, expected);
+        bool logHit = false;
+        for (const QVariantList& args : logs) {
+            if (args.at(0).toString() == expected)
+                logHit = true;
+        }
+        QVERIFY2(logHit, qPrintable(expected));
+
+        // 返回 true 即已 refreshTemplates()：列表出现新行
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+    }
+
+    void taskCenter_import_conflictOverwrite_replacesInPlace()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing;
+        existing.name = QStringLiteral("导入体").toUtf8().toStdString();
+        existing.description = QStringLiteral("本机旧版").toUtf8().toStdString();
+        existing.version = 3;                                // 高于文件版本(1)：覆盖须继承既有版本，
+        TaskStep oldStep; oldStep.type = TaskStepType::DeployFiles;   // 否则被 store 降级拒绝
+        existing.steps.push_back(oldStep);
+        QVERIFY(store.save(existing));
+        const std::string existingId = store.list().front().templateId;
+
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        QString resolverName;
+        center.setImportConflictResolver([&](const QString& name) {
+            resolverName = name;
+            return 0;                                        // 覆盖
+        });
+
+        const QString path = writeToTemp(encodeTemplateFile(makeExportableTemplate()));
+        QVERIFY(!path.isEmpty());
+        armDialogCapture(center);
+        QVERIFY(center.importTemplateFromFile(path));
+
+        QCOMPARE(resolverName, QStringLiteral("导入体"));     // resolver 收到导入名
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{1});               // 数量不变：原位覆写
+        QCOMPARE(rows.front().templateId, existingId);       // 继承既有 templateId
+        QCOMPARE(rows.front().version, 3);                   // 继承既有 version
+        QCOMPARE(QString::fromStdString(rows.front().description),
+                 QStringLiteral("导入用例种子"));              // 内容被替换
+        QVERIFY2(m_dialogClosed, "成功信息框未弹出");
+    }
+
+    void taskCenter_import_conflictRename_addsSuffix2()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing;
+        existing.name = QStringLiteral("导入体").toUtf8().toStdString();
+        existing.description = QStringLiteral("本机旧版").toUtf8().toStdString();
+        TaskStep step; step.type = TaskStepType::DeployFiles;
+        existing.steps.push_back(step);
+        QVERIFY(store.save(existing));
+
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        center.setImportConflictResolver([](const QString&) { return 1; });   // 改名
+
+        const QString path = writeToTemp(encodeTemplateFile(makeExportableTemplate()));
+        QVERIFY(!path.isEmpty());
+        armDialogCapture(center);
+        QVERIFY(center.importTemplateFromFile(path));
+
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{2});
+        const auto byName = [&rows](const QString& name) -> std::optional<TaskTemplate> {
+            for (const auto& t : rows) {
+                if (QString::fromStdString(t.name) == name)
+                    return t;
+            }
+            return std::nullopt;
+        };
+        const auto renamed = byName(QStringLiteral("导入体 (2)"));
+        QVERIFY2(renamed.has_value(), "未找到自动改名行「导入体 (2)」");
+        QCOMPARE(QString::fromStdString(renamed->description), QStringLiteral("导入用例种子"));
+        const auto kept = byName(QStringLiteral("导入体"));
+        QVERIFY(kept.has_value());
+        QCOMPARE(QString::fromStdString(kept->description), QStringLiteral("本机旧版"));   // 既有行未动
+        QVERIFY2(m_dialogText.contains(QStringLiteral("导入体 (2)")),
+                 qPrintable(m_dialogText));                  // 提示用改名后的名称
+    }
+
+    void taskCenter_import_conflictCancel_noop()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing;
+        existing.name = QStringLiteral("导入体").toUtf8().toStdString();
+        existing.description = QStringLiteral("本机旧版").toUtf8().toStdString();
+        TaskStep step; step.type = TaskStepType::DeployFiles;
+        existing.steps.push_back(step);
+        QVERIFY(store.save(existing));
+
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        int resolverCalls = 0;
+        center.setImportConflictResolver([&](const QString&) {
+            ++resolverCalls;
+            return -1;                                       // 取消
+        });
+
+        const QString path = writeToTemp(encodeTemplateFile(makeExportableTemplate()));
+        QVERIFY(!path.isEmpty());
+        // 取消=静默 false 不弹窗：故意不布防——若误弹框，exec 阻塞至测试超时即缺陷证据
+        QVERIFY(!center.importTemplateFromFile(path));
+        QCOMPARE(resolverCalls, 1);
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{1});               // 数量不变
+        QCOMPARE(QString::fromStdString(rows.front().description),
+                 QStringLiteral("本机旧版"));                  // 内容不变
+    }
+
+    void taskCenter_import_badFile_rejectedWithoutTouchingStore()
+    {
+        TaskTemplateStore store;
+        TaskTemplate keep;
+        keep.name = QStringLiteral("既有模板").toUtf8().toStdString();
+        TaskStep step; step.type = TaskStepType::Reboot;
+        keep.steps.push_back(step);
+        QVERIFY(store.save(keep));
+
+        // 手拼 formatVersion=2 契约文件 → 版本闸拒绝（升级文案），不落库
+        const QByteArray bad = QByteArrayLiteral(
+            "{\"format\":\"deviceforge.task-template\",\"formatVersion\":2,"
+            "\"template\":{\"name\":\"坏文件\",\"steps\":"
+            "[{\"type\":\"reboot\",\"parameters\":{}}]}}");
+        const QString path = writeToTemp(bad);
+        QVERIFY(!path.isEmpty());
+
+        TaskCenterWidget center;
+        center.setStores(&store, nullptr);
+        int resolverCalls = 0;
+        center.setImportConflictResolver([&](const QString&) {
+            ++resolverCalls;
+            return 0;
+        });
+        armDialogCapture(center);
+
+        QVERIFY(!center.importTemplateFromFile(path));
+        QCOMPARE(resolverCalls, 0);                          // 未触及冲突分支
+        const auto rows = store.list();
+        QCOMPARE(rows.size(), std::size_t{1});               // store 未被触碰
+        QCOMPARE(QString::fromStdString(rows.front().name), QStringLiteral("既有模板"));
+        QVERIFY2(m_dialogClosed, "错误框未弹出（布防未命中）");
+        QVERIFY2(m_dialogText.contains(QStringLiteral("升级 DeviceForge")),
+                 qPrintable(m_dialogText));
     }
 
     // ── ⑦ MultiProgressWidget：名称 + 地址；无名称保持原样 ────────

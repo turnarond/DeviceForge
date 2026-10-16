@@ -94,6 +94,14 @@ public:
     // 空结果回退 "task-template.json"
     static QString sanitizedTemplateFileName(const QString& name);
 
+    // ── v2.13 Task 4：模板导入（供宿主与测试直调）──
+    // 从 filePath 导入模板；全链任一失败返回 false（不落半成品，内部中文弹窗）。
+    // 同名 → conflictResolver(name)：0=覆盖既有(继承其 templateId 与 version)，
+    // 1=自动改名"名称 (2)"递增，-1=取消（静默，无弹窗）。返回 true 时已 refreshTemplates()。
+    bool importTemplateFromFile(const QString& filePath);
+    using ImportConflictResolver = std::function<int (const QString& name)>;
+    void setImportConflictResolver(ImportConflictResolver resolver);   // 测试缝，仿 setRunConfirmer
+
 signals:
     // 一轮执行（含阶段恢复）已启动，携带 TaskRunStore 记录 ID
     void runStarted(const QString& storeRunId);
@@ -115,6 +123,7 @@ private slots:
     void onRetryClicked();
     void onExportClicked();
     void onExportTemplateClicked();
+    void onImportTemplateClicked();
     void onCloneClicked();
     void onHistorySelectionChanged();
 
@@ -158,6 +167,7 @@ private:
     TaskRunStore* m_runs = nullptr;
     std::unique_ptr<TaskExecutionEngine> m_engine;
     RunConfirmer m_confirmer;
+    ImportConflictResolver m_importConflictResolver;   // 缺省=Yes/No/Cancel 三按钮 QMessageBox
 
     // 代际令牌：每开启新一轮「原始」运行 +1；阶段恢复沿用被恢复运行的谱系号，
     // 陈旧回调（谱系不匹配当前记账轮）一律丢弃
@@ -185,6 +195,7 @@ private:
     QPushButton* m_retryButton = nullptr;
     QPushButton* m_exportButton = nullptr;
     QPushButton* m_exportTemplateButton = nullptr;
+    QPushButton* m_importTemplateButton = nullptr;
     QPushButton* m_cloneButton = nullptr;
     QHash<QString, QListWidgetItem*> m_stateRows;            // deviceId → 执行状态行
 };

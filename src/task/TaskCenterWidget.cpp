@@ -275,12 +275,16 @@ void TaskCenterWidget::setupUi()
     m_exportTemplateButton = new QPushButton(QStringLiteral("导出模板"), rightBox);
     m_exportTemplateButton->setObjectName(QStringLiteral("taskExportTemplateButton"));
     m_exportTemplateButton->setEnabled(false);   // 未选中禁用（onTemplateSelected 各路重算）
+    m_importTemplateButton = new QPushButton(QStringLiteral("导入模板"), rightBox);
+    m_importTemplateButton->setObjectName(QStringLiteral("taskImportTemplateButton"));
+    // 导入恒可用（规格 §4：无选中前提，文件来源在对话框里挑）
     buttonRow->addWidget(m_runButton);
     buttonRow->addWidget(m_cancelButton);
     buttonRow->addWidget(m_retryButton);
     buttonRow->addWidget(m_exportButton);
     buttonRow->addWidget(m_cloneButton);
     buttonRow->addWidget(m_exportTemplateButton);
+    buttonRow->addWidget(m_importTemplateButton);
     rightLayout->addLayout(buttonRow);
     connect(m_runButton, &QPushButton::clicked, this, &TaskCenterWidget::onExecuteClicked);
     connect(m_cancelButton, &QPushButton::clicked, this, &TaskCenterWidget::onCancelClicked);
@@ -289,6 +293,8 @@ void TaskCenterWidget::setupUi()
     connect(m_cloneButton, &QPushButton::clicked, this, &TaskCenterWidget::onCloneClicked);
     connect(m_exportTemplateButton, &QPushButton::clicked, this,
             &TaskCenterWidget::onExportTemplateClicked);
+    connect(m_importTemplateButton, &QPushButton::clicked, this,
+            &TaskCenterWidget::onImportTemplateClicked);
 
     splitter->addWidget(leftBox);
     splitter->addWidget(middleBox);
@@ -317,6 +323,11 @@ void TaskCenterWidget::setStores(TaskTemplateStore* templates, TaskRunStore* run
 void TaskCenterWidget::setRunConfirmer(RunConfirmer confirmer)
 {
     m_confirmer = std::move(confirmer);
+}
+
+void TaskCenterWidget::setImportConflictResolver(ImportConflictResolver resolver)
+{
+    m_importConflictResolver = std::move(resolver);
 }
 
 std::unique_ptr<TaskExecutionEngine> TaskCenterWidget::createEngine()
@@ -1086,6 +1097,143 @@ void TaskCenterWidget::onExportTemplateClicked()
     if (exportTemplateToFile(path))
         QMessageBox::information(this, QStringLiteral("导出模板"),
                                  QStringLiteral("模板已导出：\n%1").arg(path));
+}
+
+void TaskCenterWidget::onImportTemplateClicked()
+{
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);   // 主题一致 + 测试可见
+    dialog.setAcceptMode(QFileDialog::AcceptOpen);
+    dialog.setNameFilter(QStringLiteral("JSON 模板 (*.json)"));
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    const QStringList picked = dialog.selectedFiles();
+    const QString path = picked.isEmpty() ? QString() : picked.first();
+    if (path.isEmpty())
+        return;
+    // 成功/失败弹窗全部在 importTemplateFromFile 内部（错误分类框 + 成功摘要框），
+    // 此处不重复打扰
+    importTemplateFromFile(path);
+}
+
+bool TaskCenterWidget::importTemplateFromFile(const QString& filePath)
+{
+    if (!m_templates) {
+        QMessageBox::critical(this, QStringLiteral("导入模板"),
+                              QStringLiteral("导入失败：模板存储未就绪"));
+        emit logMessage(QStringLiteral("任务中心：模板导入失败（存储未就绪）"));
+        return false;
+    }
+
+    // ① 读文件（规格 §5：不存在/无权限 → 路径 + 系统错误）
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, QStringLiteral("导入模板"),
+            QStringLiteral("无法读取文件：\n%1\n\n原因：%2").arg(filePath, file.errorString()));
+        emit logMessage(QStringLiteral("任务中心：模板导入失败 → %1").arg(filePath));
+        return false;
+    }
+    const QByteArray data = file.readAll();
+    file.close();
+
+    // ② 格式契约四道校验（JSON/魔数/formatVersion/行解码含敏感拒收），reason 为人读中文
+    QString reason;
+    const auto decoded = decodeTemplateFile(data, &reason);
+    if (!decoded) {
+        QMessageBox::critical(this, QStringLiteral("导入模板"), reason);
+        emit logMessage(QStringLiteral("任务中心：模板导入被拒 → %1").arg(filePath));
+        return false;
+    }
+    TaskTemplate tmpl = *decoded;
+    tmpl.templateId.clear();   // 双保险：跨机主键不外溢，新 ID 由 store 生成
+
+    // ③ 同名冲突（大小写敏感精确匹配）；先全量校验后落库，不落半成品（规格 §5）
+    const QString importedName = fromUtf8Std(tmpl.name);
+    auto hasTemplateName = [this](const QString& name) {
+        for (const auto& t : m_templates->list()) {
+            if (QString::fromStdString(t.name) == name)
+                return true;
+        }
+        return false;
+    };
+    std::string existingId;
+    int existingVersion = 0;
+    for (const auto& t : m_templates->list()) {
+        if (QString::fromStdString(t.name) == importedName) {
+            existingId = t.templateId;
+            existingVersion = t.version;
+            break;
+        }
+    }
+    if (!existingId.empty()) {
+        int choice = -1;
+        if (m_importConflictResolver) {
+            choice = m_importConflictResolver(importedName);
+        } else {
+            // 缺省 resolver：覆盖(Yes)/改名(No)/取消(Cancel) 三按钮。
+            // 默认按钮=改名——现场保守，防止回车键误覆盖本机同名模板。
+            QMessageBox box(QMessageBox::Question, QStringLiteral("导入模板"),
+                QStringLiteral("已存在同名模板「%1」。\n覆盖其内容，还是另存为新名称？")
+                    .arg(importedName),
+                QMessageBox::NoButton, this);
+            box.addButton(QStringLiteral("覆盖"), QMessageBox::YesRole);
+            // addButton 实装为 QPushButton（QMessageBox 内部构造），改名按钮为默认按钮
+            auto* renameButton = qobject_cast<QPushButton*>(
+                box.addButton(QStringLiteral("改名"), QMessageBox::NoRole));
+            box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+            box.setDefaultButton(renameButton);
+            box.exec();
+            const QMessageBox::ButtonRole role = box.buttonRole(box.clickedButton());
+            choice = role == QMessageBox::YesRole ? 0
+                 : role == QMessageBox::NoRole ? 1 : -1;
+        }
+        if (choice < 0)
+            return false;                    // 取消：静默收场，无弹窗、不落库
+        if (choice == 0) {
+            tmpl.templateId = existingId;    // 覆盖：赋既有 ID 原位 upsert
+            tmpl.version = existingVersion;  // 继承既有版本（store 拒绝降级写入）
+        } else {
+            for (int n = 2;; ++n) {          // 改名：「名称 (2)」「名称 (3)」…递增找空位，不设上限
+                const QString candidate = QStringLiteral("%1 (%2)").arg(importedName).arg(n);
+                if (!hasTemplateName(candidate)) {
+                    tmpl.name = toUtf8(candidate);
+                    break;
+                }
+            }
+        }
+    }
+
+    // ④ 落库：store.save 已对无效/降级/敏感 qWarning，这里补人读弹窗（日志不带秘密值）
+    if (!m_templates->save(tmpl)) {
+        const auto validation = validateTaskTemplate(tmpl);
+        QMessageBox::warning(this, QStringLiteral("导入模板"),
+            validation.valid
+                ? QStringLiteral("导入失败：模板存储写入被拒（详见日志）")
+                : QStringLiteral("导入失败：%1").arg(validation.error));
+        emit logMessage(QStringLiteral("任务中心：模板导入失败（存储拒绝）→ %1").arg(filePath));
+        return false;
+    }
+
+    // ⑤ 刷新 + 悬空引用统计（registry 为空=无设备层，不统计、不显示第二行）
+    refreshTemplates();
+    int missing = 0;
+    if (m_registry) {
+        for (const auto& id : tmpl.deviceIds) {
+            if (!m_registry->find(id))
+                ++missing;
+        }
+    }
+    QString summary = QStringLiteral("已导入模板「%1」（%2 个步骤）")
+        .arg(fromUtf8Std(tmpl.name))
+        .arg(static_cast<int>(tmpl.steps.size()));
+    if (missing > 0) {
+        // 悬空 deviceIds 原样保留不剥离（已拍板）：建好同端点档案后自动接上
+        summary += QStringLiteral("\n引用了 %1 个本机不存在的设备档案，建好同端点档案后自动接上")
+                       .arg(missing);
+    }
+    QMessageBox::information(this, QStringLiteral("导入模板"), summary);
+    emit logMessage(summary);
+    return true;
 }
 
 void TaskCenterWidget::onCloneClicked()
