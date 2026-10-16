@@ -43,8 +43,12 @@ bool gbkDecodeable(const QByteArray& raw);
 // UTF-8 分支按替换字符解码、不报错（探测失败时给用户手动切码留路）。
 bool decodeText(const QByteArray& raw, const QString& codec, QString& outText, QString& outErr);
 
-// 编码回字节：text 内部 LF → 按 eol 还原行尾 → 代码页编码；fromBom 时前置原 BOM
-QByteArray encodeText(const QString& text, const QString& codec, const QString& eol, bool fromBom);
+// 编码回字节：text 内部 LF → 按 eol 还原行尾 → 代码页编码；fromBom 时前置原 BOM。
+// 码页存在不可表示字符（或未知候选码页）时兜底改按 UTF-8 编码整篇返回——
+// fellBackToUtf8（可选，默认不取）非空时回传该决策：true=发生了兜底换码，
+// 调用方（保存链）须向用户明示，保证编码下拉显示与实际写盘编码一致（#48）。
+QByteArray encodeText(const QString& text, const QString& codec, const QString& eol, bool fromBom,
+                      bool *fellBackToUtf8 = nullptr);
 
 // 下拉候选：探测结果置首，去重追加 UTF-8/GBK/System/Latin-1（UTF-16 仅探测命中时出现）
 QStringList suggestedCodecs(const QString& detected);

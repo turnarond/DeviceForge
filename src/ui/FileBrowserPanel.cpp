@@ -1323,7 +1323,24 @@ void FileBrowserPanel::startEditorSave(bool skipConflictCheck)
 {
     if (!m_editor || !m_source)
         return;
-    const QByteArray bytes = m_editor->currentBytes();
+    // #48：所选编码不可表示全文时 encodeText 会兜底改按 UTF-8——不得静默换码。
+    // 弹窗二选一：明示"用 UTF-8 保存"（下拉与 m_editCodec 同步切 UTF-8，
+    // 显示与实写恒一致）/ 返回编辑（不保存，脏位保留）。
+    bool fellBack = false;
+    QByteArray bytes = m_editor->currentBytes(&fellBack);
+    if (fellBack) {
+        const auto ans = QMessageBox::question(this, tr("所选编码无法表示全文"),
+            tr("文本含编码 %1 无法表示的字符，直接保存会悄悄改用 UTF-8 写入整个文件。\n\n"
+               "「用 UTF-8 保存」= 明示切换为 UTF-8 后继续保存（编码下拉同步显示）；\n"
+               "「返回编辑」= 本次不保存，可修改文本或切换编码。")
+                .arg(m_editor->currentCodec()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ans != QMessageBox::Yes)
+            return;
+        m_editor->setCodecSilently(QStringLiteral("UTF-8"));
+        m_editCodec = QStringLiteral("UTF-8");
+        bytes = m_editor->currentBytes();
+    }
     m_editor->setBusy(true);
     auto source = m_source;
     QPointer<FileEditorDialog> dlg = m_editor;

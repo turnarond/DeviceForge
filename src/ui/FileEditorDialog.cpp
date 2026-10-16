@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
@@ -127,9 +127,10 @@ void FileEditorDialog::setCodecSilently(const QString& codec)
     m_codec->setCurrentText(codec);
 }
 
-QByteArray FileEditorDialog::currentBytes() const
+QByteArray FileEditorDialog::currentBytes(bool *fellBackToUtf8) const
 {
-    return encodeText(m_text->toPlainText(), m_codec->currentText(), m_eol, m_fromBom);
+    return encodeText(m_text->toPlainText(), m_codec->currentText(), m_eol, m_fromBom,
+                      fellBackToUtf8);
 }
 
 void FileEditorDialog::markSaved()

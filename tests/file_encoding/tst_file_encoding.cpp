@@ -141,6 +141,30 @@ private slots:
         QCOMPARE(p.fromBom, true);
     }
 
+    // #48：所选编码不可表示全文 → UTF-8 兜底必须显式标记（保存链弹窗提示的谓词来源）
+    void encode_gbkUnrepresentable_marksFallback()
+    {
+        const QString text = QStringLiteral("日志 😀 结束");
+        bool fellBack = false;
+        const QByteArray out = encodeText(text, QStringLiteral("GBK"),
+                                          QStringLiteral("LF"), false, &fellBack);
+        QVERIFY(fellBack);
+        QCOMPARE(out, text.toUtf8());        // 兜底内容 = UTF-8 全文，不丢字符
+    }
+
+    void encode_gbkRepresentable_noFallbackAndRoundTrips()
+    {
+        const QString text = QStringLiteral("产线控制器一");
+        bool fellBack = true;
+        const QByteArray out = encodeText(text, QStringLiteral("GBK"),
+                                          QStringLiteral("LF"), false, &fellBack);
+        QVERIFY(!fellBack);
+        QVERIFY(out != text.toUtf8());       // 确走码页 936 字节
+        QString back, err;
+        QVERIFY(decodeText(out, QStringLiteral("GBK"), back, err));
+        QCOMPARE(back, text);
+    }
+
     void remoteChanged_predicates()
     {
         ConflictSnapshot snap;
