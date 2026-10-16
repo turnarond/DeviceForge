@@ -1,4 +1,38 @@
-﻿## [2.12.0] — 2026-10-14
+﻿# Changelog
+
+## [未发布]
+
+### Added（2026-10-16，v2.13 任务模板跨机迁移）
+
+- **任务模板导出/导入（单模板文件通道）**："一台机器调好的批量部署模板，U 盘带到另一条产线直接导入"。任务中心页右栏新增「导出模板/导入模板」按钮（`TaskCenterWidget::exportTemplateToFile`/`importTemplateFromFile`，未选中导出禁用、导入恒可用；默认文件名=模板名清洗非法字符+`.json`，空回退 `task-template.json`）。文件格式为公开契约：UTF-8 JSON、格式魔数 `deviceforge.task-template` + `formatVersion=1` 版本闸（更高版本明确拒绝并提示升级，不猜测解码）；**导出丢弃 templateId**（本机主键不外溢；新模板导入由 store 生成新 ID，覆盖同名模板时继承既有 ID，见下）、**文件零秘密值**（模板只存凭据引用；解码继承 store 的敏感字段拒收守卫，手工构造恶意文件同样被拒）。导入同名冲突三选「覆盖/改名/取消」（**默认按钮=改名**防回车误覆盖）：覆盖=原位覆写既有同名模板并继承其 ID 与版本（历史执行记录为不可变快照不受影响），改名=「名称 (2)」递增找空位不设上限；悬空 deviceIds **原样保留**并在成功框提示「建好同端点档案后自动接上」（档案 ID 由端点身份确定性派生，支持先带模板后建档）；解码四道校验（JSON/魔数/版本闸/行解码）全过才一次落库、不落半成品，拒绝原因中文弹窗。编解码外提 `src/task/TaskTemplateCodec.{h,cpp}`（store 行编码与文件通道同源，字段口径唯一）。
+- 测试：新增 `tst_task_template_codec`（纯逻辑：行/文件往返、templateId 不外溢、悬空引用与 unknownFields 保留、坏输入数据驱动四类拒绝、敏感字段拒收），`tst_task_center_widget` +7 用例（导出契约文件/未选中禁用/选择清空复位；导入新建+悬空提示、覆盖原位替换、改名 (2)、取消不落库、坏文件零副作用）；store 既有用例不改全绿（重构守卫）。全量 CTest 46 目标绿。
+
+### Fixed（2026-10-16，#48 F4 编辑器静默换码）
+
+- **GBK 不可表示字符不再静默回退 UTF-8**：`encodeText`/`currentBytes` 新增 `fellBackToUtf8` 出参（默认参数向前兼容），保存链检测到所选编码无法表示全文时弹窗二选一——「用 UTF-8 保存」（下拉与面板编码态同步切换，显示与实写恒一致）/「返回编辑」（不落盘、脏位保留）。此前行为：悄悄以 UTF-8 重写整个远端文件且下拉仍显示原选择。`tst_file_encoding` +2 用例（不可表示→标记且 UTF-8 全文无损 / 可表示→不标记且 GBK 字节回环），并经验证变异负对照可抓红。
+
+### 工具/文档（2026-10-16，#51）
+
+- **smoke.py 环境预检自动化**：启动前探测 Qt bin（QT_DIR → D:/Qt、C:/Qt 的 6.x msvc 目录）并前置注入 PATH，探测失败直接归因拒跑（不再以 0xC0000005 假崩面目出现）；主窗口查找改为**标题匹配 + 属于本次启动进程 PID** 双条件，外部同名实例不再劫持 WM_CLOSE/优雅退出超时判定——只报告外部实例（PID+路径）供人工分诊，绝不杀非自身进程。
+- 文件管理规格 §4.3 脏守卫措辞对齐实现裁定（R9：仅关闭守脏，导航不打断编辑），用户手册 F4 条同步补写。
+- CHANGELOG 结构归位 Keep-a-Changelog：唯一 `# Changelog` 顶题、[未发布] 置顶、版本小节降序（历史遗留的文中重复标题与错位 [未发布] 清除）。
+
+### Added（2026-10-16，#46 设备档案端点同键校验）
+
+- **档案保存同键检测与确认**：`DeviceRegistry::endpointConflicts()` 新增只读查询——入站档案端点与其他档案存在协议+IP+端口全同的端点时逐条报冲突（归一化口径与存储一致；按 deviceId 排除编辑自身；跨协议同址不误报）。设备总线「添加/双击编辑」两保存入口接线确认框：可保存但需确认（默认「否」），放弃时回到编辑对话框不丢内容。堵 #29 遗留的源端空白（同址重复档案=同一目标，部署清目录互踩、任务串行重复操作）。
+- 测试：`tst_device_registry` +4 用例（冲突命中/排除自身/跨协议豁免/多冲突逐条），全量 CTest 45 目标绿。
+
+### 修复（2026-10-16，#45 测试抖动）
+
+- `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
+- `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
+
+### 修复（2026-08-21，fix/v2.7-编译修复）
+
+- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
+- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
+
+## [2.12.0] — 2026-10-14
 
 ### Added
 - **WebSocket 双栏控制台重构**：上部连接/操作区 + 下部事件流（2000 行环形、方向/对端/字节数/内容预览，UTF-8 截断安全）；事件模型 `WsEventTypes` 纯逻辑独立可测；Token 凭证迁移 DPAPI 存储，写路径落盘时清扫旧明文行。
@@ -40,41 +74,12 @@
 - 统一批量命令下发与部署后重启闭环，支持 Telnet/SSH、超时、重试、取消和成功设备筛选。
 - FTP 部署工具持久化重启参数配置。
 
-# Changelog
-
 ## [2.9.1] — 2026-09-26
 
 ### 修复
 
 - 修复 FTP `QUOTE` 操作默认写入 GUI 标准输出导致的 `CURLE_WRITE_ERROR`。
 - 批量部署遇到瞬时 FTP 响应写入错误时自动重连并重试当前文件。
-
-## [未发布]
-
-### Added（2026-10-16，v2.13 任务模板跨机迁移）
-
-- **任务模板导出/导入（单模板文件通道）**："一台机器调好的批量部署模板，U 盘带到另一条产线直接导入"。任务中心页右栏新增「导出模板/导入模板」按钮（`TaskCenterWidget::exportTemplateToFile`/`importTemplateFromFile`，未选中导出禁用、导入恒可用；默认文件名=模板名清洗非法字符+`.json`，空回退 `task-template.json`）。文件格式为公开契约：UTF-8 JSON、格式魔数 `deviceforge.task-template` + `formatVersion=1` 版本闸（更高版本明确拒绝并提示升级，不猜测解码）；**导出丢弃 templateId**（本机主键不外溢；新模板导入由 store 生成新 ID，覆盖同名模板时继承既有 ID，见下）、**文件零秘密值**（模板只存凭据引用；解码继承 store 的敏感字段拒收守卫，手工构造恶意文件同样被拒）。导入同名冲突三选「覆盖/改名/取消」（**默认按钮=改名**防回车误覆盖）：覆盖=原位覆写既有同名模板并继承其 ID 与版本（历史执行记录为不可变快照不受影响），改名=「名称 (2)」递增找空位不设上限；悬空 deviceIds **原样保留**并在成功框提示「建好同端点档案后自动接上」（档案 ID 由端点身份确定性派生，支持先带模板后建档）；解码四道校验（JSON/魔数/版本闸/行解码）全过才一次落库、不落半成品，拒绝原因中文弹窗。编解码外提 `src/task/TaskTemplateCodec.{h,cpp}`（store 行编码与文件通道同源，字段口径唯一）。
-- 测试：新增 `tst_task_template_codec`（纯逻辑：行/文件往返、templateId 不外溢、悬空引用与 unknownFields 保留、坏输入数据驱动四类拒绝、敏感字段拒收），`tst_task_center_widget` +7 用例（导出契约文件/未选中禁用/选择清空复位；导入新建+悬空提示、覆盖原位替换、改名 (2)、取消不落库、坏文件零副作用）；store 既有用例不改全绿（重构守卫）。全量 CTest 46 目标绿。
-
-### Fixed（2026-10-16，#48 F4 编辑器静默换码）
-
-- **GBK 不可表示字符不再静默回退 UTF-8**：`encodeText`/`currentBytes` 新增 `fellBackToUtf8` 出参（默认参数向前兼容），保存链检测到所选编码无法表示全文时弹窗二选一——「用 UTF-8 保存」（下拉与面板编码态同步切换，显示与实写恒一致）/「返回编辑」（不落盘、脏位保留）。此前行为：悄悄以 UTF-8 重写整个远端文件且下拉仍显示原选择。`tst_file_encoding` +2 用例（不可表示→标记且 UTF-8 全文无损 / 可表示→不标记且 GBK 字节回环），并经验证变异负对照可抓红。
-
-
-### Added（2026-10-16，#46 设备档案端点同键校验）
-
-- **档案保存同键检测与确认**：`DeviceRegistry::endpointConflicts()` 新增只读查询——入站档案端点与其他档案存在协议+IP+端口全同的端点时逐条报冲突（归一化口径与存储一致；按 deviceId 排除编辑自身；跨协议同址不误报）。设备总线「添加/双击编辑」两保存入口接线确认框：可保存但需确认（默认「否」），放弃时回到编辑对话框不丢内容。堵 #29 遗留的源端空白（同址重复档案=同一目标，部署清目录互踩、任务串行重复操作）。
-- 测试：`tst_device_registry` +4 用例（冲突命中/排除自身/跨协议豁免/多冲突逐条），全量 CTest 45 目标绿。
-
-### 修复（2026-10-16，#45 测试抖动）
-
-- `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
-- `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
-
-### 修复（2026-08-21，fix/v2.7-编译修复）
-
-- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
-- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
 
 ## [2.9.0] — 2026-09-16
 

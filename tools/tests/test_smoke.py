@@ -48,7 +48,7 @@ class SmokeRunnerTest(unittest.TestCase):
         proc = self._track(_spawn_sleeper())
         runner = sm.SmokeRunner(
             proc.args[0], timeout=0.5,
-            find_window=lambda title: None,  # 永远找不到窗口
+            find_window=lambda title, pid: None,  # 永远找不到窗口
             sleep=lambda s: None,            # 不真睡，加速测试
         )
         runner._spawn = lambda: proc  # 复用已启动进程
@@ -61,7 +61,7 @@ class SmokeRunnerTest(unittest.TestCase):
         proc = self._track(_spawn_sleeper())
         calls = []
 
-        def fake_find(title):
+        def fake_find(title, pid):
             # 第一次 None，第二次返回窗口句柄（模拟窗口出现）
             calls.append(title)
             return None if len(calls) == 1 else 0x1234
@@ -80,13 +80,87 @@ class SmokeRunnerTest(unittest.TestCase):
         proc = self._track(subprocess.Popen([sys.executable, "-c", "pass"]))
         runner = sm.SmokeRunner(
             proc.args[0], timeout=1,
-            find_window=lambda title: None,
+            find_window=lambda title, pid: None,
             sleep=lambda s: None,
         )
         runner._spawn = lambda: proc
         result = runner.run()
         self.assertFalse(result.ok)
         self.assertIn("提前退出", result.message)
+
+    def test_窗口查找只针对自身进程pid(self):
+        # #51：标题匹配必须按本次启动的 PID 过滤，外部同名窗口不得劫持
+        proc = self._track(_spawn_sleeper())
+        seen = []
+
+        def fake_find(title, pid):
+            seen.append(pid)
+            return 0x1234 if pid == proc.pid else None
+
+        runner = sm.SmokeRunner(
+            proc.args[0], timeout=2,
+            find_window=fake_find,
+            sleep=lambda s: None,
+            terminate=lambda p, hwnd: (True, "ok"),
+        )
+        runner._spawn = lambda: proc
+        result = runner.run()
+        self.assertTrue(result.ok, result.message)
+        self.assertTrue(seen and all(p == proc.pid for p in seen))
+
+    def test_超时消息给出外部残留实例归因(self):
+        # #51：脏环境下明确归因（PID+路径），只报告绝不杀用户进程
+        proc = self._track(_spawn_sleeper())
+        runner = sm.SmokeRunner(
+            proc.args[0], timeout=0.3,
+            find_window=lambda title, pid: None,
+            sleep=lambda s: None,
+            foreign_matches=lambda title, pid: [(4321, r"D:\tools\DeviceForge.exe")],
+        )
+        runner._spawn = lambda: proc
+        result = runner.run()
+        self.assertFalse(result.ok)
+        self.assertIn("外部实例", result.message)
+        self.assertIn("4321", result.message)
+        self.assertIn("D:\\tools\\DeviceForge.exe", result.message)
+
+
+class SmokePrecheckTest(unittest.TestCase):
+    """#51 环境预检：Qt DLL 目录探测前置注入 PATH，缺失时归因拒跑。"""
+
+    def setUp(self):
+        self.tmp = _make_tmp()
+
+    def _mk_qt(self, name):
+        d = self.tmp / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "Qt6Core.dll").touch()
+        return d
+
+    def test_find_qt_bin_dir_命中含_Qt6Core_dll_的候选(self):
+        miss = self.tmp / "no_qt"
+        miss.mkdir()
+        hit = self._mk_qt("msvc2022_64_bin")
+        self.assertEqual(sm.find_qt_bin_dir([miss, hit]), hit)
+
+    def test_find_qt_bin_dir_无候选返回_none(self):
+        miss = self.tmp / "no_qt"
+        miss.mkdir()
+        self.assertIsNone(sm.find_qt_bin_dir([miss]))
+
+    def test_ensure_qt_on_path_前置注入并报告(self):
+        hit = self._mk_qt("qtbin")
+        env = {"PATH": str(self.tmp)}
+        ok, msg = sm.ensure_qt_on_path(env=env, candidates=[hit])
+        self.assertTrue(ok)
+        self.assertTrue(env["PATH"].startswith(str(hit)))
+        self.assertIn(str(hit), msg)
+
+    def test_ensure_qt_on_path_找不到时失败归因(self):
+        env = {"PATH": ""}
+        ok, msg = sm.ensure_qt_on_path(env=env, candidates=[])
+        self.assertFalse(ok)
+        self.assertIn("Qt", msg)
 
 
 class SmokeCliTest(unittest.TestCase):
