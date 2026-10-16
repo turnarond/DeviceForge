@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
@@ -37,7 +37,9 @@ public:
 
     QString currentCodec() const;
     void setCodecSilently(const QString& codec);        // 面板拒绝切码时回滚下拉
-    QByteArray currentBytes() const;                    // 按当前 codec/eol/BOM 编码回字节
+    // 按当前 codec/eol/BOM 编码回字节；fellBackToUtf8 非空时回传所选编码不可表示
+    // 全文而兜底 UTF-8 的决策（#48 保存链明示依据）
+    QByteArray currentBytes(bool *fellBackToUtf8 = nullptr) const;
     bool isDirty() const { return m_dirty; }
     void markSaved();
     void setBusy(bool busy);

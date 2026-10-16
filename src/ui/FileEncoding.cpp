@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024-2026 turnarond.
  * All rights reserved.
  *
@@ -200,8 +200,11 @@ bool decodeText(const QByteArray& raw, const QString& codec, QString& outText, Q
     return true;
 }
 
-QByteArray encodeText(const QString& text, const QString& codec, const QString& eol, bool fromBom)
+QByteArray encodeText(const QString& text, const QString& codec, const QString& eol, bool fromBom,
+                      bool *fellBackToUtf8)
 {
+    if (fellBackToUtf8)
+        *fellBackToUtf8 = false;
     QString body = text;
     if (eol == QStringLiteral("CRLF"))
         body.replace(QStringLiteral("\n"), QStringLiteral("\r\n"));
@@ -231,7 +234,10 @@ QByteArray encodeText(const QString& text, const QString& codec, const QString& 
 
     const UINT cp = (codec == QStringLiteral("GBK")) ? 936u
                   : (codec == QStringLiteral("System") ? GetACP() : 0u);
-    if (cp == 0) return body.toUtf8();   // 未知候选：UTF-8 兜底
+    if (cp == 0) {
+        if (fellBackToUtf8) *fellBackToUtf8 = true;
+        return body.toUtf8();   // 未知候选：UTF-8 兜底
+    }
 
     QVector<wchar_t> wbuf(body.size());  // 尺寸必须按行尾还原后的 body 计（CRLF 会多字符）
     const int wlen = body.isEmpty() ? 0 :
@@ -241,12 +247,16 @@ QByteArray encodeText(const QString& text, const QString& codec, const QString& 
     BOOL usedDefault = FALSE;
     const int need = WideCharToMultiByte(cp, 0,
                                          wbuf.constData(), wlen, nullptr, 0, nullptr, &usedDefault);
-    if (need <= 0 || usedDefault)
+    if (need <= 0 || usedDefault) {
+        if (fellBackToUtf8) *fellBackToUtf8 = true;
         return body.toUtf8();   // 存在不可表示字符（如切码后混入生僻字）：UTF-8 兜底不丢内容
+    }
     QByteArray out(need, '\0');
     if (WideCharToMultiByte(cp, 0, wbuf.constData(), wlen,
-                            out.data(), need, nullptr, &usedDefault) != need || usedDefault)
+                            out.data(), need, nullptr, &usedDefault) != need || usedDefault) {
+        if (fellBackToUtf8) *fellBackToUtf8 = true;
         return body.toUtf8();
+    }
     return out;
 }
 
