@@ -1117,7 +1117,7 @@ void FtpDeployWidget::onRefreshRemote()
         // guard 在捕获列表用主线程（调度时 this 必然存活）构造 QPointer，worker 回调前
         // 判空——应用退出等在途 connect ~10s 窗口内 widget 析构后不再回调，防悬垂 UAF
         setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
-        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+        (void)QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
                            proto, protoDisplay, deviceIp, useFtps, port, dev, auth]() {
             auto source = std::make_shared<RemoteFileSource>(
                 proto, deviceIp + " (" + protoDisplay + ")");
@@ -1161,7 +1161,7 @@ void FtpDeployWidget::onRefreshRemote()
         // 与全量重建分支同构——工作线程 connect（复用既有源对象），主线程回调状态点
         setConnState(RemoteConnState::Connecting);   // 连接中 → 灰闪
         auto source = m_remoteSource;   // shared_ptr 拷贝：worker 持有期间源不被析构
-        QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+        (void)QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
                            source, dev, auth]() {
             const bool ok = source->connect(dev, auth);
             const QString err = source->lastError();
@@ -1303,7 +1303,7 @@ void FtpDeployWidget::onLeftSourceChanged(const QString& proto, const QString& d
 
     // 连接异步（与 onRefreshRemote 同构：QtConcurrent + QPointer 守卫 + 代际令牌）。
     // 左面板远程源仅影响浏览，不动工具栏部署目标
-    QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
+    (void)QtConcurrent::run([this, guard = QPointer<FtpDeployWidget>(this), gen,
                        protoKey, display, deviceIp, port, dev, auth]() {
         auto source = std::make_shared<RemoteFileSource>(protoKey,
                                                          deviceIp + " (" + display + ")");
