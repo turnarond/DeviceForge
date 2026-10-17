@@ -9,7 +9,7 @@
  * Author: turnarond
  *
  * Description: WebSocket Tool 前端实现。左栏控制台（模式/配置/状态/启停/发布订阅），
- *              右栏消息事件流表（时间|方向|主题|字节|内容预览，Interactive 列宽，
+ *              右栏消息事件流表（时间|方向|主题|对端|字节|内容预览，Interactive 列宽，
  *              2000 行 FIFO 上限）。右栏为唯一垂直扩展主体，窗口拉伸不再散架。
  *              正文预览仅进本页面；全局日志只记方向+字节数（仓规脱敏约束）。
  */
@@ -40,8 +40,8 @@ constexpr int kConsoleDefaultWidth = 360;
 // tooltip 单条正文驻留上限（UTF-8 字节）
 constexpr int kBodyResidentMaxBytes = 4096;
 
-// 事件流列定义
-enum EventColumn { ColTime = 0, ColDirection, ColTopic, ColBytes, ColPreview, ColCount };
+// 事件流列定义（v2.14 #50-1：对端列插在主题之后、字节之前）
+enum EventColumn { ColTime = 0, ColDirection, ColTopic, ColPeer, ColBytes, ColPreview, ColCount };
 
 QString formatEventTime(qint64 epochMs)
 {
@@ -269,6 +269,8 @@ void WebSocketWidget::setupUi()
     m_droppedLabel = new QLabel(eventPanel);
     m_droppedLabel->setObjectName(QStringLiteral("wsDroppedLabel"));
     m_droppedLabel->setVisible(false);
+    // #50-4 定档语义：与 onStartClicked/onClearEventsClicked 的归零行为一致，不改行为只交底
+    m_droppedLabel->setToolTip(QStringLiteral("丢弃计数仅统计本会话：停止或清除事件流后归零，不跨重启累计"));
     toolRow->addWidget(m_chkAutoScroll);
     toolRow->addWidget(m_btnClearEvents);
     toolRow->addStretch();
@@ -279,7 +281,7 @@ void WebSocketWidget::setupUi()
     m_eventTable->setObjectName(QStringLiteral("wsEventTable"));
     m_eventTable->setHorizontalHeaderLabels(
         {QStringLiteral("时间"), QStringLiteral("方向"), QStringLiteral("主题"),
-         QStringLiteral("字节"), QStringLiteral("内容预览")});
+         QStringLiteral("对端"), QStringLiteral("字节"), QStringLiteral("内容预览")});
     m_eventTable->verticalHeader()->setVisible(false);
     m_eventTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_eventTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -292,6 +294,7 @@ void WebSocketWidget::setupUi()
     m_eventTable->setColumnWidth(ColTime, 100);
     m_eventTable->setColumnWidth(ColDirection, 44);
     m_eventTable->setColumnWidth(ColTopic, 130);
+    m_eventTable->setColumnWidth(ColPeer, 130);
     m_eventTable->setColumnWidth(ColBytes, 56);
     m_eventTable->horizontalHeader()->setSectionsMovable(false);
     eventLayout->addWidget(m_eventTable, 1);
@@ -413,6 +416,7 @@ void WebSocketWidget::pushEvent(const wsproto::WsEvent& event)
     setCell(ColTime, formatEventTime(event.timestampMs));
     setCell(ColDirection, event.direction);
     setCell(ColTopic, event.topic);
+    setCell(ColPeer, event.peer);
     setCell(ColBytes, QString::number(event.byteCount));
     auto* previewItem = new QTableWidgetItem(event.preview);
     // tooltip 驻留上限：大报文场景防 2000 行全文累积（长稳内存约束）
@@ -469,6 +473,14 @@ void WebSocketWidget::applyRunningUi(bool running)
     m_btnStop->setEnabled(running);
     m_btnModeServer->setEnabled(!running);
     m_btnModeClient->setEnabled(!running);
+    // #50-5 运行守卫：运行中锁定连接参数输入（改参数须先停止再启停；错误/断开回落走
+    // 本函数 false 分支一并恢复，构造期不调用本函数——初态默认可用）
+    m_editBindAddr->setEnabled(!running);
+    m_spinPort->setEnabled(!running);
+    m_chkWss->setEnabled(!running);
+    m_editToken->setEnabled(!running);
+    m_editUrl->setEnabled(!running);
+    m_chkTrustCert->setEnabled(!running);
     m_statusDot->setProperty("running", running);
     m_statusDot->style()->unpolish(m_statusDot);
     m_statusDot->style()->polish(m_statusDot);
