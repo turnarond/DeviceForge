@@ -18,7 +18,7 @@
 
 - **事件流对端列（#50-1）**：WebSocket 事件流表新增第六列「对端」，列序定档 时间|方向|主题|对端|字节|内容预览（ColPeer 插在 ColTopic 后、ColBytes 前，初始宽 130，Interactive/末列 Stretch 逻辑随枚举名自动跟随）；数据直取后端已填的 `WsEvent::peer`（Server 模式=客户端地址、Client 模式="server"），后端零改动。测试：`tst_ws_page_layout` 新增 `peerColumnShowsSource`；既有用例预览列索引断言（4→5）随六列契约同步更新。
 - **运行输入守卫（#50-5）**：`applyRunningUi` 运行中将六个连接参数控件（wsBindAddr/wsPort/wsWss/wsToken/wsUrl/wsTrustCert）`setEnabled(!running)` 锁死——此前守卫只动按钮与模式切换、输入框运行中仍可修改，改后不生效且状态卡仍显运行配置（误导面）；停止/启动失败回落/错误回调/对端断开收口均走本函数 false 分支一并恢复，构造期不调用本函数、初态默认可用。测试：新增 `runningGuardsDisableConnectionInputs` 经 Server 模式真实 start→stop 驱动断言六控件禁用→恢复（QTcpServer 探针取空闲端口规避占用 flake）。
-- **丢弃计数 tooltip（#50-4 定档，行为不改）**：`wsDroppedLabel` 增加「丢弃计数仅统计本会话：停止或清除事件流后归零，不跨重启累计」静态说明，与 `onStartClicked`/`onClearEventsClicked` 的归零实况复核一致。测试：新增 `droppedTooltipDocumentsSessionScope`。用户手册 WebSocket 节同步五列→六列表述、计数会话内语义与运行守卫说明。全量 CTest **48** 目标绿。
+- **丢弃计数 tooltip（#50-4 定档，行为不改）**：`wsDroppedLabel` 增加「丢弃计数仅统计本会话：重新启动或清除事件流后归零，不跨重启累计」静态说明，与 `onStartClicked`/`onClearEventsClicked` 的归零实况复核一致。测试：新增 `droppedTooltipDocumentsSessionScope`。用户手册 WebSocket 节同步五列→六列表述、计数会话内语义与运行守卫说明。全量 CTest **48** 目标绿。
 
 ### 文档（2026-10-17，v2.14 #49-1 AuthResolver 凭据降级语义定档）
 

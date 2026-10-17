@@ -938,9 +938,10 @@ void FtpDeployWidget::onSaveAsTemplateClicked()
 
     if (!m_saveChannel) { appendLog("模板保存通道未接线"); return; }
     QString reason;
-    if (m_saveChannel(result, &reason)) {
+    QString savedName;   // channel 成功时回传实际落库名（改名分支≠入站 result.name）
+    if (m_saveChannel(result, &reason, &savedName)) {
         appendLog(QStringLiteral("已保存为模板「%1」，可在设备任务中心查看")
-                      .arg(QString::fromStdString(result.name)));
+                      .arg(savedName.isEmpty() ? QString::fromStdString(result.name) : savedName));
     } else {
         appendLog(QStringLiteral("模板未保存：%1").arg(reason.isEmpty()
             ? QStringLiteral("存储拒绝") : reason));
@@ -1449,7 +1450,7 @@ void FtpDeployWidget::setRegistry(DeviceRegistry* registry)
 }
 
 void FtpDeployWidget::setTemplateSaveChannel(
-    std::function<bool(const TaskTemplate&, QString*)> channel)
+    std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> channel)
 {
     m_saveChannel = std::move(channel);
 }

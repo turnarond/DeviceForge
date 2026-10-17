@@ -69,9 +69,12 @@ public:
     // 目标设备列表=本机档案快照）；落库经注入的 std::function 缝（widget 不直连
     // TaskTemplateStore，与 #54 applyEditorResult 同风格）——channel 内部完成
     // saveUniqueByName 落库与同名冲突三分支弹窗，返回 false 时 reason 写中文原因；
+    // 返回 true 且 savedName 非空时写入**实际落库名**（改名分支会把入站 name 改成
+    // 「X (n)」落库，日志必须显示任务中心里真实存在的名字，终审 Fix1）；
     // channel 未注入时按钮流程止步日志提示（无宿主场景兜底）。
     void setRegistry(DeviceRegistry* registry);
-    void setTemplateSaveChannel(std::function<bool(const TaskTemplate&, QString*)> channel);
+    void setTemplateSaveChannel(
+        std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> channel);
 
     // 菜单联动入口（主窗口「部署」菜单调用）
     void startDeployFromMenu();
@@ -142,7 +145,7 @@ private:
     DeviceBusWidget*   m_deviceBus = nullptr;
     // v2.14 #49-2 第三腿：编辑器设备快照来源 + 模板落库缝（均为主窗口注入，只读/转发）
     DeviceRegistry* m_registry = nullptr;
-    std::function<bool(const TaskTemplate&, QString*)> m_saveChannel;
+    std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> m_saveChannel;
 
     // 工具栏（工具级批量部署配置）
     QComboBox*   m_protocolCombo = nullptr;

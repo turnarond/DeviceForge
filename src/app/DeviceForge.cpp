@@ -248,8 +248,10 @@ void DeviceForge::setupFtpDeployTab()
     if (!m_templateStore)
         m_templateStore = std::make_unique<TaskTemplateStore>();   // 与 setupTaskCenterTab 的懒建共享同一实例（该函数已有 !m_templateStore 守卫）
     widget->setRegistry(m_deviceRegistry.get());
-    widget->setTemplateSaveChannel([this](const TaskTemplate& tmpl, QString* reason) {
-        return m_templateStore->saveUniqueByName(tmpl,
+    widget->setTemplateSaveChannel([this](const TaskTemplate& tmpl, QString* reason,
+                                          QString* savedName) {
+        std::string outId;   // 实际落库 ID：改名分支生成新 ID，用它反查真名回传
+        const bool ok = m_templateStore->saveUniqueByName(tmpl,
             [this](const QString& name) {
                 QMessageBox box(this);
                 box.setWindowTitle(QStringLiteral("保存为模板"));
@@ -263,7 +265,15 @@ void DeviceForge::setupFtpDeployTab()
                 if (clicked == overwrite) return NameConflictChoice::Overwrite;
                 if (clicked == rename)    return NameConflictChoice::Rename;
                 return NameConflictChoice::Cancel;
-            }, nullptr, reason);
+            }, &outId, reason);
+        if (ok && savedName) {
+            // 终审 Fix1：改名/覆盖/无冲突三形态都回传**实际落库名**（部署页日志若用
+            // 入站改名前名字，任务中心查无此模板）；load 失败兜底写入站名，不回归。
+            const auto stored = m_templateStore->load(outId);
+            *savedName = stored ? QString::fromStdString(stored->name)
+                                : QString::fromStdString(tmpl.name);
+        }
+        return ok;
     });
     widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
