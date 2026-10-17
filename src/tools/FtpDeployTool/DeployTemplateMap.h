@@ -32,7 +32,7 @@ namespace deploymap {
 struct OnceConfig {
     QString protocol;                    // "ftp"/"sftp"（currentProtocol() 同口径）
     QStringList localFiles;              // 左面板本地选中文件（调用方保证非空）
-    QString remoteDirectory;             // 右面板当前目录（空回退 "/" 由调用方处理）
+    QString remoteDirectory;             // 右面板当前目录（空则由本映射就地回退 '/'（调用方亦可先行回退，幂等））
     std::vector<std::string> deviceIds;  // 勾选档案；空=未绑定
     bool rebootAfter = false;
     QString rebootCommand;               // 重启命令行（空回退 "reboot"）

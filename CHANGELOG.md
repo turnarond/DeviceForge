@@ -2,6 +2,11 @@
 
 ## [未发布]
 
+### Added（2026-10-17，v2.14 #49-2 单次部署配置存为任务模板）
+
+- **部署页「保存为模板」全链接线（兑现 v2.11 规格 §4 单次配置捕获承诺，#49-2 收口）**：「文件部署」页工具栏部署组「▶ 部署」旁新增「保存为模板」按钮（`deploySaveTemplateBtn`，部署进行中与部署按钮同节奏禁用）。槽内先走与部署入口同源的拒绝分支（左面板远程浏览源/空文件清单），再把单次配置经 `deploymap::buildTemplateFromOnceConfig`（新纯映射头 `DeployTemplateMap.h`）固化为预填模板——文件清单+目标目录→deploy 步 `files+remoteDirectory` 简写（编辑器打开归一 items[]）、勾选设备→deviceIds（**未勾选=未绑定留空，不展开为全部设备**；空档案 ID 逐个过滤）、重启勾选→可选 reboot 步（空命令回退 `reboot`）；部署前清空/FTPS/端口/并发度刻意不进模板（工具级/连接级配置）。预填经 v2.13 `TaskTemplateEditorDialog` 模态编辑后，由主窗口注入的 `std::function` 缝（widget 不直连 store）经 `TaskTemplateStore::saveUniqueByName`（新增）落库：同名（大小写敏感全等）冲突三选「覆盖/改名保存/取消」弹窗（**默认=改名**，与 v2.13 导入冲突同口径）——覆盖继承既有 templateId 且 version 取 max(既有,入站)、改名「名称 (2)」递增找空位另存新 ID、取消不落库回中文原因；保存通道未注入时止步日志提示（无宿主兜底）。
+- 测试：新增 `tst_deploy_template_map`（纯映射 5 用例：简写参数承载/重启步进生成/空命令回退 reboot/未勾选=未绑定/不勾选仅一步）；`tst_task_template_store` +4 用例（saveUniqueByName 无冲突新建 ID/取消零写入/覆盖继承 ID 与版本/改名递增后缀）。按钮→编辑器模态流沿 #54 先例走人工冒烟（tests/AGENTS.md 覆盖空白段已登记）。全量 CTest **47** 目标绿。
+
 ### 修复（2026-08-21，fix/v2.7-编译修复）
 
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）

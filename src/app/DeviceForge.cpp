@@ -242,6 +242,29 @@ void DeviceForge::setupFtpDeployTab()
 
     widget->setBackend(backend.get());
     widget->setDeviceBusWidget(m_deviceBusWidget);
+    // v2.14 #49-2 第三腿：部署页「保存为模板」接线——registry 构造早于各 Tab（见
+    // setupModbusClusterTab 同注释）；落库缝在此组装（widget 不直连 store），冲突
+    // 三分支弹窗默认=改名，与 v2.13 导入冲突语义同口径。
+    if (!m_templateStore)
+        m_templateStore = std::make_unique<TaskTemplateStore>();   // 与 setupTaskCenterTab 的懒建共享同一实例（该函数已有 !m_templateStore 守卫）
+    widget->setRegistry(m_deviceRegistry.get());
+    widget->setTemplateSaveChannel([this](const TaskTemplate& tmpl, QString* reason) {
+        return m_templateStore->saveUniqueByName(tmpl,
+            [this](const QString& name) {
+                QMessageBox box(this);
+                box.setWindowTitle(QStringLiteral("保存为模板"));
+                box.setText(QStringLiteral("已存在同名模板「%1」。\n选择处理方式。").arg(name));
+                auto* overwrite = box.addButton(QStringLiteral("覆盖"), QMessageBox::AcceptRole);
+                auto* rename = box.addButton(QStringLiteral("改名保存"), QMessageBox::DestructiveRole);
+                box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+                box.setDefaultButton(rename);                       // 与 v2.13 导入冲突默认=改名同口径
+                box.exec();
+                QAbstractButton* clicked = box.clickedButton();
+                if (clicked == overwrite) return NameConflictChoice::Overwrite;
+                if (clicked == rename)    return NameConflictChoice::Rename;
+                return NameConflictChoice::Cancel;
+            }, nullptr, reason);
+    });
     widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_ftpBackend = backend;
