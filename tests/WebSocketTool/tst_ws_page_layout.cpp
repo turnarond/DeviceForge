@@ -12,7 +12,8 @@
  *              双栏结构、事件表为唯一垂直扩展主体（拉伸不散架）、
  *              列宽 Interactive、2000 行 FIFO 上限、Token 掩码与显隐；
  *              v2.14 #50-1/4/5：事件流对端列、运行中连接参数输入守卫、
- *              丢弃计数会话内语义 tooltip。
+ *              丢弃计数会话内语义 tooltip；v2.14 #50-2：事件流方向/主题
+ *              展示层过滤（setRowHidden 不删行、新行即时过滤、清除清全量）。
  */
 
 #include <QtTest>
@@ -66,6 +67,16 @@ wsproto::WsEvent makeEvent(const QString& body)
     return e;
 }
 
+// #50-2 过滤用例专用：显式指定方向与主题的事件构造
+wsproto::WsEvent makeEvent(const QString& direction, const QString& topic)
+{
+    wsproto::WsEvent e = makeEvent(topic);
+    e.direction = direction;
+    e.topic = topic;
+    e.action = QStringLiteral("推送");
+    return e;
+}
+
 } // namespace
 
 class TstWsPageLayout : public QObject {
@@ -87,6 +98,7 @@ private slots:
     void peerColumnShowsSource();
     void runningGuardsDisableConnectionInputs();
     void droppedTooltipDocumentsSessionScope();
+    void eventFilterHidesRowsKeepsModel();
 };
 
 void TstWsPageLayout::initTestCase()
@@ -380,6 +392,58 @@ void TstWsPageLayout::droppedTooltipDocumentsSessionScope()
     auto* label = widget.findChild<QLabel*>(QStringLiteral("wsDroppedLabel"));
     QVERIFY(label);
     QVERIFY(label->toolTip().contains(QStringLiteral("本会话")));
+}
+
+// #50-2：事件流按方向/主题过滤——展示层仅隐藏行，全量事件仍入表；
+// 新事件按当前过滤即时生效；「清除」清全量与计数、不受过滤条件影响
+void TstWsPageLayout::eventFilterHidesRowsKeepsModel()
+{
+    WebSocketWidget widget;
+    auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
+    auto* combo = widget.findChild<QComboBox*>(QStringLiteral("wsFilterDirection"));
+    auto* topicEdit = findLine(&widget, "wsFilterTopic");
+    QVERIFY(table);
+    QVERIFY(combo);
+    QVERIFY(topicEdit);
+
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("abc")));
+    widget.pushEvent(makeEvent(QStringLiteral("发"), QStringLiteral("abd")));
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("xyz")));
+    QCOMPARE(table->rowCount(), 3);
+    for (int row = 0; row < table->rowCount(); ++row)
+        QVERIFY2(!table->isRowHidden(row), "初始无过滤：全部可见");
+
+    // 方向=收（itemData 序：0=全部"" 1=收 2=发）+ 主题子串 "AB"（大小写不敏感）：
+    // 仅第 0 行（收 abc）匹配；第 1 行主题含 ab 但方向不符、第 2 行方向符但主题不符
+    combo->setCurrentIndex(1);
+    topicEdit->setText(QStringLiteral("AB"));
+    QVERIFY(!table->isRowHidden(0));
+    QVERIFY(table->isRowHidden(1));
+    QVERIFY(table->isRowHidden(2));
+    QCOMPARE(table->rowCount(), 3); // 过滤只隐藏，不删行（全量仍入表模型）
+
+    // pushEvent 新行即时按当前过滤判定：发 abc（方向不符）、收 zzz（主题不符）都应立即隐藏
+    widget.pushEvent(makeEvent(QStringLiteral("发"), QStringLiteral("abc")));
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("zzz")));
+    QCOMPARE(table->rowCount(), 5);
+    QVERIFY(table->isRowHidden(3));
+    QVERIFY(table->isRowHidden(4));
+
+    // 改回「全部」+ 清空主题 → 全可见
+    combo->setCurrentIndex(0);
+    topicEdit->clear();
+    for (int row = 0; row < table->rowCount(); ++row)
+        QVERIFY2(!table->isRowHidden(row), "过滤条件清空后应全部可见");
+
+    // 「清除」清全量与计数（过滤条件本身保留，此处带活跃过滤点击仍应清空）
+    topicEdit->setText(QStringLiteral("zzz"));
+    auto* clear = widget.findChild<QPushButton*>(QStringLiteral("wsClearEvents"));
+    QVERIFY(clear);
+    clear->click();
+    QCOMPARE(table->rowCount(), 0);
+    auto* dropped = widget.findChild<QLabel*>(QStringLiteral("wsDroppedLabel"));
+    QVERIFY(dropped);
+    QVERIFY(!dropped->isVisible());
 }
 
 QTEST_MAIN(TstWsPageLayout)

@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 增强（2026-10-17，v2.14 #50-2 WebSocket 事件流方向/主题过滤）
+
+- **事件流展示层过滤（#50-2）**：WebSocket 右栏工具行（自动滚动与清除之间）新增方向过滤下拉（`wsFilterDirection`：全部/收/发，itemData 依次 ""/收/发）与主题子串输入框（`wsFilterTopic`，placeholder「主题过滤」，大小写不敏感、空=不过滤）。过滤只作用展示层：不匹配行 `setRowHidden`，全量事件仍入表模型，FIFO 2000 上限与丢弃计数不受过滤影响；「清除」仍清全量与计数、过滤条件本身保留。谓词收敛进 `WsEventTypes.h` 纯逻辑：`wsproto::matchesFilterFields(direction, topic, directionFilter, topicSubstring)` 为单一判据（Widget 行过滤直读方向/主题单元格调用它，null 单元格视作空串防御），`matchesFilter(WsEvent,…)` 规格签名委托之（防事件对象路径与表格路径两套逻辑漂移，测试锁定）；`pushEvent` 新行插cell后、自动滚动前按当前过滤即时判定。测试：`tst_ws_event_types` 新增 `filterFieldsSemantics`（四组语义：全通过/方向全等/大小写不敏感子串/组合退化）与 `filterPredicateDelegatesToFields`（委托等价矩阵）；`tst_ws_page_layout` 新增 `eventFilterHidesRowsKeepsModel`（隐藏不删行、新行即时过滤、还原全可见、活跃过滤下清除归零）。全量 CTest **48** 目标绿。
+
 ### 增强（2026-10-17，v2.14 #50-1/4/5 WebSocket 事件流对端列+运行输入守卫+丢弃计数说明）
 
 - **事件流对端列（#50-1）**：WebSocket 事件流表新增第六列「对端」，列序定档 时间|方向|主题|对端|字节|内容预览（ColPeer 插在 ColTopic 后、ColBytes 前，初始宽 130，Interactive/末列 Stretch 逻辑随枚举名自动跟随）；数据直取后端已填的 `WsEvent::peer`（Server 模式=客户端地址、Client 模式="server"），后端零改动。测试：`tst_ws_page_layout` 新增 `peerColumnShowsSource`；既有用例预览列索引断言（4→5）随六列契约同步更新。

@@ -11,6 +11,8 @@
  * Description: WebSocket Tool 前端实现。左栏控制台（模式/配置/状态/启停/发布订阅），
  *              右栏消息事件流表（时间|方向|主题|对端|字节|内容预览，Interactive 列宽，
  *              2000 行 FIFO 上限）。右栏为唯一垂直扩展主体，窗口拉伸不再散架。
+ *              v2.14 #50-2：事件流支持方向/主题展示层过滤（仅 setRowHidden，
+ *              全量仍入表；清除清全量与计数）。
  *              正文预览仅进本页面；全局日志只记方向+字节数（仓规脱敏约束）。
  */
 
@@ -19,6 +21,7 @@
 #include "config/ConfigStore.h"
 
 #include <QButtonGroup>
+#include <QComboBox>
 #include <QDateTime>
 #include <QGroupBox>
 #include <QFormLayout>
@@ -275,6 +278,19 @@ void WebSocketWidget::setupUi()
     toolRow->addWidget(m_btnClearEvents);
     toolRow->addStretch();
     toolRow->addWidget(m_droppedLabel);
+    // #50-2 展示层过滤控件：插在自动滚动之后、清除之前；丢弃计数保持居右。
+    // 过滤只隐藏行不改表模型，全量事件仍入表（清除/计数/FIFO 语义不受影响）
+    m_filterDirection = new QComboBox(eventPanel);
+    m_filterDirection->setObjectName(QStringLiteral("wsFilterDirection"));
+    m_filterDirection->addItem(QStringLiteral("全部"), QString());
+    m_filterDirection->addItem(QStringLiteral("收"), QStringLiteral("收"));
+    m_filterDirection->addItem(QStringLiteral("发"), QStringLiteral("发"));
+    m_filterTopic = new QLineEdit(eventPanel);
+    m_filterTopic->setObjectName(QStringLiteral("wsFilterTopic"));
+    m_filterTopic->setPlaceholderText(QStringLiteral("主题过滤"));
+    m_filterTopic->setMaximumWidth(140);
+    toolRow->insertWidget(1, m_filterDirection);
+    toolRow->insertWidget(2, m_filterTopic);
     eventLayout->addLayout(toolRow);
 
     m_eventTable = new QTableWidget(0, ColCount, eventPanel);
@@ -317,6 +333,11 @@ void WebSocketWidget::setupUi()
     connect(m_btnPublish, &QPushButton::clicked, this, &WebSocketWidget::onPublishClicked);
     connect(m_btnClearEvents, &QPushButton::clicked, this, &WebSocketWidget::onClearEventsClicked);
     connect(m_btnTokenEye, &QPushButton::toggled, this, &WebSocketWidget::onTokenVisibilityToggled);
+    // #50-2：过滤条件变更即重算全表隐藏态（currentIndexChanged 取 int 重载，Qt 6.9 兼容）
+    connect(m_filterDirection, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &WebSocketWidget::applyEventFilter);
+    connect(m_filterTopic, &QLineEdit::textChanged,
+            this, &WebSocketWidget::applyEventFilter);
     onServerModeToggled();
 }
 
@@ -428,13 +449,39 @@ void WebSocketWidget::pushEvent(const wsproto::WsEvent& event)
     previewItem->setToolTip(tip);
     m_eventTable->setItem(target, ColPreview, previewItem);
 
+    // #50-2：新行按当前过滤即时判定（直读事件字段，与 applyEventFilter 共用
+    // wsproto::matchesFilterFields 单一判据）；判定先于自动滚动，最小副作用
+    m_eventTable->setRowHidden(target,
+        !wsproto::matchesFilterFields(event.direction, event.topic,
+                                      m_filterDirection->currentData().toString(),
+                                      m_filterTopic->text()));
+
     if (m_chkAutoScroll->isChecked())
         m_eventTable->scrollToBottom();
     refreshStatusCard();
 }
 
+// #50-2：展示层行过滤——遍历全表，以方向/主题单元格文本走纯谓词，仅切换隐藏态，
+// 不删行不改计数。单元格可能为 null（清除/插入瞬间的防御），null 视作空串参与判定。
+void WebSocketWidget::applyEventFilter()
+{
+    const QString directionFilter = m_filterDirection->currentData().toString();
+    const QString topicSubstring = m_filterTopic->text();
+    for (int row = 0; row < m_eventTable->rowCount(); ++row) {
+        auto* dirItem = m_eventTable->item(row, ColDirection);
+        auto* topicItem = m_eventTable->item(row, ColTopic);
+        const QString direction = dirItem ? dirItem->text() : QString();
+        const QString topic = topicItem ? topicItem->text() : QString();
+        m_eventTable->setRowHidden(
+            row, !wsproto::matchesFilterFields(direction, topic,
+                                               directionFilter, topicSubstring));
+    }
+}
+
 void WebSocketWidget::onClearEventsClicked()
 {
+    // #50-2：清除永远清全量与计数，不受当前过滤条件影响；过滤控件状态保留，
+    // 下次推入的事件仍按当前过滤即时判定（pushEvent 末段）
     m_eventTable->setRowCount(0);
     m_droppedCount = 0;
     m_droppedLabel->setVisible(false);

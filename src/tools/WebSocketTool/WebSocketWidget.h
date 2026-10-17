@@ -9,6 +9,7 @@
 #include <QTimer>
 
 class QButtonGroup;
+class QComboBox;
 class QListWidget;
 class QStackedWidget;
 class QTableWidget;
@@ -57,6 +58,9 @@ private:
     void appendLog(const QString& msg);
     void applyRunningUi(bool running);
     void refreshStatusCard();
+    // #50-2：展示层行过滤——按方向 combo + 主题子串对不匹配行 setRowHidden，
+    // 全量事件仍入表模型；「清除」清全量与计数、不受过滤条件影响
+    void applyEventFilter();
 
     WebSocketBackend* m_backend = nullptr;
 
@@ -90,6 +94,8 @@ private:
     QCheckBox*       m_chkAutoScroll   = nullptr;
     QPushButton*     m_btnClearEvents  = nullptr;
     QLabel*          m_droppedLabel    = nullptr;
+    QComboBox*       m_filterDirection = nullptr;  // #50-2 方向过滤（全部/收/发）
+    QLineEdit*       m_filterTopic     = nullptr;  // #50-2 主题子串过滤（大小写不敏感）
 
     QTimer           m_statusTimer;
     int              m_droppedCount    = 0;

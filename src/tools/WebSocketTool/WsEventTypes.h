@@ -116,4 +116,28 @@ inline QString truncatePreview(const QString& text, int maxBytes = kPreviewMaxBy
     return result;
 }
 
+// 展示层过滤字段判定（v2.14 #50-2）：directionFilter 空=不限方向，否则需与事件
+// direction 全等（"收"/"发"）；topicSubstring 空=不过滤，否则大小写不敏感子串
+// 匹配 topic。Widget 行过滤直读单元格走本函数，与 matchesFilter 共用单一判据，
+// 防事件对象路径与表格路径两套逻辑漂移。
+inline bool matchesFilterFields(const QString& direction, const QString& topic,
+                                const QString& directionFilter,
+                                const QString& topicSubstring)
+{
+    if (!directionFilter.isEmpty() && direction != directionFilter)
+        return false;
+    if (!topicSubstring.isEmpty() &&
+        !topic.contains(topicSubstring, Qt::CaseInsensitive))
+        return false;
+    return true;
+}
+
+// 规格签名入口（#50-2）：委托字段判定；由 tst_ws_event_types 锁定委托一致性
+inline bool matchesFilter(const WsEvent& e,
+                          const QString& directionFilter,
+                          const QString& topicSubstring)
+{
+    return matchesFilterFields(e.direction, e.topic, directionFilter, topicSubstring);
+}
+
 } // namespace wsproto

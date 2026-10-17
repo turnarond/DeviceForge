@@ -29,6 +29,8 @@ private slots:
     void encodersRoundTripThroughParser();
     void byteCountIsUtf8Based();
     void previewTruncationIsUtf8BoundarySafe();
+    void filterFieldsSemantics();
+    void filterPredicateDelegatesToFields();
 };
 
 void TstWsEventTypes::parsesProtocolFrames_data()
@@ -113,6 +115,59 @@ void TstWsEventTypes::previewTruncationIsUtf8BoundarySafe()
 
     // 不超限内容原样返回
     QCOMPARE(wsproto::truncatePreview(QStringLiteral("short"), 100), QStringLiteral("short"));
+}
+
+// #50-2：展示层过滤字段判定——四组语义：全通过 / 方向全等命中 /
+// 主题大小写不敏感子串 / 组合空串退化（两条件皆空=不过滤，皆非空=逻辑与）
+void TstWsEventTypes::filterFieldsSemantics()
+{
+    using wsproto::matchesFilterFields;
+    // 组1 全通过：两条件皆空 → 任意事件匹配（含空 topic 事件）
+    QVERIFY(matchesFilterFields(QStringLiteral("收"), QStringLiteral("abc"), QString(), QString()));
+    QVERIFY(matchesFilterFields(QStringLiteral("发"), QString(), QString(), QString()));
+    // 组2 方向过滤：非空时与 direction 全等才命中
+    QVERIFY(matchesFilterFields(QStringLiteral("收"), QStringLiteral("abc"),
+                                QStringLiteral("收"), QString()));
+    QVERIFY(!matchesFilterFields(QStringLiteral("发"), QStringLiteral("abc"),
+                                 QStringLiteral("收"), QString()));
+    // 组3 主题子串：大小写不敏感、任意位置
+    QVERIFY(matchesFilterFields(QStringLiteral("收"), QStringLiteral("abc"),
+                                QString(), QStringLiteral("AB")));
+    QVERIFY(matchesFilterFields(QStringLiteral("收"), QStringLiteral("xyzABq"),
+                                QString(), QStringLiteral("ab")));
+    QVERIFY(!matchesFilterFields(QStringLiteral("收"), QStringLiteral("xyz"),
+                                 QString(), QStringLiteral("ab")));
+    // 组4 组合退化：两条件同时生效取交集；空方向过滤=方向不限
+    QVERIFY(matchesFilterFields(QStringLiteral("收"), QStringLiteral("abc"),
+                                QStringLiteral("收"), QStringLiteral("AB")));
+    QVERIFY(!matchesFilterFields(QStringLiteral("发"), QStringLiteral("abc"),
+                                 QStringLiteral("收"), QStringLiteral("ab")));
+}
+
+// #50-2：matchesFilter（规格签名入口）必须委托 matchesFilterFields——
+// 二者行为一致由本用例锁定，防 Widget 单元格路径与事件对象路径两套逻辑漂移
+void TstWsEventTypes::filterPredicateDelegatesToFields()
+{
+    wsproto::WsEvent e;
+    e.direction = QStringLiteral("收");
+    e.topic = QStringLiteral("abc");
+    const char* dirFilters[] = {"", "收", "发"};
+    const char* topicSubs[] = {"", "AB", "zz"};
+    for (const char* d : dirFilters) {
+        for (const char* t : topicSubs) {
+            const QString dirFilter = QString::fromUtf8(d);
+            const QString topicSubstring = QString::fromUtf8(t);
+            QCOMPARE(wsproto::matchesFilter(e, dirFilter, topicSubstring),
+                     wsproto::matchesFilterFields(e.direction, e.topic,
+                                                  dirFilter, topicSubstring));
+        }
+    }
+    // 规格四组直例
+    QVERIFY(wsproto::matchesFilter(e, QString(), QString()));                          // 全通过
+    QVERIFY(wsproto::matchesFilter(e, QStringLiteral("收"), QString()));               // 方向命中
+    QVERIFY(!wsproto::matchesFilter(e, QStringLiteral("发"), QString()));              // 方向不命中
+    QVERIFY(wsproto::matchesFilter(e, QString(), QStringLiteral("AB")));               // 大小写不敏感子串
+    QVERIFY(wsproto::matchesFilter(e, QStringLiteral("收"), QStringLiteral("abc")));   // 组合命中
 }
 
 QTEST_MAIN(TstWsEventTypes)
