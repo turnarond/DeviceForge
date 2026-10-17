@@ -3,6 +3,7 @@
 // 克隆为新模板、删除模板存储腿（remove，v2.13 #54）、
 // 未知未来字段前向兼容保留，
 // 以及密码/私钥类敏感字段的拒绝（不落盘）与持久化记录不含任何凭据秘密值。
+// v2.14 #49-2 第二腿：同名冲突落库 saveUniqueByName（取消/覆盖/改名三分支）。
 #include <QtTest>
 
 #include <QDir>
@@ -464,6 +465,88 @@ private slots:
         const auto listed = store.list();
         QCOMPARE(listed.size(), size_t(1));
         QCOMPARE(QString::fromStdString(listed.front().templateId), QStringLiteral("tpl-good"));
+    }
+
+    // ---- v2.14 #49-2 第二腿：同名冲突落库 saveUniqueByName ----
+
+    // 无同名冲突：直接落库并生成新 ID，savedId 可回读
+    void saveUniqueByNameNoConflictSavesNewId()
+    {
+        TaskTemplateStore store;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("巡检").toStdString();
+        tmpl.version = 3;
+        tmpl.steps = {makeStep(TaskStepType::Reboot)};
+
+        std::string id;
+        QVERIFY(store.saveUniqueByName(
+            tmpl, [](const QString&) { return NameConflictChoice::Cancel; }, &id, nullptr));
+        QVERIFY(!id.empty());
+        const auto loaded = store.load(id);
+        QVERIFY(loaded.has_value());
+        QCOMPARE(QString::fromStdString(loaded->name), QStringLiteral("巡检"));
+        QCOMPARE(loaded->version, 3);
+        QCOMPARE(store.list().size(), size_t(1));
+    }
+
+    // 冲突选取消：返回 false、不落盘、list 尺寸不变、reason 含「取消」
+    void saveUniqueByNameCancelWritesNothing()
+    {
+        TaskTemplateStore store;
+        QVERIFY(store.save(makeTemplate(QStringLiteral("巡检"))));
+        QCOMPARE(store.list().size(), size_t(1));
+
+        QString reason;
+        const auto incoming = makeTemplate(QStringLiteral("巡检"));
+        QVERIFY(!store.saveUniqueByName(
+            incoming, [](const QString&) { return NameConflictChoice::Cancel; }, nullptr, &reason));
+        QCOMPARE(store.list().size(), size_t(1));
+        QVERIFY(reason.contains(QStringLiteral("取消")));
+    }
+
+    // 冲突选覆盖：继承既有 templateId，version 抬到 max(新旧)（降级禁则），list 不增行
+    void saveUniqueByNameOverwriteInheritsIdAndVersion()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing = makeTemplate(QStringLiteral("巡检"));
+        existing.templateId = "tpl-a";
+        existing.version = 5;
+        QVERIFY(store.save(existing));
+
+        TaskTemplate incoming = makeTemplate(QStringLiteral("巡检"));
+        incoming.version = 2;   // 低于既有版本：覆盖不得把库内版本降级
+        std::string id;
+        QVERIFY(store.saveUniqueByName(
+            incoming, [](const QString&) { return NameConflictChoice::Overwrite; }, &id, nullptr));
+        QCOMPARE(QString::fromStdString(id), QStringLiteral("tpl-a"));
+        QCOMPARE(store.list().size(), size_t(1));
+        const auto loaded = store.load("tpl-a");
+        QVERIFY(loaded.has_value());
+        QCOMPARE(loaded->version, 5);
+    }
+
+    // 冲突选改名：已有「巡检」「巡检 (2)」，入站「巡检」存成「巡检 (3)」并产生新 ID
+    void saveUniqueByNameRenameIncrementsSuffix()
+    {
+        TaskTemplateStore store;
+        TaskTemplate first = makeTemplate(QStringLiteral("巡检"));
+        first.templateId = "tpl-1";
+        QVERIFY(store.save(first));
+        TaskTemplate second = makeTemplate(QStringLiteral("巡检 (2)"));
+        second.templateId = "tpl-2";
+        QVERIFY(store.save(second));
+
+        TaskTemplate incoming = makeTemplate(QStringLiteral("巡检"));
+        std::string id;
+        QVERIFY(store.saveUniqueByName(
+            incoming, [](const QString&) { return NameConflictChoice::Rename; }, &id, nullptr));
+        QVERIFY(!id.empty());
+        QVERIFY(id != "tpl-1");
+        QVERIFY(id != "tpl-2");
+        const auto loaded = store.load(id);
+        QVERIFY(loaded.has_value());
+        QCOMPARE(QString::fromStdString(loaded->name), QStringLiteral("巡检 (3)"));
+        QCOMPARE(store.list().size(), size_t(3));
     }
 };
 

@@ -11,6 +11,8 @@
 #include <QLatin1String>
 #include <QUuid>
 
+#include <algorithm>
+
 namespace {
 
 constexpr QLatin1String kRecordType("task.template");
@@ -145,6 +147,74 @@ bool TaskTemplateStore::remove(const std::string& templateId)
     if (!store.exists(kRecordType, key))
         return false;
     return store.remove(kRecordType, key);
+}
+
+// v2.14 #49-2 第二腿：同名冲突落库（声明处注释为语义权威）。
+// 匹配口径：list() 全量遍历、std::string 全等（大小写敏感），
+// 与 TaskCenterWidget::importTemplateFromFile（v2.13 导入）刻意同口径；本次不重构导入路径（留债观察）。
+bool TaskTemplateStore::saveUniqueByName(
+    const TaskTemplate& tmpl,
+    const std::function<NameConflictChoice(const QString& name)>& onConflict,
+    std::string* savedId, QString* reason)
+{
+    const auto templates = list();
+
+    // 同名冲突检测：与既有模板 name 全等即冲突（std::string operator== 大小写敏感）
+    const TaskTemplate* conflict = nullptr;
+    for (const auto& t : templates) {
+        if (t.name == tmpl.name) {
+            conflict = &t;
+            break;
+        }
+    }
+
+    TaskTemplate copy = tmpl;
+    if (!conflict) {
+        // 无冲突直接落库；空 templateId 先自行生成——save 内部生成的 ID 不外露，
+        // 若不预生成则 savedId 无从回填。
+        if (copy.templateId.empty()) copy.templateId = generateTemplateId();
+    } else {
+        const NameConflictChoice choice = onConflict(QString::fromStdString(tmpl.name));
+        if (choice == NameConflictChoice::Cancel) {
+            if (reason)
+                *reason = QStringLiteral("已取消：与既有模板同名「%1」，未写入任何记录")
+                              .arg(QString::fromStdString(tmpl.name));
+            return false;
+        }
+        if (choice == NameConflictChoice::Overwrite) {
+            // 覆盖：继承既有 templateId 原位 upsert；version 取 max(新旧)——
+            // save 的降级禁则（同 ID 新 version 低于已存即拒绝）决定了必须抬版本才能覆盖成功。
+            copy.templateId = conflict->templateId;
+            copy.version = std::max(conflict->version, tmpl.version);
+        } else {
+            // 改名：「名称 (2)」「名称 (3)」…递增找空位，不设上限——
+            // 文案规则与 TaskCenterWidget::importTemplateFromFile 的改名循环（v2.13 导入）同源。
+            const QString base = QString::fromStdString(tmpl.name);
+            auto nameTaken = [&templates](const std::string& name) {
+                for (const auto& t : templates)
+                    if (t.name == name) return true;
+                return false;
+            };
+            for (int n = 2;; ++n) {
+                const QString candidate = QStringLiteral("%1 (%2)").arg(base).arg(n);
+                if (!nameTaken(candidate.toStdString())) {
+                    copy.name = candidate.toStdString();
+                    break;
+                }
+            }
+            // 改名即另存独立新模板：无条件换新 ID（入站若带旧 ID 也不可沿用，
+            // 且预生成才能让 savedId 回填）。
+            copy.templateId = generateTemplateId();
+        }
+    }
+
+    if (!save(copy)) {
+        if (reason)
+            *reason = QStringLiteral("落库失败：模板存储拒绝写入（无效模板/版本降级/敏感字段，详见日志）");
+        return false;
+    }
+    if (savedId) *savedId = copy.templateId;
+    return true;
 }
 
 std::vector<TaskTemplate> TaskTemplateStore::list() const

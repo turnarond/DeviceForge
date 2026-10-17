@@ -4,9 +4,13 @@
 
 #include <QString>
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
+
+// v2.14 #49-2 第二腿：同名冲突落库的处置选择（任务 3 接线 lambda 消费）。
+enum class NameConflictChoice { Overwrite, Rename, Cancel };
 
 // v2.11 Task 3：任务模板 ConfigStore 持久化（记录类型 task.template，key=templateId）。
 // 模板不得保存凭据秘密值：save() 拒绝校验不通过的模板且不落盘；
@@ -33,6 +37,19 @@ public:
     // 空 templateId 直接 false 不碰库；记录不存在返回 false；
     // 存在时转发 ConfigStore::remove 结果。
     bool remove(const std::string& templateId);
+
+    // v2.14 #49-2 第二腿：同名冲突落库。入站 name 与既有模板全等（std::string 全等，
+    // 大小写敏感）视为冲突；无冲突直接 save（templateId 为空则生成新 ID）。
+    // 冲突时由 onConflict(name) 决定处置：
+    //   Cancel：返回 false、reason 写入含「取消」的中文原因，不落盘；
+    //   Overwrite：继承既有 templateId 且 version 取 max(既有, 入站)（save 的降级禁则同源）；
+    //   Rename：「名称 (2)」从 2 递增找空位后另存新 ID——改名文案与
+    //     TaskCenterWidget::importTemplateFromFile（v2.13 导入，TaskCenterWidget.cpp 改名循环）刻意同口径。
+    // 成功时 savedId 写入落库模板 ID（可传 nullptr 忽略）；
+    // 失败时 reason 写入中文原因（可传 nullptr 忽略）。
+    bool saveUniqueByName(const TaskTemplate& tmpl,
+                          const std::function<NameConflictChoice(const QString& name)>& onConflict,
+                          std::string* savedId, QString* reason);
 };
 
 // 校验结果：valid=false 时 error 为中文失败原因（供日志与 UI 提示）。
