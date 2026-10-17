@@ -105,6 +105,7 @@ private:
     QTableWidget* m_itemTable = nullptr;     // teItemList（4 列：本地/远端/方向/覆盖，行=items）
     QPushButton* m_addFiles = nullptr;       // teAddFiles「添加文件…」（非原生多选）
     QPushButton* m_addDir = nullptr;         // teAddDir「添加目录…」（非原生目录选择）
+    QPushButton* m_removeItem = nullptr;     // teRemoveItem「移除选中行」（v2.14 冒烟修复，选中启用）
     QLabel* m_recoverNote = nullptr;         // teRecoverNote（recover 步可见的顶部说明）
     QPlainTextEdit* m_commandsEditor = nullptr; // teCommands（run_commands/recover 共用，一行一条）
     QSpinBox* m_commandsTimeout = nullptr;   // teTimeout（1..600，默认 10=引擎缺省）

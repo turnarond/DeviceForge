@@ -1119,6 +1119,75 @@ private slots:
         TaskTemplateEditorDialog dlg2(seeded, {});
         QVERIFY(dlg2.validate().contains(QStringLiteral("缺少命令列表")));   // v2.14 #49-3 共享口径
     }
+    // v2.14 冒烟修复（Critical，自 v2.13 带病发布）：QDialog **不会**自动接线
+    // QDialogButtonBox——必须手动 connect(accepted→accept()/rejected→reject())，
+    // 否则「保存/取消」点击全无响应，只能点窗口 ✕。原注释误称自动接线。
+    void editorDialog_buttonBoxWiringClosesDialog()
+    {
+        TaskTemplate in;
+        in.name = "接线验证";
+        QVariantMap deploy;
+        deploy.insert(QStringLiteral("items"), QVariantList{
+            QVariantMap{{QStringLiteral("localPath"), QStringLiteral("D:/a.bin")},
+                        {QStringLiteral("remotePath"), QStringLiteral("/opt/a.bin")}}});
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        step.parameters = deploy;
+        in.steps.push_back(step);
+        {
+            TaskTemplateEditorDialog dlg(in, {});
+            dlg.show();
+            auto* save = dlg.findChild<QPushButton*>(QStringLiteral("teSave"));
+            QVERIFY(save);
+            save->click();                                   // 合法输入：应关闭并 Accepted
+            QVERIFY2(!dlg.isVisible(), "点保存（合法输入）应关闭对话框");
+            QCOMPARE(dlg.result(), int(QDialog::Accepted));
+        }
+        {
+            TaskTemplateEditorDialog dlg(in, {});
+            dlg.show();
+            auto* cancel = dlg.findChild<QPushButton*>(QStringLiteral("teCancel"));
+            QVERIFY(cancel);
+            cancel->click();
+            QVERIFY(!dlg.isVisible());
+            QCOMPARE(dlg.result(), int(QDialog::Rejected));
+        }
+    }
+    // v2.14 冒烟修复：deploy 条目表只有「添加」没有「删除」入口——添加错了只能
+    // 整步重配。「移除选中行」按钮：无选中禁用，点击删表行并即时写回模型
+    //（removeRow 不发 cellChanged，必须手动 flush）。
+    void editorDialog_removeItemRowDeletesEntry()
+    {
+        TaskTemplate in;
+        in.name = "条目移除";
+        QVariantMap deploy;
+        deploy.insert(QStringLiteral("items"), QVariantList{
+            QVariantMap{{QStringLiteral("localPath"), QStringLiteral("D:/keep.bin")},
+                        {QStringLiteral("remotePath"), QStringLiteral("/opt/keep.bin")}},
+            QVariantMap{{QStringLiteral("localPath"), QStringLiteral("D:/drop.bin")},
+                        {QStringLiteral("remotePath"), QStringLiteral("/opt/drop.bin")}}});
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        step.parameters = deploy;
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+        QCOMPARE(table->rowCount(), 2);
+        auto* remove = dlg.findChild<QPushButton*>(QStringLiteral("teRemoveItem"));
+        QVERIFY(remove);
+        QVERIFY2(!remove->isEnabled(), "无选中行时移除按钮应禁用");
+        table->selectRow(1);
+        QVERIFY(remove->isEnabled());
+        remove->click();
+        QCOMPARE(table->rowCount(), 1);
+        TaskTemplate out;
+        QVERIFY(dlg.collect(&out));
+        const QVariantList items = out.steps[0].parameters.value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 1);
+        QCOMPARE(items[0].toMap().value(QStringLiteral("localPath")).toString(),
+                 QStringLiteral("D:/keep.bin"));
+    }
     void editorDialog_canonicalizeLegacyFilesShorthand()
     {
         QVariantMap legacy;

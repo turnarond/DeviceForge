@@ -285,13 +285,18 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
     m_pages->addWidget(rebootPage);
     rightLayout->addWidget(m_pages, 1);
 
-    // ── 底部按钮（QDialog 自动接线 accepted→accept()、rejected→reject()；
-    //   仅一个 RejectRole 按钮，吸取 deviceProfileEditor 重复取消按钮教训）──
+    // ── 底部按钮（必须手动接线 accepted→accept()/rejected→reject()——
+    //   QDialog 并不会自动连 QDialogButtonBox，v2.13 起此处误信"自动接线"
+    //   导致保存/点击无响应，v2.14 冒烟修复；accept 为虚函数覆写，成员指针
+    //   调用走 vtable 分派到本类校验闸。仅一个 RejectRole 按钮，吸取
+    //   deviceProfileEditor 重复取消按钮教训）──
     auto* buttons = new QDialogButtonBox(this);
     auto* save = buttons->addButton(QStringLiteral("保存"), QDialogButtonBox::AcceptRole);
     save->setObjectName(QStringLiteral("teSave"));
     auto* cancel = buttons->addButton(QStringLiteral("取消"), QDialogButtonBox::RejectRole);
     cancel->setObjectName(QStringLiteral("teCancel"));
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     auto* rootLayout = new QVBoxLayout(this);
     auto* columns = new QHBoxLayout();
@@ -405,8 +410,24 @@ void TaskTemplateEditorDialog::setupDeployPage(QWidget* page)
     m_addDir->setObjectName(QStringLiteral("teAddDir"));
     addRow->addWidget(m_addFiles);
     addRow->addWidget(m_addDir);
+    // v2.14 冒烟修复：条目此前只加不删（无按钮/无 Del/无右键），添加错了只能
+    // 整步重配。移除按钮按选中行启用；removeRow 不发 cellChanged，须手动 flush
+    // 写回 m_steps 真值（binding 守卫窗口内忽略，防程序化换步误删）。
+    m_removeItem = new QPushButton(QStringLiteral("移除选中行"), page);
+    m_removeItem->setObjectName(QStringLiteral("teRemoveItem"));
+    m_removeItem->setEnabled(false);
+    addRow->addWidget(m_removeItem);
     addRow->addStretch();
     layout->addLayout(addRow);
+    connect(m_itemTable, &QTableWidget::currentCellChanged, this,
+            [this](int row, int, int, int) { m_removeItem->setEnabled(row >= 0); });
+    connect(m_removeItem, &QPushButton::clicked, this, [this] {
+        const int row = m_itemTable->currentRow();
+        if (row < 0 || m_binding)
+            return;
+        m_itemTable->removeRow(row);
+        flushDeployTable();
+    });
 
     // 批量添加：非原生 QFileDialog（DontUseNativeDialog），每条/每个目录生成行；
     // remotePath = teRemoteDir(去尾斜杠) + '/' + 文件/目录名，空前缀=根目录

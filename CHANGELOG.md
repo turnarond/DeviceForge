@@ -2,6 +2,12 @@
 
 ## [未发布]
 
+### 修复（2026-10-17，v2.14 冒烟修复批：编辑器按钮接线 + 部署条目移除）
+
+- **模板编辑器「保存/取消」按钮无响应（v2.13 起带病发布，冒烟实测捕获）**：`TaskTemplateEditorDialog` 底部 `QDialogButtonBox` 从未接线——原注释误称「QDialog 自动接线 accepted→accept()」（Qt 实际必须手动 connect，仓内先例 `deviceProfileEditor` 即手动连），导致点「保存」「取消」均无反应、只能关窗口 ✕，编辑器 UI 无法保存任何模板。补 `connect(accepted→QDialog::accept)`/`connect(rejected→QDialog::reject)`（accept 为虚覆写，走 vtable 分派到校验闸），注释就实。自动化逃逸原因复盘：#54 用例全部直调 validate()/collect() 绕过按钮，按钮流登记为人工冒烟覆盖而 v2.13 发版未跑该格——本次以 `editorDialog_buttonBoxWiringClosesDialog` 非模态 click 直测补上（合法输入点保存→关闭且 Accepted；点取消→Rejected）。
+- **部署步骤文件条目只加不删（#54 设计缺口）**：teItemList 此前仅有「添加文件…/添加目录…」入口，无移除按钮、无 Del 键、无右键菜单，添加错了只能整步删除重配。新增「移除选中行」按钮（`teRemoveItem`，无选中禁用），点击删表行并即时 `flushDeployTable()` 写回步骤真值（removeRow 不发 cellChanged，必须手动 flush；程序化绑定窗口内忽略防误删）。用例 `editorDialog_removeItemRowDeletesEntry` 锁定：删行后 collect 出的 items 只剩未删条目。
+- 两修复同源于 v2.14 波1「保存为模板」GUI 冒烟；`tst_task_center_widget` 32/32 绿。
+
 ### 文档（2026-10-17，v2.14 勘误收口与全量核验波）
 
 - **对外文档勘误收口**：本文件 v2.12 段「事件流含对端」句段末追加勘误注记（历史正文不改写）；产品路线图「对端」表述归位 v2.14、「事件过滤」挂账就实为 v2.14 完成交付；2026-10-15 运营文章「v2.13 已立项…事件过滤」句改 v2.14 并加文首修订说明（外部渠道已发布快照无法回改，列为待人类渠道同步事项）。措辞就实：用户手册与 `wsDroppedLabel` tooltip「停止或清除后归零」改「重新启动或清除事件流后归零」（实况 `onStartClicked`/`onClearEventsClicked` 归零、单点停止不归零），手册对端列全称判断补 Server「发」行对端固定记「订阅者」既有形态（`serverPublishToSubscribers` 实证）；v2.14 #49-3 段 `tst_task_step_validation`「12 用例」就实为 10 用例（逐函数清点）。规格 `2026-10-17-v2.14-hardening-pack-design.md` §4.2/§4.3 加执行偏差注记（reboot 命令可用性分层澄清、惰性清退替代收口同步淘汰），原文保留。全量终验：Release 构建绿、CTest 48 目标连续两遍全绿、versioncheck [OK] 2.13.0（本波不动版本九源）、UI 冒烟通过。
