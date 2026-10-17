@@ -2,6 +2,14 @@
 
 ## [未发布]
 
+### 修复（2026-08-21，fix/v2.7-编译修复）
+
+- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
+- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
+
+## [2.13.0] — 2026-10-16
+
+
 ### Fixed/工具（2026-10-16，#55 v2.13 终审缓行包）
 
 - **formatVersion 严格整数闸**：`decodeTemplateFile` 拒绝 `1.5`/`true` 经 `toInt()` 静默转换伪装成 v1 的手改文件（要求数值类型且为整数值）；缺 version 用例补文案断言。
@@ -41,11 +49,6 @@
 
 - `tst_deploy_runner::singleFileFailure` flake（基线 7-13%）根因修复：fixture 拷 `params[0]` 致多台共享同一内存远端写同名路径，触发 TransferExecutor「远端目标改变」并发保护；改 `makeParams(N)` 逐台独立构造，尺寸断言附 dumpReport 诊断。
 - `tst_panel_async::editor_secondSaveNoFalseConflict`（实测 7/10 抖）：二次保存后裸 `QVERIFY(!isDirty)` 抢在 QueuedConnection 回调 `markSaved()` 之前，改 `QTRY_VERIFY_WITH_TIMEOUT` 等待模式。
-
-### 修复（2026-08-21，fix/v2.7-编译修复）
-
-- **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
-- **WebSocketBackend**：修复 WSS 自签名证书 API 在 Qt 6.11 已不存在导致的编译错误（`QSslKey` 构造参数错序 + `QSslCertificate::generateSelfSignedCertificate` 已移除），改为加载 `src/app/certs/` 预生成测试证书（RSA 2048、SAN 含 localhost，随 QRC 打包）
 
 ## [2.12.0] — 2026-10-14
 
