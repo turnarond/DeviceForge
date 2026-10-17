@@ -193,6 +193,9 @@ DeviceProfile DeviceRegistry::upsert(const DeviceProfile& profile)
 bool DeviceRegistry::saveReplacing(const DeviceProfile& profile, DeviceProfile* stored)
 {
     auto incoming = normalize(profile);
+    // v2.14 #49-7：快照置于 normalize 之后、第一次 m_profiles 变更之前——
+    // 任一失败返回前恢复 m_profiles 并 rebuildWarnings()，且 stored 仅成功时填充。
+    const auto snapshot = m_profiles;
     const std::size_t index = locate(incoming);
     std::vector<std::string> removedAddresses;   // 被移除端点的 "ip:port"（小写 ip）
 
@@ -221,11 +224,15 @@ bool DeviceRegistry::saveReplacing(const DeviceProfile& profile, DeviceProfile* 
         rebuildWarnings();
     }
 
-    if (stored) *stored = m_profiles[std::min(index, m_profiles.size() - 1)];
-    const DeviceProfile& merged = m_profiles[std::min(index, m_profiles.size() - 1)];
+    // merged 取值为快照回滚后仍可安全读日志（档案量级小，值拷贝可接受）
+    const DeviceProfile merged = m_profiles[std::min(index, m_profiles.size() - 1)];
     if (merged.deviceId.empty()) {
+        // 不变量防御分支：#49-7 运行时实证不可达（新建分支先赋 stableId() 恒非空，
+        // 命中既有档案继承非空 ID），保留以防未来构造序列破坏不变量。
         qWarning("DeviceRegistry: 设备档案无法生成稳定 ID，跳过替换保存 name=%s",
                  merged.name.c_str());
+        m_profiles = snapshot;
+        rebuildWarnings();
         return false;
     }
     if (!ConfigStore::instance().save(QStringLiteral("device.profile"),
@@ -233,8 +240,13 @@ bool DeviceRegistry::saveReplacing(const DeviceProfile& profile, DeviceProfile* 
                                       encodeDeviceProfile(merged))) {
         qWarning("DeviceRegistry: 替换保存设备档案失败 deviceId=%s",
                  merged.deviceId.c_str());
+        m_profiles = snapshot;
+        rebuildWarnings();
         return false;
     }
+    // stored 仅成功时填充（#49-7）：调用方（如 DeviceBusWidget）据此在失败时
+    // 拿不到合并结果，从源头杜绝「失败也广播/也回写 legacy 行」
+    if (stored) *stored = merged;
 
     // 清扫被取代的旧 device.list ip:port 行：本轮被移除的地址若已不再属于任何
     // 在册档案则删除对应旧行，防止 load() 回退读取把旧地址并集复活；
@@ -364,16 +376,25 @@ bool DeviceRegistry::load()
 
 bool DeviceRegistry::save(const DeviceProfile& profile)
 {
+    // v2.14 #49-7：变更前全表浅快照（档案量级小，正确性优先）——任一失败返回
+    // 前恢复 m_profiles 并 rebuildWarnings()，落盘失败不残留半成品内存。
+    const auto snapshot = m_profiles;
     const auto stored = upsert(profile);
     if (stored.deviceId.empty()) {
+        // 不变量防御分支：#49-7 运行时实证不可达（upsert 对空 id 一律先赋
+        // stableId()，恒非空；命中既有档案继承非空 ID），保留以防未来构造序列破坏不变量。
         qWarning("DeviceRegistry: 设备档案无法生成稳定 ID，跳过保存 name=%s",
                  stored.name.c_str());
+        m_profiles = snapshot;
+        rebuildWarnings();
         return false;
     }
     if (!ConfigStore::instance().save(QStringLiteral("device.profile"),
                                       QString::fromStdString(stored.deviceId),
                                       encodeDeviceProfile(stored))) {
         qWarning("DeviceRegistry: 保存设备档案失败 deviceId=%s", stored.deviceId.c_str());
+        m_profiles = snapshot;
+        rebuildWarnings();
         return false;
     }
     return true;

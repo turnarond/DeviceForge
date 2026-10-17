@@ -662,9 +662,16 @@ void DeviceBusWidget::editProfileFor(QPushButton* pill)
     // 落库（未列出的既有端点删除 + 被取代旧 device.list 行清扫），
     // 并集合并仅保留给协议发现路径（addDevice/fromDeviceInfo）
     DeviceProfile saved;
-    if (!m_registry->saveReplacing(edited, &saved))
-        qWarning("DeviceBus: 替换保存 device.profile 失败 deviceId=%s",
-                 qPrintable(QString::fromStdString(saved.deviceId)));
+    if (!m_registry->saveReplacing(edited, &saved)) {
+        // v2.14 #49-7：落盘失败——注册表已回滚内存、stored 未被填充；
+        // 告警措辞就实取入参档案（不读 stored），不写 legacy 行、
+        // 不广播 deviceProfileEdited，仅刷新回真内存态后早退
+        qWarning("DeviceBus: 替换保存 device.profile 失败 name=%s deviceId=%s",
+                 qPrintable(QString::fromStdString(edited.name)),
+                 qPrintable(QString::fromStdString(edited.deviceId)));
+        refreshFromRegistry();
+        return;
+    }
     if (!saved.endpoints.empty())
         persistLegacyRow(toDeviceInfo(saved, saved.endpoints.front()));
     refreshFromRegistry();

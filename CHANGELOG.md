@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 修复（2026-10-17，v2.14 #49-7 DeviceRegistry 落盘失败快照回滚）
+
+- **落盘失败不留半成品内存**：`DeviceRegistry::save`/`saveReplacing` 在任何失败返回前恢复调用前 `m_profiles` 快照并 `rebuildWarnings()`（票面对象经复核为 DeviceRegistry，非 TaskTemplateStore）；`saveReplacing` 的 `stored` 出参改为仅成功时填充，空 deviceId 分支运行时实证不可达、保留为不变量防御。连带调用方修复：`DeviceBusWidget::editProfileFor` 失败分支改为按入参档案记警（不读 stored）→ `refreshFromRegistry()` → 早退，失败不再写 legacy 行、不广播 `deviceProfileEdited`。`tst_device_registry_store` 新增 3 用例（save 失败回滚 / saveReplacing 失败端点回滚+stored 不写 / 失败返回前内存零残留），失败注入=成功落库后 `ConfigStore::instance().close()`（save 首行 ensureOpen 短路，用例首行运行时背书）。全量 CTest 48 目标绿。
+
 ### 修复（2026-10-17，v2.14 #49-4 lineage/32-run 错配文案分派）
 
 - **阶段恢复拒绝文案三分派与 lineage 惰性清退（#49-4）**：引擎历史上限 `kHistoryLimit=32` FIFO 淘汰，而任务中心 widget 的 `m_lineageByEngineRun` 只插不删——会话内超 32 轮后重试旧运行，lineage 命中但引擎已淘汰存档，`retryFailed` 返回空却被笼统报「阶段恢复被引擎拒绝」，未说明真因。引擎新增只读查询 `hasRunInHistory(runId)`（锁内 `m_history.find`，与 retryFailed 查找同源），`kHistoryLimit` 由 private 上移 public 作单源；widget 新增公共静态纯函数 `retryRejectionMessage(lineageKnown, engineHasHistory)` 三分派文案（本会话外运行/引擎 32 轮已淘汰/仍有存档但被拒（活跃运行）），`onRetryClicked` 在 retryFailed 拒绝且引擎无存档时**惰性清退**该运行的 lineage 与 store→engine 映射（点击即校正，不对引擎 FIFO 淘汰顺序做同构假设，偏差处置记于规格 §7 风险 1）。测试：`tst_task_execution_engine` 新增场景十一——缺命令端点快速失败模板（校验失败同样入档）连跑 33 轮，断言第 32 轮收口时首轮仍在档、第 33 轮后已淘汰且 `retryFailed` 被拒（变异对照验证非假绿）；`tst_task_center_widget` 新增 `retryRejectionMessagesAreDistinguishable` 直测三分支关键词与两两不同（轮数断言单源引用 `kHistoryLimit`）。全量 CTest **48** 目标绿。
