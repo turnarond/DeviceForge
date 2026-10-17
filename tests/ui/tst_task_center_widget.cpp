@@ -829,6 +829,10 @@ private slots:
         QVERIFY(exportBtn->isEnabled());                    // 选中即用
         QCOMPARE(TaskCenterWidget::sanitizedTemplateFileName(QStringLiteral("A/B:*<>|\\?x")),
                  QStringLiteral("A_B_______x.json"));        // 清洗口径钉死（8 个非法字符逐一替换）
+        QCOMPARE(TaskCenterWidget::sanitizedTemplateFileName(QStringLiteral("报表.json")),
+                 QStringLiteral("报表.json"));                  // #55：endsWith 防重，不再 .json.json
+        QCOMPARE(TaskCenterWidget::sanitizedTemplateFileName(QStringLiteral("x.JSON")),
+                 QStringLiteral("x.JSON"));                  // 大小写同判
         const QString path = m_tempDir.filePath(QStringLiteral("t.json"));
         QVERIFY(center.exportTemplateToFile(path));
         QFile f(path); QVERIFY(f.open(QIODevice::ReadOnly));
@@ -837,13 +841,13 @@ private slots:
         QVERIFY(content.contains(QString::fromUtf8("导出我").toUtf8()));
         QVERIFY(!content.contains("template-"));             // ID 不外溢（store 生成的前缀不在文件中）
 
-        // 失败路径：非法盘符路径 → 返回 false 不崩；错误弹窗布防后自动关闭
-        //（QMessageBox::warning 的嵌套事件循环会触发定时器，沿用本文件布防做法）
+        // 失败路径：指向已存在目录（打开写必失败，跨机器确定，#55 替代 Z: 盘假设）；
+        // 错误弹窗布防后自动关闭（沿用本文件布防做法）
         QTimer::singleShot(50, &center, [&center] {
             if (auto* box = center.findChild<QMessageBox*>())
                 box->done(QMessageBox::Ok);
         });
-        QVERIFY(!center.exportTemplateToFile(QStringLiteral("Z:/nope.json")));
+        QVERIFY(!center.exportTemplateToFile(m_tempDir.path()));
     }
 
     // ── ⑧b v2.13 Task 3：模板清空后刷新 → 陈旧选中态复位、导出按钮回禁用 ──
@@ -1146,10 +1150,16 @@ private slots:
         QCOMPARE(table->rowCount(), 1);
         QCOMPARE(table->item(0, 1)->text(), QStringLiteral("/opt/a.bin"));
         table->setItem(0, 0, new QTableWidgetItem(QStringLiteral("C:/tmp/b.bin")));
+        // #55：direction 单元格下拉往返断言（程序 setCurrentIndex 不发 activated，
+        // 由 assemble() 实时快照读 currentData——与用户 activated 即时写回两路同口径）
+        auto* dirCombo = qobject_cast<QComboBox*>(table->cellWidget(0, 2));
+        QVERIFY(dirCombo);
+        dirCombo->setCurrentIndex(dirCombo->findData(QStringLiteral("download")));
         TaskTemplate out; QVERIFY(dlg.collect(&out));
         const auto row = out.steps.front().parameters.value(QStringLiteral("items"))
                              .toList().front().toMap();
         QCOMPARE(row.value(QStringLiteral("localPath")).toString(), QStringLiteral("C:/tmp/b.bin"));
+        QCOMPARE(row.value(QStringLiteral("direction")).toString(), QStringLiteral("download"));
         QCOMPARE(row.value(QStringLiteral("overwrite")).toString(), QStringLiteral("skip"));
     }
 

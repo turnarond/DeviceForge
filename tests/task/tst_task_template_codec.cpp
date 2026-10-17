@@ -1,4 +1,4 @@
-#include <QtTest>
+﻿#include <QtTest>
 #include "task/TaskTemplateCodec.h"
 
 class TstTaskTemplateCodec : public QObject {
@@ -73,6 +73,21 @@ private slots:
         QVERIFY(reason.contains(QStringLiteral("升级")));
         // formatVersion 缺失
         QVERIFY(!decodeTemplateFile(R"({"format":"deviceforge.task-template","template":{}})", &reason));
+        QVERIFY(reason.contains(QStringLiteral("formatVersion")));
+        // #55：非整数/布尔不得通过版本闸（toInt 静默转换漏网形态）。
+        // 模板体必须是完整合法行——否则"缺名称/步骤"会替版本闸挡下坏版本，
+        // 断言失去判据力（变异负对照实测踩坑后就此钉死）
+        const QByteArray kValidBody =
+            QByteArrayLiteral("\"template\":{\"name\":\"n\",\"steps\":[{\"type\":\"reboot\",\"parameters\":{}}]}");
+        const QByteArray head15 =
+            QByteArrayLiteral("{\"format\":\"deviceforge.task-template\",\"formatVersion\":1.5,");
+        const QByteArray headTrue =
+            QByteArrayLiteral("{\"format\":\"deviceforge.task-template\",\"formatVersion\":true,");
+        const QByteArray tail = QByteArrayLiteral("}");
+        QVERIFY(!decodeTemplateFile(head15 + kValidBody + tail, &reason));
+        QVERIFY(reason.contains(QStringLiteral("formatVersion")));
+        QVERIFY(!decodeTemplateFile(headTrue + kValidBody + tail, &reason));
+        QVERIFY(reason.contains(QStringLiteral("formatVersion")));
     }
     void fileRejectsSensitiveKeys()
     {

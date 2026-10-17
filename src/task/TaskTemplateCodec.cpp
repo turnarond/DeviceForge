@@ -205,8 +205,15 @@ std::optional<TaskTemplate> decodeTemplateFile(const QByteArray& data, QString* 
     const QVariantMap root = doc.toVariant().toMap();
     if (root.value(QStringLiteral("format")).toString() != QString(kTemplateFileFormat))
         return fail(QStringLiteral("不是 DeviceForge 模板文件"));
-    const int formatVersion = root.value(QStringLiteral("formatVersion")).toInt();
-    if (!root.contains(QStringLiteral("formatVersion")) || formatVersion < 1)
+    const QVariant versionValue = root.value(QStringLiteral("formatVersion"));
+    // #55 严格整数闸：QVariant::toInt() 会把 true→1、1.5→1 静默过闸，
+    // 手改文件可借此伪装成合法 v1——要求数值类型且为整数值，bool 显式拒绝
+    const bool numeric = versionValue.typeId() == QMetaType::Int
+        || versionValue.typeId() == QMetaType::LongLong
+        || (versionValue.typeId() == QMetaType::Double
+            && versionValue.toDouble() == qRound(versionValue.toDouble()));
+    const int formatVersion = versionValue.toInt();
+    if (!root.contains(QStringLiteral("formatVersion")) || !numeric || formatVersion < 1)
         return fail(QStringLiteral("模板文件缺少合法的 formatVersion"));
     if (formatVersion > kTemplateFileFormatVersion)
         return fail(QStringLiteral("模板文件版本(v%1)比本机程序更新，请升级 DeviceForge 后导入").arg(formatVersion));

@@ -2,6 +2,16 @@
 
 ## [未发布]
 
+### Fixed/工具（2026-10-16，#55 v2.13 终审缓行包）
+
+- **formatVersion 严格整数闸**：`decodeTemplateFile` 拒绝 `1.5`/`true` 经 `toInt()` 静默转换伪装成 v1 的手改文件（要求数值类型且为整数值）；缺 version 用例补文案断言。
+- **`.json` 后缀防重**：`sanitizedTemplateFileName` 对已以 .json 结尾（大小写同判）的名字不再追加，杜绝 `x.json.json` 默认名。
+- **编辑器版本死限解除**：teVersion 上限 999 → Int 全域（store 无上限、导入 version 任意，999 封顶会把高版本模板钳进降级闸永久拒绝的编辑死锁）；手册同步"≥1 整数"口径。
+- **导出失败用例跨机化**：`Z:/nope.json` 盘符假设 → 指向已存在目录（Windows 打开写必失败），消除他机假绿/假红。
+- **direction 单元格往返断言补挂**（deploy 面板三列口径全钉）；**覆盖版本口径就实**：手册明示"导入文件自带版本号在覆盖时不生效"（维持继承本机版本的既定裁定，仅补文档）。
+- 测试：codec 数据驱动 +2 拒绝形态、widget 断言 3 处扩展；全量 ctest 46/46。
+
+
 ### Added（2026-10-16，#54 v2.13 任务模板编辑器）
 
 - **任务模板编辑器（新建/编辑/删除产品内正规入口）**：任务中心页左栏上方新增「新建模板/删除模板」小工具条（新建恒可用、删除选中启用，删除确认框默认「否」），中栏摘要行下方新增「编辑模板」（选中启用），模板列表双击行=编辑同款。编辑器对话框 `TaskTemplateEditorDialog`：元信息（名称/描述/标签/version 1..999 手动可编辑、不自动 bump）、目标设备多选（本机档案 ∪ 模板引用并集，悬空引用「（本机无档案）」保留展示且默认勾选——与导入的悬空口径一致，建好同端点档案后自动接上）、步骤列表（添加按 deploy→commands→reboot→recover 轮转/删除/上移下移/类型切换即重置该步参数）、deploy 页（items 4 列表格即时写回 + 「添加文件…/添加目录…」非原生批量添加；`teRemoteDir` 仅为批量拼接前缀的 UI 辅助、**不是持久化参数键**；旧 `files`+`remoteDirectory` 简写加载即经 `canonicalDeployParameters` 归一为 items[]）、commands/recover 共用面板（多行命令一行一条、空行忽略；timeoutSec 1..600 默认 10；recover 顶部说明 label）、reboot 静态说明页；共享 `teProtocol` 协议过滤下拉在参数栈外按步读写。保存闸=validate（必填+步骤参数预检，不过弹警告停留对话框）→ collect 组装（templateId/unknownFields 原样携带）→ 编辑原位覆盖保 id、新建由 store 生成 id；删除经 `TaskTemplateStore::remove`（本次一并落地存储腿），历史执行记录为不可变快照不受影响。兑现 v2.11 规格 §4「产品内产出模板」承诺（部署侧一键捕获转后续增强）。

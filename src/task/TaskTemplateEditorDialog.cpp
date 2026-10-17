@@ -38,6 +38,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 
@@ -212,8 +213,10 @@ TaskTemplateEditorDialog::TaskTemplateEditorDialog(const TaskTemplate& initial,
     metaForm->addRow(QStringLiteral("标签"), m_tags);
     m_version = new QSpinBox(metaGroup);
     m_version->setObjectName(QStringLiteral("teVersion"));
-    m_version->setRange(1, 999);
-    m_version->setValue(std::clamp(initial.version, 1, 999));
+    // #55：上限不设实用界（store 无上限、导入文件 version 任意）——999 封顶会把
+    // 高版本模板钳到 999，再被存储降级闸永久拒绝，形成编辑死锁
+    m_version->setRange(1, std::numeric_limits<int>::max());
+    m_version->setValue(std::max(1, initial.version));
     metaForm->addRow(QStringLiteral("版本"), m_version);
 
     auto* deviceGroup = new QGroupBox(QStringLiteral("目标设备"), this);
