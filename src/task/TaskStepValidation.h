@@ -12,7 +12,7 @@
  *              参照 NetRelayTypes.h / WsEventTypes.h 模式）。引擎 Validating
  *              阶段（TaskExecutionEngine::validateDeviceSteps）与编辑器
  *              （TaskTemplateEditorDialog::validate）此前两处并行实现参数校验，
- *              commands 分支文案分叉（「至少一条命令」vs「缺少命令列表」）；
+ *              commands 分支文案与判定口径双双分叉（编辑器更严、引擎更宽）；
  *              本头把文案收敛为单一来源。
  *              分工裁定：端点/设备存在性校验**刻意留在引擎执行期**——模板可跨机
  *              迁移，导入/编辑期本机端点未必存在（v2.13 悬空引用语义的延伸），

@@ -1,7 +1,7 @@
 // tst_task_step_validation.cpp — 步骤参数级校验共享纯函数守卫测试（v2.14 #49-3）。
 //
 // 覆盖意图：引擎 Validating（validateDeviceSteps）与编辑器 validate() 此前两处并行
-// 实现参数校验且 commands 分支文案分叉（「至少一条命令」vs「缺少命令列表」）。
+// 实现参数校验且 commands 分支文案与判定口径分叉（编辑器 trim 判空、引擎裸列表）。
 // 本测试锁定共享头 taskstep::stepParamsValidationError / parseDeployItems 的
 // 唯一口径：整句中文文案、trim 后判空（编辑器语义，比引擎旧裸列表判定更严）、
 // deploy 简写展开与 items 规范形态、reboot 无参数级校验恒通过。
