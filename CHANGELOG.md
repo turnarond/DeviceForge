@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 文档（2026-10-17，v2.14 #49-1 AuthResolver 凭据降级语义定档）
+
+- 任务链凭据取档案首端点可解析引用（定档，非缺陷修复）：v2.11 规格 §7 增补「凭据解析降级契约（v2.14 #49-1 定档）」小节，将引擎 per-device AuthResolver 的降级语义（同档案多 credentialRef 取首个可解析引用、解析顺序=端点表序、其余端点共用该凭据、告警仅设备名与引用数、跨协议独立凭据 v2.14 明确不演进）从代码注释升格为书面契约；`TaskCenterWidget.h` 头注释同步指回该契约。纯文档票，不改任何 .cpp 逻辑。
+
 ### 修复（2026-10-17，v2.14 #49-7 DeviceRegistry 落盘失败快照回滚）
 
 - **落盘失败不留半成品内存**：`DeviceRegistry::save`/`saveReplacing` 在任何失败返回前恢复调用前 `m_profiles` 快照并 `rebuildWarnings()`（票面对象经复核为 DeviceRegistry，非 TaskTemplateStore）；`saveReplacing` 的 `stored` 出参改为仅成功时填充，空 deviceId 分支运行时实证不可达、保留为不变量防御。连带调用方修复：`DeviceBusWidget::editProfileFor` 失败分支改为按入参档案记警（不读 stored）→ `refreshFromRegistry()` → 早退，失败不再写 legacy 行、不广播 `deviceProfileEdited`。`tst_device_registry_store` 新增 3 用例（save 失败回滚 / saveReplacing 失败端点回滚+stored 不写 / 失败返回前内存零残留），失败注入=成功落库后 `ConfigStore::instance().close()`（save 首行 ensureOpen 短路，用例首行运行时背书）。全量 CTest 48 目标绿。
