@@ -674,6 +674,18 @@ if(_qt_bin_dir)
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
 
+# --- 步骤参数校验共享纯函数守卫测试（v2.14 #49-3：引擎/编辑器文案单源）---
+add_executable(tst_task_step_validation
+    task/tst_task_step_validation.cpp
+)
+target_include_directories(tst_task_step_validation PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_step_validation PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_task_step_validation COMMAND tst_task_step_validation)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_step_validation PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- TaskExecutionEngine 状态机与阶段恢复测试（v2.11 Task 4，Fake 适配器无网络）---
 # 注：引擎日志路径复用 TaskRunStore 的 sanitizeTaskErrorText（终审 Important 2），
 #     须一并编入 TaskRunStore.cpp + ConfigStore.cpp（脱敏实现所在 TU）。

@@ -1114,7 +1114,7 @@ private slots:
         cmd.parameters.insert(QStringLiteral("commands"), QStringList{QStringLiteral("  ")});
         seeded.steps.push_back(cmd);
         TaskTemplateEditorDialog dlg2(seeded, {});
-        QVERIFY(dlg2.validate().contains(QStringLiteral("至少一条命令")));
+        QVERIFY(dlg2.validate().contains(QStringLiteral("缺少命令列表")));   // v2.14 #49-3 共享口径
     }
     void editorDialog_canonicalizeLegacyFilesShorthand()
     {

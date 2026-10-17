@@ -16,6 +16,7 @@
 #include "task/TaskTemplateEditorDialog.h"
 
 #include "task/TaskExecutionTypes.h"
+#include "task/TaskStepValidation.h"
 #include "task/TaskTemplateStore.h"
 
 #include <QComboBox>
@@ -112,46 +113,9 @@ int pageIndexForType(TaskStepType type)
     return 0;
 }
 
-// deploy 参数预检：复刻引擎 parseDeployItems 的文案口径（编辑器同口径；
-// 端点存在性判断属执行期 validateDeviceSteps 职责，此处不做）。
-// 返回空串=通过；非空=引擎原文（步骤前缀由调用方拼装）。
-QString deployParamsParseError(const QVariantMap& params)
-{
-    const QVariant itemsValue = params.value(QStringLiteral("items"));
-    const QVariantList list = itemsValue.toList();
-    if (!list.isEmpty()) {
-        for (const QVariant& value : list) {
-            if (value.typeId() != QMetaType::QVariantMap)
-                return QStringLiteral("文件部署步骤条目结构非法（应为对象）");
-            const QVariantMap map = value.toMap();
-            if (map.value(QStringLiteral("localPath")).toString().isEmpty()
-                || map.value(QStringLiteral("remotePath")).toString().isEmpty())
-                return QStringLiteral("文件部署步骤存在缺少 localPath/remotePath 的条目");
-        }
-        return QString();
-    }
-    const QStringList files = params.value(QStringLiteral("files")).toStringList();
-    const QString remoteDirectory = params.value(QStringLiteral("remoteDirectory")).toString();
-    if (!files.isEmpty() && !remoteDirectory.isEmpty()) {
-        for (const QString& file : files) {
-            if (file.trimmed().isEmpty())
-                return QStringLiteral("文件部署清单存在空路径");
-        }
-        return QString();
-    }
-    return QStringLiteral("文件部署步骤缺少文件清单（items 数组，或 files + remoteDirectory）");
-}
-
-// commands trim 去空后是否一条不剩（编辑器预检；引擎执行期同口径取非空集合）
-bool commandsEmptyAfterTrim(const QVariantMap& params)
-{
-    const QStringList commands = params.value(QStringLiteral("commands")).toStringList();
-    for (const QString& command : commands) {
-        if (!command.trimmed().isEmpty())
-            return false;
-    }
-    return true;
-}
+// 步骤参数级校验（deploy 参数形态、commands trim 判空）已收敛至共享纯函数
+// taskstep::stepParamsValidationError（v2.14 #49-3，引擎/编辑器文案单源）。
+// 端点/设备存在性判断属执行期 validateDeviceSteps 职责，编辑器不做。
 
 // 批量添加远端路径拼接：与 canonicalDeployParameters 同口径（去尾斜杠；
 // 空前缀=根目录 → "/"+名称，保证 remotePath 非空、validate 引擎契约不破）
@@ -769,26 +733,12 @@ QString TaskTemplateEditorDialog::validate() const
     const TaskTemplateValidationResult base = validateTaskTemplate(candidate);
     if (!base.valid)
         return base.error;
+    // 步骤参数级校验走共享纯函数（v2.14 #49-3：与引擎 Validating 文案单源；
+    // 端点存在性留执行期，编辑器不校验设备端点）。
     for (std::size_t i = 0; i < candidate.steps.size(); ++i) {
-        const TaskStep& step = candidate.steps[i];
-        switch (step.type) {
-        case TaskStepType::RunCommands:
-        case TaskStepType::Recover:
-            if (commandsEmptyAfterTrim(step.parameters))
-                return QStringLiteral("步骤 %1 至少一条命令").arg(i + 1);
-            break;
-        case TaskStepType::DeployFiles: {
-            const QString parseError = deployParamsParseError(step.parameters);
-            if (!parseError.isEmpty()) {
-                return QStringLiteral("步骤 %1（文件部署）参数非法：%2")
-                    .arg(i + 1)
-                    .arg(parseError);
-            }
-            break;
-        }
-        case TaskStepType::Reboot:
-            break;   // 无额外参数；协议过滤可选
-        }
+        const QString err = taskstep::stepParamsValidationError(candidate.steps[i], i);
+        if (!err.isEmpty())
+            return err;
     }
     return QString();
 }

@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 重构（2026-10-17，v2.14 #49-3 步骤参数校验共享纯函数）
+
+- **步骤参数校验文案引擎/编辑器单源**：新增纯逻辑头 `src/task/TaskStepValidation.h`（`taskstep::parseDeployItems` 自引擎 cpp 匿名 ns 整体搬移、行为零变化；`taskstep::stepParamsValidationError` 收敛四类步骤的参数级判定），引擎 `validateDeviceSteps`（Validating）与编辑器 `validate()` 此前两处并行实现、commands 分支文案分叉（编辑器「至少一条命令」vs 引擎「缺少命令列表」）统一为引擎原形「步骤 %1（%2）缺少命令列表」。commands 判定采编辑器 trim 后判空语义——比引擎旧裸列表 isEmpty 更严（纯空白命令行视为无效），引擎随之刻意收紧。端点/设备存在性校验**刻意留在引擎执行期**（模板可跨机，导入/编辑期本机端点未必存在，v2.13 悬空引用语义延伸）。新增 `tst_task_step_validation` 纯逻辑目标（12 用例）；全量 CTest **48** 目标绿。
+
 ### Added（2026-10-17，v2.14 #49-2 单次部署配置存为任务模板）
 
 - **部署页「保存为模板」全链接线（兑现 v2.11 规格 §4 单次配置捕获承诺，#49-2 收口）**：「文件部署」页工具栏部署组「▶ 部署」旁新增「保存为模板」按钮（`deploySaveTemplateBtn`，部署进行中与部署按钮同节奏禁用）。槽内先走与部署入口同源的拒绝分支（左面板远程浏览源/空文件清单），再把单次配置经 `deploymap::buildTemplateFromOnceConfig`（新纯映射头 `DeployTemplateMap.h`）固化为预填模板——文件清单+目标目录→deploy 步 `files+remoteDirectory` 简写（编辑器打开归一 items[]）、勾选设备→deviceIds（**未勾选=未绑定留空，不展开为全部设备**；空档案 ID 逐个过滤）、重启勾选→可选 reboot 步（空命令回退 `reboot`）；部署前清空/FTPS/端口/并发度刻意不进模板（工具级/连接级配置）。预填经 v2.13 `TaskTemplateEditorDialog` 模态编辑后，由主窗口注入的 `std::function` 缝（widget 不直连 store）经 `TaskTemplateStore::saveUniqueByName`（新增）落库：同名（大小写敏感全等）冲突三选「覆盖/改名保存/取消」弹窗（**默认=改名**，与 v2.13 导入冲突同口径）——覆盖继承既有 templateId 且 version 取 max(既有,入站)、改名「名称 (2)」递增找空位另存新 ID、取消不落库回中文原因；保存通道未注入时止步日志提示（无宿主兜底）。
