@@ -129,6 +129,11 @@ protected:
     // 引擎工厂缝：测试子类可注入带 Fake 依赖的引擎（默认生产配置）
     virtual std::unique_ptr<TaskExecutionEngine> createEngine();
 
+    // v2.14 冒烟修复：页显即刷新模板列表——部署页「保存为模板」等外部落库源
+    // 不经过本页任何操作，无通知路径可挂；showEvent 收敛一切变更源。
+    // 选中与搜索过滤由 refreshTemplates 既有语义保持，代价仅一次 SQLite 读页。
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void refreshTemplates();
     void refreshHistory();

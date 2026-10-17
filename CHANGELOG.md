@@ -2,8 +2,9 @@
 
 ## [未发布]
 
-### 修复（2026-10-17，v2.14 冒烟修复批：编辑器按钮接线 + 部署条目移除）
+### 修复（2026-10-17，v2.14 冒烟修复批：编辑器按钮接线 + 部署条目移除 + 页显刷新）
 
+- **部署页保存的模板在任务中心不可见（页显刷新缺失）**：任务中心模板列表只在构造/本页操作时刷新，部署页「保存为模板」属外部落库源、无通知路径——保存成功日志可见但切到任务中心列表仍是旧的。`TaskCenterWidget` 覆写 `showEvent` 页显即 `refreshTemplates()`（选中与搜索过滤由既有语义保持，代价一次 SQLite 读页），收敛一切外部变更源。用例 `taskCenter_showEventRefreshesExternallySavedTemplates` 非模态 show 直测。
 - **模板编辑器「保存/取消」按钮无响应（v2.13 起带病发布，冒烟实测捕获）**：`TaskTemplateEditorDialog` 底部 `QDialogButtonBox` 从未接线——原注释误称「QDialog 自动接线 accepted→accept()」（Qt 实际必须手动 connect，仓内先例 `deviceProfileEditor` 即手动连），导致点「保存」「取消」均无反应、只能关窗口 ✕，编辑器 UI 无法保存任何模板。补 `connect(accepted→QDialog::accept)`/`connect(rejected→QDialog::reject)`（accept 为虚覆写，走 vtable 分派到校验闸），注释就实。自动化逃逸原因复盘：#54 用例全部直调 validate()/collect() 绕过按钮，按钮流登记为人工冒烟覆盖而 v2.13 发版未跑该格——本次以 `editorDialog_buttonBoxWiringClosesDialog` 非模态 click 直测补上（合法输入点保存→关闭且 Accepted；点取消→Rejected）。
 - **部署步骤文件条目只加不删（#54 设计缺口）**：teItemList 此前仅有「添加文件…/添加目录…」入口，无移除按钮、无 Del 键、无右键菜单，添加错了只能整步删除重配。新增「移除选中行」按钮（`teRemoveItem`，无选中禁用），点击删表行并即时 `flushDeployTable()` 写回步骤真值（removeRow 不发 cellChanged，必须手动 flush；程序化绑定窗口内忽略防误删）。用例 `editorDialog_removeItemRowDeletesEntry` 锁定：删行后 collect 出的 items 只剩未删条目。
 - 两修复同源于 v2.14 波1「保存为模板」GUI 冒烟；`tst_task_center_widget` 32/32 绿。

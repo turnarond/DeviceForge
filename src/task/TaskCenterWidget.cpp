@@ -349,6 +349,13 @@ void TaskCenterWidget::setStores(TaskTemplateStore* templates, TaskRunStore* run
     refreshHistory();
 }
 
+// v2.14 冒烟修复：见头文件注释——页显刷新，外部落库模板立即可见。
+void TaskCenterWidget::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    refreshTemplates();
+}
+
 void TaskCenterWidget::setRunConfirmer(RunConfirmer confirmer)
 {
     m_confirmer = std::move(confirmer);

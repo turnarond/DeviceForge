@@ -1188,6 +1188,36 @@ private slots:
         QCOMPARE(items[0].toMap().value(QStringLiteral("localPath")).toString(),
                  QStringLiteral("D:/keep.bin"));
     }
+    // v2.14 冒烟修复：部署页「保存为模板」等外部落库源不经过任务中心任何操作，
+    // 列表只在构造/setStores/本页操作时刷新——用户保存后切到任务中心看不到新
+    // 模板。页显（showEvent）刷新收敛一切外部变更源；选中与搜索过滤由
+    // refreshTemplates 既有语义保持。
+    void taskCenter_showEventRefreshesExternallySavedTemplates()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        TaskTemplateStore templates;
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);              // 此刻空库
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QCOMPARE(list->count(), 0);
+
+        TaskTemplate external;
+        external.name = "外部落库";
+        external.version = 1;
+        external.steps = {makeStep(TaskStepType::Reboot, {})};
+        QVERIFY(templates.save(external));                // 模拟部署页保存通道
+
+        center.show();
+        QVERIFY2(list->count() == 1,
+                 "页显刷新应让外部落库模板立即可见（showEvent→refreshTemplates）");
+        QCOMPARE(list->item(0)->text().contains(QStringLiteral("外部落库")), true);
+        center.hide();
+    }
     void editorDialog_canonicalizeLegacyFilesShorthand()
     {
         QVariantMap legacy;
