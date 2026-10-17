@@ -275,7 +275,7 @@ void WebSocketWidget::setupUi()
     m_droppedLabel->setObjectName(QStringLiteral("wsDroppedLabel"));
     m_droppedLabel->setVisible(false);
     // #50-4 定档语义：与 onStartClicked/onClearEventsClicked 的归零行为一致，不改行为只交底
-    m_droppedLabel->setToolTip(QStringLiteral("丢弃计数仅统计本会话：停止或清除事件流后归零，不跨重启累计"));
+    m_droppedLabel->setToolTip(QStringLiteral("丢弃计数仅统计本会话：重新启动或清除事件流后归零，不跨重启累计"));
     toolRow->addWidget(m_chkAutoScroll);
     toolRow->addWidget(m_btnClearEvents);
     toolRow->addStretch();

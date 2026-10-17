@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 文档（2026-10-17，v2.14 勘误收口与全量核验波）
+
+- **对外文档勘误收口**：本文件 v2.12 段「事件流含对端」句段末追加勘误注记（历史正文不改写）；产品路线图「对端」表述归位 v2.14、「事件过滤」挂账就实为 v2.14 完成交付；2026-10-15 运营文章「v2.13 已立项…事件过滤」句改 v2.14 并加文首修订说明（外部渠道已发布快照无法回改，列为待人类渠道同步事项）。措辞就实：用户手册与 `wsDroppedLabel` tooltip「停止或清除后归零」改「重新启动或清除事件流后归零」（实况 `onStartClicked`/`onClearEventsClicked` 归零、单点停止不归零），手册对端列全称判断补 Server「发」行对端固定记「订阅者」既有形态（`serverPublishToSubscribers` 实证）；v2.14 #49-3 段 `tst_task_step_validation`「12 用例」就实为 10 用例（逐函数清点）。规格 `2026-10-17-v2.14-hardening-pack-design.md` §4.2/§4.3 加执行偏差注记（reboot 命令可用性分层澄清、惰性清退替代收口同步淘汰），原文保留。全量终验：Release 构建绿、CTest 48 目标连续两遍全绿、versioncheck [OK] 2.13.0（本波不动版本九源）、UI 冒烟通过。
+
 ### 增强（2026-10-17，v2.14 #50-3 WebSocket Token 常量时间比较+长度上限）
 
 - **Token 常量时间比较与 256 长度上限（#50-3）**：WebSocket Server 握手认证此前用 `std::string::operator!=` 短路逐字节比较 token（泄露「前 N 字节匹配」时序签名的侧信道面）且无长度上限。`WsEventTypes.h` 新增纯逻辑 `wsproto::constantTimeEquals`（等长全扫描、长度差异循环后并入判定、volatile 落点防 -O2 优化回短路；只防时序旁路、不防长度泄露，如实标注）与 `kAuthTokenMaxLen=256` 上限常量；`onNewConnection` 认证比较换用之。`WebSocketBackend::setAuthToken` 签名 void→bool 加长度闸——超限拒绝写入（保持旧值）返回 false；Widget `onStartClicked` 检查返回值，false 时弹「Token 不得超过 256 字符」且不启动；Token 输入框 `setMaxLength(256)` 同源限制。测试：`tst_ws_event_types` 新增 `constantTimeEqualsBehavior`（等值/单字节差/双向长度差/空串组；时序性质单测不可靠断言、规格定档不做计时断言）与 `authTokenMaxLengthConstant`；`tst_ws_loopback` 补 Server+Token 环回空白——`authTokenRejectsWrongConnection`（错误 token 拒连以「认证失败」日志行取证、正确 token 正常入在线列表）与 `authTokenLengthGateKeepsPreviousValue`（空串/恰 256 合法回 true、300 字符回 false 且旧值保持：持被拒超限 token 的客户端被拒、持旧 token 的客户端正常接入）。全量 CTest **48** 目标绿。
@@ -34,7 +38,7 @@
 
 ### 重构（2026-10-17，v2.14 #49-3 步骤参数校验共享纯函数）
 
-- **步骤参数校验文案引擎/编辑器单源**：新增纯逻辑头 `src/task/TaskStepValidation.h`（`taskstep::parseDeployItems` 自引擎 cpp 匿名 ns 整体搬移、行为零变化；`taskstep::stepParamsValidationError` 收敛四类步骤的参数级判定），引擎 `validateDeviceSteps`（Validating）与编辑器 `validate()` 此前两处并行实现、commands 分支文案分叉（编辑器「至少一条命令」vs 引擎「缺少命令列表」）统一为引擎原形「步骤 %1（%2）缺少命令列表」。commands 判定采编辑器 trim 后判空语义——比引擎旧裸列表 isEmpty 更严（纯空白命令行视为无效），引擎随之刻意收紧。端点/设备存在性校验**刻意留在引擎执行期**（模板可跨机，导入/编辑期本机端点未必存在，v2.13 悬空引用语义延伸）。新增 `tst_task_step_validation` 纯逻辑目标（12 用例）；全量 CTest **48** 目标绿。
+- **步骤参数校验文案引擎/编辑器单源**：新增纯逻辑头 `src/task/TaskStepValidation.h`（`taskstep::parseDeployItems` 自引擎 cpp 匿名 ns 整体搬移、行为零变化；`taskstep::stepParamsValidationError` 收敛四类步骤的参数级判定），引擎 `validateDeviceSteps`（Validating）与编辑器 `validate()` 此前两处并行实现、commands 分支文案分叉（编辑器「至少一条命令」vs 引擎「缺少命令列表」）统一为引擎原形「步骤 %1（%2）缺少命令列表」。commands 判定采编辑器 trim 后判空语义——比引擎旧裸列表 isEmpty 更严（纯空白命令行视为无效），引擎随之刻意收紧。端点/设备存在性校验**刻意留在引擎执行期**（模板可跨机，导入/编辑期本机端点未必存在，v2.13 悬空引用语义延伸）。新增 `tst_task_step_validation` 纯逻辑目标（10 用例）；全量 CTest **48** 目标绿。
 
 ### Added（2026-10-17，v2.14 #49-2 单次部署配置存为任务模板）
 
@@ -95,6 +99,8 @@
 - **WebSocket 双栏控制台重构**：上部连接/操作区 + 下部事件流（2000 行环形、方向/对端/字节数/内容预览，UTF-8 截断安全）；事件模型 `WsEventTypes` 纯逻辑独立可测；Token 凭证迁移 DPAPI 存储，写路径落盘时清扫旧明文行。
 - **MODBUS 工具重构（多 PLC 主看偶写）**：设备身份统一至 DeviceRegistry 档案（档案含 modbus 端点=能力开关），目标档案持久化 `modbus.target`（旧 `modbus.slave` 一次性自动迁移、幂等跳过）；250ms 单驱动轮询调度器（每连接 FIFO 队列、写插队、在途保护、指数退避重连）；双栏目标清单 + 逐寄存器视图（变化高亮、跳过计数、退避着色）；QModbusTcpServer 本机环回集成测试。
 - **文件管理增强（FTP/SFTP 部署双栏）**：元数据列（所有者/修改时间/权限，缺失显示 `—`；创建时间 FTP/SFTP 协议不可得，不设该列）；Ctrl+M 目录对比（元数据口径：size 主判 + 修改时间分钟辅助，差异着色 + 行对齐 + 占位行 + 仅显示差异过滤 + 汇总条，刷新自动退出）；F4 预览编辑器（UTF-8/GBK/UTF-16 BOM 自动探测 + 手动切换重解码、>2MB/二进制/混合行尾只读、保存保持原行尾、异步回传含远端变化冲突确认"仍要覆盖/放弃并刷新"）；libcurl/libssh2 内存读写原语（无临时文件中转，SylixOS 句柄纪律与既有传输一致）。
+
+> 勘误（2026-10-17）：上文 WebSocket 条目「方向/对端/字节数/内容预览」中，事件流「对端」列随 v2.14 交付（#50-1，六列口径：时间|方向|主题|对端|字节|内容预览），当时表述先于实现；v2.12 落版事件流实为五列（无「对端」）。历史条目正文不改写，以本注记就实。
 
 ### Fixed
 - WebSocket 评审修复波：后端错误路径连接悬挂致 UAF（onClientError 断链清理 + 析构无条件收尾）、字节计数口径修正为原始字节、Legacy 明文 Token 行清扫。
