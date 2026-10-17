@@ -167,6 +167,8 @@ void WebSocketWidget::setupUi()
         m_editToken->setObjectName(QStringLiteral("wsToken"));
         m_editToken->setEchoMode(QLineEdit::Password);
         m_editToken->setPlaceholderText(QStringLiteral("留空 = 不校验 Token"));
+        // #50-3：输入侧长度闸与后端 setAuthToken 长度闸同源（全文件仅此一处 Token 实例）
+        m_editToken->setMaxLength(static_cast<int>(wsproto::kAuthTokenMaxLen));
         m_btnTokenEye = new QPushButton(QStringLiteral("显示"), serverPage);
         m_btnTokenEye->setObjectName(QStringLiteral("wsTokenEye"));
         m_btnTokenEye->setCheckable(true);
@@ -612,7 +614,12 @@ void WebSocketWidget::onStartClicked()
                                          {QStringLiteral("updated_at"),
                                           QDateTime::currentMSecsSinceEpoch()}});
         m_backend->setBindAddress(bind);
-        m_backend->setAuthToken(token.toStdString());
+        // #50-3：长度闸拒绝（后端保持旧值）——与其余拒绝分支同形态，弹窗提示且不启动
+        if (!m_backend->setAuthToken(token.toStdString())) {
+            QMessageBox::warning(this, QStringLiteral("警告"),
+                                 QStringLiteral("Token 不得超过 256 字符"));
+            return;
+        }
         m_backend->startServer(port, ssl);
         emit toolStatusChanged(QStringLiteral("Server 启动中..."));
     } else {

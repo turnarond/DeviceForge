@@ -69,7 +69,14 @@ public:
     int serverListenPort() const { return m_server ? m_server->serverPort() : -1; }
 
     void setBindAddress(const QString& addr) { m_bindAddress = addr; }
-    void setAuthToken(const std::string& tok) { m_authToken = tok; }
+    // #50-3 长度闸（签名 void→bool）：超 kAuthTokenMaxLen 拒绝写入并保持旧值返回
+    // false；合法（含空串=不校验）写入返回 true。调用方须检查返回值。
+    bool setAuthToken(const std::string& tok) {
+        if (tok.size() > wsproto::kAuthTokenMaxLen)
+            return false;
+        m_authToken = tok;
+        return true;
+    }
     void setIgnoreSslErrors(bool ignore) { m_ignoreSslErrors = ignore; }  // Client 模式信任自签名证书（测试用）
 
     // 回调设置（由 Widget 调用，跨线程安全）

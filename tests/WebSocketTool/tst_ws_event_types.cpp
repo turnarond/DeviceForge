@@ -14,6 +14,8 @@
 #include <QtTest>
 #include <QByteArray>
 
+#include <string>
+
 #include "tools/WebSocketTool/WsEventTypes.h"
 
 using wsproto::FrameKind;
@@ -31,6 +33,8 @@ private slots:
     void previewTruncationIsUtf8BoundarySafe();
     void filterFieldsSemantics();
     void filterPredicateDelegatesToFields();
+    void constantTimeEqualsBehavior();
+    void authTokenMaxLengthConstant();
 };
 
 void TstWsEventTypes::parsesProtocolFrames_data()
@@ -168,6 +172,36 @@ void TstWsEventTypes::filterPredicateDelegatesToFields()
     QVERIFY(!wsproto::matchesFilter(e, QStringLiteral("发"), QString()));              // 方向不命中
     QVERIFY(wsproto::matchesFilter(e, QString(), QStringLiteral("AB")));               // 大小写不敏感子串
     QVERIFY(wsproto::matchesFilter(e, QStringLiteral("收"), QStringLiteral("abc")));   // 组合命中
+}
+
+// #50-3：constantTimeEquals 行为正确性组。
+// 【定档说明】本用例只验行为正确性（等值/单字节差/长度差/空串）；时序性质
+// （运行时长与匹配前缀无关）在单测里不可靠断言——调度噪声远大于比较耗时，
+// 计时断言只会制造 flake，故规格定档不做时序断言，勿"更严格"地补计时用例。
+void TstWsEventTypes::constantTimeEqualsBehavior()
+{
+    // 等值 → true
+    QVERIFY(wsproto::constantTimeEquals("secret", "secret"));
+    QVERIFY(wsproto::constantTimeEquals("a", "a"));
+    // 单字节差（等长）→ false
+    QVERIFY(!wsproto::constantTimeEquals("secret", "secreu"));
+    QVERIFY(!wsproto::constantTimeEquals("secret", "xecret"));
+    // 长度差 → false（两侧各验一向）
+    QVERIFY(!wsproto::constantTimeEquals("secret", "secr"));      // a 长 b 短
+    QVERIFY(!wsproto::constantTimeEquals("secr", "secret"));      // a 短 b 长
+    // 长度差且公共前缀全等（短路比较的最坏情形）→ false
+    QVERIFY(!wsproto::constantTimeEquals("token123", "token"));
+    // 空串对空串 → true
+    QVERIFY(wsproto::constantTimeEquals("", ""));
+    // 空串对非空 → false
+    QVERIFY(!wsproto::constantTimeEquals("", "x"));
+    QVERIFY(!wsproto::constantTimeEquals("x", ""));
+}
+
+// #50-3：Token 长度上限常量锁定（256），与 setAuthToken 长度闸/UI setMaxLength 同源
+void TstWsEventTypes::authTokenMaxLengthConstant()
+{
+    QCOMPARE(wsproto::kAuthTokenMaxLen, std::size_t(256));
 }
 
 QTEST_MAIN(TstWsEventTypes)

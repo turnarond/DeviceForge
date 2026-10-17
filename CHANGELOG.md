@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 增强（2026-10-17，v2.14 #50-3 WebSocket Token 常量时间比较+长度上限）
+
+- **Token 常量时间比较与 256 长度上限（#50-3）**：WebSocket Server 握手认证此前用 `std::string::operator!=` 短路逐字节比较 token（泄露「前 N 字节匹配」时序签名的侧信道面）且无长度上限。`WsEventTypes.h` 新增纯逻辑 `wsproto::constantTimeEquals`（等长全扫描、长度差异循环后并入判定、volatile 落点防 -O2 优化回短路；只防时序旁路、不防长度泄露，如实标注）与 `kAuthTokenMaxLen=256` 上限常量；`onNewConnection` 认证比较换用之。`WebSocketBackend::setAuthToken` 签名 void→bool 加长度闸——超限拒绝写入（保持旧值）返回 false；Widget `onStartClicked` 检查返回值，false 时弹「Token 不得超过 256 字符」且不启动；Token 输入框 `setMaxLength(256)` 同源限制。测试：`tst_ws_event_types` 新增 `constantTimeEqualsBehavior`（等值/单字节差/双向长度差/空串组；时序性质单测不可靠断言、规格定档不做计时断言）与 `authTokenMaxLengthConstant`；`tst_ws_loopback` 补 Server+Token 环回空白——`authTokenRejectsWrongConnection`（错误 token 拒连以「认证失败」日志行取证、正确 token 正常入在线列表）与 `authTokenLengthGateKeepsPreviousValue`（空串/恰 256 合法回 true、300 字符回 false 且旧值保持：持被拒超限 token 的客户端被拒、持旧 token 的客户端正常接入）。全量 CTest **48** 目标绿。
+
 ### 增强（2026-10-17，v2.14 #50-2 WebSocket 事件流方向/主题过滤）
 
 - **事件流展示层过滤（#50-2）**：WebSocket 右栏工具行（自动滚动与清除之间）新增方向过滤下拉（`wsFilterDirection`：全部/收/发，itemData 依次 ""/收/发）与主题子串输入框（`wsFilterTopic`，placeholder「主题过滤」，大小写不敏感、空=不过滤）。过滤只作用展示层：不匹配行 `setRowHidden`，全量事件仍入表模型，FIFO 2000 上限与丢弃计数不受过滤影响；「清除」仍清全量与计数、过滤条件本身保留。谓词收敛进 `WsEventTypes.h` 纯逻辑：`wsproto::matchesFilterFields(direction, topic, directionFilter, topicSubstring)` 为单一判据（Widget 行过滤直读方向/主题单元格调用它，null 单元格视作空串防御），`matchesFilter(WsEvent,…)` 规格签名委托之（防事件对象路径与表格路径两套逻辑漂移，测试锁定）；`pushEvent` 新行插cell后、自动滚动前按当前过滤即时判定。测试：`tst_ws_event_types` 新增 `filterFieldsSemantics`（四组语义：全通过/方向全等/大小写不敏感子串/组合退化）与 `filterPredicateDelegatesToFields`（委托等价矩阵）；`tst_ws_page_layout` 新增 `eventFilterHidesRowsKeepsModel`（隐藏不删行、新行即时过滤、还原全可见、活跃过滤下清除归零）。全量 CTest **48** 目标绿。

@@ -188,7 +188,9 @@ void WebSocketBackend::onNewConnection()
 
     if (!m_authToken.empty()) {
         QUrlQuery query(client->requestUrl());
-        if (query.queryItemValue("token").toStdString() != m_authToken) {
+        // #50-3：常量时间比较替换 std::string::operator!= 的短路逐字节比较——
+        // 消除「前 N 字节匹配即早退」的时序签名泄露面（只防时序旁路，不防长度泄露）
+        if (!wsproto::constantTimeEquals(query.queryItemValue("token").toStdString(), m_authToken)) {
             std::string addr = client->peerAddress().toString().toStdString();
             if (m_logCb) m_logCb("[Server] 认证失败，拒绝: " + addr);
             client->close(QWebSocketProtocol::CloseCodePolicyViolated, "认证失败");
