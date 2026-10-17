@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-46 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+48 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -10,6 +10,7 @@
 | NetRelayTool/ | tst_relay_addr | NetRelayTypes.h | 纯逻辑（仅头文件） |
 | config/ | tst_config_store / tst_dpapi_crypto | ConfigStore / DpapiCrypto | SQLite 持久化 / DPAPI |
 | deploy/ | tst_deploy_loop | IDeployable 部署循环 | 协议化逻辑 |
+| deploy/ | tst_deploy_template_map | DeployTemplateMap.h OnceConfig→TaskTemplate 纯映射（简写参数/未勾选=未绑定/重启步与空命令回退） | 纯逻辑（仅头文件，v2.14 #49-2） |
 | file_source/ | tst_file_source | IFileSource Local 实现 + readFile/writeFile 原语 | 文件系统 |
 | dir_compare/ | tst_dir_compare | DirCompare.h/.cpp 目录对比纯逻辑（分类/对齐/分钟精度） | 纯逻辑 |
 | file_encoding/ | tst_file_encoding | FileEncoding 编码探测/转换/冲突谓词（Win32 CP，禁 QTextCodec） | 纯逻辑 |
@@ -23,6 +24,7 @@
 | remote_model/ sftp/ telnet/ theme/ | 各自 tst_* | 远程模型/SFTP 计划/Telnet 超时/QSS 像素 | 见各子目录 |
 | WebSocketTool/ | tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback | WsEventTypes.h 纯逻辑 / 双栏页面布局 / 本机 Server↔Client 环回 | 纯逻辑 + QtTest UI 回归 + 环回集成 |
 | task/ | tst_task_template_codec | TaskTemplateCodec 模板行/文件编解码（魔数与 formatVersion 版本闸/敏感字段拒收/templateId 不外溢/悬空引用保留） | 纯逻辑（v2.13 模板跨机迁移） |
+| task/ | tst_task_step_validation | TaskStepValidation.h 步骤参数级校验纯函数（引擎/编辑器文案单源/parseDeployItems 口径/commands trim 判空） | 纯逻辑（仅头文件，v2.14 #49-3） |
 | app/ telnet(表头)/ | tst_log_panel_state / tst_batch_result_header | 日志面板状态纯逻辑 / 结果表头属性 | 纯逻辑（仅头文件） |
 | （根） | tst_updatechecker | UpdateChecker | OTA 检查 |
 
@@ -57,4 +59,4 @@ cd build && ctest -C Release -R tst_nrec --output-on-failure # 单目标
 
 ## 已知覆盖空白
 
-FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。模板编辑器对话框（v2.13 #54）的 tePageDeploy 文件选择器 leg（teAddFiles/teAddDir 弹 QFileDialog 选人）与新建/编辑按钮的模态对话框流程为人工冒烟覆盖，其余（validate/collect/面板往返/落库编排/e2e「新建→执行」链）均经 tst_task_center_widget 直调缝覆盖。
+FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。模板编辑器对话框（v2.13 #54）的 tePageDeploy 文件选择器 leg（teAddFiles/teAddDir 弹 QFileDialog 选人）与新建/编辑按钮的模态对话框流程为人工冒烟覆盖，其余（validate/collect/面板往返/落库编排/e2e「新建→执行」链）均经 tst_task_center_widget 直调缝覆盖。部署页「保存为模板」按钮（v2.14 #49-2）→TaskTemplateEditorDialog 模态流（含同名冲突三分支弹窗）为人工冒烟覆盖（对话框 exec() 沿 #54 teAddFiles 先例不设自动化 UI 目标），映射/落库腿已由 tst_deploy_template_map / tst_task_template_store 直调覆盖。

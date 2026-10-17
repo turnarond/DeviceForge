@@ -260,6 +260,18 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib")
 endif()
 
+# --- v2.14 #49-2 单发配置→模板纯映射（DeployTemplateMap.h 纯头逻辑，直测；不编产品源码）---
+add_executable(tst_deploy_template_map
+    deploy/tst_deploy_template_map.cpp
+)
+target_include_directories(tst_deploy_template_map PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_deploy_template_map PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_template_map COMMAND tst_deploy_template_map)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_template_map PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- RemoteFileModel 排序语义测试（纯 model，无网络）---
 add_executable(tst_remote_model remote_model/tst_remote_model.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
@@ -660,6 +672,18 @@ if(_qt_bin_dir)
     set_tests_properties(tst_task_template_codec PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
+# --- 步骤参数校验共享纯函数守卫测试（v2.14 #49-3：引擎/编辑器文案单源）---
+add_executable(tst_task_step_validation
+    task/tst_task_step_validation.cpp
+)
+target_include_directories(tst_task_step_validation PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_task_step_validation PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_task_step_validation COMMAND tst_task_step_validation)
+if(_qt_bin_dir)
+    set_tests_properties(tst_task_step_validation PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
 # --- TaskExecutionEngine 状态机与阶段恢复测试（v2.11 Task 4，Fake 适配器无网络）---

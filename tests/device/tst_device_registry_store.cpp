@@ -425,6 +425,154 @@ private slots:
         QVERIFY(found.has_value());
         QCOMPARE(found->endpoints.size(), size_t(2));
     }
+
+    // ---- v2.14 #49-7 落盘失败快照回滚 ----
+    //
+    // 守卫实证（失败注入手段，用例开头现场背书）：`ConfigStore::instance().close()` 后
+    // save() 必返回 false——代码面：save 首行 `if (!ensureOpen()) return false`
+    // （ConfigStore.cpp:122-126），ensureOpen() = m_open && m_db.isValid() && m_db.isOpen()
+    // （:26-29），close() 公开（ConfigStore.h:15）且把三要素全部清掉（ConfigStore.cpp:105-120）。
+    // 结论：该注入是确定性手段，无需只读权限等环境配合；下方用例 a 首行运行时复核，
+    // 探针行若注入失效（save 仍 true）直接红，用例 b/c 沿用同一注入。
+    void saveFailureRollsBackMemory()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.save(makeProfile(QStringLiteral("控制器-甲"),
+                                          QStringLiteral("10.0.0.1"), 21)));
+        QVERIFY(registry.warnings().empty());
+        const auto before = registry.list();
+        QCOMPARE(before.size(), size_t(1));
+
+        // 入站「乙」与他档重名（甲）：若修复缺失，失败后内存将残留 2 条档案
+        // 且 rebuildWarnings 已产出「设备名称重复」——两者都是 RED 取证点
+        const DeviceProfile incoming = makeProfile(QStringLiteral("控制器-甲"),
+                                                   QStringLiteral("10.0.0.2"), 21);
+        DeviceRegistry idProbe;
+        const std::string ghostId = idProbe.upsert(incoming).deviceId;
+        QVERIFY(!ghostId.empty());
+
+        // 失败注入 + 守卫实证现场复核
+        ConfigStore::instance().close();
+        QVariantMap probe;
+        probe.insert(QStringLiteral("x"), 1);
+        QVERIFY2(!ConfigStore::instance().save(QStringLiteral("probe.guard"),
+                                               QStringLiteral("probe-key"), probe),
+                 "失败注入失效：close() 后 ConfigStore::save 未返回 false");
+
+        QVERIFY(!registry.save(incoming));
+
+        // 回滚：档案表与 warnings 均与调用前一致，乙未残留内存
+        QCOMPARE(registry.list().size(), before.size());
+        QVERIFY(!registry.find(ghostId).has_value());
+        QVERIFY(registry.warnings().empty());
+
+        // 重开临时库复核磁盘：只落过成功那一条，键与内存一致
+        QVERIFY(ConfigStore::instance().open(m_dbPath));
+        const auto rows = ConfigStore::instance().list(QStringLiteral("device.profile"), 1000);
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows.first().value(QStringLiteral("key")).toString(),
+                 QString::fromStdString(before.front().deviceId));
+    }
+
+    // saveReplacing 落盘失败：端点替换回滚、stored 不写、磁盘行未受污染
+    // （清扫段本就只在成功路径执行——store 关闭期间磁盘不会变动，重开抽查为终态背书）
+    void saveReplacingFailureRollsBackEndpointsAndSkipsSweep()
+    {
+        DeviceRegistry registry;
+        DeviceProfile profile = makeProfile(QStringLiteral("控制器-01"),
+                                            QStringLiteral("10.7.0.1"), 21,
+                                            QStringLiteral("ftp"),
+                                            QStringLiteral("ref-ftp"));
+        profile.endpoints.push_back({"telnet", "10.7.0.1", 23, {}});
+        const auto stored = registry.upsert(profile);
+        QVERIFY(registry.save(stored));
+
+        // 旧 device.list 回退行：属即将被替换删除的 telnet 地址
+        QVariantMap telnetLegacy;
+        telnetLegacy.insert(QStringLiteral("ip"), QStringLiteral("10.7.0.1"));
+        telnetLegacy.insert(QStringLiteral("port"), 23);
+        telnetLegacy.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+        telnetLegacy.insert(QStringLiteral("displayName"), QStringLiteral("控制器-01"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.7.0.1:23"), telnetLegacy));
+
+        ConfigStore::instance().close();   // 失败注入（守卫实证见上一用例）
+
+        DeviceProfile edited = stored;
+        edited.endpoints = {{"ftp", "10.7.0.2", 21, "ref-ftp"}};   // 改 ip 且删 telnet
+        DeviceProfile result;
+        QVERIFY(!registry.saveReplacing(edited, &result));
+
+        // 内存回滚：档案仍是替换前两端口（未修时残留替换后的单端点 → RED）
+        const auto found = registry.find(stored.deviceId);
+        QVERIFY(found.has_value());
+        QCOMPARE(found->endpoints.size(), size_t(2));
+        QCOMPARE(QString::fromStdString(endpointKey(found->endpoints.at(0))),
+                 QStringLiteral("ftp://10.7.0.1:21"));
+        QVERIFY(registry.warnings().empty());
+
+        // stored 出参失败时未填充——调用方（DeviceBusWidget）据此拿不到合并结果，
+        // 「失败不广播 deviceProfileEdited / 不写 legacy 行」在存储层的可见性锚点
+        QVERIFY(result.deviceId.empty());
+        QVERIFY(result.endpoints.empty());
+
+        // 重开复核磁盘：旧行未被清扫、device.profile 仍是两端点（替换未生效）
+        QVERIFY(ConfigStore::instance().open(m_dbPath));
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.list"),
+                                               QStringLiteral("10.7.0.1:23")));
+        const QVariantMap raw = ConfigStore::instance().load(
+            QStringLiteral("device.profile"), QString::fromStdString(stored.deviceId));
+        const auto decoded = decodeDeviceProfile(raw);
+        QVERIFY(decoded.has_value());
+        QCOMPARE(decoded->endpoints.size(), size_t(2));
+
+        // 重载后与磁盘一致
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        const auto after = reloaded.find(stored.deviceId);
+        QVERIFY(after.has_value());
+        QCOMPARE(after->endpoints.size(), size_t(2));
+    }
+
+    // 用例 c：stableId/空 deviceId 分支可达性背书 + 可得路径的同等语义覆盖
+    void stableIdFailureAlsoRollsBack()
+    {
+        // 可达性结论（运行时背书，详见任务报告 Round 2）：save :368 与 saveReplacing :226
+        // 的 `deviceId.empty()` 分支不可达——upsert :165 与 saveReplacing :200 的新建分支
+        // 对空 id 一律先赋 stableId()，而 stableId :134-135 恒非空（无端点且无名称时
+        // identity="name:" 仍出哈希）；命中既有档案则继承非空 ID 不变量（load() 走
+        // upsert 同保）。实证方式：临时在两个分支体写哨兵文件跑全量 48 目标，
+        // 哨兵未出现。不硬凑不可达路径——本用例用 ConfigStore 失败路径覆盖同等语义：
+        // 任一 return false 之前内存无半成品残留、stored 不被填充。
+        DeviceRegistry registry;
+        QVERIFY(registry.save(makeProfile(QStringLiteral("控制器-留存"),
+                                          QStringLiteral("10.8.0.1"), 21)));
+        const size_t beforeSize = registry.list().size();
+
+        // 极端入站：名称纯空白（normalize 后为空串）、无端点、deviceId 空——
+        // 最接近「无法生成稳定 ID」的构造
+        DeviceProfile extreme;
+        extreme.name = "   ";
+
+        ConfigStore::instance().close();   // 失败注入（守卫实证见 saveFailureRollsBackMemory）
+
+        QVERIFY(!registry.save(extreme));
+        QCOMPARE(registry.list().size(), beforeSize);   // 半成品 push_back 已回滚
+
+        DeviceProfile result;
+        QVERIFY(!registry.saveReplacing(extreme, &result));
+        QCOMPARE(registry.list().size(), beforeSize);   // saveReplacing 新建分支同样回滚
+        QVERIFY(result.deviceId.empty());               // stored 仅成功时填充
+
+        // 重开复核磁盘：仍只有成功落库那一条
+        QVERIFY(ConfigStore::instance().open(m_dbPath));
+        QCOMPARE(ConfigStore::instance().list(QStringLiteral("device.profile"), 1000).size(), 1);
+
+        // 不变量正面背书：同一极端入站在落盘成功时 deviceId 必非空
+        // （即空 ID 分支的进入条件永不成立，与哨兵实证互为对照）
+        DeviceRegistry idProbe;
+        QVERIFY(!idProbe.upsert(extreme).deviceId.empty());
+    }
 };
 
 QTEST_MAIN(TstDeviceRegistryStore)

@@ -19,14 +19,16 @@ public:
     bool load();
     // save() 先合并进内存注册表（生成/保持 deviceId），再持久化合并结果。
     // 端点为并集合并语义——保留给协议发现类调用方（addDevice/fromDeviceInfo），
-    // 发现新端点只增不减。
+    // 发现新端点只增不减。落盘失败（ConfigStore 写失败）时回滚内存至调用前
+    // 状态（含 warnings），不留半成品（v2.14 #49-7）。
     bool save(const DeviceProfile& profile);
     // saveReplacing() 编辑器保存路径（v2.11 终审 Critical 1）：端点表按「整体
     // 替换」语义合并——传入清单未列出的既有端点将从档案中删除（名称/备注/标签
     // 仍与 save 同规则合并）。成功时持久化替换结果并清扫被取代的旧 device.list
     // ip:port 行（被移除的 ip:port 已不再属于任何在册档案时删除，防止 load()
-    // 回退读取复活旧地址）。stored 输出替换合并后的档案（供 UI 回写旧行/发信号，
-    // 失败时同样给出内存合并结果）。
+    // 回退读取复活旧地址）。stored 输出替换合并后的档案（供 UI 回写旧行/发信号），
+    // 仅在成功时填充；落盘失败时回滚内存（含 warnings）且 stored 保持不变，
+    // 调用方可据此在失败路径不广播、不回写旧行（v2.14 #49-7）。
     bool saveReplacing(const DeviceProfile& profile, DeviceProfile* stored);
     // remove() 从内存与 ConfigStore 删除指定档案；同时删除与该档案端点身份
     // 匹配的旧 device.list 行（key=ip:port），保证对迁移设备删除持久；

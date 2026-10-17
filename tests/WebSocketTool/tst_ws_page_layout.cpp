@@ -10,13 +10,18 @@
  *
  * Description: WebSocket 页面重构（v2.12）布局回归：
  *              双栏结构、事件表为唯一垂直扩展主体（拉伸不散架）、
- *              列宽 Interactive、2000 行 FIFO 上限、Token 掩码与显隐。
+ *              列宽 Interactive、2000 行 FIFO 上限、Token 掩码与显隐；
+ *              v2.14 #50-1/4/5：事件流对端列、运行中连接参数输入守卫、
+ *              丢弃计数会话内语义 tooltip；v2.14 #50-2：事件流方向/主题
+ *              展示层过滤（setRowHidden 不删行、新行即时过滤、清除清全量）。
  */
 
 #include <QtTest>
 #include <QCheckBox>
 #include <QHostAddress>
+#include <QSpinBox>
 #include <QTemporaryDir>
+#include <QTcpServer>
 #include <QWebSocket>
 #include <QWebSocketServer>
 #include <QComboBox>
@@ -62,6 +67,16 @@ wsproto::WsEvent makeEvent(const QString& body)
     return e;
 }
 
+// #50-2 过滤用例专用：显式指定方向与主题的事件构造
+wsproto::WsEvent makeEvent(const QString& direction, const QString& topic)
+{
+    wsproto::WsEvent e = makeEvent(topic);
+    e.direction = direction;
+    e.topic = topic;
+    e.action = QStringLiteral("推送");
+    return e;
+}
+
 } // namespace
 
 class TstWsPageLayout : public QObject {
@@ -80,6 +95,10 @@ private slots:
     void eventStreamCapsAtCapacityWithDroppedCount();
     void tokenFieldMaskedWithVisibilityToggle();
     void modeSwitchSelectsConfigPageAndSubscriptionAvailability();
+    void peerColumnShowsSource();
+    void runningGuardsDisableConnectionInputs();
+    void droppedTooltipDocumentsSessionScope();
+    void eventFilterHidesRowsKeepsModel();
 };
 
 void TstWsPageLayout::initTestCase()
@@ -191,7 +210,10 @@ void TstWsPageLayout::hugeBodyTooltipIsCapped()
     wsproto::WsEvent e = makeEvent(QString(64 * 1024, QChar(QLatin1Char('A'))));
     widget.pushEvent(e);
     auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
-    const QString tip = table->item(0, 4)->toolTip();
+    // 预览列索引随六列契约（时间|方向|主题|对端|字节|内容预览）为 5
+    auto* previewItem = table->item(0, 5);
+    QVERIFY(previewItem);
+    const QString tip = previewItem->toolTip();
     QVERIFY2(tip.size() < 64 * 1024, "超长正文必须限制驻留（长稳内存约束）");
     QVERIFY(tip.contains(QStringLiteral("已截断")));
 }
@@ -225,14 +247,15 @@ void TstWsPageLayout::eventColumnsAreUserResizable()
     WebSocketWidget widget;
     auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
     QVERIFY(table);
-    for (int col = 0; col < 4; ++col) {
+    // 六列契约：预览列（索引 5）前的各列均可拖拽
+    for (int col = 0; col < 5; ++col) {
         QCOMPARE(table->horizontalHeader()->sectionResizeMode(col),
                  static_cast<QHeaderView::ResizeMode>(QHeaderView::Interactive));
         QVERIFY2(table->columnWidth(col) >= 40,
                  qPrintable(QStringLiteral("列 %1 缺少初始宽度").arg(col)));
     }
     // 末列预览拉伸铺满
-    QCOMPARE(table->horizontalHeader()->sectionResizeMode(4),
+    QCOMPARE(table->horizontalHeader()->sectionResizeMode(5),
              static_cast<QHeaderView::ResizeMode>(QHeaderView::Stretch));
 }
 
@@ -253,8 +276,10 @@ void TstWsPageLayout::eventStreamCapsAtCapacityWithDroppedCount()
     QVERIFY(dropped->isVisible());
     QVERIFY(dropped->text().contains(QStringLiteral("50")));
 
-    // 最旧 50 条被挤掉：首行应是 m50
-    QCOMPARE(table->item(0, 4)->text(), QStringLiteral("m50"));
+    // 最旧 50 条被挤掉：首行应是 m50（预览列索引随六列契约为 5）
+    auto* firstPreview = table->item(0, 5);
+    QVERIFY(firstPreview);
+    QCOMPARE(firstPreview->text(), QStringLiteral("m50"));
 
     auto* clear = widget.findChild<QPushButton*>(QStringLiteral("wsClearEvents"));
     QVERIFY(clear);
@@ -299,6 +324,126 @@ void TstWsPageLayout::modeSwitchSelectsConfigPageAndSubscriptionAvailability()
     QVERIFY(url->isVisible());
     serverBtn->click();
     QCOMPARE(stack->currentIndex(), 0);
+}
+
+// #50-1：事件流新增「对端」列（后端 WsEvent::peer 已填，Server=客户端地址、Client="server"）
+void TstWsPageLayout::peerColumnShowsSource()
+{
+    WebSocketWidget widget;
+    wsproto::WsEvent e = makeEvent(QStringLiteral("hello"));
+    e.peer = QStringLiteral("127.0.0.1:5511");
+    widget.pushEvent(e);
+    auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
+    QVERIFY(table);
+    QCOMPARE(table->columnCount(), 6);
+    // 「对端」列序定档：时间|方向|主题|对端|字节|内容预览
+    auto* peerHeader = table->horizontalHeaderItem(3);
+    QVERIFY(peerHeader);
+    QCOMPARE(peerHeader->text(), QStringLiteral("对端"));
+    auto* peerItem = table->item(0, 3);
+    QVERIFY(peerItem);
+    QCOMPARE(peerItem->text(), QStringLiteral("127.0.0.1:5511"));
+}
+
+// #50-5：运行中六个连接参数输入控件必须禁用，停止后恢复（真实启停驱动）
+void TstWsPageLayout::runningGuardsDisableConnectionInputs()
+{
+    WebSocketBackend backend;
+    WebSocketWidget widget;
+    widget.setBackend(&backend);
+
+    // Server 模式 startServer 为同步监听，比 Client 异步连接更稳；
+    // 先用临时探针监听 port=0 拿空闲端口再释放，规避端口占用 flake
+    int port = 0;
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        port = static_cast<int>(probe.serverPort());
+    }
+    QVERIFY(port > 0);
+
+    findBtn(&widget, "wsModeServer")->click();
+    findLine(&widget, "wsBindAddr")->setText(QStringLiteral("127.0.0.1"));
+    auto* spinPort = widget.findChild<QSpinBox*>(QStringLiteral("wsPort"));
+    QVERIFY(spinPort);
+    spinPort->setValue(port);
+    findBtn(&widget, "wsStartButton")->click();
+    QTRY_VERIFY_WITH_TIMEOUT(backend.isRunning(), 5000);
+
+    for (const char* name : {"wsBindAddr", "wsPort", "wsWss", "wsToken", "wsUrl", "wsTrustCert"}) {
+        auto* w = widget.findChild<QWidget*>(QString::fromLatin1(name));
+        QVERIFY(w);
+        QCOMPARE(w->isEnabled(), false);
+    }
+
+    findBtn(&widget, "wsStopButton")->click();
+    QVERIFY(!backend.isRunning());
+    for (const char* name : {"wsBindAddr", "wsPort", "wsWss", "wsToken", "wsUrl", "wsTrustCert"}) {
+        auto* w = widget.findChild<QWidget*>(QString::fromLatin1(name));
+        QVERIFY(w);
+        QCOMPARE(w->isEnabled(), true);
+    }
+}
+
+// #50-4：丢弃计数 tooltip 交代会话内语义（与 onStart/onClear 归零行为一致）
+void TstWsPageLayout::droppedTooltipDocumentsSessionScope()
+{
+    WebSocketWidget widget;
+    auto* label = widget.findChild<QLabel*>(QStringLiteral("wsDroppedLabel"));
+    QVERIFY(label);
+    QVERIFY(label->toolTip().contains(QStringLiteral("本会话")));
+}
+
+// #50-2：事件流按方向/主题过滤——展示层仅隐藏行，全量事件仍入表；
+// 新事件按当前过滤即时生效；「清除」清全量与计数、不受过滤条件影响
+void TstWsPageLayout::eventFilterHidesRowsKeepsModel()
+{
+    WebSocketWidget widget;
+    auto* table = widget.findChild<QTableWidget*>(QStringLiteral("wsEventTable"));
+    auto* combo = widget.findChild<QComboBox*>(QStringLiteral("wsFilterDirection"));
+    auto* topicEdit = findLine(&widget, "wsFilterTopic");
+    QVERIFY(table);
+    QVERIFY(combo);
+    QVERIFY(topicEdit);
+
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("abc")));
+    widget.pushEvent(makeEvent(QStringLiteral("发"), QStringLiteral("abd")));
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("xyz")));
+    QCOMPARE(table->rowCount(), 3);
+    for (int row = 0; row < table->rowCount(); ++row)
+        QVERIFY2(!table->isRowHidden(row), "初始无过滤：全部可见");
+
+    // 方向=收（itemData 序：0=全部"" 1=收 2=发）+ 主题子串 "AB"（大小写不敏感）：
+    // 仅第 0 行（收 abc）匹配；第 1 行主题含 ab 但方向不符、第 2 行方向符但主题不符
+    combo->setCurrentIndex(1);
+    topicEdit->setText(QStringLiteral("AB"));
+    QVERIFY(!table->isRowHidden(0));
+    QVERIFY(table->isRowHidden(1));
+    QVERIFY(table->isRowHidden(2));
+    QCOMPARE(table->rowCount(), 3); // 过滤只隐藏，不删行（全量仍入表模型）
+
+    // pushEvent 新行即时按当前过滤判定：发 abc（方向不符）、收 zzz（主题不符）都应立即隐藏
+    widget.pushEvent(makeEvent(QStringLiteral("发"), QStringLiteral("abc")));
+    widget.pushEvent(makeEvent(QStringLiteral("收"), QStringLiteral("zzz")));
+    QCOMPARE(table->rowCount(), 5);
+    QVERIFY(table->isRowHidden(3));
+    QVERIFY(table->isRowHidden(4));
+
+    // 改回「全部」+ 清空主题 → 全可见
+    combo->setCurrentIndex(0);
+    topicEdit->clear();
+    for (int row = 0; row < table->rowCount(); ++row)
+        QVERIFY2(!table->isRowHidden(row), "过滤条件清空后应全部可见");
+
+    // 「清除」清全量与计数（过滤条件本身保留，此处带活跃过滤点击仍应清空）
+    topicEdit->setText(QStringLiteral("zzz"));
+    auto* clear = widget.findChild<QPushButton*>(QStringLiteral("wsClearEvents"));
+    QVERIFY(clear);
+    clear->click();
+    QCOMPARE(table->rowCount(), 0);
+    auto* dropped = widget.findChild<QLabel*>(QStringLiteral("wsDroppedLabel"));
+    QVERIFY(dropped);
+    QVERIFY(!dropped->isVisible());
 }
 
 QTEST_MAIN(TstWsPageLayout)

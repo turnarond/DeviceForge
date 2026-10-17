@@ -2,6 +2,49 @@
 
 ## [未发布]
 
+### 文档（2026-10-17，v2.14 勘误收口与全量核验波）
+
+- **对外文档勘误收口**：本文件 v2.12 段「事件流含对端」句段末追加勘误注记（历史正文不改写）；产品路线图「对端」表述归位 v2.14、「事件过滤」挂账就实为 v2.14 完成交付；2026-10-15 运营文章「v2.13 已立项…事件过滤」句改 v2.14 并加文首修订说明（外部渠道已发布快照无法回改，列为待人类渠道同步事项）。措辞就实：用户手册与 `wsDroppedLabel` tooltip「停止或清除后归零」改「重新启动或清除事件流后归零」（实况 `onStartClicked`/`onClearEventsClicked` 归零、单点停止不归零），手册对端列全称判断补 Server「发」行对端固定记「订阅者」既有形态（`serverPublishToSubscribers` 实证）；v2.14 #49-3 段 `tst_task_step_validation`「12 用例」就实为 10 用例（逐函数清点）。规格 `2026-10-17-v2.14-hardening-pack-design.md` §4.2/§4.3 加执行偏差注记（reboot 命令可用性分层澄清、惰性清退替代收口同步淘汰），原文保留。全量终验：Release 构建绿、CTest 48 目标连续两遍全绿、versioncheck [OK] 2.13.0（本波不动版本九源）、UI 冒烟通过。
+
+### 增强（2026-10-17，v2.14 #50-3 WebSocket Token 常量时间比较+长度上限）
+
+- **Token 常量时间比较与 256 长度上限（#50-3）**：WebSocket Server 握手认证此前用 `std::string::operator!=` 短路逐字节比较 token（泄露「前 N 字节匹配」时序签名的侧信道面）且无长度上限。`WsEventTypes.h` 新增纯逻辑 `wsproto::constantTimeEquals`（等长全扫描、长度差异循环后并入判定、volatile 落点防 -O2 优化回短路；只防时序旁路、不防长度泄露，如实标注）与 `kAuthTokenMaxLen=256` 上限常量；`onNewConnection` 认证比较换用之。`WebSocketBackend::setAuthToken` 签名 void→bool 加长度闸——超限拒绝写入（保持旧值）返回 false；Widget `onStartClicked` 检查返回值，false 时弹「Token 不得超过 256 字符」且不启动；Token 输入框 `setMaxLength(256)` 同源限制。测试：`tst_ws_event_types` 新增 `constantTimeEqualsBehavior`（等值/单字节差/双向长度差/空串组；时序性质单测不可靠断言、规格定档不做计时断言）与 `authTokenMaxLengthConstant`；`tst_ws_loopback` 补 Server+Token 环回空白——`authTokenRejectsWrongConnection`（错误 token 拒连以「认证失败」日志行取证、正确 token 正常入在线列表）与 `authTokenLengthGateKeepsPreviousValue`（空串/恰 256 合法回 true、300 字符回 false 且旧值保持：持被拒超限 token 的客户端被拒、持旧 token 的客户端正常接入）。全量 CTest **48** 目标绿。
+
+### 增强（2026-10-17，v2.14 #50-2 WebSocket 事件流方向/主题过滤）
+
+- **事件流展示层过滤（#50-2）**：WebSocket 右栏工具行（自动滚动与清除之间）新增方向过滤下拉（`wsFilterDirection`：全部/收/发，itemData 依次 ""/收/发）与主题子串输入框（`wsFilterTopic`，placeholder「主题过滤」，大小写不敏感、空=不过滤）。过滤只作用展示层：不匹配行 `setRowHidden`，全量事件仍入表模型，FIFO 2000 上限与丢弃计数不受过滤影响；「清除」仍清全量与计数、过滤条件本身保留。谓词收敛进 `WsEventTypes.h` 纯逻辑：`wsproto::matchesFilterFields(direction, topic, directionFilter, topicSubstring)` 为单一判据（Widget 行过滤直读方向/主题单元格调用它，null 单元格视作空串防御），`matchesFilter(WsEvent,…)` 规格签名委托之（防事件对象路径与表格路径两套逻辑漂移，测试锁定）；`pushEvent` 新行插cell后、自动滚动前按当前过滤即时判定。测试：`tst_ws_event_types` 新增 `filterFieldsSemantics`（四组语义：全通过/方向全等/大小写不敏感子串/组合退化）与 `filterPredicateDelegatesToFields`（委托等价矩阵）；`tst_ws_page_layout` 新增 `eventFilterHidesRowsKeepsModel`（隐藏不删行、新行即时过滤、还原全可见、活跃过滤下清除归零）。全量 CTest **48** 目标绿。
+
+### 增强（2026-10-17，v2.14 #50-1/4/5 WebSocket 事件流对端列+运行输入守卫+丢弃计数说明）
+
+- **事件流对端列（#50-1）**：WebSocket 事件流表新增第六列「对端」，列序定档 时间|方向|主题|对端|字节|内容预览（ColPeer 插在 ColTopic 后、ColBytes 前，初始宽 130，Interactive/末列 Stretch 逻辑随枚举名自动跟随）；数据直取后端已填的 `WsEvent::peer`（Server 模式=客户端地址、Client 模式="server"），后端零改动。测试：`tst_ws_page_layout` 新增 `peerColumnShowsSource`；既有用例预览列索引断言（4→5）随六列契约同步更新。
+- **运行输入守卫（#50-5）**：`applyRunningUi` 运行中将六个连接参数控件（wsBindAddr/wsPort/wsWss/wsToken/wsUrl/wsTrustCert）`setEnabled(!running)` 锁死——此前守卫只动按钮与模式切换、输入框运行中仍可修改，改后不生效且状态卡仍显运行配置（误导面）；停止/启动失败回落/错误回调/对端断开收口均走本函数 false 分支一并恢复，构造期不调用本函数、初态默认可用。测试：新增 `runningGuardsDisableConnectionInputs` 经 Server 模式真实 start→stop 驱动断言六控件禁用→恢复（QTcpServer 探针取空闲端口规避占用 flake）。
+- **丢弃计数 tooltip（#50-4 定档，行为不改）**：`wsDroppedLabel` 增加「丢弃计数仅统计本会话：重新启动或清除事件流后归零，不跨重启累计」静态说明，与 `onStartClicked`/`onClearEventsClicked` 的归零实况复核一致。测试：新增 `droppedTooltipDocumentsSessionScope`。用户手册 WebSocket 节同步五列→六列表述、计数会话内语义与运行守卫说明。全量 CTest **48** 目标绿。
+
+### 文档（2026-10-17，v2.14 #49-1 AuthResolver 凭据降级语义定档）
+
+- 任务链凭据取档案首端点可解析引用（定档，非缺陷修复）：v2.11 规格 §7 增补「凭据解析降级契约（v2.14 #49-1 定档）」小节，将引擎 per-device AuthResolver 的降级语义（同档案多 credentialRef 取首个可解析引用、解析顺序=端点表序、其余端点共用该凭据、告警仅设备名与引用数、跨协议独立凭据 v2.14 明确不演进）从代码注释升格为书面契约；`TaskCenterWidget.h` 头注释同步指回该契约。纯文档票，不改任何 .cpp 逻辑。
+
+### 修复（2026-10-17，v2.14 #49-7 DeviceRegistry 落盘失败快照回滚）
+
+- **落盘失败不留半成品内存**：`DeviceRegistry::save`/`saveReplacing` 在任何失败返回前恢复调用前 `m_profiles` 快照并 `rebuildWarnings()`（票面对象经复核为 DeviceRegistry，非 TaskTemplateStore）；`saveReplacing` 的 `stored` 出参改为仅成功时填充，空 deviceId 分支运行时实证不可达、保留为不变量防御。连带调用方修复：`DeviceBusWidget::editProfileFor` 失败分支改为按入参档案记警（不读 stored）→ `refreshFromRegistry()` → 早退，失败不再写 legacy 行、不广播 `deviceProfileEdited`。`tst_device_registry_store` 新增 3 用例（save 失败回滚 / saveReplacing 失败端点回滚+stored 不写 / 失败返回前内存零残留），失败注入=成功落库后 `ConfigStore::instance().close()`（save 首行 ensureOpen 短路，用例首行运行时背书）。全量 CTest 48 目标绿。
+
+### 修复（2026-10-17，v2.14 #49-4 lineage/32-run 错配文案分派）
+
+- **阶段恢复拒绝文案三分派与 lineage 惰性清退（#49-4）**：引擎历史上限 `kHistoryLimit=32` FIFO 淘汰，而任务中心 widget 的 `m_lineageByEngineRun` 只插不删——会话内超 32 轮后重试旧运行，lineage 命中但引擎已淘汰存档，`retryFailed` 返回空却被笼统报「阶段恢复被引擎拒绝」，未说明真因。引擎新增只读查询 `hasRunInHistory(runId)`（锁内 `m_history.find`，与 retryFailed 查找同源），`kHistoryLimit` 由 private 上移 public 作单源；widget 新增公共静态纯函数 `retryRejectionMessage(lineageKnown, engineHasHistory)` 三分派文案（本会话外运行/引擎 32 轮已淘汰/仍有存档但被拒（活跃运行）），`onRetryClicked` 在 retryFailed 拒绝且引擎无存档时**惰性清退**该运行的 lineage 与 store→engine 映射（点击即校正，不对引擎 FIFO 淘汰顺序做同构假设，偏差处置记于规格 §7 风险 1）。测试：`tst_task_execution_engine` 新增场景十一——缺命令端点快速失败模板（校验失败同样入档）连跑 33 轮，断言第 32 轮收口时首轮仍在档、第 33 轮后已淘汰且 `retryFailed` 被拒（变异对照验证非假绿）；`tst_task_center_widget` 新增 `retryRejectionMessagesAreDistinguishable` 直测三分支关键词与两两不同（轮数断言单源引用 `kHistoryLimit`）。全量 CTest **48** 目标绿。
+
+### 修复（2026-10-17，v2.14 #49-9 引擎异常路径脱敏）
+
+- **引擎 catch 旁路异常文本过脱敏后入日志（#49-9）**：`TaskExecutionEngine` 两处 `catch (const std::exception&)` 的 `qWarning()` 原先直送 `error.what()` 进全局日志（qWarning→LogBridge→文件日志），而执行链底层（libcurl/libssh2 等）常把含 userinfo 的 URL 塞进异常文本，构成凭据泄露旁路。两处出口（协调线程 Runnable、`executeRun` 收口）统一改为 `sanitizeTaskErrorText(error.what())` 脱敏后再入日志，保留原中文措辞。测试：`tst_task_execution_engine` 新增场景十——fake 命令适配器 connect 抛含 `ftp://admin:pass@…` 形态的 `std::runtime_error`，经 `qInstallMessageHandler` 捕获 qWarning 行（RAII 装卸成对、互斥锁保护捕获容器、以 `onRunFinished` 回调为同步点），断言捕获行不含凭据原文且含 `://***@` 脱敏形态；红-绿已验证。全量 CTest **48** 目标绿。
+
+### 重构（2026-10-17，v2.14 #49-3 步骤参数校验共享纯函数）
+
+- **步骤参数校验文案引擎/编辑器单源**：新增纯逻辑头 `src/task/TaskStepValidation.h`（`taskstep::parseDeployItems` 自引擎 cpp 匿名 ns 整体搬移、行为零变化；`taskstep::stepParamsValidationError` 收敛四类步骤的参数级判定），引擎 `validateDeviceSteps`（Validating）与编辑器 `validate()` 此前两处并行实现、commands 分支文案分叉（编辑器「至少一条命令」vs 引擎「缺少命令列表」）统一为引擎原形「步骤 %1（%2）缺少命令列表」。commands 判定采编辑器 trim 后判空语义——比引擎旧裸列表 isEmpty 更严（纯空白命令行视为无效），引擎随之刻意收紧。端点/设备存在性校验**刻意留在引擎执行期**（模板可跨机，导入/编辑期本机端点未必存在，v2.13 悬空引用语义延伸）。新增 `tst_task_step_validation` 纯逻辑目标（10 用例）；全量 CTest **48** 目标绿。
+
+### Added（2026-10-17，v2.14 #49-2 单次部署配置存为任务模板）
+
+- **部署页「保存为模板」全链接线（兑现 v2.11 规格 §4 单次配置捕获承诺，#49-2 收口）**：「文件部署」页工具栏部署组「▶ 部署」旁新增「保存为模板」按钮（`deploySaveTemplateBtn`，部署进行中与部署按钮同节奏禁用）。槽内先走与部署入口同源的拒绝分支（左面板远程浏览源/空文件清单），再把单次配置经 `deploymap::buildTemplateFromOnceConfig`（新纯映射头 `DeployTemplateMap.h`）固化为预填模板——文件清单+目标目录→deploy 步 `files+remoteDirectory` 简写（编辑器打开归一 items[]）、勾选设备→deviceIds（**未勾选=未绑定留空，不展开为全部设备**；空档案 ID 逐个过滤）、重启勾选→可选 reboot 步（空命令回退 `reboot`）；部署前清空/FTPS/端口/并发度刻意不进模板（工具级/连接级配置）。预填经 v2.13 `TaskTemplateEditorDialog` 模态编辑后，由主窗口注入的 `std::function` 缝（widget 不直连 store）经 `TaskTemplateStore::saveUniqueByName`（新增）落库：同名（大小写敏感全等）冲突三选「覆盖/改名保存/取消」弹窗（**默认=改名**，与 v2.13 导入冲突同口径）——覆盖继承既有 templateId 且 version 取 max(既有,入站)、改名「名称 (2)」递增找空位另存新 ID、取消不落库回中文原因；保存通道未注入时止步日志提示（无宿主兜底）。
+- 测试：新增 `tst_deploy_template_map`（纯映射 5 用例：简写参数承载/重启步进生成/空命令回退 reboot/未勾选=未绑定/不勾选仅一步）；`tst_task_template_store` +4 用例（saveUniqueByName 无冲突新建 ID/取消零写入/覆盖继承 ID 与版本/改名递增后缀）。按钮→编辑器模态流沿 #54 先例走人工冒烟（tests/AGENTS.md 覆盖空白段已登记）。全量 CTest **47** 目标绿。
+
 ### 修复（2026-08-21，fix/v2.7-编译修复）
 
 - **ModbusBackend**：修复 Qt 6.11 编译错误（由 v2.7 评审修复提交引入，任何 Qt 版本均无法编译）——`QObject::connect` 的 context 误传非 QObject 的 `this`（改为 3 参数 connect、以 client 为 context）；`sendWriteSingleCoil`/`sendWriteSingleRegister` 为不存在的 API（改为 `sendWriteRequest` + `QModbusDataUnit`，保持 0x05 线圈/0x06 寄存器语义）；日志回调 QString 直传 `std::string` 参数（补 `.toStdString()`）
@@ -56,6 +99,8 @@
 - **WebSocket 双栏控制台重构**：上部连接/操作区 + 下部事件流（2000 行环形、方向/对端/字节数/内容预览，UTF-8 截断安全）；事件模型 `WsEventTypes` 纯逻辑独立可测；Token 凭证迁移 DPAPI 存储，写路径落盘时清扫旧明文行。
 - **MODBUS 工具重构（多 PLC 主看偶写）**：设备身份统一至 DeviceRegistry 档案（档案含 modbus 端点=能力开关），目标档案持久化 `modbus.target`（旧 `modbus.slave` 一次性自动迁移、幂等跳过）；250ms 单驱动轮询调度器（每连接 FIFO 队列、写插队、在途保护、指数退避重连）；双栏目标清单 + 逐寄存器视图（变化高亮、跳过计数、退避着色）；QModbusTcpServer 本机环回集成测试。
 - **文件管理增强（FTP/SFTP 部署双栏）**：元数据列（所有者/修改时间/权限，缺失显示 `—`；创建时间 FTP/SFTP 协议不可得，不设该列）；Ctrl+M 目录对比（元数据口径：size 主判 + 修改时间分钟辅助，差异着色 + 行对齐 + 占位行 + 仅显示差异过滤 + 汇总条，刷新自动退出）；F4 预览编辑器（UTF-8/GBK/UTF-16 BOM 自动探测 + 手动切换重解码、>2MB/二进制/混合行尾只读、保存保持原行尾、异步回传含远端变化冲突确认"仍要覆盖/放弃并刷新"）；libcurl/libssh2 内存读写原语（无临时文件中转，SylixOS 句柄纪律与既有传输一致）。
+
+> 勘误（2026-10-17）：上文 WebSocket 条目「方向/对端/字节数/内容预览」中，事件流「对端」列随 v2.14 交付（#50-1，六列口径：时间|方向|主题|对端|字节|内容预览），当时表述先于实现；v2.12 落版事件流实为五列（无「对端」）。历史条目正文不改写，以本注记就实。
 
 ### Fixed
 - WebSocket 评审修复波：后端错误路径连接悬挂致 UAF（onClientError 断链清理 + 析构无条件收尾）、字节计数口径修正为原始字节、Legacy 明文 Token 行清扫。

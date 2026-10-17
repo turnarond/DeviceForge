@@ -17,6 +17,7 @@
 #include "framework/ToolWidget.h"
 #include "framework/DeviceInfo.h"
 #include "ui/DirCompare.h"
+#include "task/TaskTemplateTypes.h"
 #include <memory>
 #include <atomic>
 #include <functional>
@@ -37,6 +38,7 @@
 
 class FtpDeployBackend;
 class DeviceBusWidget;
+class DeviceRegistry;
 class MultiProgressWidget;
 class FileBrowserPanel;
 class RemoteFileSource;
@@ -63,6 +65,17 @@ public:
     void setBackend(FtpDeployBackend* backend);
     void setDeviceBusWidget(DeviceBusWidget* deviceBus);
 
+    // v2.14 #49-2 第三腿：部署页「保存为模板」接线。registry 只读注入（编辑器
+    // 目标设备列表=本机档案快照）；落库经注入的 std::function 缝（widget 不直连
+    // TaskTemplateStore，与 #54 applyEditorResult 同风格）——channel 内部完成
+    // saveUniqueByName 落库与同名冲突三分支弹窗，返回 false 时 reason 写中文原因；
+    // 返回 true 且 savedName 非空时写入**实际落库名**（改名分支会把入站 name 改成
+    // 「X (n)」落库，日志必须显示任务中心里真实存在的名字，终审 Fix1）；
+    // channel 未注入时按钮流程止步日志提示（无宿主场景兜底）。
+    void setRegistry(DeviceRegistry* registry);
+    void setTemplateSaveChannel(
+        std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> channel);
+
     // 菜单联动入口（主窗口「部署」菜单调用）
     void startDeployFromMenu();
     void cancelDeployFromMenu();
@@ -73,6 +86,9 @@ signals:
 
 private slots:
     void onDeployClicked();
+    // v2.14 #49-2 第三腿：「保存为模板」按钮槽（采集单次配置 → 纯映射预填 →
+    // TaskTemplateEditorDialog 模态编辑 → 经注入缝落库）
+    void onSaveAsTemplateClicked();
     void onRefreshRemote();
     // v2.8 Task 5：部署报告导出（CSV/HTML 二选一）+ 失败设备一键重试
     void onExportReportClicked();
@@ -127,6 +143,9 @@ private:
 
     FtpDeployBackend*  m_backend = nullptr;
     DeviceBusWidget*   m_deviceBus = nullptr;
+    // v2.14 #49-2 第三腿：编辑器设备快照来源 + 模板落库缝（均为主窗口注入，只读/转发）
+    DeviceRegistry* m_registry = nullptr;
+    std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> m_saveChannel;
 
     // 工具栏（工具级批量部署配置）
     QComboBox*   m_protocolCombo = nullptr;
@@ -168,6 +187,7 @@ private:
 
     // 部署
     QPushButton*          m_deployBtn = nullptr;
+    QPushButton*          m_saveTemplateBtn = nullptr;   // v2.14 #49-2「保存为模板」（与部署按钮同节奏禁用）
     MultiProgressWidget*  m_multiProgress = nullptr;
 
     // 结果操作（v2.8 Task 5）：部署结束后点亮——导出本轮报告 / 重试失败设备

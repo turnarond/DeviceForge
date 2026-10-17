@@ -31,6 +31,7 @@
  *   credentialRef（如 FTP 与 Telnet 各一套凭据），本轮执行只用首个可解析引用，
  *   其余端点共用该凭据；此时 startTemplate 发出中文告警（仅设备名与引用数量，
  *   不含引用内容）。跨协议独立凭据需引擎签名演进（per-endpoint 解析）后支持。
+ *   本限制已于 v2.14 定档为书面契约，见 v2.11 设计文档 §凭据解析降级契约。
  */
 
 #pragma once
@@ -109,6 +110,12 @@ public:
     // 返回 false。错误框刻意非模态：本缝供测试直调，不允许在无事件循环兜底的
     // 用例里阻塞（对话框流内弹窗才走模态 exec）。
     bool applyEditorResult(const TaskTemplate& tmpl);
+
+    // ── v2.14 #49-4：阶段恢复拒绝文案三分派（公共静态纯函数，供直测）──
+    // lineageKnown=false：本会话外启动的运行（lineage 从未登记），沿用旧文案；
+    // true+!engineHasHistory：引擎 kHistoryLimit 轮 FIFO 已淘汰该运行存档，
+    // 说明真因；true+engineHasHistory：存档仍在却被拒（最可能是活跃运行占用）。
+    static QString retryRejectionMessage(bool lineageKnown, bool engineHasHistory);
 
 signals:
     // 一轮执行（含阶段恢复）已启动，携带 TaskRunStore 记录 ID

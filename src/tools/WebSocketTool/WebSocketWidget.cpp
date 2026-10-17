@@ -9,8 +9,10 @@
  * Author: turnarond
  *
  * Description: WebSocket Tool 前端实现。左栏控制台（模式/配置/状态/启停/发布订阅），
- *              右栏消息事件流表（时间|方向|主题|字节|内容预览，Interactive 列宽，
+ *              右栏消息事件流表（时间|方向|主题|对端|字节|内容预览，Interactive 列宽，
  *              2000 行 FIFO 上限）。右栏为唯一垂直扩展主体，窗口拉伸不再散架。
+ *              v2.14 #50-2：事件流支持方向/主题展示层过滤（仅 setRowHidden，
+ *              全量仍入表；清除清全量与计数）。
  *              正文预览仅进本页面；全局日志只记方向+字节数（仓规脱敏约束）。
  */
 
@@ -19,6 +21,7 @@
 #include "config/ConfigStore.h"
 
 #include <QButtonGroup>
+#include <QComboBox>
 #include <QDateTime>
 #include <QGroupBox>
 #include <QFormLayout>
@@ -40,8 +43,8 @@ constexpr int kConsoleDefaultWidth = 360;
 // tooltip 单条正文驻留上限（UTF-8 字节）
 constexpr int kBodyResidentMaxBytes = 4096;
 
-// 事件流列定义
-enum EventColumn { ColTime = 0, ColDirection, ColTopic, ColBytes, ColPreview, ColCount };
+// 事件流列定义（v2.14 #50-1：对端列插在主题之后、字节之前）
+enum EventColumn { ColTime = 0, ColDirection, ColTopic, ColPeer, ColBytes, ColPreview, ColCount };
 
 QString formatEventTime(qint64 epochMs)
 {
@@ -164,6 +167,8 @@ void WebSocketWidget::setupUi()
         m_editToken->setObjectName(QStringLiteral("wsToken"));
         m_editToken->setEchoMode(QLineEdit::Password);
         m_editToken->setPlaceholderText(QStringLiteral("留空 = 不校验 Token"));
+        // #50-3：输入侧长度闸与后端 setAuthToken 长度闸同源（全文件仅此一处 Token 实例）
+        m_editToken->setMaxLength(static_cast<int>(wsproto::kAuthTokenMaxLen));
         m_btnTokenEye = new QPushButton(QStringLiteral("显示"), serverPage);
         m_btnTokenEye->setObjectName(QStringLiteral("wsTokenEye"));
         m_btnTokenEye->setCheckable(true);
@@ -269,17 +274,32 @@ void WebSocketWidget::setupUi()
     m_droppedLabel = new QLabel(eventPanel);
     m_droppedLabel->setObjectName(QStringLiteral("wsDroppedLabel"));
     m_droppedLabel->setVisible(false);
+    // #50-4 定档语义：与 onStartClicked/onClearEventsClicked 的归零行为一致，不改行为只交底
+    m_droppedLabel->setToolTip(QStringLiteral("丢弃计数仅统计本会话：重新启动或清除事件流后归零，不跨重启累计"));
     toolRow->addWidget(m_chkAutoScroll);
     toolRow->addWidget(m_btnClearEvents);
     toolRow->addStretch();
     toolRow->addWidget(m_droppedLabel);
+    // #50-2 展示层过滤控件：插在自动滚动之后、清除之前；丢弃计数保持居右。
+    // 过滤只隐藏行不改表模型，全量事件仍入表（清除/计数/FIFO 语义不受影响）
+    m_filterDirection = new QComboBox(eventPanel);
+    m_filterDirection->setObjectName(QStringLiteral("wsFilterDirection"));
+    m_filterDirection->addItem(QStringLiteral("全部"), QString());
+    m_filterDirection->addItem(QStringLiteral("收"), QStringLiteral("收"));
+    m_filterDirection->addItem(QStringLiteral("发"), QStringLiteral("发"));
+    m_filterTopic = new QLineEdit(eventPanel);
+    m_filterTopic->setObjectName(QStringLiteral("wsFilterTopic"));
+    m_filterTopic->setPlaceholderText(QStringLiteral("主题过滤"));
+    m_filterTopic->setMaximumWidth(140);
+    toolRow->insertWidget(1, m_filterDirection);
+    toolRow->insertWidget(2, m_filterTopic);
     eventLayout->addLayout(toolRow);
 
     m_eventTable = new QTableWidget(0, ColCount, eventPanel);
     m_eventTable->setObjectName(QStringLiteral("wsEventTable"));
     m_eventTable->setHorizontalHeaderLabels(
         {QStringLiteral("时间"), QStringLiteral("方向"), QStringLiteral("主题"),
-         QStringLiteral("字节"), QStringLiteral("内容预览")});
+         QStringLiteral("对端"), QStringLiteral("字节"), QStringLiteral("内容预览")});
     m_eventTable->verticalHeader()->setVisible(false);
     m_eventTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_eventTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -292,6 +312,7 @@ void WebSocketWidget::setupUi()
     m_eventTable->setColumnWidth(ColTime, 100);
     m_eventTable->setColumnWidth(ColDirection, 44);
     m_eventTable->setColumnWidth(ColTopic, 130);
+    m_eventTable->setColumnWidth(ColPeer, 130);
     m_eventTable->setColumnWidth(ColBytes, 56);
     m_eventTable->horizontalHeader()->setSectionsMovable(false);
     eventLayout->addWidget(m_eventTable, 1);
@@ -314,6 +335,11 @@ void WebSocketWidget::setupUi()
     connect(m_btnPublish, &QPushButton::clicked, this, &WebSocketWidget::onPublishClicked);
     connect(m_btnClearEvents, &QPushButton::clicked, this, &WebSocketWidget::onClearEventsClicked);
     connect(m_btnTokenEye, &QPushButton::toggled, this, &WebSocketWidget::onTokenVisibilityToggled);
+    // #50-2：过滤条件变更即重算全表隐藏态（currentIndexChanged 取 int 重载，Qt 6.9 兼容）
+    connect(m_filterDirection, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &WebSocketWidget::applyEventFilter);
+    connect(m_filterTopic, &QLineEdit::textChanged,
+            this, &WebSocketWidget::applyEventFilter);
     onServerModeToggled();
 }
 
@@ -413,6 +439,7 @@ void WebSocketWidget::pushEvent(const wsproto::WsEvent& event)
     setCell(ColTime, formatEventTime(event.timestampMs));
     setCell(ColDirection, event.direction);
     setCell(ColTopic, event.topic);
+    setCell(ColPeer, event.peer);
     setCell(ColBytes, QString::number(event.byteCount));
     auto* previewItem = new QTableWidgetItem(event.preview);
     // tooltip 驻留上限：大报文场景防 2000 行全文累积（长稳内存约束）
@@ -424,13 +451,39 @@ void WebSocketWidget::pushEvent(const wsproto::WsEvent& event)
     previewItem->setToolTip(tip);
     m_eventTable->setItem(target, ColPreview, previewItem);
 
+    // #50-2：新行按当前过滤即时判定（直读事件字段，与 applyEventFilter 共用
+    // wsproto::matchesFilterFields 单一判据）；判定先于自动滚动，最小副作用
+    m_eventTable->setRowHidden(target,
+        !wsproto::matchesFilterFields(event.direction, event.topic,
+                                      m_filterDirection->currentData().toString(),
+                                      m_filterTopic->text()));
+
     if (m_chkAutoScroll->isChecked())
         m_eventTable->scrollToBottom();
     refreshStatusCard();
 }
 
+// #50-2：展示层行过滤——遍历全表，以方向/主题单元格文本走纯谓词，仅切换隐藏态，
+// 不删行不改计数。单元格可能为 null（清除/插入瞬间的防御），null 视作空串参与判定。
+void WebSocketWidget::applyEventFilter()
+{
+    const QString directionFilter = m_filterDirection->currentData().toString();
+    const QString topicSubstring = m_filterTopic->text();
+    for (int row = 0; row < m_eventTable->rowCount(); ++row) {
+        auto* dirItem = m_eventTable->item(row, ColDirection);
+        auto* topicItem = m_eventTable->item(row, ColTopic);
+        const QString direction = dirItem ? dirItem->text() : QString();
+        const QString topic = topicItem ? topicItem->text() : QString();
+        m_eventTable->setRowHidden(
+            row, !wsproto::matchesFilterFields(direction, topic,
+                                               directionFilter, topicSubstring));
+    }
+}
+
 void WebSocketWidget::onClearEventsClicked()
 {
+    // #50-2：清除永远清全量与计数，不受当前过滤条件影响；过滤控件状态保留，
+    // 下次推入的事件仍按当前过滤即时判定（pushEvent 末段）
     m_eventTable->setRowCount(0);
     m_droppedCount = 0;
     m_droppedLabel->setVisible(false);
@@ -469,6 +522,14 @@ void WebSocketWidget::applyRunningUi(bool running)
     m_btnStop->setEnabled(running);
     m_btnModeServer->setEnabled(!running);
     m_btnModeClient->setEnabled(!running);
+    // #50-5 运行守卫：运行中锁定连接参数输入（改参数须先停止再启停；错误/断开回落走
+    // 本函数 false 分支一并恢复，构造期不调用本函数——初态默认可用）
+    m_editBindAddr->setEnabled(!running);
+    m_spinPort->setEnabled(!running);
+    m_chkWss->setEnabled(!running);
+    m_editToken->setEnabled(!running);
+    m_editUrl->setEnabled(!running);
+    m_chkTrustCert->setEnabled(!running);
     m_statusDot->setProperty("running", running);
     m_statusDot->style()->unpolish(m_statusDot);
     m_statusDot->style()->polish(m_statusDot);
@@ -553,7 +614,12 @@ void WebSocketWidget::onStartClicked()
                                          {QStringLiteral("updated_at"),
                                           QDateTime::currentMSecsSinceEpoch()}});
         m_backend->setBindAddress(bind);
-        m_backend->setAuthToken(token.toStdString());
+        // #50-3：长度闸拒绝（后端保持旧值）——与其余拒绝分支同形态，弹窗提示且不启动
+        if (!m_backend->setAuthToken(token.toStdString())) {
+            QMessageBox::warning(this, QStringLiteral("警告"),
+                                 QStringLiteral("Token 不得超过 256 字符"));
+            return;
+        }
         m_backend->startServer(port, ssl);
         emit toolStatusChanged(QStringLiteral("Server 启动中..."));
     } else {

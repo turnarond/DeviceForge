@@ -242,6 +242,39 @@ void DeviceForge::setupFtpDeployTab()
 
     widget->setBackend(backend.get());
     widget->setDeviceBusWidget(m_deviceBusWidget);
+    // v2.14 #49-2 第三腿：部署页「保存为模板」接线——registry 构造早于各 Tab（见
+    // setupModbusClusterTab 同注释）；落库缝在此组装（widget 不直连 store），冲突
+    // 三分支弹窗默认=改名，与 v2.13 导入冲突语义同口径。
+    if (!m_templateStore)
+        m_templateStore = std::make_unique<TaskTemplateStore>();   // 与 setupTaskCenterTab 的懒建共享同一实例（该函数已有 !m_templateStore 守卫）
+    widget->setRegistry(m_deviceRegistry.get());
+    widget->setTemplateSaveChannel([this](const TaskTemplate& tmpl, QString* reason,
+                                          QString* savedName) {
+        std::string outId;   // 实际落库 ID：改名分支生成新 ID，用它反查真名回传
+        const bool ok = m_templateStore->saveUniqueByName(tmpl,
+            [this](const QString& name) {
+                QMessageBox box(this);
+                box.setWindowTitle(QStringLiteral("保存为模板"));
+                box.setText(QStringLiteral("已存在同名模板「%1」。\n选择处理方式。").arg(name));
+                auto* overwrite = box.addButton(QStringLiteral("覆盖"), QMessageBox::AcceptRole);
+                auto* rename = box.addButton(QStringLiteral("改名保存"), QMessageBox::DestructiveRole);
+                box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+                box.setDefaultButton(rename);                       // 与 v2.13 导入冲突默认=改名同口径
+                box.exec();
+                QAbstractButton* clicked = box.clickedButton();
+                if (clicked == overwrite) return NameConflictChoice::Overwrite;
+                if (clicked == rename)    return NameConflictChoice::Rename;
+                return NameConflictChoice::Cancel;
+            }, &outId, reason);
+        if (ok && savedName) {
+            // 终审 Fix1：改名/覆盖/无冲突三形态都回传**实际落库名**（部署页日志若用
+            // 入站改名前名字，任务中心查无此模板）；load 失败兜底写入站名，不回归。
+            const auto stored = m_templateStore->load(outId);
+            *savedName = stored ? QString::fromStdString(stored->name)
+                                : QString::fromStdString(tmpl.name);
+        }
+        return ok;
+    });
     widget->setGlobalLogCallback([this](const QString& msg) { appendGlobalLog(msg); });
     widget->onToolStart();
     m_ftpBackend = backend;

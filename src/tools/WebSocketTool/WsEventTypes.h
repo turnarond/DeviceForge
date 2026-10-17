@@ -22,6 +22,10 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <algorithm>
+#include <cstddef>
+#include <string>
+
 namespace wsproto {
 
 enum class FrameKind { Subscribe, Unsubscribe, Publish, TopicPush, Plain };
@@ -114,6 +118,54 @@ inline QString truncatePreview(const QString& text, int maxBytes = kPreviewMaxBy
         result.chop(1);
     result += QStringLiteral("…");
     return result;
+}
+
+// 展示层过滤字段判定（v2.14 #50-2）：directionFilter 空=不限方向，否则需与事件
+// direction 全等（"收"/"发"）；topicSubstring 空=不过滤，否则大小写不敏感子串
+// 匹配 topic。Widget 行过滤直读单元格走本函数，与 matchesFilter 共用单一判据，
+// 防事件对象路径与表格路径两套逻辑漂移。
+inline bool matchesFilterFields(const QString& direction, const QString& topic,
+                                const QString& directionFilter,
+                                const QString& topicSubstring)
+{
+    if (!directionFilter.isEmpty() && direction != directionFilter)
+        return false;
+    if (!topicSubstring.isEmpty() &&
+        !topic.contains(topicSubstring, Qt::CaseInsensitive))
+        return false;
+    return true;
+}
+
+// 规格签名入口（#50-2）：委托字段判定；由 tst_ws_event_types 锁定委托一致性
+inline bool matchesFilter(const WsEvent& e,
+                          const QString& directionFilter,
+                          const QString& topicSubstring)
+{
+    return matchesFilterFields(e.direction, e.topic, directionFilter, topicSubstring);
+}
+
+// Token 长度上限（v2.14 #50-3）：后端 setAuthToken 长度闸与 UI 输入 setMaxLength 同源
+constexpr std::size_t kAuthTokenMaxLen = 256;
+
+// 常量时间字符串等值比较（#50-3）：长度不等也走完等长扫描再判负——长度本身是公开
+// 信息，此比较防的是逐字节短路泄露「前多少字节匹配」的时序签名。只防时序旁路，
+// 不防长度泄露（如实标注，勿过度声称）。
+inline bool constantTimeEquals(const std::string& a, const std::string& b)
+{
+    // (std::max) 加括号形态：拦 windows.h 的 max(a,b) 函数宏——主程序 TU 若先经
+    // windows.h（未 NOMINMAX）再含本头，裸 std::max( 会被宏替换致编译失败（MSVC 实证 C2589）
+    const std::size_t n = (std::max)(a.size(), b.size());
+    unsigned char accumulator = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const unsigned char ca = i < a.size() ? static_cast<unsigned char>(a[i]) : 0u;
+        const unsigned char cb = i < b.size() ? static_cast<unsigned char>(b[i]) : 0u;
+        accumulator |= static_cast<unsigned char>(ca ^ cb);
+        // volatile 落点：防 -O2 把累积或运算优化成短路比较（规格 §7 风险 3 处置）
+        volatile unsigned char sink = accumulator;
+        accumulator = sink;
+    }
+    accumulator |= static_cast<unsigned char>((a.size() ^ b.size()) != 0u);
+    return accumulator == 0u;
 }
 
 } // namespace wsproto

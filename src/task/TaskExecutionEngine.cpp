@@ -13,12 +13,12 @@
 #include "adapter/FtpAdapter.h"
 #include "adapter/ProtocolRegistry.h"
 #include "task/TaskRunStore.h"   // sanitizeTaskErrorText：日志路径错误文本统一脱敏
+#include "task/TaskStepValidation.h"  // v2.14 #49-3：步骤参数级校验文案单源
 #include "transfer/AdapterTransferChannel.h"
 #include "transfer/TransferScheduler.h"
 #include "transfer/TransferTypes.h"
 
 #include <QDebug>
-#include <QFileInfo>
 #include <QMetaType>
 #include <QStringList>
 #include <QUuid>
@@ -138,62 +138,8 @@ int intParam(const QVariantMap& params, const QString& key, int fallback)
     return ok ? value : fallback;
 }
 
-// 部署步骤参数解析（items 数组，或 files+remoteDirectory 简写）
-bool parseDeployItems(const QVariantMap& params,
-                      QVector<TransferItemRequest>& items,
-                      QString& error)
-{
-    const QVariant itemsValue = params.value(QStringLiteral("items"));
-    if (itemsValue.typeId() == QMetaType::QVariantList && !itemsValue.toList().isEmpty()) {
-        const QVariantList list = itemsValue.toList();
-        for (const QVariant& value : list) {
-            if (value.typeId() != QMetaType::QVariantMap) {
-                error = QStringLiteral("文件部署步骤条目结构非法（应为对象）");
-                return false;
-            }
-            const QVariantMap map = value.toMap();
-            TransferItemRequest item;
-            item.localPath = map.value(QStringLiteral("localPath")).toString();
-            item.remotePath = map.value(QStringLiteral("remotePath")).toString();
-            if (item.localPath.isEmpty() || item.remotePath.isEmpty()) {
-                error = QStringLiteral("文件部署步骤存在缺少 localPath/remotePath 的条目");
-                return false;
-            }
-            item.direction = map.value(QStringLiteral("direction")).toString() == QLatin1String("download")
-                ? TransferDirection::Download : TransferDirection::Upload;
-            item.overwrite = map.value(QStringLiteral("overwrite")).toString() == QLatin1String("skip")
-                ? OverwritePolicy::Skip : OverwritePolicy::Overwrite;
-            items.push_back(item);
-        }
-        return true;
-    }
-
-    const QStringList files = params.value(QStringLiteral("files")).toStringList();
-    const QString remoteDirectory = params.value(QStringLiteral("remoteDirectory")).toString();
-    if (!files.isEmpty() && !remoteDirectory.isEmpty()) {
-        QString base = remoteDirectory;
-        while (base.size() > 1 && base.endsWith(u'/')) {
-            base.chop(1);
-        }
-        for (const QString& file : files) {
-            if (file.trimmed().isEmpty()) {
-                error = QStringLiteral("文件部署清单存在空路径");
-                return false;
-            }
-            TransferItemRequest item;
-            item.localPath = file;
-            const QString name = QFileInfo(file).fileName();
-            item.remotePath = base == QLatin1String("/")
-                ? QStringLiteral("/") + name
-                : base + QLatin1Char('/') + name;
-            items.push_back(item);
-        }
-        return true;
-    }
-
-    error = QStringLiteral("文件部署步骤缺少文件清单（items 数组，或 files + remoteDirectory）");
-    return false;
-}
+// 部署步骤参数解析与参数级校验文案已收敛至 taskstep::（task/TaskStepValidation.h，
+// v2.14 #49-3 引擎/编辑器单源）；本文件只保留端点存在性等执行期检查。
 
 struct StepValidation {
     bool ok = true;
@@ -201,6 +147,9 @@ struct StepValidation {
 };
 
 // Validating 阶段：静态检查每台设备的端点与步骤参数（不含任何凭据判断）。
+// v2.14 #49-3：参数级校验委托 taskstep::stepParamsValidationError（与编辑器文案
+// 单源）；端点存在性检查**刻意留在本处执行期**——模板可跨机，导入/编辑期本机
+// 端点未必存在（v2.13 悬空引用语义的延伸）。各 case 保持先端点后参数检查的顺序。
 StepValidation validateDeviceSteps(const TaskTemplate& tmpl, const DeviceProfile& profile)
 {
     for (std::size_t i = 0; i < tmpl.steps.size(); ++i) {
@@ -213,11 +162,9 @@ StepValidation validateDeviceSteps(const TaskTemplate& tmpl, const DeviceProfile
                 return {false, utf8(QStringLiteral("步骤 %1（文件部署）缺少可用端点："
                                                    "设备未配置 FTP/SFTP 端点").arg(i + 1))};
             }
-            QVector<TransferItemRequest> items;
-            QString parseError;
-            if (!parseDeployItems(step.parameters, items, parseError)) {
-                return {false, utf8(QStringLiteral("步骤 %1（文件部署）参数非法：%2")
-                                        .arg(i + 1).arg(parseError))};
+            const QString paramError = taskstep::stepParamsValidationError(step, i);
+            if (!paramError.isEmpty()) {
+                return {false, utf8(paramError)};
             }
             break;
         }
@@ -229,10 +176,9 @@ StepValidation validateDeviceSteps(const TaskTemplate& tmpl, const DeviceProfile
                                         .arg(i + 1)
                                         .arg(taskStepTypeToChineseName(step.type)))};
             }
-            if (stringListParam(step.parameters, QStringLiteral("commands")).isEmpty()) {
-                return {false, utf8(QStringLiteral("步骤 %1（%2）缺少命令列表")
-                                        .arg(i + 1)
-                                        .arg(taskStepTypeToChineseName(step.type)))};
+            const QString paramError = taskstep::stepParamsValidationError(step, i);
+            if (!paramError.isEmpty()) {
+                return {false, utf8(paramError)};
             }
             break;
         }
@@ -383,7 +329,10 @@ public:
                 m_function();
             }
         } catch (const std::exception& error) {
-            qWarning() << "TaskExecutionEngine: 协调线程异常:" << error.what();
+            // #49-9：旁路异常 what() 可能携带 URL 凭据片段（libcurl/libssh2 常把
+            // 含 userinfo 的 URL 塞进错误串），入全局日志前必须过脱敏
+            qWarning().noquote() << QStringLiteral("TaskExecutionEngine: 协调线程异常: %1")
+                    .arg(utf8ToQString(sanitizeTaskErrorText(error.what())));
         } catch (...) {
             qWarning() << "TaskExecutionEngine: 协调线程未知异常";
         }
@@ -523,6 +472,13 @@ bool TaskExecutionEngine::isRunning() const
     return m_active != nullptr;
 }
 
+bool TaskExecutionEngine::hasRunInHistory(const TaskRunId& runId) const
+{
+    // v2.14 #49-4：与 retryFailed 的存档查找同源（同一锁同一容器），只读不改状态
+    QMutexLocker locker(&m_stateMutex);
+    return m_history.find(runId) != m_history.cend();
+}
+
 std::size_t TaskExecutionEngine::resumePrefix(const std::vector<TaskStepResult>& steps) const
 {
     std::size_t prefix = 0;
@@ -599,7 +555,9 @@ void TaskExecutionEngine::executeRun(const std::shared_ptr<RunContext>& run)
                     .arg(utf8ToQString(run->runId))
                     .arg(succeeded).arg(partial).arg(failed).arg(cancelled).arg(skipped));
     } catch (const std::exception& error) {
-        qWarning() << "TaskExecutionEngine: 执行协调异常收口:" << error.what();
+        // #49-9：与 Runnable 出口同源——执行链上抛的 what() 先脱敏再入日志
+        qWarning().noquote() << QStringLiteral("TaskExecutionEngine: 执行协调异常收口: %1")
+                .arg(utf8ToQString(sanitizeTaskErrorText(error.what())));
         QMutexLocker locker(&m_stateMutex);
         if (m_active == run) {
             m_active.reset();
@@ -818,7 +776,7 @@ TaskStepResult TaskExecutionEngine::runDeployStep(
 
     QString parseError;
     QVector<TransferItemRequest> allItems;
-    if (!parseDeployItems(step.parameters, allItems, parseError)) {
+    if (!taskstep::parseDeployItems(step.parameters, allItems, parseError)) {
         result.error = utf8(parseError);
         return result;
     }

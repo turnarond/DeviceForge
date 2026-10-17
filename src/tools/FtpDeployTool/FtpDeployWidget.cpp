@@ -28,6 +28,9 @@
 #include "adapter/ProtocolRegistry.h"
 #include "config/ConfigStore.h"
 #include "command/RebootPreferences.h"
+#include "device/DeviceRegistry.h"
+#include "task/TaskTemplateEditorDialog.h"
+#include "tools/FtpDeployTool/DeployTemplateMap.h"
 #include "transfer/AdapterTransferChannel.h"
 #include "transfer/LocalPanelTransfer.h"
 #include "transfer/TransferExecutor.h"
@@ -720,6 +723,14 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_deployBtn->setText(QStringLiteral("▶ 部署"));
     deployGroup->addWidget(m_deployBtn);
 
+    // v2.14 #49-2 第三腿：「保存为模板」——把当前单次部署配置固化为任务模板
+    m_saveTemplateBtn = new QPushButton(QStringLiteral("保存为模板"), this);
+    m_saveTemplateBtn->setObjectName(QStringLiteral("deploySaveTemplateBtn"));
+    m_saveTemplateBtn->setToolTip(QStringLiteral(
+        "把当前文件清单、目标目录与勾选设备固化为可复用的任务模板（部署前清空/FTPS/端口等连接配置不进模板）"));
+    connect(m_saveTemplateBtn, &QPushButton::clicked, this, &FtpDeployWidget::onSaveAsTemplateClicked);
+    deployGroup->addWidget(m_saveTemplateBtn);
+
     // === 结果操作组（v2.8 Task 5）：导出报告 | 重试失败设备（部署结束后点亮） ===
     auto* resultSeparator = new QFrame(this);
     resultSeparator->setObjectName("toolbarSeparator");
@@ -793,6 +804,7 @@ void FtpDeployWidget::connectBackendSignals()
                const std::vector<std::string>& failures) {
             QMetaObject::invokeMethod(this, [this, ok, successes, failures]() {
                 m_deployBtn->setEnabled(true);
+                m_saveTemplateBtn->setEnabled(true);   // v2.14 #49-2：与部署按钮同节奏复明
                 // 更新每个设备的状态
                 for (const auto& key : successes)
                     m_multiProgress->setDeviceStatusByKey(
@@ -885,6 +897,57 @@ void FtpDeployWidget::onDeployClicked()
                     protocol, useFtps, port, QString());
 }
 
+// v2.14 #49-2 第三腿：「保存为模板」按钮槽——采集与部署入口同源（左面板远程浏览源
+// /空文件清单两拒绝分支文案同部署口径），映射交 DeployTemplateMap.h 纯函数，
+// 编辑走 #54 同一模态对话框，落库经主窗口注入的 std::function 缝（widget 不直连 store）。
+void FtpDeployWidget::onSaveAsTemplateClicked()
+{
+    if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
+    // 与部署入口同源的拒绝分支（远程浏览源/空文件清单）
+    if (m_leftPanel->source() && m_leftPanel->source()->sourceId() != "local") {
+        appendLog("左侧面板当前为远程浏览源，请切换为「本地」后再保存模板");
+        return;
+    }
+    const auto files = collectLocalFiles();
+    if (files.empty()) { appendLog("请先在左侧本地面板中选中要部署的文件"); return; }
+
+    deploymap::OnceConfig cfg;
+    cfg.protocol = QString::fromStdString(currentProtocol());
+    for (const auto& f : files) cfg.localFiles << QString::fromStdString(f);
+    QString remoteDir = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
+    if (remoteDir.isEmpty()) remoteDir = QStringLiteral("/");   // 与映射层就地回退双保险（幂等）
+    cfg.remoteDirectory = remoteDir;
+    for (const auto& profile : m_deviceBus->selectedDeviceProfiles()) {
+        // 过滤遗留 pill 的空 deviceId；过滤后为空＝未绑定（同部署语义），
+        // 刻意不展开成"全部设备"——模板执行期按绑定档案解析
+        if (!profile.deviceId.empty())
+            cfg.deviceIds.push_back(profile.deviceId);
+    }
+    cfg.rebootAfter = m_rebootCheck->isChecked();
+    cfg.rebootCommand = m_rebootCommandEdit->text();
+    cfg.rebootProtocol = m_rebootProtocolCombo->currentData().toString();
+    cfg.rebootTimeoutSec = m_rebootTimeoutSpin->value();
+    cfg.rebootRetryCount = m_rebootRetrySpin->value();
+
+    TaskTemplate initial = deploymap::buildTemplateFromOnceConfig(cfg);
+    const std::vector<DeviceProfile> known = m_registry ? m_registry->list() : std::vector<DeviceProfile>{};
+    TaskTemplateEditorDialog dlg(initial, known, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    TaskTemplate result;
+    if (!dlg.collect(&result)) return;              // 校验失败：对话框内已弹警告并停留
+
+    if (!m_saveChannel) { appendLog("模板保存通道未接线"); return; }
+    QString reason;
+    QString savedName;   // channel 成功时回传实际落库名（改名分支≠入站 result.name）
+    if (m_saveChannel(result, &reason, &savedName)) {
+        appendLog(QStringLiteral("已保存为模板「%1」，可在设备任务中心查看")
+                      .arg(savedName.isEmpty() ? QString::fromStdString(result.name) : savedName));
+    } else {
+        appendLog(QStringLiteral("模板未保存：%1").arg(reason.isEmpty()
+            ? QStringLiteral("存储拒绝") : reason));
+    }
+}
+
 void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
                                       const std::vector<std::string>& files,
                                       const QString& remotePath,
@@ -899,6 +962,7 @@ void FtpDeployWidget::startDeployment(const std::vector<DeviceInfo>& devices,
     m_backend->bindDevices(devices);
 
     m_deployBtn->setEnabled(false);
+    m_saveTemplateBtn->setEnabled(false);   // v2.14 #49-2：部署进行中禁用保存模板（同节奏）
     // 新一轮批量启动：结果操作按钮先熄灭（finished 回调按本轮结果重新点亮）
     m_exportReportBtn->setEnabled(false);
     m_retryBtn->setEnabled(false);
@@ -1377,6 +1441,18 @@ void FtpDeployWidget::setBackend(FtpDeployBackend* backend)
 {
     m_backend = backend;
     connectBackendSignals();
+}
+
+// v2.14 #49-2 第三腿：主窗口注入（只读档案快照 + 落库转发缝，见头文件注释）
+void FtpDeployWidget::setRegistry(DeviceRegistry* registry)
+{
+    m_registry = registry;
+}
+
+void FtpDeployWidget::setTemplateSaveChannel(
+    std::function<bool(const TaskTemplate&, QString* reason, QString* savedName)> channel)
+{
+    m_saveChannel = std::move(channel);
 }
 
 void FtpDeployWidget::setDeviceBusWidget(DeviceBusWidget* deviceBus)
