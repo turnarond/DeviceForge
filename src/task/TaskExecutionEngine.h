@@ -93,6 +93,15 @@ public:
 
     bool isRunning() const;
 
+    // v2.14 #49-4：只读查询某运行是否仍驻留阶段恢复历史（m_history）。
+    // 超过 kHistoryLimit 轮后最旧存档被 FIFO 淘汰，本查询返回 false；
+    // widget 据此把「历史已淘汰」与「活跃运行占用」两类拒绝文案区分开。
+    bool hasRunInHistory(const TaskRunId& runId) const;
+
+    // 阶段恢复历史上限（超出即 FIFO 淘汰最旧存档）。v2.14 #49-4 由 private
+    // 上移为公开单源：TaskCenterWidget 的拒绝文案引用此值，防止数字漂移。
+    static constexpr std::size_t kHistoryLimit = 32;
+
 private:
     // 每台设备在本轮的恢复计划（start 时全部为默认值）
     struct DevicePlan {
@@ -147,6 +156,4 @@ private:
     std::shared_ptr<RunContext> m_active;                  // 非空表示有活跃运行
     std::map<TaskRunId, StoredRun> m_history;              // 阶段恢复的内存快照（上限截断）
     std::deque<TaskRunId> m_historyOrder;                  // 插入顺序，用于淘汰最旧记录
-
-    static constexpr std::size_t kHistoryLimit = 32;
 };

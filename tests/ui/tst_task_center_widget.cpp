@@ -20,6 +20,8 @@
 // ⑭ v2.13 #54 Task 6：e2e「新建→执行」链——编辑器 collect 产出的 deploy+reboot
 //    两步模板经 applyEditorResult 落库（store 生成 id）后 startTemplate 全链
 //    发起执行并收口落库（FTP-only 档案不触网，重启步骤必校验失败，模式同⑥）。
+// ⑮ v2.14 #49-4：阶段恢复拒绝文案三分派静态直测（retryRejectionMessage 纯函数，
+//    lineage 未知 / 引擎 32 轮已淘汰 / 活跃运行三种入参各得对应关键词且两两不同）。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -47,6 +49,7 @@
 #include "config/ConfigStore.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskCenterWidget.h"
+#include "task/TaskExecutionEngine.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateEditorDialog.h"
@@ -1383,6 +1386,32 @@ private slots:
         QVERIFY(history);
         QTRY_COMPARE_WITH_TIMEOUT(history->rowCount(), 1, 10000);
         QCOMPARE(history->item(0, 2)->text(), QStringLiteral("失败"));
+    }
+
+    // ── v2.14 #49-4：阶段恢复拒绝文案三分派（纯静态函数直测，无需真跑 33 轮）──
+    void retryRejectionMessagesAreDistinguishable()
+    {
+        // 分支一：lineage 从未登记（本会话外启动的历史运行）
+        const QString lineageUnknown =
+            TaskCenterWidget::retryRejectionMessage(false, false);
+        // 分支二：lineage 已知，但引擎 32 轮 FIFO 已淘汰该运行存档
+        const QString evicted =
+            TaskCenterWidget::retryRejectionMessage(true, false);
+        // 分支三：lineage 已知且存档仍在，retryFailed 仍拒绝（最可能活跃运行占用）
+        const QString stillRejected =
+            TaskCenterWidget::retryRejectionMessage(true, true);
+
+        QVERIFY2(lineageUnknown.contains(QStringLiteral("本会话")), qPrintable(lineageUnknown));
+        // 轮数上限必须单源取自 TaskExecutionEngine::kHistoryLimit（防文案与引擎漂移）
+        QVERIFY2(evicted.contains(QStringLiteral("超出 %1 轮上限")
+                                      .arg(TaskExecutionEngine::kHistoryLimit)),
+                 qPrintable(evicted));
+        QVERIFY2(stillRejected.contains(QStringLiteral("活跃运行")), qPrintable(stillRejected));
+
+        // 三条文案两两不同——分派的意义就在于用户能从文案分辨真因（防同形退化）
+        QVERIFY(lineageUnknown != evicted);
+        QVERIFY(lineageUnknown != stillRejected);
+        QVERIFY(evicted != stillRejected);
     }
 };
 

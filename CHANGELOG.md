@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 修复（2026-10-17，v2.14 #49-4 lineage/32-run 错配文案分派）
+
+- **阶段恢复拒绝文案三分派与 lineage 惰性清退（#49-4）**：引擎历史上限 `kHistoryLimit=32` FIFO 淘汰，而任务中心 widget 的 `m_lineageByEngineRun` 只插不删——会话内超 32 轮后重试旧运行，lineage 命中但引擎已淘汰存档，`retryFailed` 返回空却被笼统报「阶段恢复被引擎拒绝」，未说明真因。引擎新增只读查询 `hasRunInHistory(runId)`（锁内 `m_history.find`，与 retryFailed 查找同源），`kHistoryLimit` 由 private 上移 public 作单源；widget 新增公共静态纯函数 `retryRejectionMessage(lineageKnown, engineHasHistory)` 三分派文案（本会话外运行/引擎 32 轮已淘汰/仍有存档但被拒（活跃运行）），`onRetryClicked` 在 retryFailed 拒绝且引擎无存档时**惰性清退**该运行的 lineage 与 store→engine 映射（点击即校正，不对引擎 FIFO 淘汰顺序做同构假设，偏差处置记于规格 §7 风险 1）。测试：`tst_task_execution_engine` 新增场景十一——缺命令端点快速失败模板（校验失败同样入档）连跑 33 轮，断言第 32 轮收口时首轮仍在档、第 33 轮后已淘汰且 `retryFailed` 被拒（变异对照验证非假绿）；`tst_task_center_widget` 新增 `retryRejectionMessagesAreDistinguishable` 直测三分支关键词与两两不同（轮数断言单源引用 `kHistoryLimit`）。全量 CTest **48** 目标绿。
+
 ### 修复（2026-10-17，v2.14 #49-9 引擎异常路径脱敏）
 
 - **引擎 catch 旁路异常文本过脱敏后入日志（#49-9）**：`TaskExecutionEngine` 两处 `catch (const std::exception&)` 的 `qWarning()` 原先直送 `error.what()` 进全局日志（qWarning→LogBridge→文件日志），而执行链底层（libcurl/libssh2 等）常把含 userinfo 的 URL 塞进异常文本，构成凭据泄露旁路。两处出口（协调线程 Runnable、`executeRun` 收口）统一改为 `sanitizeTaskErrorText(error.what())` 脱敏后再入日志，保留原中文措辞。测试：`tst_task_execution_engine` 新增场景十——fake 命令适配器 connect 抛含 `ftp://admin:pass@…` 形态的 `std::runtime_error`，经 `qInstallMessageHandler` 捕获 qWarning 行（RAII 装卸成对、互斥锁保护捕获容器、以 `onRunFinished` 回调为同步点），断言捕获行不含凭据原文且含 `://***@` 脱敏形态；红-绿已验证。全量 CTest **48** 目标绿。

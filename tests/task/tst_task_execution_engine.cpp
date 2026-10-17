@@ -1160,6 +1160,56 @@ private slots:
         }
         QVERIFY2(sawCatchLine, "必须捕获到引擎收口 catch 的 qWarning 行");
     }
+
+    // 场景十一：v2.14 #49-4——m_history 32 轮 FIFO 淘汰对只读查询可见。
+    // 校验即失败的运行（设备缺 FTP 端点，Validating 阶段就 fail）同样会被
+    // 收口存档进 m_history（executeRun 无条件写入），所以用快速失败模板
+    // 连跑 33 轮即可在不触网的前提下填满历史并触发最旧一轮淘汰。
+    void historyLimitEvictsOldestRuns()
+    {
+        auto fixture = std::make_shared<EngineFixture>();
+        Recorder recorder;
+        TaskExecutionEngine engine(makeDependencies(fixture));
+
+        TaskTemplate tmpl = makeTemplate({
+            makeStep(TaskStepType::DeployFiles,
+                     deployParameters({{m_fileA, QStringLiteral("/apps/a.bin")}})),
+        });
+        TaskExecutionRequest request;
+        request.task = tmpl;
+        request.devices = {makeProfile("dev-evict", QStringLiteral("10.0.0.99"),
+                                       /*withFtpEndpoint=*/false)};
+        request.authResolver = [](const DeviceProfile&) { return makeAuth(); };
+
+        TaskRunId firstRunId;
+        TaskRunId lastRunId;
+        // 轮数 = kHistoryLimit + 1（当前即 33）：恰好越过淘汰边界一轮
+        for (int i = 0; i < static_cast<int>(TaskExecutionEngine::kHistoryLimit) + 1; ++i) {
+            recorder.resetRunDone();
+            const TaskRunId runId = engine.start(request, recorder.make());
+            QVERIFY2(!runId.empty(),
+                     qPrintable(QStringLiteral("第 %1 轮 start 必须成功").arg(i + 1)));
+            // 收口信号即 m_active 已清空（收口锁块先复位再广播），下一轮可直接启动
+            QTRY_VERIFY_WITH_TIMEOUT(recorder.runDone(), 20000);
+            if (i == 0) {
+                firstRunId = runId;
+            }
+            lastRunId = runId;
+            // 淘汰边界证据：第 32 轮收口时首轮仍在档——淘汰恰由第 33 轮越界触发
+            if (i == static_cast<int>(TaskExecutionEngine::kHistoryLimit) - 1) {
+                QVERIFY2(engine.hasRunInHistory(firstRunId),
+                         "第 32 轮收口时首轮应仍在档（尚未越过淘汰边界）");
+            }
+        }
+
+        // 上限 32：第 33 轮入档后首轮必已被淘汰，最新一轮仍在档
+        QVERIFY2(!engine.hasRunInHistory(firstRunId),
+                 "超出 kHistoryLimit 后最早一轮的引擎历史必须已淘汰");
+        QVERIFY2(engine.hasRunInHistory(lastRunId),
+                 "最新一轮必须仍驻留在引擎历史中");
+        // 被淘汰运行的阶段恢复同样被拒——widget 文案分派依赖与本查询同源
+        QVERIFY(engine.retryFailed(firstRunId).empty());
+    }
 };
 
 QTEST_MAIN(TstTaskExecutionEngine)

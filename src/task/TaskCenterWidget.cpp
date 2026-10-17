@@ -897,6 +897,16 @@ void TaskCenterWidget::onCancelClicked()
     emit logMessage(QStringLiteral("任务中心：已请求取消，将在步骤边界与执行内核检查点收口"));
 }
 
+QString TaskCenterWidget::retryRejectionMessage(bool lineageKnown, bool engineHasHistory)
+{
+    if (!lineageKnown)
+        return QStringLiteral("任务中心：该历史运行无法从失败阶段重试（仅支持本会话内启动的运行）");
+    if (!engineHasHistory)
+        return QStringLiteral("任务中心：该运行的引擎历史已淘汰（超出 %1 轮上限），无法阶段恢复")
+            .arg(TaskExecutionEngine::kHistoryLimit);
+    return QStringLiteral("任务中心：阶段恢复被引擎拒绝（可能有活跃运行）");
+}
+
 void TaskCenterWidget::onRetryClicked()
 {
     if (!m_engine || !m_runs || m_active)
@@ -905,9 +915,11 @@ void TaskCenterWidget::onRetryClicked()
     if (storeRunId.isEmpty())
         return;
     const QString engineRunId = m_storeToEngineRun.value(storeRunId);
-    if (engineRunId.isEmpty() || !m_lineageByEngineRun.contains(engineRunId)) {
-        emit logMessage(QStringLiteral(
-            "任务中心：该历史运行无法从失败阶段重试（仅支持本会话内启动的运行）"));
+    // v2.14 #49-4：先判定 lineage 是否登记（本会话内启动的运行才有）
+    const bool lineageKnown =
+        !engineRunId.isEmpty() && m_lineageByEngineRun.contains(engineRunId);
+    if (!lineageKnown) {
+        emit logMessage(retryRejectionMessage(false, false));
         return;
     }
     if (m_engine->isRunning()) {
@@ -919,7 +931,24 @@ void TaskCenterWidget::onRetryClicked()
     const std::string newEngineRunId =
         m_engine->retryFailed(engineRunId.toUtf8().toStdString());
     if (newEngineRunId.empty()) {
-        emit logMessage(QStringLiteral("任务中心：阶段恢复被引擎拒绝"));
+        // 三分派：lineage 已知却被拒——查引擎存档是否已被 32 轮 FIFO 淘汰，
+        // 区分「历史已淘汰（真因）」与「仍有存档但被拒（活跃运行）」两种文案
+        const bool engineHasHistory =
+            m_engine->hasRunInHistory(engineRunId.toUtf8().toStdString());
+        emit logMessage(retryRejectionMessage(true, engineHasHistory));
+        if (!engineHasHistory) {
+            // 惰性清退：引擎已淘汰该运行存档 → 它永远不可恢复，点击校正时同步
+            // 清掉 widget 侧陈旧映射（只清「lineage 已知但已淘汰」这一种；
+            // 可恢复运行与本来无 lineage 的运行不受影响）。不做收口时全表清扫：
+            // 那等于对引擎 FIFO 淘汰顺序做同构假设。
+            m_lineageByEngineRun.remove(engineRunId);
+            for (auto it = m_storeToEngineRun.begin(); it != m_storeToEngineRun.end();) {
+                if (it.value() == engineRunId)
+                    it = m_storeToEngineRun.erase(it);
+                else
+                    ++it;
+            }
+        }
         return;
     }
     const std::string storeRunId2 = m_runs->begin(lineageInfo.request);

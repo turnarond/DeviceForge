@@ -110,6 +110,12 @@ public:
     // 用例里阻塞（对话框流内弹窗才走模态 exec）。
     bool applyEditorResult(const TaskTemplate& tmpl);
 
+    // ── v2.14 #49-4：阶段恢复拒绝文案三分派（公共静态纯函数，供直测）──
+    // lineageKnown=false：本会话外启动的运行（lineage 从未登记），沿用旧文案；
+    // true+!engineHasHistory：引擎 kHistoryLimit 轮 FIFO 已淘汰该运行存档，
+    // 说明真因；true+engineHasHistory：存档仍在却被拒（最可能是活跃运行占用）。
+    static QString retryRejectionMessage(bool lineageKnown, bool engineHasHistory);
+
 signals:
     // 一轮执行（含阶段恢复）已启动，携带 TaskRunStore 记录 ID
     void runStarted(const QString& storeRunId);

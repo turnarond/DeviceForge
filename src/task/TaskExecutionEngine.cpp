@@ -472,6 +472,13 @@ bool TaskExecutionEngine::isRunning() const
     return m_active != nullptr;
 }
 
+bool TaskExecutionEngine::hasRunInHistory(const TaskRunId& runId) const
+{
+    // v2.14 #49-4：与 retryFailed 的存档查找同源（同一锁同一容器），只读不改状态
+    QMutexLocker locker(&m_stateMutex);
+    return m_history.find(runId) != m_history.cend();
+}
+
 std::size_t TaskExecutionEngine::resumePrefix(const std::vector<TaskStepResult>& steps) const
 {
     std::size_t prefix = 0;
