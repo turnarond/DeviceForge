@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -213,6 +214,24 @@ public:
         m_hardFailConnectIp = ip;
         m_hardFailConnectError = errorText;
     }
+    // #49-9：让指定 IP 的命令适配器在 connect 时抛旁路异常（what() 原文由测试携带，
+    // 模拟适配器底层把含凭据的 URL 塞进异常文本；BatchCommandRunner 不捕异常，
+    // 该异常沿协调线程直达引擎 catch 的日志出口）
+    void setThrowingConnect(const QString& ip, const std::string& message)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_throwConnectIp = ip;
+        m_throwConnectMessage = message;
+    }
+    bool takeThrowingConnect(const QString& ip, std::string* message)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_throwConnectIp.isEmpty() || ip != m_throwConnectIp) {
+            return false;
+        }
+        *message = m_throwConnectMessage;
+        return true;
+    }
 
     int uploadEntered() const { return m_uploadEntered.load(); }
     int commandGateEntered() const { return m_commandGateEntered.load(); }
@@ -269,6 +288,8 @@ private:
     QString m_flakyConnectIp;
     QString m_hardFailConnectIp;
     std::string m_hardFailConnectError;
+    QString m_throwConnectIp;               // #49-9：旁路异常注入 IP
+    std::string m_throwConnectMessage;      // #49-9：异常 what() 原文（含敏感形态）
     QString m_deployGateIp;
     QString m_gatedCommand;
     std::atomic_bool m_deployGateArmed{false};
@@ -329,6 +350,12 @@ public:
     bool connect(const DeviceInfo& device, const AuthInfo&) override
     {
         m_ip = QString::fromStdString(device.ip);
+        // #49-9：旁路异常入口——引擎收口 catch 唯一不吞异常的调用点即此处链路，
+        // 抛出的 what() 原文将直达 TaskExecutionEngine 的两处 qWarning 日志出口
+        std::string throwMessage;
+        if (m_fixture->takeThrowingConnect(m_ip, &throwMessage)) {
+            throw std::runtime_error(throwMessage);
+        }
         std::string error;
         if (!m_fixture->commandConnect(m_ip, &error)) {
             m_lastError = error;
@@ -530,6 +557,38 @@ AuthInfo makeAuth()
     auth.password = "task-secret";
     return auth;
 }
+
+// ——————— qWarning 日志出口捕获（#49-9） ———————
+// 协调线程跑在 QThreadPool 工作线程上，qWarning 从该线程进入全局 message
+// handler；捕获容器必须互斥锁保护。测试期间整体接管 handler 且不转发旧
+// handler（QtTest 自身的日志路由不该把敏感原文再抄一份进测试输出）。
+
+std::mutex g_captureMutex;
+std::vector<QByteArray> g_capturedWarnings;
+
+void captureWarningHandler(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+    if (type != QtWarningMsg) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_captureMutex);
+    g_capturedWarnings.push_back(message.toUtf8());
+}
+
+// RAII：装-摘成对；断言失败提前返回（QVERIFY* 会 return）也不把自定义
+// handler 遗留给后续用例。
+class MessageHandlerSwitch
+{
+public:
+    explicit MessageHandlerSwitch(QtMessageHandler handler)
+        : m_previous(qInstallMessageHandler(handler))
+    {
+    }
+    ~MessageHandlerSwitch() { qInstallMessageHandler(m_previous); }
+
+private:
+    QtMessageHandler m_previous;
+};
 
 } // namespace
 
@@ -1043,6 +1102,63 @@ private slots:
             }
         }
         QVERIFY2(sawReasonLog, "失败步骤必须产生含「原因：」的结果日志");
+    }
+
+    // 场景十：终审 #49-9——引擎 catch 旁路的异常 what() 原文可能携带含凭据的
+    // URL，必须先过 sanitizeTaskErrorText 再入全局日志（qWarning→LogBridge→
+    // 文件日志）。触发路径：fake 命令适配器 connect 抛 std::runtime_error，
+    // 沿协调线程直达 executeRun 收口 catch 的 qWarning 出口。
+    void engineCatchBypassSanitizesExceptionWhat()
+    {
+        auto fixture = std::make_shared<EngineFixture>();
+        Recorder recorder;
+        TaskExecutionEngine engine(makeDependencies(fixture));
+        // 敏感原文取 URL userinfo 形态（sanitizeTaskErrorText 规则 1，
+        // TaskRunStore.cpp:200-220：://user:pass@host → ://***@host）
+        fixture->setThrowingConnect(QStringLiteral("10.0.0.91"),
+                                    "boom ftp://admin:pass@10.0.0.1 rejected");
+
+        {
+            std::lock_guard<std::mutex> lock(g_captureMutex);
+            g_capturedWarnings.clear();
+        }
+        MessageHandlerSwitch handlerSwitch(captureWarningHandler);
+
+        TaskTemplate tmpl = makeTemplate({
+            makeStep(TaskStepType::RunCommands,
+                     commandParameters({QStringLiteral("uptime")})),
+        });
+        TaskExecutionRequest request;
+        request.task = tmpl;
+        request.devices = {makeProfile("dev-throw", QStringLiteral("10.0.0.91"))};
+        request.authResolver = [](const DeviceProfile&) { return makeAuth(); };
+
+        const TaskRunId runId = engine.start(request, recorder.make());
+        QVERIFY(!runId.empty());
+        // 同步点：收口 catch 先 qWarning 后回调 onRunFinished（同线程顺序），
+        // runDone 置位即捕获行已就位
+        QTRY_VERIFY_WITH_TIMEOUT(recorder.runDone(), 20000);
+
+        std::vector<QByteArray> captured;
+        {
+            std::lock_guard<std::mutex> lock(g_captureMutex);
+            captured.swap(g_capturedWarnings);
+        }
+
+        bool sawCatchLine = false;
+        for (const QByteArray& line : captured) {
+            const std::string text = line.toStdString();
+            QVERIFY2(text.find("admin:pass") == std::string::npos,
+                     qPrintable(QStringLiteral("引擎 catch 旁路日志不得含凭据原文: %1")
+                                    .arg(QString::fromUtf8(line))));
+            if (text.find(u8"执行协调异常收口") != std::string::npos) {
+                sawCatchLine = true;
+                QVERIFY2(text.find("://***@") != std::string::npos,
+                         qPrintable(QStringLiteral("what() 入日志前必须过脱敏: %1")
+                                        .arg(QString::fromUtf8(line))));
+            }
+        }
+        QVERIFY2(sawCatchLine, "必须捕获到引擎收口 catch 的 qWarning 行");
     }
 };
 

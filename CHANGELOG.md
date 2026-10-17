@@ -2,6 +2,10 @@
 
 ## [未发布]
 
+### 修复（2026-10-17，v2.14 #49-9 引擎异常路径脱敏）
+
+- **引擎 catch 旁路异常文本过脱敏后入日志（#49-9）**：`TaskExecutionEngine` 两处 `catch (const std::exception&)` 的 `qWarning()` 原先直送 `error.what()` 进全局日志（qWarning→LogBridge→文件日志），而执行链底层（libcurl/libssh2 等）常把含 userinfo 的 URL 塞进异常文本，构成凭据泄露旁路。两处出口（协调线程 Runnable、`executeRun` 收口）统一改为 `sanitizeTaskErrorText(error.what())` 脱敏后再入日志，保留原中文措辞。测试：`tst_task_execution_engine` 新增场景十——fake 命令适配器 connect 抛含 `ftp://admin:pass@…` 形态的 `std::runtime_error`，经 `qInstallMessageHandler` 捕获 qWarning 行（RAII 装卸成对、互斥锁保护捕获容器、以 `onRunFinished` 回调为同步点），断言捕获行不含凭据原文且含 `://***@` 脱敏形态；红-绿已验证。全量 CTest **48** 目标绿。
+
 ### 重构（2026-10-17，v2.14 #49-3 步骤参数校验共享纯函数）
 
 - **步骤参数校验文案引擎/编辑器单源**：新增纯逻辑头 `src/task/TaskStepValidation.h`（`taskstep::parseDeployItems` 自引擎 cpp 匿名 ns 整体搬移、行为零变化；`taskstep::stepParamsValidationError` 收敛四类步骤的参数级判定），引擎 `validateDeviceSteps`（Validating）与编辑器 `validate()` 此前两处并行实现、commands 分支文案分叉（编辑器「至少一条命令」vs 引擎「缺少命令列表」）统一为引擎原形「步骤 %1（%2）缺少命令列表」。commands 判定采编辑器 trim 后判空语义——比引擎旧裸列表 isEmpty 更严（纯空白命令行视为无效），引擎随之刻意收紧。端点/设备存在性校验**刻意留在引擎执行期**（模板可跨机，导入/编辑期本机端点未必存在，v2.13 悬空引用语义延伸）。新增 `tst_task_step_validation` 纯逻辑目标（12 用例）；全量 CTest **48** 目标绿。

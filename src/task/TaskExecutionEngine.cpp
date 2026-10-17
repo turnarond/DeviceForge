@@ -329,7 +329,10 @@ public:
                 m_function();
             }
         } catch (const std::exception& error) {
-            qWarning() << "TaskExecutionEngine: 协调线程异常:" << error.what();
+            // #49-9：旁路异常 what() 可能携带 URL 凭据片段（libcurl/libssh2 常把
+            // 含 userinfo 的 URL 塞进错误串），入全局日志前必须过脱敏
+            qWarning().noquote() << QStringLiteral("TaskExecutionEngine: 协调线程异常: %1")
+                    .arg(utf8ToQString(sanitizeTaskErrorText(error.what())));
         } catch (...) {
             qWarning() << "TaskExecutionEngine: 协调线程未知异常";
         }
@@ -545,7 +548,9 @@ void TaskExecutionEngine::executeRun(const std::shared_ptr<RunContext>& run)
                     .arg(utf8ToQString(run->runId))
                     .arg(succeeded).arg(partial).arg(failed).arg(cancelled).arg(skipped));
     } catch (const std::exception& error) {
-        qWarning() << "TaskExecutionEngine: 执行协调异常收口:" << error.what();
+        // #49-9：与 Runnable 出口同源——执行链上抛的 what() 先脱敏再入日志
+        qWarning().noquote() << QStringLiteral("TaskExecutionEngine: 执行协调异常收口: %1")
+                .arg(utf8ToQString(sanitizeTaskErrorText(error.what())));
         QMutexLocker locker(&m_stateMutex);
         if (m_active == run) {
             m_active.reset();
