@@ -1,5 +1,8 @@
 #include "DeviceForge.h"
+#include "app/WindowPlacement.h"   // v2.14 双屏初始放置决策纯函数
 #include <QMessageBox>
+#include <QGuiApplication>   // v2.14 双屏放置：枚举 screens()
+#include <QScreen>           // v2.14 双屏放置：availableGeometry()
 #include <QString>
 #include <QStyleFactory>
 #include <QVBoxLayout>
@@ -159,6 +162,20 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 6. 设置初始活跃项
     m_navBar->setActiveItem(0);
     m_toolStack->setCurrentIndex(0);
+
+    // v2.14 双屏「看不全」修复：工具栏单行最小宽度可超单屏可用宽，OS 默认放置
+    // 可能落在装不下它的屏上致右侧裁切；启动时按「能否完整容纳」选屏并居中
+    //（决策纯函数见 app/WindowPlacement.h，此处仅收集屏几何并应用）。
+    {
+        QList<QRect> screenGeoms;
+        const auto screens = QGuiApplication::screens();
+        for (const QScreen* screen : screens)
+            screenGeoms << screen->availableGeometry();
+        const QRect frame = winplace::initialFrameGeometry(
+            sizeHint().expandedTo(minimumSizeHint()), screenGeoms);
+        resize(frame.size());
+        move(frame.topLeft());
+    }
 
     // 7. 日志面板状态（v2.11.1）：从 ConfigStore 恢复折叠态与展开高度，
     //    初始比例由 splitSizes 钳制（不再硬编码 600:250）

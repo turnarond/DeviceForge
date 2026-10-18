@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-48 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+49 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48；v2.14 双屏窗口放置 +1 = 49），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -25,7 +25,7 @@
 | WebSocketTool/ | tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback | WsEventTypes.h 纯逻辑 / 双栏页面布局 / 本机 Server↔Client 环回 | 纯逻辑 + QtTest UI 回归 + 环回集成 |
 | task/ | tst_task_template_codec | TaskTemplateCodec 模板行/文件编解码（魔数与 formatVersion 版本闸/敏感字段拒收/templateId 不外溢/悬空引用保留） | 纯逻辑（v2.13 模板跨机迁移） |
 | task/ | tst_task_step_validation | TaskStepValidation.h 步骤参数级校验纯函数（引擎/编辑器文案单源/parseDeployItems 口径/commands trim 判空） | 纯逻辑（仅头文件，v2.14 #49-3） |
-| app/ telnet(表头)/ | tst_log_panel_state / tst_batch_result_header | 日志面板状态纯逻辑 / 结果表头属性 | 纯逻辑（仅头文件） |
+| app/ telnet(表头)/ | tst_log_panel_state / tst_window_placement / tst_batch_result_header | 日志面板状态纯逻辑 / 主窗口初始屏选择与居中纯逻辑 / 结果表头属性 | 纯逻辑（仅头文件） |
 | （根） | tst_updatechecker | UpdateChecker | OTA 检查 |
 
 ## 注册模板（tests/CMakeLists.txt）
