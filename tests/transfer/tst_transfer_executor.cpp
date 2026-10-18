@@ -363,6 +363,32 @@ private slots:
         QCOMPARE(readFile(targetPath), QByteArray("local reliable payload"));
     }
 
+    void directoryUploadSourceFailsBeforeAnyChannelCall()
+    {
+        // 部署页选中文件夹条目 → 单发与任务模板同走本执行器：目录源必须在
+        // 触碰远端之前失败（评审 I-1 钉桩：两条路径口径一致，无"单发能传文件夹"分叉）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QVERIFY(QDir(directory.path()).mkpath(QStringLiteral("bundle")));
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 0);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(directory.filePath(QStringLiteral("bundle")),
+                          QStringLiteral("/opt/bundle")),
+            m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::LocalIo);
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.statCalls, 0);
+        QCOMPARE(channel.renameCalls, 0);
+        QCOMPARE(channel.clearCredentialsCalls, 1);
+    }
+
     void deterministicFailureDoesNotRetryAndPreservesRootError()
     {
         QTemporaryDir directory;

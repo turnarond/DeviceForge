@@ -1111,7 +1111,9 @@ std::vector<std::string> FtpDeployWidget::collectLocalFiles() const
     std::vector<std::string> files;
     if (!m_leftPanel) return files;
     // 面板 selectedFiles 返回 FtpFileInfo（name 需拼面板当前路径）；
-    // 跳过 ".." 导航条目；文件与文件夹均纳入部署（backend 的 uploadFolder 递归处理文件夹）
+    // 跳过 ".." 导航条目；文件夹条目原样传给传输层——单发与任务引擎同走
+    // TransferExecutor，目录源在触碰远端前即失败（仅普通文件可传输，
+    // tst_transfer_executor::directoryUploadSourceFailsBeforeAnyChannelCall 钉桩）
     const QString base = m_leftPanel->currentPath();
     for (const auto& f : m_leftPanel->selectedFiles()) {
         if (f.name == ".." || f.name.empty()) continue;
