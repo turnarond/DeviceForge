@@ -19,6 +19,7 @@ private slots:
     void uniqueKeyUpsert();
     void listOrder();
     void listPaging();
+    void listDefaultUnlimitedAboveLegacyCap();
     void removeWorks();
     void exportImportRoundtrip();
 };
@@ -131,6 +132,18 @@ void TestConfigStore::listPaging()
     for (int i = 11; i >= 0; --i)
         expected << QStringLiteral("k%1").arg(i, 2, 10, QLatin1Char('0'));
     QCOMPARE(joined, expected);
+}
+
+void TestConfigStore::listDefaultUnlimitedAboveLegacyCap()
+{
+    // #49-5：默认 limit 曾为 1000 ——「遍历全表」语义的调用方在 >1000 行时
+    // 静默丢数据。新默认 -1 必须返回全部行；显式 limit 行为不变（既有 listPaging 守护）。
+    for (int i = 0; i < 1002; ++i)
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("bulk.t"),
+                                             QStringLiteral("k%1").arg(i, 5, 10, QLatin1Char('0')),
+                                             QVariantMap{{QStringLiteral("v"), i}}));
+    QCOMPARE(ConfigStore::instance().list(QStringLiteral("bulk.t")).size(), 1002);
+    QCOMPARE(ConfigStore::instance().list(QStringLiteral("bulk.t"), 5).size(), 5);
 }
 
 void TestConfigStore::removeWorks()
