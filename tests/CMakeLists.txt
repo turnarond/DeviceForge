@@ -390,6 +390,9 @@ target_link_libraries(tst_telnet_timeout PRIVATE
     lwcommunicate lwlog
 )
 add_test(NAME tst_telnet_timeout COMMAND tst_telnet_timeout)
+# TIMEOUT 60 有界化挂起形态（D）：全套并发下偶发无限挂起→单目标 60s 有界失败。
+# 置于 _qt_bin_dir 守卫之外，保证 TIMEOUT 无条件生效。
+set_tests_properties(tst_telnet_timeout PROPERTIES TIMEOUT 60)
 if(_qt_bin_dir)
     set_tests_properties(tst_telnet_timeout PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
