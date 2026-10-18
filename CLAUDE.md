@@ -121,9 +121,9 @@ GitHub Actions 分为两个入口：
 
 ## 代码架构
 
-### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.13.0
+### 架构状态：DeviceForge (DeployMaster 2.0) Phase 0-2 完成，当前版本 2.14.0
 
-项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）+ v2.8 并行批量部署（并发度 1-8、设备级进度、CSV/HTML 报告、失败设备重试）+ v2.12 三大界面重构（WebSocket 双栏控制台、MODBUS 主看偶写重构、文件管理增强，2026-10）+ v2.13 轻还债版（任务模板跨机迁移、任务模板编辑器、还债波，2026-10）。
+项目已完成从 MVP+EventBus 单体架构到 **lwserverbase 服务核 + Qt Widget 壳** 双层架构的基础设施搭建 + 主要 Tool 迁移 + 安全加固 + 配置持久化 + FTP 双栏重构 + 布局现代化 + v2.5 功能补完 + SylixOS 适配 + v2.6 SFTP 批量部署 + 双栏面板模块化（FileBrowserPanel/IFileSource，2026-08）+ v2.7 UX 收尾（远程异步化/面板源选择器/系统拖入，2026-08）+ v2.8 并行批量部署（并发度 1-8、设备级进度、CSV/HTML 报告、失败设备重试）+ v2.12 三大界面重构（WebSocket 双栏控制台、MODBUS 主看偶写重构、文件管理增强，2026-10）+ v2.13 轻还债版（任务模板跨机迁移、任务模板编辑器、还债波，2026-10）+ v2.14 加固与可见性版（部署页保存为模板、#49 加固波、#50 WebSocket 可见性，2026-10）。
 
 **v2.9 传输可靠性内核（2026-09）**：双栏上传、下载、本地复制/移动和批量部署统一经 `TransferScheduler → TransferExecutor → ITransferChannel`；支持瞬时错误重试、SHA-256 校验、临时文件、原子提交、非原子降级告警、项目级取消、已交付文件恢复跳过和报告 `nonAtomic` 字段。`IProtocolAdapter`/`IDeployable` ABI 保持不变。
 
@@ -132,6 +132,8 @@ GitHub Actions 分为两个入口：
 **v2.12 三大界面重构（2026-10）**：① WebSocket 页双栏控制台——事件模型 `src/tools/WebSocketTool/WsEventTypes.h` 纯逻辑（parseFrame/encode/UTF-8 边界截断），事件流 2000 行环形 + 方向/对端/字节数/预览；Token 走 DPAPI（`devicebus::storeFtpCredential` 同款纪律），评审修复后端错误路径 UAF（onClientError 断链 + 析构无条件收尾）。② MODBUS 按"多 PLC 主看偶写、规模 B（IO 留 GUI 线程）"重构——`modbus.target` 档案（key=deviceId，`ModbusTargetStore` 旧 `modbus.slave` 幂等迁移）、`ModbusScheduler`（250ms 单驱动 + nextDue、每连接 FIFO、写插队、指数退避）、`ModbusDataStore` 单写者 + `ModbusTargetListModel`/`ModbusPointModel` 双视图（变化高亮/跳过计数/退避着色）、QModbusTcpServer 环回集成测试。③ 文件管理增强——`FtpFileInfo` 增 owner（LIST user/SFTP uid/本地 QFileInfo），`IFileSource::readFile/writeFile` 内存原语（libcurl 有界写回调/libssh2 分块，SylixOS 句柄纪律照抄），`DirCompare` 元数据口径纯函数 + `RemoteFileModel` 对比行视图（差异着色/占位行/仅差异过滤，刷新即出对比态），`FileEncoding` 编码探测（BOM/严格 UTF-8 DFA/Win32 CP936，禁 QTextCodec）+ `FileEditorDialog` F4 编辑回传（2MB/二进制/混合行尾只读、保存前 `remoteChanged` 冲突确认、打开即推进 `m_editGeneration` 防串包）。全量测试 36→45 目标。
 
 **v2.13 轻还债版（2026-10-16）**：① 任务模板跨机迁移——`TaskTemplateCodec` 行编解码自 store 外提（字段口径唯一来源）+ 文件契约（魔数 `deviceforge.task-template`、formatVersion 严格整数闸、敏感键拒收继承、templateId 导出丢弃、悬空 deviceIds 保留——档案 ID=端点哈希使"先带模板后建档"成立）；任务中心「导出/导入模板」（同名三选默认改名、覆盖原位继承 ID 与版本、四道校验全过才落库）。② 任务模板编辑器——`TaskTemplateEditorDialog` 补产品内新建/步骤编辑（四类步骤参数表单与引擎契约逐字一致，deploy 简写打开即归一 items[]）/删除（`TaskTemplateStore::remove`，确认默认否），堵 v2.11"保存配置为模板"承诺缺口；三面板共享 protocol 下拉、m_binding+blockSignals 双守卫即时写回。③ 还债波：#46 档案端点同键保存确认、#47 编译警告 C4858×7/C4834×2 清零、#48 GBK 不可表示明示换码（fellBackToUtf8 出参）、#51 手册/规格口径归一+CHANGELOG 归位+smoke 环境预检（Qt PATH 注入+PID 限定窗口）、#54/#55 转嫁项全收。测试 45→46 目标（+tst_task_template_codec），编辑器/通道新增用例 19 个。
+
+**v2.14 加固与可见性版（2026-10-18）**：收编 #49/#50 两池。① #49-2 部署页「保存为模板」——`DeployTemplateMap.h` 纯映射（files+remoteDirectory 简写/reboot 步 command 键与引擎逐字同源；清空/FTPS/端口/并发刻意不进模板）→ 预填 #54 编辑器 → `TaskTemplateStore::saveUniqueByName`（同名三选：覆盖继承 ID+max 版本、改名"名称 (2)"与导入同口径、回传实际落库名）经 DeviceForge std::function 缝落库，任务中心 `showEvent` 页显刷新收敛外部落库源。② #49 加固：`TaskStepValidation.h` 参数校验引擎/编辑器单源（commands trim 判定收紧、端点存在性留执行期）；引擎两处 catch 的 `what()` 过 `sanitizeTaskErrorText`；`hasRunInHistory`+`retryRejectionMessage` 三分派（32 轮淘汰可分辨文案+惰性清退）；`DeviceRegistry::save/saveReplacing` 落盘失败全表快照回滚（stored 仅成功写，`editProfileFor` 失败早退连带修）；AuthResolver 降级语义定档入 v2.11 spec §7。③ #50 WebSocket：事件表六列（+对端）、`matchesFilterFields`/`matchesFilter` 委托式方向/主题过滤（展示层隐藏）、`constantTimeEquals`（volatile 累积+长度折叠）+`kAuthTokenMaxLen=256` 三道闸、丢弃计数会话语义 tooltip、`applyRunningUi` 纳入六连接输入守卫。④ 勘误收口：v2.12 CHANGELOG「对端」段末注记（历史不改写）、路线图/文章归位 v2.14。⑤ 冒烟修复批：编辑器 `QDialogButtonBox` 从未接线（原注释误称自动接线，v2.13 带病）补 connect、条目「移除选中行」、双屏初始放置 `WindowPlacement.h` 按屏钳制。测试 46→49 目标（+tst_deploy_template_map/tst_task_step_validation/tst_window_placement），按钮流非模态 click 直测补空白。
 
 **架构模型**：Tool = ToolBackend (ServiceTask) + ToolWidget (QWidget)，通过 lwmsgq 双向解耦。统一 IProtocolAdapter 接口 + ProtocolRegistry 连接池。
 

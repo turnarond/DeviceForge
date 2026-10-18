@@ -2,11 +2,11 @@
 
 > 本文件描述 DeviceForge 的发展方向。计划会随社区反馈调整——**如果你正好需要某个功能,欢迎在 [Issues](../../issues) 提出或 👍,这会直接影响优先级。**
 
-**当前版本**：v2.13.0 · **平台**：Windows（x64）· **许可**：MIT License
+**当前版本**：v2.14.0 · **平台**：Windows（x64）· **许可**：MIT License
 
 ---
 
-## 已交付（至 v2.13.0）
+## 已交付（至 v2.14.0）
 
 | 模块 | 能力 |
 |------|------|
@@ -38,10 +38,11 @@
 - **v2.11.1**（2026-10-08）：现场反馈可用性补丁——设备编辑器协议/凭据下拉与就地新建、综合日志折叠记忆、批量命令结果列宽可拖动
 - **v2.12**（2026-10-14）：三大界面重构——WebSocket 双栏控制台 + 事件流、MODBUS 多 PLC 主看偶写重构、文件管理增强（元数据列/目录对比/F4 在线编辑回传）
 - **v2.13**（2026-10-16）：轻还债版——任务模板跨机迁移（导出/导入，"U 盘带模板"）+ 任务模板编辑器（新建/编辑/删除补齐产品内入口）+ 还债波 #46/#47/#48/#51/#54/#55
+- **v2.14**（2026-10-18）：加固与可见性版——部署页「保存为模板」（v2.11 spec 承诺兑现）+ 任务中心加固批（#49 收编：校验单源/异常脱敏/重试文案分档/档案落盘回滚/凭据降级定档）+ WebSocket 五项（#50 收编：对端列/事件过滤/Token 常量时间/计数语义/运行守卫）+ 两处对外文档勘误
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + IDeployable 部署能力接口 + 工业仪表盘深色主题（「琴色是动词」体系）。
 产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
-测试：46 个 QtTest/CTest 目标（v2.13 新增 tst_task_template_codec）（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e；v2.12 新增 tst_batch_result_header / tst_log_panel_state / tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback / tst_modbus_target_store / tst_modbus_scheduler / tst_modbus_page / tst_modbus_loopback / tst_dir_compare / tst_file_encoding）。
+测试：49 个 QtTest/CTest 目标（v2.14 新增 tst_deploy_template_map / tst_task_step_validation / tst_window_placement；v2.13 新增 tst_task_template_codec）（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e；v2.12 新增 tst_batch_result_header / tst_log_panel_state / tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback / tst_modbus_target_store / tst_modbus_scheduler / tst_modbus_page / tst_modbus_loopback / tst_dir_compare / tst_file_encoding）。
 
 ---
 
