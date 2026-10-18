@@ -206,13 +206,18 @@ QList<QVariantMap> ConfigStore::list(const QString& type, int limit, int offset)
 
     QSqlQuery q(m_db);
     // updated_at 并列时以自增 id 升序兜底，保证 OFFSET 分页遍历顺序稳定可复现
-    if (!q.prepare(QStringLiteral(
-            "SELECT type, key, value, updated_at FROM config_items "
-            "WHERE type=:t ORDER BY updated_at DESC, id ASC LIMIT :n OFFSET :o")))
+    QString sql = QStringLiteral(
+        "SELECT type, key, value, updated_at FROM config_items "
+        "WHERE type=:t ORDER BY updated_at DESC, id ASC");
+    if (limit >= 0)
+        sql += QStringLiteral(" LIMIT :n OFFSET :o");
+    if (!q.prepare(sql))
         return out;
     q.bindValue(QStringLiteral(":t"), type);
-    q.bindValue(QStringLiteral(":n"), limit);
-    q.bindValue(QStringLiteral(":o"), offset);
+    if (limit >= 0) {
+        q.bindValue(QStringLiteral(":n"), limit);
+        q.bindValue(QStringLiteral(":o"), offset);
+    }
     if (!q.exec())
         return out;
 

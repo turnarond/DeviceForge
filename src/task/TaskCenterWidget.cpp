@@ -17,6 +17,7 @@
 #include "config/DpapiCrypto.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskExecutionEngine.h"
+#include "task/TaskRunAggregate.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateEditorDialog.h"
@@ -740,35 +741,8 @@ void TaskCenterWidget::updateDeviceRow(const QString& deviceId, TaskDeviceState 
 
 TaskRunStatus TaskCenterWidget::aggregateStatus(const TaskRunOutcome& outcome)
 {
-    int succeeded = 0;
-    int partial = 0;
-    int cancelled = 0;
-    int failed = 0;
-    for (const auto& device : outcome.devices) {
-        switch (device.state) {
-        case TaskDeviceState::Succeeded:
-        case TaskDeviceState::Skipped:
-            ++succeeded;
-            break;
-        case TaskDeviceState::PartiallySucceeded:
-            ++partial;
-            break;
-        case TaskDeviceState::Cancelled:
-            ++cancelled;
-            break;
-        default:
-            ++failed;
-            break;
-        }
-    }
-    const int total = static_cast<int>(outcome.devices.size());
-    if (total > 0 && succeeded == total)
-        return TaskRunStatus::Succeeded;
-    if (succeeded > 0 || partial > 0)
-        return TaskRunStatus::PartiallySucceeded;
-    if (cancelled > 0 && failed == 0)
-        return TaskRunStatus::Cancelled;
-    return TaskRunStatus::Failed;
+    // v2.15 #49-6：收敛规则单源外提 TaskRunAggregate.h，成员入口仅转发
+    return taskrun::aggregateRunStatus(outcome);
 }
 
 void TaskCenterWidget::setRunningUi(bool running)
@@ -1220,28 +1194,16 @@ bool TaskCenterWidget::importTemplateFromFile(const QString& filePath)
     TaskTemplate tmpl = *decoded;
     tmpl.templateId.clear();   // 双保险：跨机主键不外溢，新 ID 由 store 生成
 
-    // ③ 同名冲突（大小写敏感精确匹配）；先全量校验后落库，不落半成品（规格 §5）
+    // ③+④ 同名冲突与落库：v2.15 起与部署页「保存为模板」共用 saveUniqueByName
+    //（冲突匹配口径/覆盖 ID+版本规则/改名递增换新 ID 单源，v2.13 导入语义不变）。
+    // 先全量校验后落库，不落半成品（规格 §5）。
     const QString importedName = fromUtf8Std(tmpl.name);
-    auto hasTemplateName = [this](const QString& name) {
-        for (const auto& t : m_templates->list()) {
-            if (QString::fromStdString(t.name) == name)
-                return true;
-        }
-        return false;
-    };
-    std::string existingId;
-    int existingVersion = 0;
-    for (const auto& t : m_templates->list()) {
-        if (QString::fromStdString(t.name) == importedName) {
-            existingId = t.templateId;
-            existingVersion = t.version;
-            break;
-        }
-    }
-    if (!existingId.empty()) {
+    TaskTemplate inbound = tmpl;
+    inbound.templateId.clear();   // 双保险保留：跨机主键不外溢
+    auto onConflict = [this, &importedName](const QString& name) -> NameConflictChoice {
         int choice = -1;
         if (m_importConflictResolver) {
-            choice = m_importConflictResolver(importedName);
+            choice = m_importConflictResolver(name);
         } else {
             // 缺省 resolver：覆盖(Yes)/改名(No)/取消(Cancel) 三按钮。
             // 默认按钮=改名——现场保守，防止回车键误覆盖本机同名模板。
@@ -1260,32 +1222,26 @@ bool TaskCenterWidget::importTemplateFromFile(const QString& filePath)
             choice = role == QMessageBox::YesRole ? 0
                  : role == QMessageBox::NoRole ? 1 : -1;
         }
-        if (choice < 0)
-            return false;                    // 取消：静默收场，无弹窗、不落库
-        if (choice == 0) {
-            tmpl.templateId = existingId;    // 覆盖：赋既有 ID 原位 upsert
-            tmpl.version = existingVersion;  // 继承既有版本（store 拒绝降级写入）
-        } else {
-            for (int n = 2;; ++n) {          // 改名：「名称 (2)」「名称 (3)」…递增找空位，不设上限
-                const QString candidate = QStringLiteral("%1 (%2)").arg(importedName).arg(n);
-                if (!hasTemplateName(candidate)) {
-                    tmpl.name = toUtf8(candidate);
-                    break;
-                }
-            }
+        // 测试缝 int 口径不变：0=覆盖、1=改名、其余（含 -1）=取消
+        return choice == 0 ? NameConflictChoice::Overwrite
+             : choice == 1 ? NameConflictChoice::Rename
+                           : NameConflictChoice::Cancel;
+    };
+    std::string savedId;
+    QString failReason;
+    if (!m_templates->saveUniqueByName(inbound, onConflict, &savedId, &failReason)) {
+        // reason 嗅探「已取消」= 用户在冲突对话框取消：静默收场，无弹窗、不记失败日志
+        //（store 取消分支只写 reason 不落盘，其余拒绝 reason 为「落库失败：…」）
+        if (!failReason.contains(QStringLiteral("已取消"))) {
+            QMessageBox::warning(this, QStringLiteral("导入模板"), failReason);
+            emit logMessage(QStringLiteral("任务中心：模板导入失败（存储拒绝）→ %1").arg(filePath));
         }
-    }
-
-    // ④ 落库：store.save 已对无效/降级/敏感 qWarning，这里补人读弹窗（日志不带秘密值）
-    if (!m_templates->save(tmpl)) {
-        const auto validation = validateTaskTemplate(tmpl);
-        QMessageBox::warning(this, QStringLiteral("导入模板"),
-            validation.valid
-                ? QStringLiteral("导入失败：模板存储写入被拒（详见日志）")
-                : QStringLiteral("导入失败：%1").arg(validation.error));
-        emit logMessage(QStringLiteral("任务中心：模板导入失败（存储拒绝）→ %1").arg(filePath));
         return false;
     }
+    // 回读落库行对齐局部 tmpl：改名后的「名称 (n)」与继承的既有 ID/version——
+    // ⑤ 段摘要文案与悬空统计以此为准（v2.13 行为：提示用改名后的名称）
+    if (const auto saved = m_templates->load(savedId))
+        tmpl = *saved;
 
     // ⑤ 刷新 + 悬空引用统计（registry 为空=无设备层，不统计、不显示第二行）
     refreshTemplates();

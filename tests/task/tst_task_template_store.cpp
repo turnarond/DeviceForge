@@ -4,6 +4,7 @@
 // 未知未来字段前向兼容保留，
 // 以及密码/私钥类敏感字段的拒绝（不落盘）与持久化记录不含任何凭据秘密值。
 // v2.14 #49-2 第二腿：同名冲突落库 saveUniqueByName（取消/覆盖/改名三分支）。
+// v2.15 #49-8：全表语义迁移——>1000 模板对 list() 与同名冲突检测全可见。
 #include <QtTest>
 
 #include <QDir>
@@ -525,6 +526,28 @@ private slots:
         QCOMPARE(loaded->version, 5);
     }
 
+    // 覆盖高档臂（用户手册口径「导入文件版本更高时生效」）：既有 2、入站 5 →
+    // Overwrite 落库 version=max(2,5)=5，std::max 取入站高档；低档臂见上一用例。
+    void saveUniqueByNameOverwriteTakesHigherIncomingVersion()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing = makeTemplate(QStringLiteral("巡检"));
+        existing.templateId = "tpl-b";
+        existing.version = 2;
+        QVERIFY(store.save(existing));
+
+        TaskTemplate incoming = makeTemplate(QStringLiteral("巡检"));
+        incoming.version = 5;   // 高于既有版本：覆盖生效并抬到入站版本
+        std::string id;
+        QVERIFY(store.saveUniqueByName(
+            incoming, [](const QString&) { return NameConflictChoice::Overwrite; }, &id, nullptr));
+        QCOMPARE(QString::fromStdString(id), QStringLiteral("tpl-b"));
+        QCOMPARE(store.list().size(), size_t(1));
+        const auto loaded = store.load("tpl-b");
+        QVERIFY(loaded.has_value());
+        QCOMPARE(loaded->version, 5);
+    }
+
     // 冲突选改名：已有「巡检」「巡检 (2)」，入站「巡检」存成「巡检 (3)」并产生新 ID
     void saveUniqueByNameRenameIncrementsSuffix()
     {
@@ -547,6 +570,60 @@ private slots:
         QVERIFY(loaded.has_value());
         QCOMPARE(QString::fromStdString(loaded->name), QStringLiteral("巡检 (3)"));
         QCOMPARE(store.list().size(), size_t(3));
+    }
+
+    // ---- v2.15 #49-8 全表语义迁移 ----
+
+    // 模板清单曾固定 list(type,1000)：超上限模板对 list() 与 saveUniqueByName
+    // 同名冲突检测静默不可见。全表形态后 1002 份必须全可见、冲突全检出。
+    void listAboveLegacyCapReturnsAll()
+    {
+        TaskTemplateStore store;
+        for (int i = 0; i < 1002; ++i) {
+            TaskTemplate tmpl;
+            tmpl.name = QStringLiteral("批量模板-%1").arg(i).toStdString();
+            tmpl.version = 1;
+            tmpl.steps = {makeStep(TaskStepType::Reboot)};
+            QVERIFY(store.save(tmpl));
+        }
+
+        const auto listed = store.list();
+
+        // 冲突检测须覆盖截断腿：取当前不可见的名字（全表形态下无不可见行，回退查首份）
+        QString hiddenName;
+        for (int i = 0; i < 1002; ++i) {
+            const QString name = QStringLiteral("批量模板-%1").arg(i);
+            bool visible = false;
+            for (const auto& t : listed) {
+                if (QString::fromStdString(t.name) == name) {
+                    visible = true;
+                    break;
+                }
+            }
+            if (!visible) {
+                hiddenName = name;
+                break;
+            }
+        }
+        if (hiddenName.isEmpty()) hiddenName = QStringLiteral("批量模板-0");
+
+        TaskTemplate incoming;
+        incoming.name = hiddenName.toStdString();
+        incoming.version = 1;
+        incoming.steps = {makeStep(TaskStepType::Reboot)};
+        bool conflictAsked = false;
+        std::string savedId;
+        const bool saved = store.saveUniqueByName(
+            incoming,
+            [&conflictAsked](const QString&) {
+                conflictAsked = true;
+                return NameConflictChoice::Cancel;
+            },
+            &savedId, nullptr);
+        QCOMPARE(listed.size(), size_t(1002));
+        QVERIFY(!saved);
+        QVERIFY(conflictAsked);
+        QCOMPARE(store.list().size(), size_t(1002));   // 取消分支不增行
     }
 };
 

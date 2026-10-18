@@ -1,6 +1,8 @@
 // v2.11 Task 2：DeviceRegistry ConfigStore 持久化与兼容迁移测试
 // 覆盖：round-trip 持久化、缺失 deviceId 的旧 DeviceInfo::alias 记录迁移、
-// 多协议端点合并持久化、损坏记录回退跳过、仅存凭据引用（不存密码明文）。
+// 多协议端点合并持久化、损坏记录回退跳过、仅存凭据引用（不存密码明文）、
+// v2.15 #49-8：超上限（>1000）legacy 行的全表清扫不漏扫 + load() 主存储
+// device.profile 回读全表（残余站点，控制器裁定纳入波1）。
 #include <QtTest>
 
 #include <QDir>
@@ -572,6 +574,68 @@ private slots:
         // （即空 ID 分支的进入条件永不成立，与哨兵实证互为对照）
         DeviceRegistry idProbe;
         QVERIFY(!idProbe.upsert(extreme).deviceId.empty());
+    }
+
+    // ---- v2.15 #49-8 全表语义迁移 ----
+
+    // 清扫曾固定 list(type,1000)——超上限的 legacy 行漏扫残留，
+    // load() 回退读取把旧地址复活。全表形态后必须一条不漏。
+    void sweepAboveLegacyCapRemovesEverySupersededRow()
+    {
+        // 夹具：一份档案持有 1005 个旧 device.list 地址（key=ip:port，同 DeviceBusWidget），
+        // 编辑器整表替换为不含上述任何地址的 guard 端点后，1005 行全部被取代，须被清扫删净
+        DeviceRegistry registry;
+        DeviceProfile bulky;
+        bulky.name = QStringLiteral("批量旧地址").toStdString();
+        for (int i = 0; i < 1005; ++i) {
+            const QString ip = QStringLiteral("10.0.%1.%2").arg(i / 256).arg(i % 256);
+            bulky.endpoints.push_back({"telnet", ip.toStdString(), 23, {}});
+            QVariantMap row;
+            row.insert(QStringLiteral("ip"), ip);
+            row.insert(QStringLiteral("port"), 23);
+            row.insert(QStringLiteral("protocol"), QStringLiteral("telnet"));
+            QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                                 QStringLiteral("%1:23").arg(ip), row));
+        }
+        const auto stored = registry.upsert(bulky);
+        QCOMPARE(stored.endpoints.size(), size_t(1005));
+        QVERIFY(registry.save(stored));
+
+        // 编辑器动作：端点清单整表替换为 guard 地址，触发被取代旧行清扫
+        DeviceProfile edited = stored;
+        edited.endpoints = {{"telnet", "192.0.2.1", 23, {}}};
+        DeviceProfile result;
+        QVERIFY(registry.saveReplacing(edited, &result));
+
+        // 全表清扫：被取代的 1005 条旧行一条不漏（未修时截断 1000 → 残留 5 → RED）
+        QCOMPARE(ConfigStore::instance().list(QStringLiteral("device.list")).size(), 0);
+
+        // 行为面复证：重载后旧地址不回退复活，只剩 guard 档案一条一端点
+        DeviceRegistry reloaded;
+        QVERIFY(reloaded.load());
+        QCOMPARE(reloaded.list().size(), size_t(1));
+        QCOMPARE(reloaded.list().front().endpoints.size(), size_t(1));
+    }
+
+    // load() 主存储 device.profile 回读曾固定 list(type,1000)——>1000 档案
+    // 静默不可见（与 #49-8 同缺陷类的清点残余站点，控制器裁定纳入波1）。
+    // 全表语义迁移后必须一条不漏。
+    void loadAboveLegacyCapReadsEveryProfile()
+    {
+        // 夹具：绕开 Registry 直存 1005 条结构合法的 device.profile 行，
+        // 每台 IP 互异（端点身份确定性 ID 互不合并，key 亦逐行唯一）
+        for (int i = 0; i < 1005; ++i) {
+            const QString ip = QStringLiteral("10.0.%1.%2").arg(i / 256).arg(i % 256);
+            const DeviceProfile profile = makeProfile(QStringLiteral("档案-%1").arg(i), ip, 21);
+            QVERIFY(ConfigStore::instance().save(QStringLiteral("device.profile"),
+                                                 QStringLiteral("profile-%1").arg(i),
+                                                 encodeDeviceProfile(profile)));
+        }
+
+        // 全表回读：1005 条一条不漏（未修时截断 1000 → 只加载 1000 → RED）
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QCOMPARE(registry.list().size(), size_t(1005));
     }
 };
 
