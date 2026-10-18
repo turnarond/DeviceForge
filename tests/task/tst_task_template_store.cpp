@@ -526,6 +526,28 @@ private slots:
         QCOMPARE(loaded->version, 5);
     }
 
+    // 覆盖高档臂（用户手册口径「导入文件版本更高时生效」）：既有 2、入站 5 →
+    // Overwrite 落库 version=max(2,5)=5，std::max 取入站高档；低档臂见上一用例。
+    void saveUniqueByNameOverwriteTakesHigherIncomingVersion()
+    {
+        TaskTemplateStore store;
+        TaskTemplate existing = makeTemplate(QStringLiteral("巡检"));
+        existing.templateId = "tpl-b";
+        existing.version = 2;
+        QVERIFY(store.save(existing));
+
+        TaskTemplate incoming = makeTemplate(QStringLiteral("巡检"));
+        incoming.version = 5;   // 高于既有版本：覆盖生效并抬到入站版本
+        std::string id;
+        QVERIFY(store.saveUniqueByName(
+            incoming, [](const QString&) { return NameConflictChoice::Overwrite; }, &id, nullptr));
+        QCOMPARE(QString::fromStdString(id), QStringLiteral("tpl-b"));
+        QCOMPARE(store.list().size(), size_t(1));
+        const auto loaded = store.load("tpl-b");
+        QVERIFY(loaded.has_value());
+        QCOMPARE(loaded->version, 5);
+    }
+
     // 冲突选改名：已有「巡检」「巡检 (2)」，入站「巡检」存成「巡检 (3)」并产生新 ID
     void saveUniqueByNameRenameIncrementsSuffix()
     {
@@ -591,8 +613,6 @@ private slots:
         incoming.steps = {makeStep(TaskStepType::Reboot)};
         bool conflictAsked = false;
         std::string savedId;
-        // 未修时截断行不可见 → 冲突未检出、Cancel 回调不触发、直接落库返回 true → RED。
-        // QCOMPARE 失败即中止用例，RED 现场先把冲突探测结果打进日志，两点一次跑齐。
         const bool saved = store.saveUniqueByName(
             incoming,
             [&conflictAsked](const QString&) {
@@ -600,8 +620,6 @@ private slots:
                 return NameConflictChoice::Cancel;
             },
             &savedId, nullptr);
-        qInfo() << "conflict probe:" << hiddenName
-                << "saved=" << saved << "conflictAsked=" << conflictAsked;
         QCOMPARE(listed.size(), size_t(1002));
         QVERIFY(!saved);
         QVERIFY(conflictAsked);

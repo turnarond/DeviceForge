@@ -1530,6 +1530,17 @@ private slots:
         QCOMPARE(taskrun::aggregateRunStatus(TaskRunOutcome{}), TaskRunStatus::Failed); // 空 outcome 非全成功
         o.devices[0].state = TaskDeviceState::Succeeded;
         QCOMPARE(taskrun::aggregateRunStatus(o), TaskRunStatus::Succeeded);
+
+        // v2.15 终审 [T3]：Skipped 归 succeeded 桶的边界钉桩——
+        // 单设备全 Skipped → Succeeded；Skipped+Failed 混布 → PartiallySucceeded
+        TaskRunOutcome sk;
+        sk.devices = {{}};
+        sk.devices[0].state = TaskDeviceState::Skipped;
+        QCOMPARE(taskrun::aggregateRunStatus(sk), TaskRunStatus::Succeeded);
+        sk.devices = {{}, {}};
+        sk.devices[0].state = TaskDeviceState::Skipped;
+        sk.devices[1].state = TaskDeviceState::Failed;
+        QCOMPARE(taskrun::aggregateRunStatus(sk), TaskRunStatus::PartiallySucceeded);
     }
 };
 

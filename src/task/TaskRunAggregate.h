@@ -1,7 +1,7 @@
 #pragma once
 // v2.15 #49-6：运行级终态收敛规则单源（原 TaskCenterWidget::aggregateStatus 与
 // tst_task_center_e2e 复制实现两处同规则并行——自本头起仅此一版）。
-// 函数体逐字搬移自 TaskCenterWidget.cpp:741，逻辑零改写。
+// 函数体逐字搬移自 TaskCenterWidget::aggregateStatus 原函数体，逻辑零改写。
 // TaskRunOutcome/TaskDeviceState 来自 TaskExecutionTypes.h；TaskRunStatus 来自 TaskRunTypes.h。
 #include "task/TaskExecutionTypes.h"
 #include "task/TaskRunTypes.h"
