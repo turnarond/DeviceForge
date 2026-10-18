@@ -272,6 +272,18 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- v2.15 波2 任务7 目录展开纯头（FolderExpand.h 纯逻辑，注入 scanner 脱盘直测；不编产品源码）---
+add_executable(tst_folder_expand
+    deploy/tst_folder_expand.cpp
+)
+target_include_directories(tst_folder_expand PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_folder_expand PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_folder_expand COMMAND tst_folder_expand)
+if(_qt_bin_dir)
+    set_tests_properties(tst_folder_expand PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- RemoteFileModel 排序语义测试（纯 model，无网络）---
 add_executable(tst_remote_model remote_model/tst_remote_model.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
