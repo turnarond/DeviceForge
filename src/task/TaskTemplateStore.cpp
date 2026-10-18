@@ -150,8 +150,9 @@ bool TaskTemplateStore::remove(const std::string& templateId)
 }
 
 // v2.14 #49-2 第二腿：同名冲突落库（声明处注释为语义权威）。
-// 匹配口径：list() 全量遍历、std::string 全等（大小写敏感），
-// 与 TaskCenterWidget::importTemplateFromFile（v2.13 导入）刻意同口径；本次不重构导入路径（留债观察）。
+// 匹配口径：list() 全量遍历、std::string 全等（大小写敏感）。
+// v2.15（E）起 TaskCenterWidget::importTemplateFromFile（v2.13 导入）与部署页「保存为模板」
+// 均经本函数单源落库，冲突三分支不再有第二实现。
 bool TaskTemplateStore::saveUniqueByName(
     const TaskTemplate& tmpl,
     const std::function<NameConflictChoice(const QString& name)>& onConflict,
@@ -188,7 +189,7 @@ bool TaskTemplateStore::saveUniqueByName(
             copy.version = std::max(conflict->version, tmpl.version);
         } else {
             // 改名：「名称 (2)」「名称 (3)」…递增找空位，不设上限——
-            // 文案规则与 TaskCenterWidget::importTemplateFromFile 的改名循环（v2.13 导入）同源。
+            // v2.15（E）起 widget 侧改名循环已删，本循环即导入/保存为模板共用的改名口径单源。
             const QString base = QString::fromStdString(tmpl.name);
             auto nameTaken = [&templates](const std::string& name) {
                 for (const auto& t : templates)

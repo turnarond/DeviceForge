@@ -42,6 +42,8 @@ set_tests_properties(tst_xxx PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")   # 缺它 Windows 报 0xc0000135
 ```
 
+**测试属性登记（在册特例）**：`tst_telnet_timeout` 另挂 `TIMEOUT 60`（v2.15 D）——vendored lwcommunicate 在全套并发下偶发无限挂起（v2.14.0 终验实踩），TIMEOUT 把该形态从"拖死整轮"降为**有界红**（单目标 60s 超时失败）；该 `set_tests_properties` 刻意置于 `if(_qt_bin_dir)` 守卫之外，保证 TIMEOUT 无条件生效。分诊口径：命中 TIMEOUT 红按既有 flake 处理——单目标单跑复核 + 全量复跑，两遍口径都过即不判波失败（典型耗时 ~1.3s，基线曾观测单次负载下 15.6s，距 60s 上限有大余量），但复跑记录与命中实况必须写进终验报告，不藏红。
+
 ## 约定（TDD 红-绿-重构）
 
 1. **红灯先行**：新功能/修 bug 先写失败用例，再实现；修复类必须先复现缺陷

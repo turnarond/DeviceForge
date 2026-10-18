@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## [未发布]
+
+### v2.15 波1（留池清零，开发中——定版归波4）
+
+- **ConfigStore 截断根治（#49-5）**：`list()` 默认 limit 1000→-1（-1=全表读取，offset 忽略）；显式传 limit 的调用方行为逐字不变。根治"遍历全表语义被默认 limit 静默截断"的潜在数据不可见类。`tst_config_store` 附 >1000 行夹具红-绿。
+- **legacy 清扫与模板清单全表化（#49-8）**：`DeviceRegistry` 三处 device.list 清扫/回退扫描（saveReplacing/load/remove）与 `TaskTemplateStore::list()` 去 1000 上限，>1000 行残留一条不漏；`tst_device_registry_store`/`tst_task_template_store` 各附超界可见性用例。
+- **运行终态聚合单源（#49-6）**：新纯逻辑头 `src/task/TaskRunAggregate.h`（`taskrun::aggregateRunStatus`），`TaskCenterWidget::aggregateStatus` 薄转发、`tst_task_center_e2e` 删复制实现改 include 纯头——Failed>Cancelled>Running>Success 优先级规则从机制上消除复制漂移；规则用例并入 `tst_task_center_widget` 直测纯头（不新增目标，CTest 计数不变）。
+- **导入通道统一（E）**：`TaskCenterWidget::importTemplateFromFile` 同名冲突三分支改走 `TaskTemplateStore::saveUniqueByName` 单源落库（与部署页「保存为模板」共用冲突弹窗/匹配口径/改名递增循环/覆盖 ID 规则；覆盖 version 定档为 max(本机既有, 入站) 抬升归一）。widget 侧独立改名循环与 hasTemplateName 扫描删除。
+- **telnet 工装有界化（D）**：`tst_telnet_timeout` 挂 ctest `TIMEOUT 60`（独立无条件属性调用，置于 `_qt_bin_dir` 守卫外），负载下挂起形态从拖死整轮降为单目标有界红；分诊口径（单跑复核+全量两遍）登记 `tests/AGENTS.md`。
+- **波1 文档收口（本票）**：用户手册同名策略版本口径就实（覆盖=继承 ID + 版本取较大值；导入与保存为模板共用落库通道；设备/模板清单无隐性条数上限就实）、`TaskTemplateStore` 注释失效引用清理（"不重构导入路径（留债观察）"与 widget 侧改名循环同源引用已失效）、CHANGELOG 汇总腿与规格执行注记（残余 limit 站点清点入册）。
+
 ## [2.14.1] — 2026-10-18
 
 ### 修复与就实（2026-10-18，v2.14 代码评审后续波补丁，评审 I-1/I-2/Minor）

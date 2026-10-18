@@ -97,7 +97,8 @@ public:
 
     // ── v2.13 Task 4：模板导入（供宿主与测试直调）──
     // 从 filePath 导入模板；全链任一失败返回 false（不落半成品，内部中文弹窗）。
-    // 同名 → conflictResolver(name)：0=覆盖既有(继承其 templateId 与 version)，
+    // v2.15（E）起同名冲突与落库经 TaskTemplateStore::saveUniqueByName 单源：
+    // conflictResolver(name)：0=覆盖既有(继承其 templateId，version 取两者较大)，
     // 1=自动改名"名称 (2)"递增，-1=取消（静默，无弹窗）。返回 true 时已 refreshTemplates()。
     bool importTemplateFromFile(const QString& filePath);
     using ImportConflictResolver = std::function<int (const QString& name)>;

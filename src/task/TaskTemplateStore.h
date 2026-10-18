@@ -43,8 +43,9 @@ public:
     // 冲突时由 onConflict(name) 决定处置：
     //   Cancel：返回 false、reason 写入含「取消」的中文原因，不落盘；
     //   Overwrite：继承既有 templateId 且 version 取 max(既有, 入站)（save 的降级禁则同源）；
-    //   Rename：「名称 (2)」从 2 递增找空位后另存新 ID——改名文案与
-    //     TaskCenterWidget::importTemplateFromFile（v2.13 导入，TaskCenterWidget.cpp 改名循环）刻意同口径。
+    //   Rename：「名称 (2)」从 2 递增找空位后另存新 ID——v2.15（E）起导入路径
+    //     （TaskCenterWidget::importTemplateFromFile）与部署页「保存为模板」均经本函数，
+    //     改名口径由本函数单源，widget 侧不再有独立实现。
     // 成功时 savedId 写入落库模板 ID（可传 nullptr 忽略）；
     // 失败时 reason 写入中文原因（可传 nullptr 忽略）。
     bool saveUniqueByName(const TaskTemplate& tmpl,
