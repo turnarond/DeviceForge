@@ -220,7 +220,7 @@ bool TaskTemplateStore::saveUniqueByName(
 std::vector<TaskTemplate> TaskTemplateStore::list() const
 {
     std::vector<TaskTemplate> templates;
-    for (const auto& row : ConfigStore::instance().list(kRecordType, 1000)) {
+    for (const auto& row : ConfigStore::instance().list(kRecordType)) {
         QString reason;
         auto tmpl = decodeTaskTemplate(row, &reason);
         if (!tmpl) {

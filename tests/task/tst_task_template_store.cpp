@@ -4,6 +4,7 @@
 // 未知未来字段前向兼容保留，
 // 以及密码/私钥类敏感字段的拒绝（不落盘）与持久化记录不含任何凭据秘密值。
 // v2.14 #49-2 第二腿：同名冲突落库 saveUniqueByName（取消/覆盖/改名三分支）。
+// v2.15 #49-8：全表语义迁移——>1000 模板对 list() 与同名冲突检测全可见。
 #include <QtTest>
 
 #include <QDir>
@@ -547,6 +548,64 @@ private slots:
         QVERIFY(loaded.has_value());
         QCOMPARE(QString::fromStdString(loaded->name), QStringLiteral("巡检 (3)"));
         QCOMPARE(store.list().size(), size_t(3));
+    }
+
+    // ---- v2.15 #49-8 全表语义迁移 ----
+
+    // 模板清单曾固定 list(type,1000)：超上限模板对 list() 与 saveUniqueByName
+    // 同名冲突检测静默不可见。全表形态后 1002 份必须全可见、冲突全检出。
+    void listAboveLegacyCapReturnsAll()
+    {
+        TaskTemplateStore store;
+        for (int i = 0; i < 1002; ++i) {
+            TaskTemplate tmpl;
+            tmpl.name = QStringLiteral("批量模板-%1").arg(i).toStdString();
+            tmpl.version = 1;
+            tmpl.steps = {makeStep(TaskStepType::Reboot)};
+            QVERIFY(store.save(tmpl));
+        }
+
+        const auto listed = store.list();
+
+        // 冲突检测须覆盖截断腿：取当前不可见的名字（全表形态下无不可见行，回退查首份）
+        QString hiddenName;
+        for (int i = 0; i < 1002; ++i) {
+            const QString name = QStringLiteral("批量模板-%1").arg(i);
+            bool visible = false;
+            for (const auto& t : listed) {
+                if (QString::fromStdString(t.name) == name) {
+                    visible = true;
+                    break;
+                }
+            }
+            if (!visible) {
+                hiddenName = name;
+                break;
+            }
+        }
+        if (hiddenName.isEmpty()) hiddenName = QStringLiteral("批量模板-0");
+
+        TaskTemplate incoming;
+        incoming.name = hiddenName.toStdString();
+        incoming.version = 1;
+        incoming.steps = {makeStep(TaskStepType::Reboot)};
+        bool conflictAsked = false;
+        std::string savedId;
+        // 未修时截断行不可见 → 冲突未检出、Cancel 回调不触发、直接落库返回 true → RED。
+        // QCOMPARE 失败即中止用例，RED 现场先把冲突探测结果打进日志，两点一次跑齐。
+        const bool saved = store.saveUniqueByName(
+            incoming,
+            [&conflictAsked](const QString&) {
+                conflictAsked = true;
+                return NameConflictChoice::Cancel;
+            },
+            &savedId, nullptr);
+        qInfo() << "conflict probe:" << hiddenName
+                << "saved=" << saved << "conflictAsked=" << conflictAsked;
+        QCOMPARE(listed.size(), size_t(1002));
+        QVERIFY(!saved);
+        QVERIFY(conflictAsked);
+        QCOMPARE(store.list().size(), size_t(1002));   // 取消分支不增行
     }
 };
 

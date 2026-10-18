@@ -262,7 +262,8 @@ bool DeviceRegistry::saveReplacing(const DeviceProfile& profile, DeviceProfile* 
             }
         }
         auto& store = ConfigStore::instance();
-        for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+        // 全表语义，v2.15 #49-8：清扫必须见到每一条 legacy 行，超上限漏扫即残留复活源
+        for (const auto& row : store.list(QStringLiteral("device.list"))) {
             const auto legacy = decodeDeviceProfile(row);
             if (!legacy) continue;
             bool superseded = false;
@@ -360,7 +361,7 @@ bool DeviceRegistry::load()
     }
 
     // 兼容迁移：旧 device.list 记录只读回退，缺失 deviceId 的按端点身份生成确定性 ID
-    for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+    for (const auto& row : store.list(QStringLiteral("device.list"))) {
         const auto profile = decodeDeviceProfile(row);
         if (profile) {
             upsert(*profile);
@@ -415,7 +416,7 @@ bool DeviceRegistry::remove(const std::string& deviceId)
         // 删除必须持久：同步删除与该档案端点身份匹配的旧 device.list 行
         // （key=ip:port，见 DeviceBusWidget），否则 load() 回退读取会让设备复活；
         // 不匹配的旧行保留，回退读取兼容不受影响。
-        for (const auto& row : store.list(QStringLiteral("device.list"), 1000)) {
+        for (const auto& row : store.list(QStringLiteral("device.list"))) {
             const auto legacy = decodeDeviceProfile(row);
             if (!legacy) continue;
             bool matched = false;

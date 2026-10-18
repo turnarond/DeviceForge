@@ -19,7 +19,7 @@ public:
     QVariantMap load(const QString& type, const QString& key);
     bool exists(const QString& type, const QString& key);
     bool remove(const QString& type, const QString& key);
-    // limit<0=全表返回（默认）；显式正数=有界分页读取，updated_at 倒序（同秒并列自增 id 升序兜底）。
+    // limit<0=全表返回（默认，此时 offset 忽略，即全表语义）；显式正数=有界分页读取，updated_at 倒序（同秒并列自增 id 升序兜底）。
     QList<QVariantMap> list(const QString& type, int limit = -1, int offset = 0);
 
     bool exportTo(const QString& jsonPath);
