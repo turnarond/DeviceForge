@@ -456,9 +456,26 @@ bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
         }
         if (m_channel.makeDirectory(level))
             continue;
-        // 建目录失败=确定性失败（deterministicFailure 同族）：不重连、不退避、不重试。
+        // 建目录报失败：先收口本次通道错误，再复检同一层以区分两类形态——真实 FTP 下
+        // 父目录实际存在、仅 ensure 层 stat 恰逢连接瞬断时，MKD 已存在目录会报
+        // 550/QUOTE_ERROR；此时复检若报存在，则该层视为已确保，继续遍历、上传照常
+        // 进入既有传输（重试）环，闭合"瞬断被收口成确定性红"的窄窗口（评审 I-1）。
         const TransferError createError =
             channelErrorOrFallback(m_channel, QStringLiteral("远端目录创建失败"));
+        if (cancel.load()) {
+            terminalResult = cancelledResult(0);
+            return false;
+        }
+        TransferFileStat reStat;
+        const bool reStatSucceeded = m_channel.stat(level, reStat);
+        if (cancel.load()) {
+            // 复检期间到达的取消不得再开始建目录/续建更深层
+            terminalResult = cancelledResult(0);
+            return false;
+        }
+        if (reStatSucceeded && reStat.exists)
+            continue;
+        // 复检仍缺失（或复检同样失败）→ 确定性失败族保持原样：不重连、不退避、不重试。
         terminalResult = failedResult(
             makeError(createError.code,
                       QStringLiteral("远端目录创建失败：%1（%2）")

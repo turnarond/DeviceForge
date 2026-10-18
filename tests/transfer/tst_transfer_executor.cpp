@@ -556,6 +556,100 @@ private slots:
         QVERIFY(delays.isEmpty());
     }
 
+    void makeDirectoryFailureRevealsExistingParentAndUploadContinues()
+    {
+        // 修复轮 1（评审 I-1）：瞬断闭合臂——父目录实际存在、仅 ensure 层 stat 恰逢
+        // 瞬断报缺失，随后 MKD 对已存在目录报 550/QUOTE_ERROR 形态失败；执行器必须
+        // 复检同一层，确认存在则视为已确保并继续遍历，让上传照常进行（进正常传输环），
+        // 而非把瞬断收口成确定性红（makeError retryable 恒 false）。
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.makeDirectoryResults = {false};
+        channel.operationErrors = {connectionLostError()};  // MKD 已存在目录的连接层失败形态
+        int optStatCount = 0;
+        channel.statHandler = [&channel, &optStatCount](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/opt")) {
+                // 首探报缺失（瞬断形态）；建目录失败后的复检报存在
+                out = optStatCount++ == 0
+                    ? TransferFileStat{}
+                    : TransferFileStat{true, 0, QStringLiteral("dir")};
+                return true;
+            }
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/opt/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(result.attempts, 1);
+        QCOMPARE(channel.makeDirectoryCalls, 1);
+        QCOMPARE(channel.makeDirectoryPaths, QVector<QString>({QStringLiteral("/opt")}));
+        // stat 序列精确钉桩：目标基线 → /opt 首探（缺失）→ 建失败后复检 /opt（存在）
+        // → 临时文件校验 → 目标复核——复检确实发生且就位于建目录失败之后
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/opt/a.bin"),
+                                   QStringLiteral("/opt"),
+                                   QStringLiteral("/opt"),
+                                   channel.uploadTargets.front(),
+                                   QStringLiteral("/opt/a.bin")}));
+        QCOMPARE(channel.uploadCalls, 1);
+        QCOMPARE(channel.renameCalls, 1);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+    }
+
+    void makeDirectoryFailureWithStillMissingReStatStaysDeterministic()
+    {
+        // 修复轮 1 互补臂：建目录失败且同层复检仍报缺失 → 维持确定性失败族
+        // （真不存在且不可建的硬失败不被软化）；stat 序列钉桩复检发生，收口后零上传，
+        // attempts 与既有确定性失败口径一致（makeDirectoryFailureIsDeterministicWithoutRetry 同族）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("blocked.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.makeDirectoryResults = {false};
+        channel.operationErrors = {permissionError()};
+        makeAtomicUploadStat(channel, 7);
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/secure/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::Permission);
+        QVERIFY(result.error.message.contains(QStringLiteral("远端目录创建失败")));
+        QVERIFY(result.error.message.contains(QStringLiteral("/secure")));
+        QVERIFY(result.error.message.contains(QStringLiteral("权限不足")));
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(channel.makeDirectoryCalls, 1);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+        // stat 序列：目标基线 → /secure 首探（缺失）→ 建失败后复检（仍缺失）→ 确定性收口
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/secure/a.bin"),
+                                   QStringLiteral("/secure"),
+                                   QStringLiteral("/secure")}));
+    }
+
     void unsupportedChannelNamesCapabilityGapWhenParentMissing()
     {
         // ④ 缺失且通道不支持 → 失败文案点名「通道不支持自动创建」，且绝不触碰 makeDirectory
