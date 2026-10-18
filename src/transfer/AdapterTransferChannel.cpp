@@ -151,6 +151,16 @@ bool AdapterTransferChannel::remove(const QString& path)
     return finishOperation(m_operations.remove(path), QStringLiteral("删除失败"));
 }
 
+// v2.15 波2：单层 mkdir 语义直通底层 Adapter 原语（FtpAdapter::makeDirectory /
+// SshAdapter::sftpMakeDirectory），逐级编排在执行器父目录确保步。
+bool AdapterTransferChannel::makeDirectory(const QString& remotePath)
+{
+    if (!m_operations.makeDirectory)
+        return failUnsupported(QStringLiteral("makeDirectory"));
+    return finishOperation(m_operations.makeDirectory(remotePath),
+                           QStringLiteral("新建远端目录失败"));
+}
+
 void AdapterTransferChannel::setProgressCallback(std::function<void(int)> callback)
 {
     if (m_operations.setProgressCallback)
@@ -173,7 +183,8 @@ TransferCapabilities AdapterTransferChannel::capabilities() const
             static_cast<bool>(m_operations.download),
             static_cast<bool>(m_operations.rename),
             static_cast<bool>(m_operations.remove),
-            static_cast<bool>(m_operations.list)};
+            static_cast<bool>(m_operations.list),
+            static_cast<bool>(m_operations.makeDirectory)};
 }
 
 TransferError AdapterTransferChannel::lastError() const
@@ -211,6 +222,10 @@ TransferChannelOps AdapterTransferChannel::bindOperations(
         operations.remove = [ftp](const QString& path) {
             return ftp->deleteFile(narrowPath(path));
         };
+        // 单层 MKD：SylixOS 三禁核对见 FtpAdapter::makeDirectory 实现注记
+        operations.makeDirectory = [ftp](const QString& path) {
+            return ftp->makeDirectory(narrowPath(path));
+        };
         operations.list = [ftp](const QString& path, QVector<TransferChannelEntry>& entries) {
             const auto source = ftp->listDirectoryParsed(narrowPath(path));
             if (!ftp->lastError().empty())
@@ -240,6 +255,10 @@ TransferChannelOps AdapterTransferChannel::bindOperations(
         };
         operations.remove = [ssh](const QString& path) {
             return ssh->sftpDeleteFile(narrowPath(path));
+        };
+        // 单层 mkdir（libssh2_sftp_mkdir），逐级编排在执行器父目录确保步
+        operations.makeDirectory = [ssh](const QString& path) {
+            return ssh->sftpMakeDirectory(narrowPath(path));
         };
         operations.list = [ssh](const QString& path, QVector<TransferChannelEntry>& entries) {
             const auto source = ssh->sftpListDirectory(narrowPath(path));

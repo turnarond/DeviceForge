@@ -409,6 +409,9 @@ TaskExecutionEngine::Dependencies makeDependencies(const std::shared_ptr<EngineF
         ops.list = [fixture, fake](const QString& parent, QVector<TransferChannelEntry>& entries) {
             return fake ? fixture->deployList(fake->ip(), parent, entries) : false;
         };
+        // v2.15 波2：执行器上传前确保远端父目录（capabilities().makeDirectory）——
+        // 真实 FTP/SFTP 通道具备单层 mkdir，内存假文件系统无目录概念、恒成功。
+        ops.makeDirectory = [](const QString&) { return true; };
         ops.rename = [fixture, fake](const QString& from, const QString& to) {
             return fake && fixture->deployRename(fake->ip(), from, to);
         };

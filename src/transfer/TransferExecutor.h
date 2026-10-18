@@ -83,6 +83,13 @@ private:
                            std::atomic_bool& cancel,
                            int& attemptIndex,
                            TransferItemResult& terminalResult);
+    // v2.15 波2：上传前确保远端目标父目录存在。仅当目标不存在时被调用（目标存在
+    // 即证明其父目录存在）。返回 false 时 terminalResult 为确定性终局结果：
+    // 建目录失败/通道不支持自动创建不进入重试环（确定性失败族）。
+    bool ensureRemoteParentDirectories(const QString& remotePath,
+                                       const TransferCapabilities& capabilities,
+                                       std::atomic_bool& cancel,
+                                       TransferItemResult& terminalResult);
     bool waitBeforeRetry(int milliseconds, std::atomic_bool& cancel) const;
 
     ITransferChannel& m_channel;

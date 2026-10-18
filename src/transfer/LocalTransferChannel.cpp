@@ -3,6 +3,7 @@
 #include "transfer/LocalTransferChannel.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -103,6 +104,34 @@ bool LocalTransferChannel::remove(const QString& path)
     return true;
 }
 
+// v2.15 波2：**单层** mkdir 语义——仅创建路径最后一段目录，父目录不存在即失败。
+// 不做全路径 mkpath 递归的原因：逐级编排（stat 判定 + 自最浅缺失层起序贯创建）
+// 收敛在 TransferExecutor 的上传前父目录确保步，通道与 FTP MKD/SFTP mkdir
+// 等真实协议原语保持同一口径，避免两层"半递归"叠加。已存在同名目录=幂等成功。
+bool LocalTransferChannel::makeDirectory(const QString& remotePath)
+{
+    const QFileInfo info(remotePath);
+    if (info.isDir()) {
+        m_error = {};
+        return true;
+    }
+    if (info.exists()) {
+        setError(TransferErrorCode::InvalidPath, QStringLiteral("目标路径已存在且不是目录"));
+        return false;
+    }
+    QDir parent = info.dir();
+    if (!parent.exists()) {
+        setError(TransferErrorCode::LocalIo, QStringLiteral("父目录不存在，单层创建失败"));
+        return false;
+    }
+    if (!parent.mkdir(info.fileName())) {
+        setError(TransferErrorCode::LocalIo, QStringLiteral("本地目录创建失败"));
+        return false;
+    }
+    m_error = {};
+    return true;
+}
+
 void LocalTransferChannel::setProgressCallback(std::function<void(int)> callback)
 {
     m_progress = std::move(callback);
@@ -115,7 +144,8 @@ void LocalTransferChannel::setCancelFlag(std::atomic_bool* flag)
 
 TransferCapabilities LocalTransferChannel::capabilities() const
 {
-    return {true, true, true, true, true};
+    // 六项能力全亮（v2.15 波2 增 makeDirectory 单层创建）
+    return {true, true, true, true, true, true};
 }
 
 TransferError LocalTransferChannel::lastError() const

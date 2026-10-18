@@ -18,6 +18,9 @@ struct TransferCapabilities
     bool rename = false;
     bool remove = false;
     bool stat = false;
+    // v2.15 波2：单层远端目录创建能力。置于聚合末尾且默认 false——既有 5 项聚合
+    // 初始化零改动兼容，未实现该能力的旧通道行为向前不变。
+    bool makeDirectory = false;
 };
 
 struct TransferFileStat
@@ -50,4 +53,14 @@ public:
     // 清除通道为重连缓存的认证副本。默认实现保持测试/其他内部通道兼容；
     // AdapterTransferChannel 会覆盖并安全擦除实际缓存。
     virtual void clearCredentials() {}
+
+    // 创建**单层**远端目录：仅创建 remotePath 的最后一段，其父目录不存在时返回
+    // 失败（逐级编排由 TransferExecutor 上传前的父目录确保步自最浅缺失层起负责）。
+    // 默认实现返回 false=不支持；虚函数追加在接口末尾，旧实现类零改动即
+    // ABI/行为向前兼容（AGENTS 纪律 6：SDK 场景接口改动向前兼容）。
+    virtual bool makeDirectory(const QString& remotePath)
+    {
+        Q_UNUSED(remotePath);
+        return false;
+    }
 };

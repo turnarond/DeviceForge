@@ -46,6 +46,7 @@ endif()
 add_executable(tst_transfer_channel
     transfer/tst_transfer_channel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp

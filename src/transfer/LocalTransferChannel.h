@@ -15,6 +15,7 @@ public:
     bool stat(const QString& path, TransferFileStat& out) override;
     bool rename(const QString& from, const QString& to) override;
     bool remove(const QString& path) override;
+    bool makeDirectory(const QString& remotePath) override;
 
     void setProgressCallback(std::function<void(int)> callback) override;
     void setCancelFlag(std::atomic_bool* flag) override;

@@ -873,6 +873,13 @@ bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& ne
 
 bool FtpAdapter::makeDirectory(const std::string& remotePath)
 {
+    // SylixOS 三禁核对（v2.15 波2 任务 8 接线时校验）：
+    // ① QUOTE 用根 URL + 绝对路径 MKD —— buildUrl("/") + "/"前缀路径，符合；
+    // ② MULTICWD 逐级 CWD —— setupCommonOpts 已设 CURLFTPMETHOD_MULTICWD，符合；
+    //    本函数只发单层 MKD（父层由 TransferExecutor 确保步自最浅缺失层起逐级创建），
+    //    不依赖服务端多级 MKD 能力，符合"不支持多级路径"约束；
+    // ③ EPSV 禁用 —— setupCommonOpts 的控制命令短超时序列未设 CURLOPT_FTP_USE_EPSV
+    //    （与旧 downloadFile 历史遗漏同族），此处显式补齐、不回退纪律。
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_impl->m_lastError = "curl_easy_init() 失败";
@@ -881,6 +888,7 @@ bool FtpAdapter::makeDirectory(const std::string& remotePath)
 
     std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
     m_impl->setupCommonOpts(curl, url);
+    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
     std::string response;
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);

@@ -3,6 +3,7 @@
 #include "transfer/TransferExecutor.h"
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QThread>
@@ -244,6 +245,39 @@ TransferError channelErrorOrFallback(ITransferChannel& channel, const QString& f
     return error;
 }
 
+// 通道错误短语：优先中文 message，退回原始 detail，最后兜底文案（父目录确保步文案拼装）。
+QString channelErrorText(const TransferError& error)
+{
+    if (!error.message.isEmpty())
+        return error.message;
+    if (!error.detail.isEmpty())
+        return error.detail;
+    return QStringLiteral("未知通道错误");
+}
+
+// 父目录逐级拆解（浅→深）："/opt/bin/lib" → {"/opt", "/opt/bin", "/opt/bin/lib"}。
+// 本波仅识别正斜杠：远端为 POSIX 路径口径（SylixOS/Linux），反斜杠是合法文件名
+// 字符，分段口径与 AdapterTransferChannel::parentPath 一致；带盘符的 Windows 风格
+// remotePath 不在本波父目录确保支持范围内。
+QVector<QString> remoteDirectoryLevels(const QString& parent)
+{
+    const bool absolute = parent.startsWith(u'/');
+    QVector<QString> levels;
+    QString accumulated;
+    const QStringList segments = parent.split(u'/', Qt::SkipEmptyParts);
+    levels.reserve(segments.size());
+    for (const QString& segment : segments) {
+        if (absolute)
+            accumulated += QStringLiteral("/") + segment;
+        else
+            accumulated = accumulated.isEmpty()
+                ? segment
+                : accumulated + QStringLiteral("/") + segment;
+        levels.push_back(accumulated);
+    }
+    return levels;
+}
+
 } // namespace
 
 TransferExecutor::TransferExecutor(ITransferChannel& channel, Sleeper sleeper)
@@ -382,6 +416,59 @@ bool TransferExecutor::prepareRemoteStat(const QString& path,
     return false;
 }
 
+bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
+                                                     const TransferCapabilities& capabilities,
+                                                     std::atomic_bool& cancel,
+                                                     TransferItemResult& terminalResult)
+{
+    // 本波仅识别正斜杠（POSIX 远端路径口径，见 remoteDirectoryLevels 注记）。
+    const qsizetype lastSlash = remotePath.lastIndexOf(u'/');
+    if (lastSlash <= 0)
+        return true; // 无父段（纯文件名）或父为根 "/"：根恒存在，无需确保
+
+    const QString parent = remotePath.left(lastSlash);
+    bool creating = false; // 已越过第一个缺失层：其后各层直接创建，不再 stat
+    for (const QString& level : remoteDirectoryLevels(parent)) {
+        if (cancel.load()) {
+            terminalResult = cancelledResult(0);
+            return false;
+        }
+        if (!creating) {
+            TransferFileStat levelStat;
+            const bool statSucceeded = m_channel.stat(level, levelStat);
+            if (cancel.load()) {
+                // stat 期间到达的取消不得再开始建目录
+                terminalResult = cancelledResult(0);
+                return false;
+            }
+            if (statSucceeded && levelStat.exists)
+                continue;
+            // stat 成功但 exists=false 与 stat 失败同臂：真实通道（如 FTP 列目录）
+            // 的"父目录缺失"就表现为 stat 失败。创建失败才是确定性终局。
+            creating = true;
+        }
+        if (!capabilities.makeDirectory) {
+            terminalResult = failedResult(
+                makeError(TransferErrorCode::Unsupported,
+                          QStringLiteral("远端目标父目录不存在且通道不支持自动创建")),
+                0);
+            return false;
+        }
+        if (m_channel.makeDirectory(level))
+            continue;
+        // 建目录失败=确定性失败（deterministicFailure 同族）：不重连、不退避、不重试。
+        const TransferError createError =
+            channelErrorOrFallback(m_channel, QStringLiteral("远端目录创建失败"));
+        terminalResult = failedResult(
+            makeError(createError.code,
+                      QStringLiteral("远端目录创建失败：%1（%2）")
+                          .arg(level, channelErrorText(createError))),
+            0);
+        return false;
+    }
+    return true;
+}
+
 TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& request,
                                                    const TransferCapabilities& capabilities,
                                                    std::atomic_bool& cancel,
@@ -415,6 +502,16 @@ TransferItemResult TransferExecutor::executeUpload(const TransferItemRequest& re
         return prepareFailure;
     if (request.overwrite == OverwritePolicy::Skip && targetBaseline.exists)
         return {TransferState::Succeeded, {}, 0, false, 0, false, true};
+
+    // v2.15 波2（任务 8）：目标不存在时才确保父目录——目标存在即证明其父目录
+    // 存在，跳过可将对既有通道的 stat 调用增量降为零（既有传输计数钉桩契约
+    // 不漂移，见 tst_transfer_executor::existingTargetSkipsParentEnsureEntirely）。
+    if (!targetBaseline.exists) {
+        TransferItemResult ensureFailure;
+        if (!ensureRemoteParentDirectories(request.remotePath, capabilities, cancel,
+                                           ensureFailure))
+            return ensureFailure;
+    }
 
     const bool atomicCommit = capabilities.rename;
     const QString transferPath = atomicCommit ? temporaryPathFor(request.remotePath)
