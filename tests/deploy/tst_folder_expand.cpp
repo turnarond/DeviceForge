@@ -4,7 +4,7 @@
 // 为远端相对路径首段（D:/pkg/bin → "bin/app.conf"）；顶层普通文件 rel 为空（扁平）且
 // 保持输入序；混选两类同现；展开总数超 kMaxExpandedItems(5000) → 整体拒绝，中文 error
 // 同时含实际数与上限数；空目录 0 条目不报错；composeRemotePath 三分支（rel 空防御分支
-// /常规目录去尾斜杠拼接/根目录 "/" 不叠斜杠）。
+// /常规目录去尾斜杠拼接/根目录 "/" 不叠斜杠）；根目录退化（契约 ⑧）整体拒绝并给中文 error。
 // 夹具=注入 fake DirScanner，全程不触真盘（脱盘纯逻辑）；目录内顺序只依赖注入 scanner
 // 的返回序，不依赖真实 QDirIterator 自然序。
 
@@ -127,6 +127,32 @@ private slots:
         QCOMPARE(folderexpand::composeRemotePath(QStringLiteral("/"),
                                                  QStringLiteral("bin/a")),
                  QStringLiteral("/bin/a"));
+    }
+
+    // 根目录退化防御（契约 ⑧，评审 I-2）：文件系统根作为目录 Selection 时
+    // QFileInfo::fileName() 返回空串，若不拦 rel 会退化成 "/x.txt"、下游
+    // composeRemotePath 叠 "//"。expand 须整体拒绝：ok=false、中文 error、files 全空。
+    void rootDirSelectionRejectedWithChineseError() {
+        // 前置自证：确认所选根形态在当前平台确会退化成空 fileName——
+        // QDir::rootPath()（Windows "C:/"、Unix "/"）的末段即空串（最后一个 '/' 之后
+        // 无字符），故此用例的 dirName 触发条件成立；若此断言变红说明平台语义漂移，需换根形态。
+        const QString root = QDir::rootPath();
+        QVERIFY2(QFileInfo(root).fileName().isEmpty(),
+                 qPrintable(QStringLiteral("前置不成立：QFileInfo(%1).fileName() 非空").arg(root)));
+        // 注入返回非空清单的 scanner：证明 dirName 空时在扫描前即整体拒绝、
+        // 且 scanner 结果绝不落入 files（不产 "/x.txt" 坏 rel）。
+        const QStringList scanned = {
+            QStringLiteral("D:/should/not/appear.txt"),
+        };
+        const folderexpand::DirScanner scanner = [&scanned](const QString&) { return scanned; };
+        const QList<folderexpand::Selection> selections = {
+            {root, true},
+        };
+        const folderexpand::ScanResult res = folderexpand::expand(selections, scanner);
+        QVERIFY(!res.ok);
+        QVERIFY(res.files.isEmpty());   // 整体拒绝：不留半份清单，无坏 rel
+        QVERIFY(!res.error.isEmpty());
+        QVERIFY(res.error.contains(QStringLiteral("根目录")));   // 中文拒绝文案在册
     }
 };
 
