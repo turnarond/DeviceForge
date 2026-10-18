@@ -1,8 +1,8 @@
 ﻿# Changelog
 
-## [未发布]
+## [2.14.1] — 2026-10-18
 
-### 修复与就实（2026-10-18，v2.14 终审代码评审后续波）
+### 修复与就实（2026-10-18，v2.14 代码评审后续波补丁，评审 I-1/I-2/Minor）
 - **传输层目录条目口径钉桩**：`tst_transfer_executor` 新增用例断言文件夹作为上传源在触碰远端前即失败（LocalIo/零通道调用）——单发部署与任务模板同走 TransferExecutor，本就无「单发能传文件夹」分叉；`FtpDeployWidget::collectLocalFiles` 处宣称 backend uploadFolder 递归处理文件夹的失实注释改写为实况（uploadFolder 全仓无调用方）。用户手册文件部署首段与操作步骤、保存为模板映射表同批改就实（仅普通文件可部署）。
 - **主窗口初始几何主屏优先兑现**：`WindowPlacement.h` 契约写明「调用方按主屏优先传」，`DeviceForge.cpp` 实际按 `QGuiApplication::screens()` 任意序传——收集屏几何改为 primaryScreen 置顶再补其余，兑现文档与测试意图。
 - **文档失效引用勘误**：v2.13 编辑器规格中「至少一条命令」文案已被 #49-3 单源为「缺少命令列表」，段末补勘误注记（历史正文不改写）。
