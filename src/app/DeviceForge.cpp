@@ -169,8 +169,15 @@ DeviceForge::DeviceForge(QWidget* parent)
     {
         QList<QRect> screenGeoms;
         const auto screens = QGuiApplication::screens();
-        for (const QScreen* screen : screens)
+        // WindowPlacement 契约「调用方按主屏优先传」：screens() 顺序不保证主屏在首，
+        // 显式把 primaryScreen 置顶，其余按列表序补后（同一指针来源，不重复）
+        QScreen* primary = QGuiApplication::primaryScreen();
+        if (primary)
+            screenGeoms << primary->availableGeometry();
+        for (const QScreen* screen : screens) {
+            if (screen == primary) continue;
             screenGeoms << screen->availableGeometry();
+        }
         const QRect frame = winplace::initialFrameGeometry(
             sizeHint().expandedTo(minimumSizeHint()), screenGeoms);
         resize(frame.size());
