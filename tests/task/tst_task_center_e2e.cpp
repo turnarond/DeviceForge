@@ -26,6 +26,7 @@
 #include "config/ConfigStore.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskExecutionEngine.h"
+#include "task/TaskRunAggregate.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateStore.h"
 #include "transfer/AdapterTransferChannel.h"
@@ -318,39 +319,8 @@ bool isTerminalState(TaskDeviceState state)
     }
 }
 
-// 与 TaskCenterWidget::aggregateStatus 相同的收敛规则（运行级终态的唯一口径）
-TaskRunStatus aggregateRunStatus(const TaskRunOutcome& outcome)
-{
-    int succeeded = 0;
-    int partial = 0;
-    int cancelled = 0;
-    int failed = 0;
-    for (const auto& device : outcome.devices) {
-        switch (device.state) {
-        case TaskDeviceState::Succeeded:
-        case TaskDeviceState::Skipped:
-            ++succeeded;
-            break;
-        case TaskDeviceState::PartiallySucceeded:
-            ++partial;
-            break;
-        case TaskDeviceState::Cancelled:
-            ++cancelled;
-            break;
-        default:
-            ++failed;
-            break;
-        }
-    }
-    const int total = static_cast<int>(outcome.devices.size());
-    if (total > 0 && succeeded == total)
-        return TaskRunStatus::Succeeded;
-    if (succeeded > 0 || partial > 0)
-        return TaskRunStatus::PartiallySucceeded;
-    if (cancelled > 0 && failed == 0)
-        return TaskRunStatus::Cancelled;
-    return TaskRunStatus::Failed;
-}
+// v2.15 #49-6：原此处置有 aggregateRunStatus 复制实现（与 TaskCenterWidget::aggregateStatus
+// 同规则并行两份，存在漂移风险）——已删除，收敛规则单源见 task/TaskRunAggregate.h。
 
 // ——————— 无头集成形态：复刻 TaskCenterWidget 的存储写入契约 ———————
 // 引擎回调都在协调线程触发；一律 QueuedConnection 编组回本对象宿主线程
@@ -459,7 +429,7 @@ private:
     // （幂等覆盖，含阶段恢复携带的已成功步骤），再按收敛状态 finish
     void handleRunFinished(const TaskRunOutcome& outcome)
     {
-        const TaskRunStatus status = aggregateRunStatus(outcome);
+        const TaskRunStatus status = taskrun::aggregateRunStatus(outcome);
         for (const auto& device : outcome.devices) {
             TaskDeviceResult result;
             result.deviceId = device.deviceId;

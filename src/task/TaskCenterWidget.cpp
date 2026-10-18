@@ -17,6 +17,7 @@
 #include "config/DpapiCrypto.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskExecutionEngine.h"
+#include "task/TaskRunAggregate.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateEditorDialog.h"
@@ -740,35 +741,8 @@ void TaskCenterWidget::updateDeviceRow(const QString& deviceId, TaskDeviceState 
 
 TaskRunStatus TaskCenterWidget::aggregateStatus(const TaskRunOutcome& outcome)
 {
-    int succeeded = 0;
-    int partial = 0;
-    int cancelled = 0;
-    int failed = 0;
-    for (const auto& device : outcome.devices) {
-        switch (device.state) {
-        case TaskDeviceState::Succeeded:
-        case TaskDeviceState::Skipped:
-            ++succeeded;
-            break;
-        case TaskDeviceState::PartiallySucceeded:
-            ++partial;
-            break;
-        case TaskDeviceState::Cancelled:
-            ++cancelled;
-            break;
-        default:
-            ++failed;
-            break;
-        }
-    }
-    const int total = static_cast<int>(outcome.devices.size());
-    if (total > 0 && succeeded == total)
-        return TaskRunStatus::Succeeded;
-    if (succeeded > 0 || partial > 0)
-        return TaskRunStatus::PartiallySucceeded;
-    if (cancelled > 0 && failed == 0)
-        return TaskRunStatus::Cancelled;
-    return TaskRunStatus::Failed;
+    // v2.15 #49-6：收敛规则单源外提 TaskRunAggregate.h，成员入口仅转发
+    return taskrun::aggregateRunStatus(outcome);
 }
 
 void TaskCenterWidget::setRunningUi(bool running)

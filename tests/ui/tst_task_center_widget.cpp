@@ -22,6 +22,8 @@
 //    发起执行并收口落库（FTP-only 档案不触网，重启步骤必校验失败，模式同⑥）。
 // ⑮ v2.14 #49-4：阶段恢复拒绝文案三分派静态直测（retryRejectionMessage 纯函数，
 //    lineage 未知 / 引擎 32 轮已淘汰 / 活跃运行三种入参各得对应关键词且两两不同）。
+// ⑯ v2.15 #49-6：运行终态聚合纯头直测（taskrun::aggregateRunStatus 分桶收敛规则，
+//    单源见 task/TaskRunAggregate.h）。
 // 模式参照 tests/panel_async：QSignalSpy + QTRY_* 超时兜底，禁止 sleep 等待；
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
@@ -50,6 +52,7 @@
 #include "device/DeviceRegistry.h"
 #include "task/TaskCenterWidget.h"
 #include "task/TaskExecutionEngine.h"
+#include "task/TaskRunAggregate.h"
 #include "task/TaskRunStore.h"
 #include "task/TaskTemplateCodec.h"
 #include "task/TaskTemplateEditorDialog.h"
@@ -1511,6 +1514,22 @@ private slots:
         QVERIFY(lineageUnknown != evicted);
         QVERIFY(lineageUnknown != stillRejected);
         QVERIFY(evicted != stillRejected);
+    }
+
+    // ── v2.15 #49-6：运行终态聚合纯头直测（收敛规则单源 TaskRunAggregate.h）──
+    void aggregatePureHeaderSingleSource()
+    {
+        // #49-6：收敛规则唯一口径在 TaskRunAggregate.h；成员函数与 e2e 都必须是它的转发
+        TaskRunOutcome o;
+        o.devices = {{}, {}};
+        o.devices[0].state = TaskDeviceState::Cancelled;
+        o.devices[1].state = TaskDeviceState::Failed;
+        QCOMPARE(taskrun::aggregateRunStatus(o), TaskRunStatus::Failed);
+        o.devices[1].state = TaskDeviceState::Succeeded;
+        QCOMPARE(taskrun::aggregateRunStatus(o), TaskRunStatus::PartiallySucceeded);
+        QCOMPARE(taskrun::aggregateRunStatus(TaskRunOutcome{}), TaskRunStatus::Failed); // 空 outcome 非全成功
+        o.devices[0].state = TaskDeviceState::Succeeded;
+        QCOMPARE(taskrun::aggregateRunStatus(o), TaskRunStatus::Succeeded);
     }
 };
 
