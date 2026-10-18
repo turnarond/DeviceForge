@@ -350,7 +350,7 @@ bool DeviceRegistry::load()
     auto& store = ConfigStore::instance();
 
     // 新格式：device.profile（key=deviceId）
-    for (const auto& row : store.list(QStringLiteral("device.profile"), 1000)) {
+    for (const auto& row : store.list(QStringLiteral("device.profile"))) {
         const auto profile = decodeDeviceProfile(row);
         if (profile) {
             upsert(*profile);

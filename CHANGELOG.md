@@ -5,7 +5,7 @@
 ### v2.15 波1（留池清零，开发中——定版归波4）
 
 - **ConfigStore 截断根治（#49-5）**：`list()` 默认 limit 1000→-1（-1=全表读取，offset 忽略）；显式传 limit 的调用方行为逐字不变。根治"遍历全表语义被默认 limit 静默截断"的潜在数据不可见类。`tst_config_store` 附 >1000 行夹具红-绿。
-- **legacy 清扫与模板清单全表化（#49-8）**：`DeviceRegistry` 三处 device.list 清扫/回退扫描（saveReplacing/load/remove）与 `TaskTemplateStore::list()` 去 1000 上限，>1000 行残留一条不漏；`tst_device_registry_store`/`tst_task_template_store` 各附超界可见性用例。
+- **legacy 清扫与模板清单全表化（#49-8）**：`DeviceRegistry` 三处 device.list 清扫/回退扫描（saveReplacing/load/remove）与 `TaskTemplateStore::list()` 去 1000 上限，>1000 行残留一条不漏；`tst_device_registry_store`/`tst_task_template_store` 各附超界可见性用例。收口评审补迁：`DeviceRegistry::load()` 主存储 device.profile 回读（清点残余站点，控制器裁定纳入波1）同去 1000 上限，回归钉 `loadAboveLegacyCapReadsEveryProfile`（1005 条档案一条不漏，RED 先证 actual 1000）——波1 limit 清点就此闭合，待裁残余 0。
 - **运行终态聚合单源（#49-6）**：新纯逻辑头 `src/task/TaskRunAggregate.h`（`taskrun::aggregateRunStatus`），`TaskCenterWidget::aggregateStatus` 薄转发、`tst_task_center_e2e` 删复制实现改 include 纯头——Failed>Cancelled>Running>Success 优先级规则从机制上消除复制漂移；规则用例并入 `tst_task_center_widget` 直测纯头（不新增目标，CTest 计数不变）。
 - **导入通道统一（E）**：`TaskCenterWidget::importTemplateFromFile` 同名冲突三分支改走 `TaskTemplateStore::saveUniqueByName` 单源落库（与部署页「保存为模板」共用冲突弹窗/匹配口径/改名递增循环/覆盖 ID 规则；覆盖 version 定档为 max(本机既有, 入站) 抬升归一）。widget 侧独立改名循环与 hasTemplateName 扫描删除。
 - **telnet 工装有界化（D）**：`tst_telnet_timeout` 挂 ctest `TIMEOUT 60`（独立无条件属性调用，置于 `_qt_bin_dir` 守卫外），负载下挂起形态从拖死整轮降为单目标有界红；分诊口径（单跑复核+全量两遍）登记 `tests/AGENTS.md`。
