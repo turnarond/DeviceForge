@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-51 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48；v2.14 双屏窗口放置 +1 = 49；v2.15 波2 文件夹支持 +2 = 51，计数定版 2026-10-20；波2 计划初稿写 50 系未计任务9 新增 `tst_deploy_entry_builder`），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+52 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48；v2.14 双屏窗口放置 +1 = 49；v2.15 波2 文件夹支持 +2 = 51，计数定版 2026-10-20；波2 计划初稿写 50 系未计任务9 新增 `tst_deploy_entry_builder`；v2.15 波3 部署页工具栏两行化 +1 = 52 `tst_deploy_toolbar_layout`），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -13,6 +13,7 @@
 | deploy/ | tst_deploy_template_map | DeployTemplateMap.h OnceConfig→TaskTemplate 纯映射（简写参数/未勾选=未绑定/重启步与空命令回退） | 纯逻辑（仅头文件，v2.14 #49-2） |
 | deploy/ | tst_folder_expand | FolderExpand.h 目录展开纯头（镜像首段/顶层扁平/5000 上限整体拒绝/根退化拒绝/空目录不算错；scanner 注入脱盘） | 纯逻辑（仅头文件，v2.15 波2 任务7） |
 | deploy/ | tst_deploy_entry_builder | DeployEntryBuilder.h 入口装配纯头（混合选择扁平+镜像条目、超上限逐字拒绝、全空目录拒绝、无目录 v2.14 扁平口径、快照过期按点击时刻实况重分类） | 纯逻辑（仅头文件，v2.15 波2 任务9） |
+| deploy/ | tst_deploy_toolbar_layout | FtpDeployWidget 部署页工具栏两行化布局（deployToolbar=QVBoxLayout+两 QHBoxLayout；行1 连接+主操作/行2 选项+结果，控件按 objectName 或可见文本定位） | QtTest UI 回归（v2.15 波3 任务13 方案 C） |
 | file_source/ | tst_file_source | IFileSource Local 实现 + readFile/writeFile 原语 | 文件系统 |
 | dir_compare/ | tst_dir_compare | DirCompare.h/.cpp 目录对比纯逻辑（分类/对齐/分钟精度） | 纯逻辑 |
 | file_encoding/ | tst_file_encoding | FileEncoding 编码探测/转换/冲突谓词（Win32 CP，禁 QTextCodec） | 纯逻辑 |

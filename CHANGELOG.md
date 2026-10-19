@@ -20,6 +20,10 @@
 - **波2 收口（T10）**：`tst_deploy_loop` 增**真盘目录树环回集成用例**（scanDir 实扫→deployentry::build 装配→Backend/Job 显式条目模式→TransferExecutor 确保步→LocalTransferChannel 真盘单层 mkdir→目标树与源树镜像逐文件一致，路径集合+字节双断言、无 .part 残留）——"远端子目录由执行器创建"这条新链路的唯一端到端防线（摘除确保步即红的 neuter 取证）。勘误三处（RELEASE_NOTES v2.14.1/CHANGELOG [2.14.1] 段末注记 + 用户手册就地改实况）、接口参考 makeDirectory/能力位/DeployJob 双路径与 uploadFolder 预留口径就实、用户手册目录语义+5000 上限+SFTP 落点变更+teAddDir 行为补写、规格 §3.1 与计划初稿装配措辞勘误注记、`tests/AGENTS.md` 计数定版 **51**（波2 新增 `tst_folder_expand`/`tst_deploy_entry_builder` 两目标；计划初稿写 50 系未计任务9 新增目标）。
   > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。
 
+### v2.15 波3（性能债与编辑器体验，开发中——定版归波4）
+
+- **部署页工具栏两行化（任务13 方案 C，窄屏右侧裁切根治）**：`FtpDeployWidget::setupToolbar` 原单行 `QHBoxLayout` 承载 23 控件、最小宽 ~2010px 超过 1920 屏宽，`QHBoxLayout` 最小宽=子控件之和且从不换行 → 右侧「导出报告/重试失败设备」在 1366/1280 屏被裁。改为容器 `deployToolbar` 内 `QVBoxLayout`（行距 4）+ 两个 `QHBoxLayout` 行：**第 1 行=连接组（协议/设备/端口/FTPS/状态点）│ 分隔条 │ 主操作（⟳ 刷新 / ▶ 部署到 N 台设备 / 保存为模板）**，**第 2 行=部署选项（清空/重启 + 协议/命令/超时/重试四参）│ 分隔条 │ 结果操作（⬇ 导出报告 / ↻ 重试失败设备）**，各行尾 `addStretch()`。控件创建顺序/对象名/初值/tooltip/ConfigStore `ftp.deploy.prefs` 读写/所有 `connect` 逐字不变（仅归属布局改变，无新增对象名）。**窄屏不再右侧裁切**（1366/1280 右侧按钮完整可见），代价工具栏垂直 +1 行 ~34px。新目标 `tst_deploy_toolbar_layout` 直构 widget 断言两行结构与成员归属（控件按对象名/可见文本定位）。CTest 计数 **51→52**。
+
 ## [2.14.1] — 2026-10-18
 
 ### 修复与就实（2026-10-18，v2.14 代码评审后续波补丁，评审 I-1/I-2/Minor）
