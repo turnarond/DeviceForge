@@ -10,9 +10,9 @@
  *              左侧本地（LocalFileSource），右侧远程（RemoteFileSource），
  *              工具栏保留工具级批量部署配置（协议/设备/FTPS/端口/清空/重启），
  *              文件浏览/操作能力全部下沉到 FileBrowserPanel（Task 2/3）。
- *              v2.15 任务9：部署/保存为模板两腿在入口展开目录（buildDeployEntries），
- *              含目录时经每条目远端路径平行向量贯通 Backend/Job/Runner；纯文件
- *              扁平口径与 v2.14 逐字不变。
+ *              v2.15 任务9：部署/保存为模板两腿在入口展开目录（deployentry::build
+ *              装配纯头，评审修复轮薄调用方化），含目录时经每条目远端路径平行向量
+ *              贯通 Backend/Job/Runner；纯文件扁平口径与 v2.14 逐字不变。
  */
 
 #pragma once
@@ -115,18 +115,9 @@ private:
     void exitDirectoryCompare();
     void appendLog(const QString& msg);
     // v2.15 任务9：采集左面板本地选中条目为 folderexpand::Selection 清单
-    // （isDir 取面板行快照口径——目录列表加载时刻的类型，注释详见 cpp）
+    // （isDir 取面板行快照口径，仅作输入信息——装配腿 deployentry::build 一律按
+    // 点击时刻磁盘实况重分类，评审 I-1，注释详见 cpp）
     QList<folderexpand::Selection> collectLocalSelection() const;
-    // 三入口共用采集+展开腿（规格 §3.1 同口径）：无目录→files 原始扁平清单、
-    // entryRemotePaths/expandedItems 空（v2.14 逐字行为）；含目录→expandedItems
-    // 全量展开条目、files=展开本地路径、entryRemotePaths=每条目远端全路径。
-    // 返回 false=拒绝，rejectReason 走中文日志闸（超上限/根退化=纯头文案逐字）。
-    bool buildDeployEntries(const QList<folderexpand::Selection>& selections,
-                            const QString& remoteDirectory,
-                            std::vector<std::string>& files,
-                            std::vector<std::string>& entryRemotePaths,
-                            QList<folderexpand::ExpandedFile>& expandedItems,
-                            QString& rejectReason) const;
     void connectBackendSignals();
     // 既有部署路径收口（v2.8 Task 5）：绑定凭证/设备 + 进度行初始化 + 日志 +
     // startUpload。onDeployClicked 与 onRetryFailedClicked 共用，logPrefix

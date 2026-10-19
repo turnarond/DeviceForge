@@ -136,6 +136,11 @@ void DeployJob::run()
             ++sourceIndex;
             continue;
         }
+        // v2.14 legacy 目录展开（评审修复轮注记）：受 5000 上限的整体拒绝在**入口
+        // 装配腿**（deployentry::build）闭合——生产三入口含目录时必带显式
+        // entryRemotePaths 走上方显式分支，本目录遍历仅直接组装 Params 的历史
+        // 调用方/测试（tst_deploy_runner 回归契约）可达，保留以钉 v2.14 行为，
+        // 新调用方勿依赖。本分支无条目数上限，与入口口径的差异是刻意现状非漏洞。
         // 保留协议原有目录映射：FTP 包含顶层目录，SFTP 上传目录内容。
         auto base = m_params.protocol == "ssh" || m_params.protocol == "sftp"
             ? m_params.remotePath : joinPath(m_params.remotePath, local.filename().u8string());

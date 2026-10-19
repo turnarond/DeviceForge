@@ -285,6 +285,20 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- v2.15 波2 任务9 评审修复 部署入口装配纯头（DeployEntryBuilder.h 直测；不编产品源码）---
+# 覆盖：混合选择扁平+镜像条目、超上限逐字拒绝（I-1 闭环）、全空目录拒绝、
+# 无目录 v2.14 扁平口径、快照过期按点击时刻实况重分类（评审 I-2 可测缝）
+add_executable(tst_deploy_entry_builder
+    deploy/tst_deploy_entry_builder.cpp
+)
+target_include_directories(tst_deploy_entry_builder PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_deploy_entry_builder PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_entry_builder COMMAND tst_deploy_entry_builder)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_entry_builder PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- RemoteFileModel 排序语义测试（纯 model，无网络）---
 add_executable(tst_remote_model remote_model/tst_remote_model.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp

@@ -9,9 +9,9 @@
  * Description: FTP 部署双面板宿主实现。文件浏览/导航/右键操作/拖拽全部下沉
  *              FileBrowserPanel（Task 2/3）；
  *              本类仅保留：工具级批量部署配置（协议/设备/FTPS/端口/清空/重启）+
- *              部署入口（校验 → collectLocalSelection → buildDeployEntries 目录
- *              展开 → startUpload）+ 远程源按协议/设备变化重建（RemoteFileSource
- *              注入右侧面板）。
+ *              部署入口（校验 → collectLocalSelection → deployentry::build 装配
+ *              纯头目录展开 → startUpload，评审修复轮：widget 为薄调用方）+
+ *              远程源按协议/设备变化重建（RemoteFileSource 注入右侧面板）。
  */
 
 #include "FtpDeployWidget.h"
@@ -29,6 +29,7 @@
 #include "adapter/ProtocolRegistry.h"
 #include "config/ConfigStore.h"
 #include "command/RebootPreferences.h"
+#include "deploy/DeployEntryBuilder.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskTemplateEditorDialog.h"
 #include "tools/FtpDeployTool/DeployTemplateMap.h"
@@ -878,14 +879,15 @@ void FtpDeployWidget::onDeployClicked()
     QString remotePath = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
     if (remotePath.isEmpty()) remotePath = QStringLiteral("/");
 
-    // v2.15 任务9：目录在**入口**展开（三入口同口径）——无目录=扁平清单逐字
-    // 不变；含目录=每条目本地+远端全路径（顶层文件扁平项+目录镜像项）。
+    // v2.15 任务9 评审修复轮 I-1/I-2：目录在**入口**按点击时刻实况分类展开
+    // （deployentry::build 装配纯头，三入口同口径）——无目录=扁平清单逐字不变；
+    // 含目录=每条目本地+远端全路径（顶层文件扁平项+目录镜像项）。
     // 拒绝（超上限/根退化/空目录）走中文日志闸，不静默放行。
     std::vector<std::string> files;
     std::vector<std::string> entryRemotePaths;
     QList<folderexpand::ExpandedFile> expandedItems;   // 单发腿不消费（保存为模板专用）
     QString rejectReason;
-    if (!buildDeployEntries(selections, remotePath, files, entryRemotePaths,
+    if (!deployentry::build(selections, remotePath, files, entryRemotePaths,
                             expandedItems, rejectReason)) {
         appendLog(rejectReason);
         return;
@@ -918,8 +920,8 @@ void FtpDeployWidget::onDeployClicked()
 }
 
 // v2.14 #49-2 第三腿：「保存为模板」按钮槽——采集与部署入口同源（左面板远程浏览源
-// /空文件清单两拒绝分支文案同部署口径；v2.15 任务9 起含目录选择经 buildDeployEntries
-// 同函数展开，拒绝文案=纯头中文逐字），映射交 DeployTemplateMap.h 纯函数，
+// /空文件清单两拒绝分支文案同部署口径；v2.15 任务9 起含目录选择经装配纯头
+// deployentry::build 同口径展开，拒绝文案=纯头中文逐字），映射交 DeployTemplateMap.h 纯函数，
 // 编辑走 #54 同一模态对话框，落库经主窗口注入的 std::function 缝（widget 不直连 store）。
 void FtpDeployWidget::onSaveAsTemplateClicked()
 {
@@ -935,14 +937,14 @@ void FtpDeployWidget::onSaveAsTemplateClicked()
     QString remoteDir = m_rightPanel ? m_rightPanel->currentPath() : QStringLiteral("/");
     if (remoteDir.isEmpty()) remoteDir = QStringLiteral("/");   // 与映射层就地回退双保险（幂等）
 
-    // v2.15 任务9：与部署入口同函数展开（buildDeployEntries）——含目录时映射层
-    // 走 items 全量承载（expandedItems 非空→只产 items 数组、不写 files 键），
+    // v2.15 任务9 评审修复轮：与部署入口同走装配纯头 deployentry::build——含目录时
+    // 映射层走 items 全量承载（expandedItems 非空→只产 items 数组、不写 files 键），
     // 纯文件选择维持 v2.14 简写组装（files+remoteDirectory 逐字不变）。
     std::vector<std::string> files;
     std::vector<std::string> entryRemotePaths;   // 本入口不消费（单发腿专用）
     QList<folderexpand::ExpandedFile> expandedItems;
     QString rejectReason;
-    if (!buildDeployEntries(selections, remoteDir, files, entryRemotePaths,
+    if (!deployentry::build(selections, remoteDir, files, entryRemotePaths,
                             expandedItems, rejectReason)) {
         appendLog(rejectReason);
         return;
@@ -1162,13 +1164,11 @@ QList<folderexpand::Selection> FtpDeployWidget::collectLocalSelection() const
 {
     QList<folderexpand::Selection> selections;
     if (!m_leftPanel) return selections;
-    // 面板 selectedFiles 返回 FtpFileInfo（name 需拼面板当前路径）；
-    // 跳过 ".." 导航条目。isDir 判定取**面板行快照口径**（目录列表加载时刻的
-    // 行属性，非部署点击时刻的实时文件系统类型）：快照窗口内类型漂移的兜底
-    // ——目录行实为文件 → expand 的 scanDir 得 0 条目（该目录贡献空，顶层文件
-    // 语义不损）；文件行实为目录 → 扁平口径原样下传，DeployJob 仍会在 Job 内
-    // 遍历目录（v2.14 既有行为），显式条目模式下则由 TransferExecutor 钉桩
-    // 在触碰远端前失败（tst_transfer_executor::directoryUploadSourceFailsBeforeAnyChannelCall）。
+    // 面板 selectedFiles 返回 FtpFileInfo（name 需拼面板当前路径）；跳过 ".." 导航
+    // 条目。isDir 取面板行快照口径（目录列表加载时刻的行属性），**仅作输入信息**：
+    // 评审 I-1 修复后装配腿 deployentry::build 一律以点击时刻 QFileInfo::isDir()
+    // 实况重分类——快照把目录记成文件（外部 file→dir 漂移）不再可能产扁平清单
+    // 绕过 5000 上限走 Job legacy 遍历；快照把文件记成目录则该文件按实况扁平交付。
     const QString base = m_leftPanel->currentPath();
     for (const auto& f : m_leftPanel->selectedFiles()) {
         if (f.name == ".." || f.name.empty()) continue;
@@ -1178,57 +1178,6 @@ QList<folderexpand::Selection> FtpDeployWidget::collectLocalSelection() const
         selections.append({full, f.isDir});
     }
     return selections;
-}
-
-// v2.15 任务9 三入口共用采集+展开腿（规格 §3.1「三入口同口径」；单发部署、
-// 保存为模板都经本函数，编辑器入口经 TaskTemplateEditorDialog::
-// addDeployDirectoryEntries 同用 folderexpand::expand+composeRemotePath）。
-// 无目录选择 → 原始扁平清单（entryRemotePaths/expandedItems 留空，v2.14 行为
-// 与后端 requestKey 键形态逐字不变）；含目录 → 全量条目清单：顶层文件=
-// composeRemotePath(remoteDir, 文件名) 扁平项、目录内容=composeRemotePath
-// (remoteDir, rel) 镜像项，与模板层 items 全量承载同规则。
-bool FtpDeployWidget::buildDeployEntries(const QList<folderexpand::Selection>& selections,
-                                         const QString& remoteDirectory,
-                                         std::vector<std::string>& files,
-                                         std::vector<std::string>& entryRemotePaths,
-                                         QList<folderexpand::ExpandedFile>& expandedItems,
-                                         QString& rejectReason) const
-{
-    files.clear();
-    entryRemotePaths.clear();
-    expandedItems.clear();
-    rejectReason.clear();
-
-    bool hasDirectory = false;
-    for (const auto& selection : selections) {
-        if (selection.isDirectory) { hasDirectory = true; break; }
-    }
-    if (!hasDirectory) {
-        for (const auto& selection : selections)
-            files.push_back(selection.localPath.toStdString());
-        return true;   // 扁平口径：与 v2.14 逐字一致
-    }
-
-    const folderexpand::ScanResult expanded = folderexpand::expand(selections);
-    if (!expanded.ok) {
-        rejectReason = expanded.error;   // 超上限/根目录退化：纯头中文文案逐字直传
-        return false;                    // （调用方经 appendLog 日志闸拒绝，不静默放行）
-    }
-    if (expanded.files.isEmpty()) {
-        rejectReason = QStringLiteral("所选目录为空，没有可部署的文件，请检查左侧选择");
-        return false;
-    }
-    for (const auto& entry : expanded.files) {
-        files.push_back(entry.localPath.toStdString());
-        // rel 空=顶层扁平文件 → 文件名作远端末段（与映射层 items 组装同口径）
-        const QString rel = entry.remoteRel.isEmpty()
-            ? QFileInfo(entry.localPath).fileName()
-            : entry.remoteRel;
-        entryRemotePaths.push_back(
-            folderexpand::composeRemotePath(remoteDirectory, rel).toStdString());
-    }
-    expandedItems = expanded.files;
-    return true;
 }
 
 void FtpDeployWidget::onRefreshRemote()
