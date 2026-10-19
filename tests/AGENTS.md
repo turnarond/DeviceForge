@@ -47,6 +47,8 @@ set_tests_properties(tst_xxx PROPERTIES
 
 **测试属性登记（在册特例）**：`tst_telnet_timeout` 另挂 `TIMEOUT 60`（v2.15 D）——vendored lwcommunicate 在全套并发下偶发无限挂起（v2.14.0 终验实踩），TIMEOUT 把该形态从"拖死整轮"降为**有界红**（单目标 60s 超时失败）；该 `set_tests_properties` 刻意置于 `if(_qt_bin_dir)` 守卫之外，保证 TIMEOUT 无条件生效。分诊口径：命中 TIMEOUT 红按既有 flake 处理——单目标单跑复核 + 全量复跑，两遍口径都过即不判波失败（典型耗时 ~1.3s，基线曾观测单次负载下 15.6s，距 60s 上限有大余量），但复跑记录与命中实况必须写进终验报告，不藏红。
 
+**零输出红的取证口径（v2.15 波3 合并结果实踩立规）**：全量轮次里若某目标 `***Failed` 且 `--output-on-failure` 底下**一个字节都没打**（本环境实测出现过：`tst_transfer_executor` 0.30s 退出码 8、无任何 FAIL 行；后续 60 次直跑 + 8 遍全量 + 8 轮闭包循环全绿，WER 无 Application Error 事件、无 dump），**当轮立刻**补三件事，否则证据就随日志覆盖丢失：① `ctest -C Release -V -R <该目标>` 复跑取**退出码**（小整数=断言失败条数；`0xc0000135`=Qt DLL/PATH 属性形态；`0xc0000409`=fail-fast；无输出且码为杀进程类=外部干预）；② 直跑必须 `-o file,txt` 并 `[ -s file ]` 判非空（裸跑 stdout 恒 0 字节不可当证据）；③ 全量终验一律附 `--output-junit <file>.xml` 留档。分诊结论未落到"产品缺陷"之前，不得写进 flake 基线，也不得以"复现不到"结案——按未闭合观察披露（同波2 `tst_panel_async` 先例）。
+
 ## 约定（TDD 红-绿-重构）
 
 1. **红灯先行**：新功能/修 bug 先写失败用例，再实现；修复类必须先复现缺陷
