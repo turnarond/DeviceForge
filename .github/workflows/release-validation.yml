@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   release-validation:
-    runs-on: windows-latest
+    runs-on: windows-2022   # 钉版本：latest 镜像已无 VS2022（configure 报 could not find any instance of Visual Studio）
     env:
       REQUESTED_VERSION: ${{ inputs.version }}
     steps:
