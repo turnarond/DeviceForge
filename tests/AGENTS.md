@@ -13,7 +13,7 @@
 | deploy/ | tst_deploy_template_map | DeployTemplateMap.h OnceConfig→TaskTemplate 纯映射（简写参数/未勾选=未绑定/重启步与空命令回退） | 纯逻辑（仅头文件，v2.14 #49-2） |
 | deploy/ | tst_folder_expand | FolderExpand.h 目录展开纯头（镜像首段/顶层扁平/5000 上限整体拒绝/根退化拒绝/空目录不算错；scanner 注入脱盘） | 纯逻辑（仅头文件，v2.15 波2 任务7） |
 | deploy/ | tst_deploy_entry_builder | DeployEntryBuilder.h 入口装配纯头（混合选择扁平+镜像条目、超上限逐字拒绝、全空目录拒绝、无目录 v2.14 扁平口径、快照过期按点击时刻实况重分类） | 纯逻辑（仅头文件，v2.15 波2 任务9） |
-| deploy/ | tst_deploy_toolbar_layout | FtpDeployWidget 部署页工具栏两行化（deployToolbar=QVBoxLayout+两 QHBoxLayout；行1 连接+主操作/行2 选项+结果，控件按 objectName 或可见文本定位）+ **目的钉桩** toolbarFitsNarrowScreen（totalMinimumSize ≤1286；须把 `src/app/DeviceForge.qrc` 编入目标并加载生产 darkstyle.qss，否则 QSS 的 min-width 兜底不生效、量出假宽） | QtTest UI 回归（v2.15 波3 任务13 方案 C） |
+| deploy/ | tst_deploy_toolbar_layout | FtpDeployWidget 部署页工具栏两行化（deployToolbar=QVBoxLayout+两 QHBoxLayout；行1 连接组三件套+主操作／行2 重启四参+结果操作，含分隔条与反向归属；既有控件零新增对象名，按可见文本/类型/尺寸特征定位）+ **目的钉桩** toolbarFitsNarrowScreen（totalMinimumSize ≤1270 = 1366−导航栏 56−右侧 VBox margin 16−页面 margin 24）；**必须**先 `QStyleFactory::create("Fusion")` 再把 `src/app/DeviceForge.qrc` 编入目标并加载生产 darkstyle.qss，另有 qssFloorIsInEffect 守卫——无 QSS 时量得 834px 会伪装成过关（实测 Fusion+QSS：两行 933px、单行 1866px） | QtTest UI 回归（v2.15 波3 任务13 方案 C） |
 | file_source/ | tst_file_source | IFileSource Local 实现 + readFile/writeFile 原语 | 文件系统 |
 | dir_compare/ | tst_dir_compare | DirCompare.h/.cpp 目录对比纯逻辑（分类/对齐/分钟精度） | 纯逻辑 |
 | file_encoding/ | tst_file_encoding | FileEncoding 编码探测/转换/冲突谓词（Win32 CP，禁 QTextCodec） | 纯逻辑 |

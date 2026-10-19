@@ -784,6 +784,8 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
 
     toolbar->addLayout(row1);
     toolbar->addLayout(row2);
+    // 焦点序说明：本仓无 setTabOrder，Tab 序随子控件重新挂载父级的次序（行 1 组→行 1 主操作→行 2），
+    // 即「先连上并执行、再调选项与结果」；改两行归属时同步复核这条隐式契约。
 
     mainLayout->addWidget(toolbarWidget);
 }

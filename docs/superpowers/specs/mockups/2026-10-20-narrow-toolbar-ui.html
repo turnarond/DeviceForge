@@ -396,7 +396,7 @@ table.cmp td b.g{color:var(--teal)}table.cmp td b.r{color:var(--red)}
   <p><b>本稿未覆盖、需你裁定是否同波处理：</b>设备总线胶囊行（<code>DeviceBusWidget.cpp:405-428</code>）同样是
   <code>QHBoxLayout</code> 且随设备台数线性增宽（每台 ≈130–180px），24 台时一样会把窗口撑爆。
   规格 §4 只点了"工具栏"，所以稿子里它只作为背景出现、未给方案。</p>
-  <p><b>实现后实测回填（2026-10-20，方案 C 已落地）：</b>用 <code>totalMinimumSize().width()</code> 在同一条件下（加载生产 darkstyle.qss、未选设备、设备下拉取下限 160）量得 <b>单行 1908px → 两行 967px</b>（单行数由一次性变异工装复跑得）。即稿内推算 1737 偏保守、方案 C 的实际余量比稿中判定（需求 1231）更宽裕；锚点 2010 与本波实测 1908 之差来自设备名长度与「部署到 N 台设备」文案（同一控件不同内容）。钉桩见 <code>tests/deploy/tst_deploy_toolbar_layout.cpp</code> 的 <code>toolbarFitsNarrowScreen</code>（阈值 1286 = 1366 − 导航栏 56 − 页面 margin 24）。</p>
+  <p><b>实现后实测回填（2026-10-20，方案 C 已落地）：</b>用 <code>totalMinimumSize().width()</code> 在<b>与生产同口径</b>（先 <code>QStyleFactory::create("Fusion")</code>，再加载生产 darkstyle.qss；未选设备、设备下拉取下限 160）量得 <b>单行 1866px → 两行 933px</b>（单行数由一次性变异工装复跑得，改动未入库）。读法要小心两件事：<b>稿内推算 1737 对实测 1866 偏乐观（少算 132px）</b>，而方案 C 的推算需求 1231 对实测 933 偏保守——方向不同，不能一句话说成「稿子保守」。锚点 2010 与本波实测 1866 之差来自设备名长度与窗口边框/DPI。钉桩见 <code>tests/deploy/tst_deploy_toolbar_layout.cpp</code> 的 <code>toolbarFitsNarrowScreen</code>（阈值 <b>1270</b> = 1366 − 导航栏 56 − 右侧 VBox margin 8+8 − 页面 margin 12+12；本稿初版写 1286，漏了右侧 VBox margin，已就实）。另实测：主按钮文案换成「▶ 部署到 24 台设备」不影响最小宽（QSS min-width 主导），所以「现场台数」不会推翻窄屏判定。</p>
   <p><b>可落地性声明：</b>稿中界面区域只用纯色填充 + 1px 边框，均为 Qt QSS 可表达；外围网格、红虚线裁切标尺、金色宽度标注属审校辅助层，不进产品。
   <b>宽度账性质：</b>逐项为按代码定宽与 QSS <code>min-width</code> 的推算，合计由脚本实测 DOM；<code>~2010px</code> 才是实测锚点。</p>
 </div>
