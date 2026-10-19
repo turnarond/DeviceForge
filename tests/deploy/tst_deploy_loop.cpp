@@ -1,11 +1,14 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
 #include <QDir>        // v2.15 任务9 单发镜像用例夹具建子目录
+#include <QDirIterator>  // v2.15 波2 任务10 环回目标树逐文件镜像断言
 #include <QFile>
 #include "adapter/IProtocolAdapter.h"
 #include "adapter/IDeployable.h"
 #include "adapter/ProtocolRegistry.h"
+#include "deploy/DeployEntryBuilder.h"     // v2.15 波2 任务10 入口装配缝（真盘 scanner）
 #include "framework/DeviceInfo.h"
+#include "transfer/LocalTransferChannel.h" // v2.15 波2 任务10 真盘传输链路通道
 #include "tools/FtpDeployTool/FtpDeployBackend.h"
 #include "tools/FtpDeployTool/DeploymentRunner.h"
 #include "MemoryDeployChannel.h"
@@ -13,6 +16,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -353,6 +357,118 @@ private slots:
         // 续传命中：首条 basename 目标 /apps/a.txt 已交付被跳过，仅补传第二条
         QCOMPARE(mock->uploadCalls.load() - callsMid, 1);
         backend.OnStop();
+    }
+
+    // v2.15 波2 任务10 环回集成（真盘目录树端到端唯一防线）：
+    //   folderexpand::scanDir（缺省实扫）→ deployentry::build 入口装配缝 →
+    //   FtpDeployBackend/DeployJob **显式条目模式**（其 mkdir 循环被刻意跳过）→
+    //   TransferExecutor 上传前父目录确保（任务 8）→ LocalTransferChannel 真实
+    //   单层 makeDirectory → 同盘真盘目标树。
+    // 既有覆盖的缝隙：入口纯头测试不触执行器；tst_transfer_executor 父目录确保全用
+    // MockChannel+POSIX 假路径；memoryDeployChannelFactory 内存假 FS 无目录概念
+    // （mkdir 恒成功，环回空转）——本用例是第一处（也是唯一一处）让"远端子目录由
+    // 执行器侧创建"落到真实文件系统上的端到端断言：目标树与源树**镜像逐文件一致**
+    // （路径集合相等 + 每文件字节相等），多深子链（pkg/lib/plugins）由确保步逐层创建。
+    // 远端基目录（lbtarget）刻意不预建：基目录与其下所有层级同样由确保步创建，
+    // 是被测链路的超集（生产中基目录通常已存在，确保步自最浅缺失层起同样适用）。
+    void folderMirrorEndToEndThroughRealTransferChain() {
+        QVERIFY(m_tmpDir.isValid());
+        const QString srcRoot = m_tmpDir.filePath(QStringLiteral("lb"));
+        QVERIFY(QDir(srcRoot).mkpath(QStringLiteral("pkg/bin")));
+        QVERIFY(QDir(srcRoot).mkpath(QStringLiteral("pkg/lib/plugins")));
+        const QString topTxt = srcRoot + QStringLiteral("/top.txt");
+        const QString readme = srcRoot + QStringLiteral("/pkg/readme.md");
+        const QString appConf = srcRoot + QStringLiteral("/pkg/bin/app.conf");
+        const QString deepDll = srcRoot + QStringLiteral("/pkg/lib/plugins/deep.dll");
+        struct Seed { QString path; QByteArray content; };
+        const QList<Seed> seeds = {
+            {topTxt, QByteArray("lb-flat-top")},
+            {readme, QByteArray("lb-pkg-readme")},
+            {appConf, QByteArray("lb-mirror-app-conf")},
+            {deepDll, QByteArray("lb-mirror-deep-3-levels")},
+        };
+        for (const Seed& seed : seeds) {
+            QFile f(seed.path);
+            QVERIFY2(f.open(QIODevice::WriteOnly), qPrintable(f.errorString()));
+            QCOMPARE(f.write(seed.content), seed.content.size());
+            f.close();
+        }
+
+        // 入口装配缝：与生产单发入口同调用（缺省 scanner=scanDir 真盘递归扫描）。
+        // 快照旗标按面板口径给出（顶层文件 false / 目录 true），build 以磁盘实况重分类。
+        const QString remoteDirectory = m_tmpDir.filePath(QStringLiteral("lbtarget"));
+        const QList<folderexpand::Selection> selections = {
+            {topTxt, false},
+            {srcRoot + QStringLiteral("/pkg"), true},
+        };
+        std::vector<std::string> files;
+        std::vector<std::string> remotePaths;
+        QList<folderexpand::ExpandedFile> expandedItems;
+        QString entryError;
+        QVERIFY2(deployentry::build(selections, remoteDirectory, files, remotePaths,
+                                    expandedItems, entryError),
+                 qPrintable(entryError));
+        QCOMPARE(files.size(), std::size_t{4});
+        QCOMPARE(remotePaths.size(), std::size_t{4});
+        QCOMPARE(expandedItems.size(), 4);
+
+        // 部署链路：mock 适配器仅供 ProtocolRegistry 建连/能力位；传输通道换成
+        // LocalTransferChannel——"远端"即同盘真盘目录，stat/mkdir/upload/rename 全走实盘。
+        auto* mock = new MockDeployable;
+        ProtocolRegistry::instance()->registerFactory("mock_lb_mirror",
+            [mock] { return std::shared_ptr<IProtocolAdapter>(mock, [](IProtocolAdapter*) {}); });
+        mock->releaseGate = true;
+        FtpDeployBackend backend;
+        backend.setTransferChannelFactory(
+            [](std::shared_ptr<IProtocolAdapter>) {
+                return std::make_unique<LocalTransferChannel>();
+            });
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        backend.bindDevices({{"192.168.1.77", 21, "", "", ""}});
+        backend.bindCredentials({"u", "p"});
+        std::atomic<bool> finished{false};
+        backend.setFinishedCallback([&](bool, const auto&, const auto&) { finished = true; });
+        backend.startUpload(files, remoteDirectory.toStdString(), false, false,
+                            "mock_lb_mirror", false, 0, RebootOptions{}, remotePaths);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+
+        {
+            const DeployReport report = backend.lastReport();   // 按值持副本（防悬垂）
+            QVERIFY2(report.results.front().failedFiles.empty(),
+                     report.results.front().lastError.c_str());
+            QCOMPARE(report.results.front().state, DeviceResult::Ok);
+            QCOMPARE(report.results.front().deliveredFiles.size(), std::size_t{4});
+        }
+        backend.OnStop();
+
+        // 镜像逐文件断言①：每个装配条目远端路径存在且内容与源文件字节相等。
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            const QString remotePath = QString::fromStdString(remotePaths[i]);
+            QFile remote(remotePath);
+            QVERIFY2(remote.exists(), remotePath.toUtf8().constData());
+            QFile source(QString::fromStdString(files[i]));
+            QVERIFY(source.open(QIODevice::ReadOnly));
+            const QByteArray sourceBytes = source.readAll();
+            QVERIFY(remote.open(QIODevice::ReadOnly));
+            QCOMPARE(remote.readAll(), sourceBytes);
+        }
+
+        // 镜像逐文件断言②：目标树文件集合与期望镜像相对路径集合**相等**——
+        // 既无缺失（含 pkg/lib/plugins 三层深链目录确由执行器侧父目录确保创建），
+        // 也无多余（无 .deviceforge-part-* 残留临时文件）。
+        QVERIFY(QFileInfo(remoteDirectory + QStringLiteral("/pkg/lib/plugins")).isDir());
+        QStringList mirrored;
+        QDirIterator it(remoteDirectory, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            mirrored << QDir(remoteDirectory).relativeFilePath(it.next());
+        }
+        mirrored.sort();
+        QStringList expected = {QStringLiteral("pkg/bin/app.conf"),
+                                QStringLiteral("pkg/lib/plugins/deep.dll"),
+                                QStringLiteral("pkg/readme.md"),
+                                QStringLiteral("top.txt")};
+        expected.sort();
+        QCOMPARE(mirrored, expected);
     }
 };
 QTEST_MAIN(TstDeployLoop)

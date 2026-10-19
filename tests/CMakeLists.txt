@@ -231,9 +231,12 @@ endif()
 #     FtpListParser.cpp（被 FtpAdapter.cpp 引用），并链接 Qt6::Concurrent
 #     （QtConcurrent::run）+ Qt6::Sql（ConfigStore SQLite）+ lwserverbase
 #     （ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
+# v2.15 波2 任务10：环回集成用例以 LocalTransferChannel（真盘单层 mkdir + 真盘
+#     upload/rename）作为注入通道，验证执行器侧父目录确保全链，故编入该 TU。
 add_executable(tst_deploy_loop
     deploy/tst_deploy_loop.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
