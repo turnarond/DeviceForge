@@ -882,6 +882,7 @@ endif()
 # 见 m_backend==nullptr 直接返回）。
 add_executable(tst_deploy_toolbar_layout
     deploy/tst_deploy_toolbar_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/DeviceForge.qrc
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp

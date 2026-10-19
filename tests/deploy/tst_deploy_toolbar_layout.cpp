@@ -83,10 +83,20 @@ private slots:
                 .arg(QUuid::createUuid().toString(QUuid::Id128)));
         QVERIFY(QDir().mkpath(m_workDir));
         m_dbPath = QDir(m_workDir).filePath(QStringLiteral("config.db"));
+        // 目的钉桩（toolbarFitsNarrowScreen）依赖生产 QSS 的 QPushButton{min-width:85px}
+        // 与 QComboBox{min-width:120px} 撑出的真实最小宽，不加载样式表量出来的是假数
+        QFile qss(QStringLiteral(":/styles/darkstyle.qss"));
+        QVERIFY2(qss.open(QIODevice::ReadOnly), "读不到 :/styles/darkstyle.qss（DeviceForge.qrc 未编入本目标）");
+        const QString qssText = QString::fromUtf8(qss.readAll());
+        QVERIFY2(qssText.contains(QStringLiteral("min-width: 85px"))
+                 || qssText.contains(QStringLiteral("min-width:85px")),
+                 "darkstyle.qss 里找不到 QPushButton min-width:85px——样式表来源可疑");
+        qApp->setStyleSheet(qssText);
     }
 
     void cleanupTestCase()
     {
+        qApp->setStyleSheet(QString());
         ConfigStore::instance().close();
         QDir(m_workDir).removeRecursively();
     }
@@ -136,6 +146,17 @@ private slots:
         QVERIFY2(rowContains(row1, refresh), "⟳ 刷新 不在第 1 行");
         QVERIFY2(rowContains(row1, deploy), "▶ 部署（btnPrimary）不在第 1 行");
         QVERIFY2(rowContains(row1, saveTemplate), "保存为模板 不在第 1 行");
+
+        // 连接组整体也必须在第 1 行（否则"行1=连上并执行"的口径名不副实）
+        const QList<QWidget*> row1Widgets = collectRowWidgets(row1);
+        QCheckBox* ftps = nullptr;
+        const auto boxes = w.findChildren<QCheckBox*>();
+        for (auto* box : boxes) {
+            if (box->text() == QStringLiteral("FTPS 加密"))
+                ftps = box;
+        }
+        QVERIFY2(ftps, "未找到『FTPS 加密』复选框");
+        QVERIFY2(row1Widgets.contains(ftps), "『FTPS 加密』不在第 1 行");
     }
 
     void row2_hasDeployOptionsAndResultActions()
@@ -180,6 +201,22 @@ private slots:
         QVERIFY2(retryBtn, "未找到『重试失败设备』按钮");
         QVERIFY2(row2Widgets.contains(exportBtn), "『导出报告』不在第 2 行");
         QVERIFY2(row2Widgets.contains(retryBtn), "『重试失败设备』不在第 2 行");
+    }
+
+    // 目的钉桩（不只钉形状）：两行的意义是让工具栏最小宽落进常见窄屏的可用宽之内。
+    // 阈值来源=1366 屏 − 导航栏 56 − 页面左右 margin 24 = 1286。
+    // 变异取证（同一测法、加载 darkstyle.qss、默认内容）：单行 1908px → 两行 967px；
+    // 没有这一格，把宽控件全塞进第 1 行的"两行"重构照样能过形状断言。
+    void toolbarFitsNarrowScreen()
+    {
+        FtpDeployWidget w;
+        auto* bar = w.findChild<QWidget*>(QStringLiteral("deployToolbar"));
+        QVERIFY(bar);
+        QVERIFY(bar->layout());
+        const int minW = bar->layout()->totalMinimumSize().width();
+        QVERIFY2(minW > 0, "工具栏最小宽算出 0，布局未参与计算（用例失效信号）");
+        QVERIFY2(minW <= 1286,
+                 qPrintable(QStringLiteral("工具栏最小宽 %1px 仍超过 1366 屏可用宽 1286px").arg(minW)));
     }
 };
 
