@@ -1422,6 +1422,160 @@ private slots:
         QCOMPARE(funique.size(), 2);   // 两条不同远端目标：/opt/app/bin/tool.txt 与 /opt/app/pkg/tool.txt
     }
 
+    // v2.15 波3 任务12：目录展开批量刷表收口——批量插入窗口内必须抑制逐行
+    // cellChanged→flushDeployTable 全表重序列化（QSignalSpy 钉桩：批窗口 cellChanged
+    // 发射次数为 0；旧实现 3 行入表发 6 次 → 红）。O(N²)→O(N) 结论仅由代码审查与
+    // 本行为保持用例背书，不写计时断言（CI 抖动无判据价值）。
+    // 行为逐字节等价钉桩：行数不丢不增、种子行恒居首、m_steps 真值写回经
+    // 「切步往返→按真值重灌」实证、collect() 条目集与顺序逐字段相符；
+    // currentCellChanged 不因尾部插入移动当前单元格（新旧实现同为 0——移除按钮
+    // 启用态无副作用的 equivalence 取证，置于 cellChanged 断言之前以便红名仍可见）。
+    void editorDialog_addDeployDirectory_batchInsertFlushesOnceAndPreservesRows()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("pkg/bin")));
+        {
+            QFile f(tmp.filePath(QStringLiteral("pkg/bin/app.conf")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("a");
+        }
+        {
+            QFile f(tmp.filePath(QStringLiteral("pkg/notes.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("b");
+        }
+        {
+            QFile f(tmp.filePath(QStringLiteral("pkg/readme.md")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("c");
+        }
+
+        TaskTemplate in;
+        in.name = QStringLiteral("批量刷表").toStdString();
+        TaskStep deployStep;
+        deployStep.type = TaskStepType::DeployFiles;
+        deployStep.parameters.insert(QStringLiteral("items"), QVariantList{
+            QVariantMap{{QStringLiteral("localPath"), QStringLiteral("D:/seed.bin")},
+                        {QStringLiteral("remotePath"), QStringLiteral("/opt/app/seed.bin")},
+                        {QStringLiteral("direction"), QStringLiteral("upload")},
+                        {QStringLiteral("overwrite"), QStringLiteral("overwrite")}}});
+        TaskStep rebootStep;
+        rebootStep.type = TaskStepType::Reboot;
+        in.steps.push_back(deployStep);
+        in.steps.push_back(rebootStep);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* remoteDir = dlg.findChild<QLineEdit*>(QStringLiteral("teRemoteDir"));
+        QVERIFY(remoteDir);
+        remoteDir->setText(QStringLiteral("/opt/app"));
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+        auto* remove = dlg.findChild<QPushButton*>(QStringLiteral("teRemoveItem"));
+        QVERIFY(remove);
+        auto* stepList = dlg.findChild<QListWidget*>(QStringLiteral("teStepList"));
+        QVERIFY(stepList);
+        QCOMPARE(table->rowCount(), 1);                        // 绑定态种子行已在表
+
+        QSignalSpy cellSpy(table, &QTableWidget::cellChanged);
+        QSignalSpy currentSpy(table, &QTableWidget::currentCellChanged);
+
+        QString error;
+        QCOMPARE(dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("pkg")), &error), 3);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+
+        QCOMPARE(currentSpy.count(), 0);
+        QVERIFY2(!remove->isEnabled(), "批量添加后移除按钮启用态不变（无当前单元格，与旧实现一致）");
+        // 收口核心红：批窗口内零逐行 flush 信号（旧实现 3 行 × 2 次 setItem=6）
+        QCOMPARE(cellSpy.count(), 0);
+
+        // 行不丢不增、种子行居首、展开行按表格序追加
+        QCOMPARE(table->rowCount(), 4);
+        QCOMPARE(table->item(0, 0)->text(), QStringLiteral("D:/seed.bin"));
+        QStringList locals;
+        QStringList remotes;
+        for (int row = 1; row < 4; ++row) {
+            locals << table->item(row, 0)->text();
+            remotes << table->item(row, 1)->text();
+            QVERIFY2(!table->item(row, 0)->text().endsWith(QStringLiteral("/pkg")),
+                     "展开行必须是普通文件而非目录");
+        }
+        QCOMPARE(QSet<QString>(locals.begin(), locals.end()).size(), 3);   // 无重复行
+        QVERIFY(remotes.contains(QStringLiteral("/opt/app/pkg/bin/app.conf")));   // 镜像相对段
+        QVERIFY(remotes.contains(QStringLiteral("/opt/app/pkg/notes.txt")));
+        QVERIFY(remotes.contains(QStringLiteral("/opt/app/pkg/readme.md")));
+        QCOMPARE(QSet<QString>(remotes.begin(), remotes.end()).size(), 3); // 批量化未旁路互异远端
+
+        // m_steps 真值写回实证：切到 reboot 再切回 deploy——绑定重灌按 m_steps
+        // 回表；若批末单次 flush 未发生，此处表回到 1 行（种子行）
+        stepList->setCurrentRow(1);
+        stepList->setCurrentRow(0);
+        QCOMPARE(table->rowCount(), 4);
+
+        // collect() 条目集与顺序逐字段相符（种子行在前，展开行保持表格序，
+        // 方向/覆盖为引擎规范串）
+        TaskTemplate out;
+        QVERIFY(dlg.collect(&out));
+        const QVariantList items =
+            out.steps[0].parameters.value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 4);
+        const QVariantMap seed = items[0].toMap();
+        QCOMPARE(seed.value(QStringLiteral("localPath")).toString(), QStringLiteral("D:/seed.bin"));
+        QCOMPARE(seed.value(QStringLiteral("remotePath")).toString(), QStringLiteral("/opt/app/seed.bin"));
+        QCOMPARE(seed.value(QStringLiteral("direction")).toString(), QStringLiteral("upload"));
+        QCOMPARE(seed.value(QStringLiteral("overwrite")).toString(), QStringLiteral("overwrite"));
+        for (int i = 0; i < 3; ++i) {
+            const QVariantMap entry = items[i + 1].toMap();
+            QCOMPARE(entry.value(QStringLiteral("localPath")).toString(), locals.at(i));
+            QCOMPARE(entry.value(QStringLiteral("remotePath")).toString(), remotes.at(i));
+            QCOMPARE(entry.value(QStringLiteral("direction")).toString(), QStringLiteral("upload"));
+            QCOMPARE(entry.value(QStringLiteral("overwrite")).toString(), QStringLiteral("overwrite"));
+        }
+    }
+
+    // v2.15 波3 任务12（规格 §3.1 条款 4「空目录跳过不产条目、提示、不算错误」）：
+    // 空目录添加仍返回 0、*error 保持空、表格零改动，但用户必须收到中文提示。
+    // 提示通道沿用本对话框既有 QMessageBox 形态（validate 闸与波2 冲突拒绝同通道；
+    // 本对话框无独立日志 sink，不发明新通道），information 而非 warning——空目录
+    // 不算错误。捕获形态照搬 armDialogCapture：布防定时器→exec 嵌套事件循环触发
+    // →抓文案+done(Ok)+置标志；未弹框则标志保持 false（负对照）。
+    void editorDialog_addDeployDirectory_emptyDirShowsChineseNoticeAndAddsNothing()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("emptydir")));   // 无文件无子目录
+
+        TaskTemplate in;
+        in.name = QStringLiteral("空目录提示").toStdString();
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* remoteDir = dlg.findChild<QLineEdit*>(QStringLiteral("teRemoteDir"));
+        QVERIFY(remoteDir);
+        remoteDir->setText(QStringLiteral("/opt/app"));
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+
+        QString noticeText;
+        bool noticeSeen = false;
+        QTimer::singleShot(50, &dlg, [&dlg, &noticeText, &noticeSeen] {
+            const auto boxes = dlg.findChildren<QMessageBox*>();
+            if (boxes.isEmpty())
+                return;
+            noticeText = boxes.first()->text();
+            noticeSeen = true;
+            boxes.first()->done(QMessageBox::Ok);
+        });
+
+        QString error;
+        QCOMPARE(dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("emptydir")), &error), 0);
+        QVERIFY2(noticeSeen, "空目录添加必须弹出中文提示（未命中 QMessageBox：当前实现静默）");
+        QVERIFY2(noticeText.contains(QStringLiteral("所选目录为空，未添加任何文件条目")),
+                 qPrintable(noticeText));
+        QVERIFY2(error.isEmpty(), "空目录不算错误：*error 不应携带拒绝串");
+        QCOMPARE(table->rowCount(), 0);
+    }
+
     // ── ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令 + timeoutSec + protocol）──
     void editorDialog_commandsPanelSplitsLinesAndClamps()
     {

@@ -58,7 +58,11 @@ public:
     // 拒绝（文件系统根退化/超 kMaxExpandedItems 上限/远端目标与既有行冲突
     // ——规格 §3.1 条款 4，波2 终审 I-1）返回 -1 并把中文 error 串写入 *error
     // （根退化/超上限=纯头文案逐字直传，三入口同文案纪律禁止改写；冲突=本缝文案），
-    // 表格零改动、停留编辑不丢内容。teAddDir 按钮与自动化用例共用本缝（QFileDialog
+    // 表格零改动、停留编辑不丢内容。空目录（展开成功但无文件条目）返回 0、
+    // *error 保持空，并经本对话框既有 QMessageBox::information 通道给出中文提示
+    // （规格 §3.1 条款 4「提示、不算错误」，v2.15 波3 任务12）；批量入表走
+    // blockSignals 收口——末行后 flushDeployTable 恰好一次，行为与逐行 flush
+    // 等价（同任务12）。teAddDir 按钮与自动化用例共用本缝（QFileDialog
     // 选人腿仍按 #54 先例人工冒烟）。
     int addDeployDirectoryEntries(const QString& dirPath, QString* error);
 
