@@ -478,7 +478,10 @@ void TaskTemplateEditorDialog::appendDeployRow(const QString& localPath, const Q
 {
     const int row = m_itemTable->rowCount();
     m_itemTable->insertRow(row);
-    // 先挂下拉再写文本单元格：cellChanged 触发的 flush 读到完整行
+    // 先挂下拉再写文本单元格：自 v2.15 波3 任务12 起三处调用点（teAddFiles 批量
+    // 窗口/fillDeployTable/addDeployDirectoryEntries 批量窗口）均在 blockSignals
+    // 批窗口内执行、不存在 mid-append flush 路径，此顺序保留为无害的历史约定；
+    // 若未来新增不屏蔽信号的调用点须遵守（cellChanged 触发的 flush 读到完整行）
     auto* directionCombo = makeDeployChoiceCombo(direction, true, m_itemTable);
     connect(directionCombo, &QComboBox::activated, this, [this](int) { flushDeployTable(); });
     m_itemTable->setCellWidget(row, 2, directionCombo);
@@ -905,8 +908,9 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
     // 反向补集：信号被抑制时须显式补一次）。added==0（空目录）不 flush，与旧实现
     // 「零行零 flush」逐字节一致；插入不移动当前单元格，tst_task_center_widget 已对
     // currentCellChanged 新旧同为 0 取证（移除按钮启用态无副作用）。
-    if (m_itemTable)
-        m_itemTable->blockSignals(true);
+    // m_itemTable 构造于 setupDeployPage（构造函数无条件调用），本缝不可先于构造
+    // 可达，与 appendDeployRow 同样直接解引用（评审 M-3 去冗余守卫）。
+    m_itemTable->blockSignals(true);
     for (const folderexpand::ExpandedFile& file : expanded.files) {
         // 顶层扁平文件 rel 空 → 取文件名为远端末段（与映射层 items 组装同口径）；
         // 目录镜像项 rel 带「目录名/」首段 → composeRemotePath 单源拼接
@@ -918,8 +922,7 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
                         QStringLiteral("upload"), QStringLiteral("overwrite"));
         ++added;
     }
-    if (m_itemTable)
-        m_itemTable->blockSignals(false);
+    m_itemTable->blockSignals(false);
     if (added > 0) {
         flushDeployTable();
         return added;
