@@ -24,6 +24,7 @@
 
 #include "framework/DeviceInfo.h"
 #include "tools/FtpDeployTool/DeployReport.h"
+#include "transfer/EnsuredDirCache.h"
 #include "transfer/TransferExecutor.h"
 #include "adapter/IProtocolAdapter.h"
 #include <memory>
@@ -91,4 +92,9 @@ private:
     // 两路取消标志皆空时的兜底哑标志：仅满足适配器「非空指针」契约，
     // 恒为 false，不影响 isCancelled() 判定
     std::atomic<bool> m_fallbackCancel{false};
+    // v2.15 波3 任务11（波2 终审 I-3）：运行级「已确保远端目录」缓存。挂在成员
+    // 而非 Params——Params 本就按设备拷贝、且缓存是 job 执行期内部状态而非输入；
+    // 每设备一个 job（DeploymentRunner 并发粒度），run() 内单线程使用 ⇒ 无需加锁。
+    // 逐文件新建 TransferExecutor 时传址复用，祖先层确认后不再重复 stat。
+    xfer::EnsuredDirCache m_ensuredDirs;
 };

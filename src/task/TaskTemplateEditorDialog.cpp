@@ -441,13 +441,23 @@ void TaskTemplateEditorDialog::setupDeployPage(QWidget* page)
             QStringLiteral("所有文件 (*)"), nullptr,
             QFileDialog::DontUseNativeDialog);
         const QString prefix = m_remoteDir->text();
+        // v2.15 波3 任务12 批量刷表收口（与 addDeployDirectoryEntries 同法）：
+        // 批量插入窗口 blockSignals 抑制逐行 cellChanged→flushDeployTable 全表
+        // 重序列化，末行后单次 flush 等价写回（flush 语义为整表快照覆盖 items[]；
+        // 零新增行不 flush，与旧实现逐字节一致）
+        m_itemTable->blockSignals(true);
+        int added = 0;
         for (const QString& file : files) {
             if (file.trimmed().isEmpty())
                 continue;
             appendDeployRow(file,
                             joinRemotePath(prefix, QFileInfo(file).fileName()),
                             QStringLiteral("upload"), QStringLiteral("overwrite"));
+            ++added;
         }
+        m_itemTable->blockSignals(false);
+        if (added > 0)
+            flushDeployTable();
     });
     connect(m_addDir, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
@@ -468,7 +478,10 @@ void TaskTemplateEditorDialog::appendDeployRow(const QString& localPath, const Q
 {
     const int row = m_itemTable->rowCount();
     m_itemTable->insertRow(row);
-    // 先挂下拉再写文本单元格：cellChanged 触发的 flush 读到完整行
+    // 先挂下拉再写文本单元格：自 v2.15 波3 任务12 起三处调用点（teAddFiles 批量
+    // 窗口/fillDeployTable/addDeployDirectoryEntries 批量窗口）均在 blockSignals
+    // 批窗口内执行、不存在 mid-append flush 路径，此顺序保留为无害的历史约定；
+    // 若未来新增不屏蔽信号的调用点须遵守（cellChanged 触发的 flush 读到完整行）
     auto* directionCombo = makeDeployChoiceCombo(direction, true, m_itemTable);
     connect(directionCombo, &QComboBox::activated, this, [this](int) { flushDeployTable(); });
     m_itemTable->setCellWidget(row, 2, directionCombo);
@@ -823,9 +836,12 @@ void TaskTemplateEditorDialog::accept()
 
 // v2.15 任务9 目录展开直调缝（teAddDir 与自动化用例共用）：单目录 Selection 走
 // folderexpand::expand 缺省 scanDir（QDirIterator 递归全深度、不追符号链接），
-// 展开产物逐行 appendDeployRow——与 teAddFiles 同款即时写回纪律（appendDeployRow
-// 内 setItem 触发 cellChanged → flushDeployTable 写回当前 deploy 步，绑定守卫
-// 窗口内忽略；按钮腿必然非绑定态，直调缝同样不设守卫以复现表格行为）。
+// 展开产物经 appendDeployRow 批量入表。v2.15 波3 任务12 起插入循环套 blockSignals
+// 批量刷表收口（与 teAddFiles 同法）：批窗口内不发逐行 cellChanged，末行后
+// flushDeployTable **恰好一次**写回当前 deploy 步（added==0 不 flush，与旧实现的
+// 「零行零 flush」一致；绑定守卫窗口内 flush 自行忽略）。空目录（展开成功但无文件
+// 条目）返回 0 并经本对话框既有 QMessageBox::information 通道给出中文提示
+// （规格 §3.1 条款 4「提示、不算错误」——*error 不写拒绝串，表格零改动）。
 // 拒绝口径（返回 -1）：① dirPath 空白——本缝自有防御，非纯头文案；② 文件系统
 // 根退化（FolderExpand.h 契约 ⑧）与超 kMaxExpandedItems 上限——纯头中文 error
 // 逐字直传（三入口同文案纪律），且表格零改动、编辑内容不丢；③ 远端目标冲突
@@ -856,8 +872,8 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
     // （如 D:/a/bin 与 D:/b/bin）各自展开出「bin/…」同一远端首段，两次添加会得到
     // 同一 remotePath 的重复行、部署时后写覆盖静默累积。命中冲突即整体拒绝（返回
     // -1 + 中文 error，与上限/根退化同族拒绝形态），**在追加任何行之前**判定、表格
-    // 零改动——既有 flush 纪律（appendDeployRow→cellChanged→flushDeployTable）只在
-    // 全部校验通过后才被触发，冲突路径绝不出半入表状态。
+    // 零改动——flush 纪律（v2.15 波3 任务12 起：批量插入窗口→批末单次 flushDeployTable）
+    // 只在全部门禁校验通过后才被触发，冲突路径绝不出半入表状态。
     // 只比对「既有行 vs 本次新增」：单个目录展开内 rel 天然互异（文件系统路径互斥），
     // 本次添加不自冲突；扁平模式既有的同名散落文件后写覆盖语义不变（非本缝范围）。
     QSet<QString> existingRemotePaths;
@@ -883,6 +899,18 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
     }
 
     int added = 0;
+    // v2.15 波3 任务12 批量刷表收口：与 teAddFiles 批量窗口同法——blockSignals 抑制
+    // 逐行 cellChanged→flushDeployTable 全表重序列化（旧形态每行 flush 一次，N 行即
+    // N 次全表快照，近上限目录为 O(N²) 级卡顿；O(N²)→O(N) 结论仅由代码审查与该
+    // 抑制窗口背书，不写计时用例——CI 抖动无判据价值）。flushDeployTable 语义是
+    // 「整表快照覆盖 items[]」，逐行 flush 与末行后单次 flush 对 m_steps 终态等价；
+    // 单次 flush 走同一 m_binding/当前步/page 守卫（同 teRemoveItem 手动 flush 先例的
+    // 反向补集：信号被抑制时须显式补一次）。added==0（空目录）不 flush，与旧实现
+    // 「零行零 flush」逐字节一致；插入不移动当前单元格，tst_task_center_widget 已对
+    // currentCellChanged 新旧同为 0 取证（移除按钮启用态无副作用）。
+    // m_itemTable 构造于 setupDeployPage（构造函数无条件调用），本缝不可先于构造
+    // 可达，与 appendDeployRow 同样直接解引用（评审 M-3 去冗余守卫）。
+    m_itemTable->blockSignals(true);
     for (const folderexpand::ExpandedFile& file : expanded.files) {
         // 顶层扁平文件 rel 空 → 取文件名为远端末段（与映射层 items 组装同口径）；
         // 目录镜像项 rel 带「目录名/」首段 → composeRemotePath 单源拼接
@@ -894,5 +922,16 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
                         QStringLiteral("upload"), QStringLiteral("overwrite"));
         ++added;
     }
+    m_itemTable->blockSignals(false);
+    if (added > 0) {
+        flushDeployTable();
+        return added;
+    }
+    // 规格 §3.1 条款 4「空目录跳过不产条目、提示、不算错误」：返回值语义不变
+    // （仍返回 0、*error 保持空、表格零改动），提示沿用本对话框既有 QMessageBox
+    // 通道（validate 闸与波2 冲突拒绝同通道，无独立日志 sink 不另造），
+    // information 而非 warning——空目录不算错误。
+    QMessageBox::information(this, QStringLiteral("添加目录"),
+                             QStringLiteral("所选目录为空，未添加任何文件条目"));
     return added;
 }

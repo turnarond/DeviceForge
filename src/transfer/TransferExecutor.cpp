@@ -9,6 +9,8 @@
 #include <QThread>
 #include <QUuid>
 
+#include "transfer/EnsuredDirCache.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <utility>
@@ -280,19 +282,23 @@ QVector<QString> remoteDirectoryLevels(const QString& parent)
 
 } // namespace
 
-TransferExecutor::TransferExecutor(ITransferChannel& channel, Sleeper sleeper)
-    : m_channel(channel), m_sleeper(std::move(sleeper))
+TransferExecutor::TransferExecutor(ITransferChannel& channel,
+                                   Sleeper sleeper,
+                                   xfer::EnsuredDirCache* ensuredDirs)
+    : m_channel(channel), m_sleeper(std::move(sleeper)), m_ensuredDirs(ensuredDirs)
 {
 }
 
 TransferExecutor::TransferExecutor(ITransferChannel& channel,
                                    DeviceInfo device,
                                    AuthInfo& credentials,
-                                   Sleeper sleeper)
+                                   Sleeper sleeper,
+                                   xfer::EnsuredDirCache* ensuredDirs)
     : m_channel(channel)
     , m_sleeper(std::move(sleeper))
     , m_device(std::move(device))
     , m_credentials(&credentials)
+    , m_ensuredDirs(ensuredDirs)
 {
 }
 
@@ -426,12 +432,26 @@ bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
     if (lastSlash <= 0)
         return true; // 无父段（纯文件名）或父为根 "/"：根恒存在，无需确保
 
+    // v2.15 波3 任务11（波2 终审 I-3）：可选的运行级已确保目录缓存。唯一作用是
+    // 跳过「本运行内已被三层确认路径之一证实存在」的层的 stat 探测本身——缺失判定、
+    // 建目录、MKD 失败复检、确定性失败族与各 cancel 检查点语义逐字保留（nullptr 时
+    // 行为与波2 现状一致，见 tst_transfer_executor::nullEnsuredDirCacheKeepsParentProbeSequence）。
+    const auto markEnsured = [this](const QString& level) {
+        if (m_ensuredDirs)
+            m_ensuredDirs->insert(level);
+    };
+
     const QString parent = remotePath.left(lastSlash);
     bool creating = false; // 已越过第一个缺失层：其后各层直接创建，不再 stat
     for (const QString& level : remoteDirectoryLevels(parent)) {
         if (cancel.load()) {
             terminalResult = cancelledResult(0);
             return false;
+        }
+        if (!creating && m_ensuredDirs && m_ensuredDirs->contains(level)) {
+            // 缓存命中不旁路循环顶 cancel 检查点：每层迭代仍至少经过一次检查，
+            // 取消响应性不因跳过 stat 而退化。
+            continue;
         }
         if (!creating) {
             TransferFileStat levelStat;
@@ -441,8 +461,10 @@ bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
                 terminalResult = cancelledResult(0);
                 return false;
             }
-            if (statSucceeded && levelStat.exists)
+            if (statSucceeded && levelStat.exists) {
+                markEnsured(level);
                 continue;
+            }
             // stat 成功但 exists=false 与 stat 失败同臂：真实通道（如 FTP 列目录）
             // 的"父目录缺失"就表现为 stat 失败。创建失败才是确定性终局。
             creating = true;
@@ -454,8 +476,10 @@ bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
                 0);
             return false;
         }
-        if (m_channel.makeDirectory(level))
+        if (m_channel.makeDirectory(level)) {
+            markEnsured(level);
             continue;
+        }
         // 建目录报失败：先收口本次通道错误，再复检同一层以区分两类形态——真实 FTP 下
         // 父目录实际存在、仅 ensure 层 stat 恰逢连接瞬断时，MKD 已存在目录会报
         // 550/QUOTE_ERROR；此时复检若报存在，则该层视为已确保，继续遍历、上传照常
@@ -473,8 +497,10 @@ bool TransferExecutor::ensureRemoteParentDirectories(const QString& remotePath,
             terminalResult = cancelledResult(0);
             return false;
         }
-        if (reStatSucceeded && reStat.exists)
+        if (reStatSucceeded && reStat.exists) {
+            markEnsured(level);
             continue;
+        }
         // 复检仍缺失（或复检同样失败）→ 确定性失败族保持原样：不重连、不退避、不重试。
         terminalResult = failedResult(
             makeError(createError.code,
