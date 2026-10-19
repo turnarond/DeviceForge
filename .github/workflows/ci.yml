@@ -41,3 +41,21 @@ jobs:
       - run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
       - run: cmake --build build --config ${{ matrix.configuration }} --parallel
       - run: ctest --test-dir build -C ${{ matrix.configuration }} --output-on-failure
+      # 一次性诊断（不合回）：tst_ws_page_layout 在 runner 上零输出红，本地 6.11.1 常规与
+      # offscreen 两种平台都复现不出，且该工具与用例自 v2.14.1 起未改动。取三样证据：
+      # 屏几何、QtTest 落盘输出尾部、进程退出码。
+      - name: DIAG 屏几何
+        if: always()
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          $sc = [System.Windows.Forms.Screen]::PrimaryScreen
+          "Screen: $($sc.Bounds.Width)x$($sc.Bounds.Height) work=$($sc.WorkingArea.Width)x$($sc.WorkingArea.Height)"
+          Get-CimInstance Win32_VideoController | ForEach-Object { "VC: $($_.Name) $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
+      - name: DIAG 直跑 tst_ws_page_layout 并打落盘输出
+        if: always()
+        run: |
+          $env:PATH = "$env:QT_ROOT_DIRin;$PWDuild\Release;$PWDuild\Debug;$env:PATH"
+          $exe = "build/${{ matrix.configuration }}/tst_ws_page_layout.exe"
+          & $exe -o diag-out.txt,txt
+          "EXITCODE=$LASTEXITCODE"
+          if (Test-Path diag-out.txt) { "BYTES=" + (Get-Item diag-out.txt).Length; Get-Content diag-out.txt -Encoding UTF8 -Tail 40 } else { "NO OUTPUT FILE" }
