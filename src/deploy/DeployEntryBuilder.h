@@ -53,7 +53,9 @@ namespace deployentry {
 //    目录内容=remoteDir/rel 镜像项）、expandedItemsOut=展开条目原样（保存为模板
 //    映射层消费），两向量同长、顺序与展开序一致；
 // ③ 返回 false ⇔ 拒绝——errorOut 为完整中文文案（超上限/根退化=纯头逐字直传；
-//    全空目录=本头「所选目录为空…」），三输出容器零写入。
+//    全空目录=本头「所选目录为空…」）。三输出容器（filesOut/remotePathsOut/
+//    expandedItemsOut）在函数入口即清空，故拒绝返回时它们**为空**（不写任何条目），
+//    与调用方「拒绝即不产出半份清单」的期望一致（tst_deploy_entry_builder 已钉）。
 // scanner 注入缝沿用 FolderExpand 口径以脱盘测试上限拒绝分支；类型判定不脱盘
 // （实况分类正是本函数的修复语义）。
 inline bool build(const QList<folderexpand::Selection>& selections,

@@ -18,6 +18,7 @@
 - **三入口目录展开接线（T9）**：新装配纯头 `src/deploy/DeployEntryBuilder.h`（`deployentry::build`：分类以**点击时刻磁盘实况** QFileInfo::isDir 为准、面板行快照丢弃重算——闭合快照过期绕过 5000 上限的窗口，评审 I-1/I-2）；部署页单发、模板编辑器 teAddDir（`addDeployDirectoryEntries` 直调缝，展开即文件条目入表、拒绝纯头文案逐字弹显表格零改动）、部署页保存为模板三入口同口径。`DeployJob` 增**每条目远端路径贯通**（`entryRemotePaths` 平行向量：非空=显式条目模式，Job 不派生 basename、不目录遍历、跳过自身 mkdir 环，远端子目录全由执行器确保步创建；requestKey 纳入每条目远端路径——同清单仅布局变化不再误判同一请求）；空向量=v2.14 扁平口径逐字不变。新目标 `tst_deploy_entry_builder`；`tst_deploy_loop`/`tst_task_center_widget` 增镜像与直调用例。
 - **SFTP 单发落点加深一层（行为变更，用户批准裁定）**：放弃 v2.14 及更早 `DeployJob` legacy 目录展开的协议不对称（FTP 包含顶层目录名 / SFTP 上传目录内容），三入口统一为**镜像口径（目录名为首段）**——由此 **SFTP 单发部署所选目录的远端落点比 v2.14 深一层**（此前 `/apps` 选 `pkg/` 内容直落 `/apps/`，现落 `/apps/pkg/`；FTP 落点不变）。属现场可见变更，依赖旧 SFTP 落点的脚本/站点需在 v2.15 发布说明中知悉并复核目标路径。
 - **波2 收口（T10）**：`tst_deploy_loop` 增**真盘目录树环回集成用例**（scanDir 实扫→deployentry::build 装配→Backend/Job 显式条目模式→TransferExecutor 确保步→LocalTransferChannel 真盘单层 mkdir→目标树与源树镜像逐文件一致，路径集合+字节双断言、无 .part 残留）——"远端子目录由执行器创建"这条新链路的唯一端到端防线（摘除确保步即红的 neuter 取证）。勘误三处（RELEASE_NOTES v2.14.1/CHANGELOG [2.14.1] 段末注记 + 用户手册就地改实况）、接口参考 makeDirectory/能力位/DeployJob 双路径与 uploadFolder 预留口径就实、用户手册目录语义+5000 上限+SFTP 落点变更+teAddDir 行为补写、规格 §3.1 与计划初稿装配措辞勘误注记、`tests/AGENTS.md` 计数定版 **51**（波2 新增 `tst_folder_expand`/`tst_deploy_entry_builder` 两目标；计划初稿写 50 系未计任务9 新增目标）。
+  > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。
 
 ## [2.14.1] — 2026-10-18
 

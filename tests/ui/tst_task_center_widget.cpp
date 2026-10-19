@@ -41,6 +41,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSet>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -1338,6 +1339,87 @@ private slots:
         auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
         QVERIFY(table);
         QCOMPARE(table->rowCount(), 0);          // 拒绝时表格零改动，停留编辑不丢内容
+    }
+
+    // v2.15 波2 终审 I-1（规格 §3.1 条款 4 远端目标冲突检测）：teAddDir 两次添加
+    // **同名不同父**目录（a/bin 与 b/bin）→ 二者展开出同一远端相对首段 "bin/…"，
+    // 第二次添加的展开行远端路径与条目表既有行冲突 → 整体拒绝（中文 error、表格零
+    // 改动、收集 items 无重复 remotePath、部署不再后写覆盖静默累积）；非冲突目录
+    // （c/pkg）仍成功入表（无误拒）。
+    void editorDialog_addDeployDirectory_rejectsRemoteTargetCollision()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("a/bin")));
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("b/bin")));
+        {
+            QFile f(tmp.filePath(QStringLiteral("a/bin/tool.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("1");
+        }
+        {
+            QFile f(tmp.filePath(QStringLiteral("b/bin/tool.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("2");   // 与 a/bin/tool.txt 同名不同父 → 展开远端 rel 同为 "bin/tool.txt"
+        }
+
+        TaskTemplate in;
+        in.name = QStringLiteral("冲突拒绝").toStdString();
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* remoteDir = dlg.findChild<QLineEdit*>(QStringLiteral("teRemoteDir"));
+        QVERIFY(remoteDir);
+        remoteDir->setText(QStringLiteral("/opt/app"));
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+
+        QString error;
+        // 第一次添加 a/bin → 成功 1 行（远端 /opt/app/bin/tool.txt）
+        QCOMPARE(dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("a/bin")), &error), 1);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(table->rowCount(), 1);
+
+        // 第二次添加 b/bin → 展开远端目标与既有行同为 /opt/app/bin/tool.txt → 拒绝 -1、
+        // 中文 error、表格零改动（旧实现此处静默追加重复远端行——红）
+        QCOMPARE(dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("b/bin")), &error), -1);
+        QVERIFY2(!error.isEmpty(), "远端目标冲突必须给出中文拒绝原因");
+        QVERIFY2(error.contains(QStringLiteral("冲突")), qPrintable(error));
+        QCOMPARE(table->rowCount(), 1);
+
+        // 收集 items 无重复 remotePath（防半入表/后写覆盖静默累积）
+        {
+            TaskTemplate out;
+            QVERIFY(dlg.collect(&out));
+            const QVariantList items = out.steps[0].parameters.value(QStringLiteral("items")).toList();
+            QCOMPARE(items.size(), 1);
+            QStringList remotePaths;
+            for (const QVariant& v : items)
+                remotePaths << v.toMap().value(QStringLiteral("remotePath")).toString();
+            const QSet<QString> unique(remotePaths.begin(), remotePaths.end());
+            QCOMPARE(unique.size(), remotePaths.size());
+        }
+
+        // 非冲突目录仍成功（无误拒）：c/pkg → rel "pkg/…" 与既有 "bin/…" 无碰撞
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("c/pkg")));
+        {
+            QFile f(tmp.filePath(QStringLiteral("c/pkg/tool.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("3");
+        }
+        QCOMPARE(dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("c/pkg")), &error), 1);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(table->rowCount(), 2);
+        TaskTemplate afterNonColliding;
+        QVERIFY(dlg.collect(&afterNonColliding));
+        const QVariantList fitems = afterNonColliding.steps[0].parameters.value(QStringLiteral("items")).toList();
+        QCOMPARE(fitems.size(), 2);
+        QStringList fremotes;
+        for (const QVariant& v : fitems)
+            fremotes << v.toMap().value(QStringLiteral("remotePath")).toString();
+        const QSet<QString> funique(fremotes.begin(), fremotes.end());
+        QCOMPARE(funique.size(), 2);   // 两条不同远端目标：/opt/app/bin/tool.txt 与 /opt/app/pkg/tool.txt
     }
 
     // ── ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令 + timeoutSec + protocol）──

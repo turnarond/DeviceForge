@@ -34,6 +34,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -827,7 +828,10 @@ void TaskTemplateEditorDialog::accept()
 // 窗口内忽略；按钮腿必然非绑定态，直调缝同样不设守卫以复现表格行为）。
 // 拒绝口径（返回 -1）：① dirPath 空白——本缝自有防御，非纯头文案；② 文件系统
 // 根退化（FolderExpand.h 契约 ⑧）与超 kMaxExpandedItems 上限——纯头中文 error
-// 逐字直传（三入口同文案纪律），且表格零改动、编辑内容不丢。
+// 逐字直传（三入口同文案纪律），且表格零改动、编辑内容不丢；③ 远端目标冲突
+// （规格 §3.1 条款 4，波2 终审 I-1）——本次展开行的远端路径与条目表既有行相同
+// 即整体拒绝（本缝中文 error、追加任何行之前判定、表格零改动），杜绝同名目录多次
+// 添加静默累积重复远端目标、部署后写覆盖。
 int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, QString* error)
 {
     if (error)
@@ -846,6 +850,38 @@ int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, 
         return -1;
     }
     const QString prefix = m_remoteDir ? m_remoteDir->text().trimmed() : QString();
+
+    // v2.15 波2 终审 I-1（规格 §3.1 条款 4「远端目标冲突检测」落地）：把展开产物
+    // 入条目表前，逐条比对新行远端路径与表内既有行的远端路径——同名不同父目录
+    // （如 D:/a/bin 与 D:/b/bin）各自展开出「bin/…」同一远端首段，两次添加会得到
+    // 同一 remotePath 的重复行、部署时后写覆盖静默累积。命中冲突即整体拒绝（返回
+    // -1 + 中文 error，与上限/根退化同族拒绝形态），**在追加任何行之前**判定、表格
+    // 零改动——既有 flush 纪律（appendDeployRow→cellChanged→flushDeployTable）只在
+    // 全部校验通过后才被触发，冲突路径绝不出半入表状态。
+    // 只比对「既有行 vs 本次新增」：单个目录展开内 rel 天然互异（文件系统路径互斥），
+    // 本次添加不自冲突；扁平模式既有的同名散落文件后写覆盖语义不变（非本缝范围）。
+    QSet<QString> existingRemotePaths;
+    if (m_itemTable) {
+        for (int row = 0; row < m_itemTable->rowCount(); ++row) {
+            const QTableWidgetItem* remoteCell = m_itemTable->item(row, 1);
+            if (remoteCell)
+                existingRemotePaths.insert(remoteCell->text().trimmed());
+        }
+    }
+    for (const folderexpand::ExpandedFile& file : expanded.files) {
+        const QString rel = file.remoteRel.isEmpty()
+            ? QFileInfo(file.localPath).fileName()
+            : file.remoteRel;
+        const QString remotePath = folderexpand::composeRemotePath(prefix, rel);
+        if (existingRemotePaths.contains(remotePath)) {
+            if (error)
+                *error = QStringLiteral("添加目录的远端目标与条目表已有条目冲突（「%1」），"
+                                        "请勿重复添加同名目录或先移除冲突条目")
+                             .arg(remotePath);
+            return -1;
+        }
+    }
+
     int added = 0;
     for (const folderexpand::ExpandedFile& file : expanded.files) {
         // 顶层扁平文件 rel 空 → 取文件名为远端末段（与映射层 items 组装同口径）；
