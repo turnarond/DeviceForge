@@ -223,6 +223,10 @@ class SmokeRunner:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    # 输出码页钉 UTF-8：中文用法行在 cp1252 一类旧码页控制台下会抛 UnicodeEncodeError，
+    # 把约定的退出码 2 变成 1（GitHub runner 与本仓 test_smoke 在 CI 上的实况）。
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 1:
         print("用法: python smoke.py <exe路径>")

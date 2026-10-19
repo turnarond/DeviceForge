@@ -158,6 +158,10 @@ def check_versions(root: str = ".", sources: Tuple = DEFAULT_SOURCES) -> CheckRe
 # ---------------------------------------------------------------- CLI
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # 输出码页钉 UTF-8：报告行含中文路径（docs/01-白皮书/…），而控制台码页可能是
+    # cp1252 之类编不出中文的旧页——GitHub windows runner 上就是靠这一点把 4 个用例打成 ERROR。
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="版本一致性校验（以 CMakeLists.txt 为唯一权威）")
     ap.add_argument("--root", default=".", help="仓库根目录（默认当前目录）")
     args = ap.parse_args(argv)
