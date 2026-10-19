@@ -872,6 +872,74 @@ if(_qt_bin_dir)
             "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
 
+# --- v2.15 波3 任务13（方案 C）部署页工具栏两行化布局回归 ---
+# 仿 tst_task_center_widget + tst_ws_page_layout（Widget 组装层直测）：构造 FtpDeployWidget
+# 断言 deployToolbar 容器 = QVBoxLayout + 两个 QHBoxLayout 行（连接/主操作 = 行1，
+# 选项/结果 = 行2）。源集合 = FtpDeployWidget 的完整可链接闭包：widget + backend/runner/job +
+# 双栏面板族（FileBrowserPanel/Local|RemoteFileSource/DirCompare/FileEncoding/FileEditorDialog/
+# RemoteFileModel）+ MultiProgressWidget/DeviceBusWidget + task 编辑器闭包 + transfer + adapter +
+# config + device + ToolWidget 基类。构造仅走 setupUi（不建后端/不触网：connectBackendSignals
+# 见 m_backend==nullptr 直接返回）。
+add_executable(tst_deploy_toolbar_layout
+    deploy/tst_deploy_toolbar_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/app/DeviceForge.qrc
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpDeployBackend.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeploymentRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployJob.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/DeployReport.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/MultiProgressWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/FtpListParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/framework/ToolWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileBrowserPanel.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/LocalFileSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/RemoteFileSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DirCompare.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileEncoding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/FileEditorDialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/DeviceBusWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
+    ${CMAKE_SOURCE_DIR}/src/adapter/ProtocolRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/command/BatchCommandRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/device/DeviceProfileCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateEditorDialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskTemplateCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskRunStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/task/TaskExecutionEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferScheduler.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
+)
+target_include_directories(tst_deploy_toolbar_layout PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(tst_deploy_toolbar_layout PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Concurrent Qt6::Sql Qt6::Test
+    ${LIBCURL_IMPL_LIB}
+    ${LIBSSH2_LIB}
+    lwlog
+    lwserverbase
+)
+if(WIN32)
+    target_link_libraries(tst_deploy_toolbar_layout PRIVATE crypt32)
+endif()
+add_test(NAME tst_deploy_toolbar_layout COMMAND tst_deploy_toolbar_layout)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_toolbar_layout PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};PATH=path_list_prepend:${CMAKE_SOURCE_DIR}/lib;QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
 # --- MODBUS 目标数据模型、持久化与旧配置迁移测试（v2.12 Task 1）---
 # 编入产品源码 ModbusTargetStore.cpp（纯头文件数据模型 ModbusTargetTypes.h 随含）+
 #     ConfigStore.cpp（SQLite 持久化）+ DeviceRegistry/Codec（迁移读取设备档案端点）；

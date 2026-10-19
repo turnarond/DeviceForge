@@ -571,10 +571,19 @@ void FtpDeployWidget::clearTransferCredential(const QUuid& taskId)
 
 void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
 {
+    // 工具栏容器：两行布局（v2.15 波3 任务13 方案 C，窄屏不再右侧裁切）
+    //   第 1 行 = 连接组（协议/设备/端口/FTPS/状态点）│ 分隔条 │ 主操作（刷新/部署/保存为模板）
+    //   第 2 行 = 部署选项（清空/重启及重启四参）│ 分隔条 │ 结果操作（导出报告/重试失败设备）
     auto* toolbarWidget = new QWidget(this);
-    auto* toolbar = new QHBoxLayout(toolbarWidget);
+    toolbarWidget->setObjectName("deployToolbar");
+    auto* toolbar = new QVBoxLayout(toolbarWidget);
     toolbar->setContentsMargins(0, 0, 0, 0);
-    toolbar->setSpacing(6);   // 组间间距
+    toolbar->setSpacing(4);   // 两行行间距
+
+    auto* row1 = new QHBoxLayout();   // 连接与执行
+    row1->setSpacing(6);              // 组间间距
+    auto* row2 = new QHBoxLayout();   // 选项与结果
+    row2->setSpacing(6);              // 组间间距
 
     // === 连接组：协议 | 设备 | 端口 | FTPS 加密 | 连接状态点 ===
     auto* connGroup = new QHBoxLayout();
@@ -649,7 +658,11 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     separator->setFrameShadow(QFrame::Plain);
     separator->setFixedWidth(1);
 
-    // === 部署组：清空 | 重启 | 刷新 | 部署 ===
+    // 连接组 + 分隔条入第 1 行（主操作按钮随后 append）
+    row1->addLayout(connGroup);
+    row1->addWidget(separator);
+
+    // === 部署选项组（第 2 行）：清空 | 重启（+ 协议/命令/超时/重试四参） ===
     auto* deployGroup = new QHBoxLayout();
     deployGroup->setSpacing(4);
 
@@ -710,12 +723,15 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     connect(m_rebootCheck, &QCheckBox::toggled, this, updateRebootControls);
     updateRebootControls(m_rebootCheck->isChecked());
 
+    // 部署选项组入第 2 行
+    row2->addLayout(deployGroup);
+
     // 「⟳ 刷新」按钮（2026-08-12 修复波回归：onRefreshRemote 的 UI 入口）
     m_refreshBtn = new QPushButton("⟳ 刷新", this);
     m_refreshBtn->setObjectName("refreshBtn");
     m_refreshBtn->setToolTip("重新连接远程并刷新文件列表");
     connect(m_refreshBtn, &QPushButton::clicked, this, &FtpDeployWidget::onRefreshRemote);
-    deployGroup->addWidget(m_refreshBtn);
+    row1->addWidget(m_refreshBtn);
 
     m_deployBtn = new QPushButton(this);
     m_deployBtn->setObjectName("btnPrimary");
@@ -724,7 +740,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     // 初始文本「▶ 部署」：设备总线同步前不显示「0 台设备」；
     // 同步后由 setDeviceBusWidget → updateDeployBtnText() 更新为「▶ 部署到 N 台设备」
     m_deployBtn->setText(QStringLiteral("▶ 部署"));
-    deployGroup->addWidget(m_deployBtn);
+    row1->addWidget(m_deployBtn);
 
     // v2.14 #49-2 第三腿：「保存为模板」——把当前单次部署配置固化为任务模板
     m_saveTemplateBtn = new QPushButton(QStringLiteral("保存为模板"), this);
@@ -732,7 +748,8 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_saveTemplateBtn->setToolTip(QStringLiteral(
         "把当前文件清单、目标目录与勾选设备固化为可复用的任务模板（部署前清空/FTPS/端口等连接配置不进模板）"));
     connect(m_saveTemplateBtn, &QPushButton::clicked, this, &FtpDeployWidget::onSaveAsTemplateClicked);
-    deployGroup->addWidget(m_saveTemplateBtn);
+    row1->addWidget(m_saveTemplateBtn);
+    row1->addStretch();
 
     // === 结果操作组（v2.8 Task 5）：导出报告 | 重试失败设备（部署结束后点亮） ===
     auto* resultSeparator = new QFrame(this);
@@ -760,12 +777,15 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
             this, &FtpDeployWidget::onRetryFailedClicked);
     resultGroup->addWidget(m_retryBtn);
 
-    toolbar->addLayout(connGroup);
-    toolbar->addWidget(separator);
-    toolbar->addLayout(deployGroup);
-    toolbar->addWidget(resultSeparator);
-    toolbar->addLayout(resultGroup);
-    toolbar->addStretch();
+    // 结果分隔条 + 结果操作组入第 2 行
+    row2->addWidget(resultSeparator);
+    row2->addLayout(resultGroup);
+    row2->addStretch();
+
+    toolbar->addLayout(row1);
+    toolbar->addLayout(row2);
+    // 焦点序说明：本仓无 setTabOrder，Tab 序随子控件重新挂载父级的次序（行 1 组→行 1 主操作→行 2），
+    // 即「先连上并执行、再调选项与结果」；改两行归属时同步复核这条隐式契约。
 
     mainLayout->addWidget(toolbarWidget);
 }

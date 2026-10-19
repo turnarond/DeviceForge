@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>DeviceForge · 窄屏工具栏视觉稿（v2.15 波3 任务 13 关卡）</title>
+<style>
+/* ============================================================
+   色值来源（唯一依据，未自由发挥）：
+   src/app/darkstyle.qss      —— data-theme="dark"
+   src/app/darkstyle-light.qss—— data-theme="light"
+   QSS 硬约束：Qt QSS 不支持 box-shadow / CSS 渐变（须 qlineargradient），
+   故稿内所有控件视觉只用纯色 + 1px 边框；页面外围的网格/标尺属审校辅助层。
+   ============================================================ */
+:root[data-theme="dark"]{
+  --bg:#0B0E14; --panel:#141820; --table:#0E1219; --line:#252A33; --line2:#333B48;
+  --text:#C8CCD4; --muted:#7B8494; --bright:#E4E7EC; --white:#FFFFFF;
+  --gold:#F0A030; --gold-bd:#D48820; --gold-ink:#1A1200; --gold-dim:#2A2518;
+  --teal:#40C8A0; --red:#E85848;
+  --btn:#232A36; --btn-hov:#2C3543; --btn-dis:#161A22; --ink-dis:#5A6270;
+  --rail:#0E1219; --status:#141820;
+  --page:#05070B; --grid:rgba(120,132,148,.07); --note:#8B93A3;
+}
+:root[data-theme="light"]{
+  --bg:#F5F6F8; --panel:#FFFFFF; --table:#ECEFF3; --line:#D0D5DD; --line2:#C4CAD4;
+  --text:#2A2F38; --muted:#6B7280; --bright:#1B1F26; --white:#1B1F26;
+  --gold:#D48820; --gold-bd:#B87A1A; --gold-ink:#2A2F38; --gold-dim:#F5E3C8;
+  --teal:#2E9E7C; --red:#C8382E;
+  --btn:#E4E8EE; --btn-hov:#D8DEE7; --btn-dis:#ECEFF3; --ink-dis:#9AA1AD;
+  --rail:#ECEFF3; --status:#FFFFFF;
+  --page:#E7EAEF; --grid:rgba(42,47,56,.06); --note:#5C6370;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:30px 34px 70px;background:var(--page);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+  color:var(--text);font:12px/1.55 "Microsoft YaHei","Segoe UI",sans-serif}
+h1{font-size:19px;margin:0 0 4px;color:var(--bright);letter-spacing:.4px}
+h1 em{font-style:normal;color:var(--gold)}
+.meta{color:var(--note);font-size:11px;margin-bottom:20px}
+.meta code{font-family:Consolas,monospace;color:var(--text)}
+h2{font-size:14px;color:var(--gold);margin:34px 0 2px;letter-spacing:.3px}
+h2 .tag{font-size:10px;font-weight:400;color:var(--muted);margin-left:8px}
+p.note{color:var(--note);font-size:11px;margin:0 0 12px;max-width:1120px}
+.mono{font-family:Consolas,Monaco,monospace}
+
+/* ---- 控制条 ---- */
+.bar{position:sticky;top:0;z-index:40;display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 14px;margin-bottom:10px}
+.bar b{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:5px;overflow:hidden}
+.seg button{background:var(--btn);border:0;border-right:1px solid var(--line2);color:var(--text);
+  padding:4px 12px;font:600 11px/1.4 "Microsoft YaHei";cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--gold);color:var(--gold-ink)}
+.ck{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text);cursor:pointer}
+.ck i{width:15px;height:15px;border:1px solid var(--line2);border-radius:3px;display:inline-flex;
+  align-items:center;justify-content:center;font-size:10px;color:var(--gold-ink);background:transparent}
+.ck.on i{background:var(--gold);border-color:var(--gold)}
+
+/* ---- 窗口仿真 ---- */
+.viewport{position:relative;border:1px solid var(--gold-bd);border-radius:8px;overflow:hidden;
+  margin-bottom:8px;background:var(--bg)}
+.vp-label{position:absolute;top:0;right:0;z-index:30;background:var(--gold);color:var(--gold-ink);
+  font:700 10px/1 "Microsoft YaHei";padding:4px 8px;border-bottom-left-radius:6px;letter-spacing:.4px}
+.win{background:var(--bg);display:flex;min-height:190px}
+.rail{flex:0 0 56px;background:var(--rail);border-right:1px solid var(--line);padding:8px 0;
+  display:flex;flex-direction:column;gap:2px}
+.rail button{width:56px;height:48px;background:transparent;border:0;border-left:2px solid transparent;
+  color:var(--muted);font:10px/1.25 "Microsoft YaHei";cursor:default;white-space:pre-line}
+.rail button.on{color:var(--gold);background:var(--panel);border-left-color:var(--gold)}
+.rail .sp{margin-top:auto}
+.main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.menubar{display:flex;gap:18px;padding:5px 12px;background:var(--bg);border-bottom:1px solid var(--line);
+  color:var(--text);font-size:12px}
+.busrow{display:flex;align-items:center;gap:4px;padding:6px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.pill{background:var(--btn);border:1px solid var(--line2);border-radius:4px;color:var(--text);
+  padding:2px 8px;font:400 11px/1.5 "Microsoft YaHei";white-space:nowrap;border-left:3px solid var(--teal)}
+.pill.sel{border-color:var(--gold);background:var(--gold-dim)}
+.pill.off{border-left-color:var(--red)}
+.addbtn{background:transparent;border:1px dashed var(--line2);border-radius:4px;color:var(--muted);
+  padding:2px 8px;font-size:11px;white-space:nowrap}
+
+/* ---- 被审校对象：工具栏 ---- */
+/* 盒模型对齐 Qt：QSS QPushButton{min-width:85px;padding:4px 10px} 的 min-width 作用于**内容宽**，
+   故短标签按钮总宽 = 85+10+10+1+1 = 107（下方 min-width:107px 是 border-box 语义，等价）。
+   代码 setFixedWidth(n)/setMinimumWidth(n) 设的是**控件总宽**，故用 .w80/.w160/... 直接给总宽。 */
+.tbarwrap{padding:8px 12px 0;position:relative}
+.tbar{display:flex;align-items:center;width:max-content;gap:6px}
+.grp{display:flex;align-items:center;width:max-content;gap:4px}
+.sep{width:1px;align-self:stretch;background:var(--line);flex:0 0 1px}
+.lb{color:var(--text);font-weight:500;white-space:nowrap;font-size:12px}
+.btn{background:var(--btn);border:1px solid var(--line2);border-radius:5px;padding:4px 10px;
+  color:var(--bright);font:600 12px/1.4 "Microsoft YaHei";white-space:nowrap;min-width:107px;text-align:center}
+.btn.dis{background:var(--btn-dis);border-color:var(--line);color:var(--ink-dis)}
+.btn.pri{background:var(--gold);border:1px solid var(--gold-bd);color:var(--gold-ink);min-height:30px}
+.btn.ico{min-width:0;padding:4px 8px}
+.cmb,.spn,.edt{background:var(--table);border:1px solid var(--line2);border-radius:4px;
+  padding:4px 8px;color:var(--white);font-size:12px;white-space:nowrap}
+.cmb::after{content:" ▾";color:var(--muted)}
+.spn::after{content:" ▴▾";color:var(--muted);font-size:8px;margin-left:3px}
+.w80{width:80px}.w70{width:70px}.w110{width:110px}.w55{width:55px}.w45{width:45px}
+.w160{min-width:160px}
+/* 端口 QSpinBox 无显式定宽：sizeHint 取 range 上限 65535 的文本宽 + 上下箭头区 */
+.wspin{width:78px}
+.cbx{display:inline-flex;align-items:center;gap:10px;color:var(--text);font-weight:500;font-size:12px;white-space:nowrap}
+.cbx i{width:18px;height:18px;border:2px solid var(--line2);border-radius:3px;background:var(--table);flex:0 0 18px}
+.cbx.on i{background:var(--gold);border-color:var(--gold)}
+.dot{width:10px;height:10px;border-radius:5px;background:var(--muted);flex:0 0 10px}
+.dot.ok{background:var(--teal)}
+.more{min-width:0;padding:4px 9px;letter-spacing:1px}
+.statusbar{margin-top:auto;display:flex;align-items:center;gap:14px;padding:4px 12px;
+  background:var(--status);border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+.statusbar b{color:var(--text);font-weight:500}
+
+/* ---- 溢出折叠浮层 ---- */
+.pop{position:relative;margin:6px 0 0 auto;width:230px;background:var(--panel);
+  border:1px solid var(--line2);border-radius:6px;padding:6px}
+.pop:before{content:"";position:absolute;top:-6px;right:26px;width:10px;height:10px;
+  background:var(--panel);border-left:1px solid var(--line2);border-top:1px solid var(--line2);transform:rotate(45deg)}
+.pop div{padding:6px 8px;border-radius:4px;color:var(--text);font-size:12px;white-space:nowrap}
+.pop div.hi{color:var(--bright);font-weight:600}
+.pop div:hover{background:var(--gold-dim);color:var(--gold)}
+.pop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.pop .cap{font-size:10px;color:var(--muted);letter-spacing:1px;padding:2px 8px 4px}
+
+/* ---- 裁切标尺 ---- */
+.clip{position:absolute;top:0;bottom:0;width:0;border-right:2px dashed var(--red);z-index:25;pointer-events:none}
+.clip span{position:absolute;top:50%;right:3px;transform:translateY(-50%) writing-mode:vertical-rl;
+  background:var(--red);color:#fff;font:700 9px/1 "Microsoft YaHei";padding:6px 3px;border-radius:3px;letter-spacing:1px}
+.hatch{position:absolute;top:0;bottom:0;z-index:20;pointer-events:none;opacity:.35;
+  background:repeating-linear-gradient(45deg,var(--red) 0 2px,transparent 2px 7px)}
+
+/* ---- 宽度账 ---- */
+.acct{display:flex;flex-wrap:wrap;gap:6px 18px;margin:2px 0 6px;font-size:11px;color:var(--note)}
+.acct b{color:var(--bright);font-family:Consolas,monospace;font-weight:600}
+.acct .bad b{color:var(--red)}
+.acct .good b{color:var(--teal)}
+table.cmp{border-collapse:collapse;margin-top:14px;font-size:11.5px;max-width:1180px}
+table.cmp th{background:var(--panel);color:var(--text);font-weight:600;text-align:left;
+  padding:7px 10px;border:1px solid var(--line)}
+table.cmp td{padding:7px 10px;border:1px solid var(--line);color:var(--text);vertical-align:top}
+table.cmp tr.rec td{background:var(--gold-dim)}
+table.cmp td b.g{color:var(--teal)}table.cmp td b.r{color:var(--red)}
+/* 标注模式 */
+.annot .el{outline:1px dotted var(--gold)}
+.annot .el:after{content:attr(data-w);position:absolute;transform:translateY(-16px);font:9px/1 Consolas;
+  color:var(--gold)}
+.el{position:relative}
+.foot{margin-top:40px;border-top:1px solid var(--line);padding-top:14px;font-size:11px;color:var(--note);max-width:1150px}
+.foot code{font-family:Consolas,monospace;color:var(--text)}
+</style>
+</head>
+<body>
+
+<h1>DeviceForge · <em>窄屏工具栏</em> 视觉稿</h1>
+<div class="meta">
+  v2.15 波3 任务 13（关卡：<b>批准本稿之前不写产品代码</b>）｜基线 <code>main@1213ab9</code>｜规格 §4｜
+  色值取自 <code>src/app/darkstyle.qss</code> 与 <code>darkstyle-light.qss</code>｜
+  被改对象 <code>FtpDeployWidget::setupToolbar</code>（:572-771，单条 QHBoxLayout）
+</div>
+
+<div class="bar">
+  <b>主题</b>
+  <span class="seg" id="segTheme">
+    <button data-theme-val="dark" class="on">深色</button><button data-theme-val="light">浅色</button>
+  </span>
+  <b>视口宽</b>
+  <span class="seg" id="segVp">
+    <button data-vp="1920" class="on">1920</button><button data-vp="1600">1600</button><button data-vp="1366">1366</button><button data-vp="1280">1280</button>
+  </span>
+  <b>选中设备台数</b>
+  <span class="seg" id="segN">
+    <button data-n="1">1 台</button><button data-n="3" class="on">3 台</button><button data-n="12">12 台</button>
+  </span>
+  <b>显示</b>
+  <span class="seg" id="segZoom">
+    <button data-z="fit" class="on">适合窗口</button><button data-z="one">1:1（可横向滚动）</button>
+  </span>
+  <span class="ck on" id="ckAnnot"><i>✓</i>显示每项宽度来源</span>
+</div>
+
+<p class="note">
+  <b>宽度账口径（重要，请连同结论一起看）：</b>每个控件的宽度按代码定宽（<code>setFixedWidth(80/70/110/55/45)</code>、
+  <code>setMinimumWidth(160)</code>）与 QSS 盒模型（<code>QPushButton{min-width:85px; padding:4px 10px}</code>，min-width 作用于内容宽 ⇒ 短标签按钮总宽 107）
+  <b>推算</b>，合计由脚本实测本稿 DOM 得出。推算合计比 <code>~2010px</code>（v2.14 双屏诊断<b>实测</b>锚点，CHANGELOG:35）窄，
+  差额 <b>整份折算</b>为校准量并显式写在每节账上，所以"够不够"的判断用的是<b>锚点校准后的保守值</b>，不是乐观值。
+  红虚线 = 视口右边界；斜纹 = 被裁掉的示意带（宽度封顶 220px，真实缺口写在标线上）；<b>不会出现滚动条</b>——
+  QHBoxLayout 的 minimum 是子项之和，装不下就裁，不换行。
+</p>
+
+<h2>0 · 现状：一条放不下 <span class="tag">自然宽度 → 右侧被裁</span></h2>
+<p class="note">
+  单行 23 个控件：<b>连接组</b>（协议/设备/端口/FTPS/状态点）│ <b>部署组</b>（清空、重启及其 4 个参数、刷新、部署、保存为模板）│ <b>结果组</b>（导出报告、重试失败设备）。
+  低频次参数（重启协议/命令/超时/重试）与主操作挤在同一行，是宽度失控的根源。
+</p>
+<div class="viewport" id="vp0"><span class="vp-label"></span><div class="clip"><span>视口右边界</span></div><div class="hatch"></div>
+  <div class="win">
+    <div class="rail">
+      <button class="on">📁<br>文件<br>部署</button><button>📝<br>批量<br>命令</button><button>🔌<br>Web<br>Socket</button>
+      <button>📊<br>MOD<br>BUS</button><button>🌐<br>网络<br>调试</button><button>🔧<br>OPC<br>UA</button>
+      <button class="sp">🎯<br>任务<br>中心</button><button>⚙<br>设置</button>
+    </div>
+    <div class="main">
+      <div class="menubar"><span>文件</span><span>部署</span><span>帮助</span></div>
+      <div class="busrow"><span class="el pill sel" data-w="胶囊">S7-1500 10.20.3.11:21 ×</span><span class="el pill sel" data-w="胶囊">AM580 10.20.3.21:22 ×</span><span class="el pill off" data-w="胶囊">PLC-B 10.20.3.31:21 ×</span><span class="el addbtn" data-w="min-width:0">+ 添加</span></div>
+      <div class="tbarwrap"><div class="tbar">
+        <div class="grp">
+          <span class="el lb" data-w="文本">协议:</span><span class="el cmb w80" data-w="setFixedWidth(80) :587">FTP</span>
+          <span class="el lb" data-w="文本">设备:</span><span class="el cmb w160" data-w="setMinimumWidth(160) :607；实际随最长设备名增宽">S7-1500</span>
+          <span class="el lb" data-w="文本">端口:</span><span class="el spn wspin" data-w="无显式定宽：sizeHint=65535+箭头区">21</span>
+          <span class="el cbx" data-w="18+10+文本"><i></i>FTPS 加密</span><span class="el dot" data-w="setFixedSize(10,10) :629"></span>
+        </div>
+        <div class="sep"></div>
+        <div class="grp">
+          <span class="el cbx" data-w="18+10+文本"><i></i>部署前清空远程</span>
+          <span class="el cbx on" data-w="18+10+文本"><i>✓</i>部署后重启</span>
+          <span class="el lb" data-w="文本">协议:</span><span class="el cmb w70" data-w="setFixedWidth(70) :665">Telnet</span>
+          <span class="el lb" data-w="文本">命令:</span><span class="el edt w110" data-w="setFixedWidth(110) :669">reboot</span>
+          <span class="el lb" data-w="文本">超时:</span><span class="el spn w55" data-w="setFixedWidth(55) :676">10s</span>
+          <span class="el lb" data-w="文本">重试:</span><span class="el spn w45" data-w="setFixedWidth(45) :682">1</span>
+          <span class="el btn" data-w="85+20 兜底">⟳ 刷新</span>
+          <span class="el btn pri nbtn" data-w="随台数增长 :1343">▶ 部署到 3 台设备</span>
+          <span class="el btn" data-w="85+20 兜底">保存为模板</span>
+        </div>
+        <div class="sep"></div>
+        <div class="grp">
+          <span class="el btn dis" data-w="85+20 兜底">⬇ 导出报告</span>
+          <span class="el btn dis" data-w="文本>85">↻ 重试失败设备</span>
+        </div>
+      </div></div>
+      <div class="statusbar"><b>F2 重命名 · F4 预览/编辑 · F5 复制 → · Tab 切栏</b><span>本地 → 远程</span><span style="margin-left:auto">v2.14.1</span></div>
+    </div>
+  </div>
+</div>
+<div class="acct" id="acct0"></div>
+
+<h2>方案 A · 断点图标化 <span class="tag">短标签与文字退场，tooltip 承载名称</span></h2>
+<p class="note">
+  1400 以下触发：按钮退化为图标（<code>min-width:0</code>），前缀标签「协议:/设备:/端口:」并入 placeholder 式内联提示，
+  重启四参数折进「重启设置…」弹层。<b>代价：可发现性下降</b>——「保存为模板」这类新功能是文字按钮，图标化后老用户认不出。
+  Qt 侧无原生断点，需手写 <code>resizeEvent</code> 阈值切换（中等代价）。
+</p>
+<div class="viewport" id="vpA"><span class="vp-label"></span><div class="clip"><span>视口右边界</span></div><div class="hatch"></div>
+  <div class="win">
+    <div class="rail">
+      <button class="on">📁<br>文件<br>部署</button><button>📝<br>批量<br>命令</button><button>🔌<br>Web<br>Socket</button>
+      <button>📊<br>MOD<br>BUS</button><button>🌐<br>网络<br>调试</button><button>🔧<br>OPC<br>UA</button>
+      <button class="sp">🎯<br>任务<br>中心</button><button>⚙<br>设置</button>
+    </div>
+    <div class="main">
+      <div class="menubar"><span>文件</span><span>部署</span><span>帮助</span></div>
+      <div class="busrow"><span class="el pill sel" data-w="胶囊">S7-1500 10.20.3.11:21 ×</span><span class="el pill sel" data-w="胶囊">AM580 10.20.3.21:22 ×</span><span class="el pill off" data-w="胶囊">PLC-B 10.20.3.31:21 ×</span><span class="el addbtn" data-w="min-width:0">+ 添加</span></div>
+      <div class="tbarwrap"><div class="tbar">
+        <div class="grp">
+          <span class="el cmb w80" data-w="原 80，靠 tooltip 标明是协议">FTP</span>
+          <span class="el cmb" style="width:138px" data-w="QSS 兜底 120+16+2=138（代码 min 160 被断点覆盖）">S7-1500</span>
+          <span class="el spn wspin" data-w="sizeHint 同现状">21</span>
+          <span class="el cbx" data-w="图标态：仅方框+悬浮说明"><i></i></span><span class="el dot ok" data-w="状态点"></span>
+        </div>
+        <div class="sep"></div>
+        <div class="grp">
+          <span class="el cbx" data-w="清空远程"><i></i>清空</span>
+          <span class="el cbx on" data-w="部署后重启"><i>✓</i>重启</span>
+          <span class="el btn ico" data-w="min-width:0 覆盖">⚙</span>
+          <span class="el btn ico" data-w="⟳ 刷新">⟳</span>
+          <span class="el btn pri nbtn" data-w="主操作保文字">▶ 部署到 3 台</span>
+          <span class="el btn ico" data-w="保存为模板 → 图标">🗂</span>
+        </div>
+        <div class="sep"></div>
+        <div class="grp">
+          <span class="el btn ico dis" data-w="导出报告">⬇</span>
+          <span class="el btn ico dis" data-w="重试失败设备">↻</span>
+        </div>
+      </div></div>
+      <div class="statusbar"><b>图标态：鼠标悬停显示原名（tooltip 已配，:716/:732/:748/:756）</b><span style="margin-left:auto">v2.14.1</span></div>
+    </div>
+  </div>
+</div>
+<div class="acct" id="acctA"></div>
+
+<h2>方案 B · 溢出折叠「⋯」 <span class="tag">QToolBar 自带 extension 箭头，最省实现</span></h2>
+<p class="note">
+  把 <code>QHBoxLayout</code> 换成 <code>QToolBar</code>：Qt 在装不下时<b>自动</b>在右端给出 <code>⋯</code> 箭头，把溢出项收进浮层菜单，
+  无需自算断点（<code>darkstyle.qss:530</code> 的 QToolBar 规则现为死样式，届时启用即可）。<b>代价：溢出集合由 Qt 决定，
+  「部署」按钮可能被自己的箭头收进去</b>——需给主操作设 <code>setPriority(QToolBar::High)</code> 保它在主行。
+</p>
+<div class="viewport" id="vpB"><span class="vp-label"></span><div class="clip"><span>视口右边界</span></div><div class="hatch"></div>
+  <div class="win">
+    <div class="rail">
+      <button class="on">📁<br>文件<br>部署</button><button>📝<br>批量<br>命令</button><button>🔌<br>Web<br>Socket</button>
+      <button>📊<br>MOD<br>BUS</button><button>🌐<br>网络<br>调试</button><button>🔧<br>OPC<br>UA</button>
+      <button class="sp">🎯<br>任务<br>中心</button><button>⚙<br>设置</button>
+    </div>
+    <div class="main">
+      <div class="menubar"><span>文件</span><span>部署</span><span>帮助</span></div>
+      <div class="busrow"><span class="el pill sel" data-w="胶囊">S7-1500 10.20.3.11:21 ×</span><span class="el pill sel" data-w="胶囊">AM580 10.20.3.21:22 ×</span><span class="el pill off" data-w="胶囊">PLC-B 10.20.3.31:21 ×</span><span class="el addbtn" data-w="min-width:0">+ 添加</span></div>
+      <div class="tbarwrap"><div class="tbar">
+        <div class="grp">
+          <span class="el lb" data-w="文本">协议:</span><span class="el cmb w80" data-w="setFixedWidth(80) :587">FTP</span>
+          <span class="el lb" data-w="文本">设备:</span><span class="el cmb w160" data-w="setMinimumWidth(160) :607">S7-1500</span>
+          <span class="el lb" data-w="文本">端口:</span><span class="el spn wspin" data-w="无定宽：sizeHint">21</span>
+          <span class="el cbx" data-w="FTPS 加密"><i></i>FTPS 加密</span><span class="el dot ok" data-w="状态点"></span>
+        </div>
+        <div class="sep"></div>
+        <div class="grp">
+          <span class="el cbx" data-w="清空远程"><i></i>部署前清空远程</span>
+          <span class="el btn" data-w="85+20">⟳ 刷新</span>
+          <span class="el btn pri nbtn" data-w="High 优先级，永不折叠">▶ 部署到 3 台设备</span>
+        </div>
+        <div class="grp"><span class="el btn more" data-w="QToolBar 内置箭头">⋯</span></div>
+        <div class="pop">
+          <div class="cap">⋯ 溢出浮层（Qt 自动生成）</div>
+          <div class="hi">☑ 部署后重启</div>
+          <div>重启协议: Telnet ▾</div>
+          <div>重启命令: reboot</div>
+          <div>超时 10s · 重试 1</div>
+          <hr>
+          <div class="hi">🗂 保存为模板</div>
+          <div>⬇ 导出报告（置灰）</div>
+          <div>↻ 重试失败设备（置灰）</div>
+        </div>
+      </div></div>
+      <div class="statusbar"><b>低频项收进 ⋯；主行只剩连接组 + 清空 + 刷新 + 部署</b><span style="margin-left:auto">v2.14.1</span></div>
+    </div>
+  </div>
+</div>
+<div class="acct" id="acctB"></div>
+
+<h2>方案 C · 两行工具栏（推荐） <span class="tag">按"连接 / 执行"与"选项 / 结果"分层，零可发现性损失</span></h2>
+<p class="note">
+  拆成两行：<b>第 1 行 = 连接组 │ 主操作</b>（刷新、部署、保存为模板）；<b>第 2 行 = 部署选项</b>（清空、重启及其四参数）│ <b>结果操作</b>（导出报告、重试失败设备）。
+  文字全留、标签全留，纵向多花约 34px（日志区分流后不影响双栏可视行数）。实现为把 <code>setupToolbar</code> 产出的
+  <code>QWidget</code> 内部改成两行 <code>QVBoxLayout</code>（纯布局重排，不改任何控件语义、对象名与信号接线），
+  既有钉桩（对象名 <code>btnPrimary</code>/<code>refreshBtn</code>/<code>deploySaveTemplateBtn</code>）全部原样命中。
+</p>
+<div class="viewport" id="vpC"><span class="vp-label"></span><div class="clip"><span>视口右边界</span></div><div class="hatch"></div>
+  <div class="win" style="min-height:206px">
+    <div class="rail">
+      <button class="on">📁<br>文件<br>部署</button><button>📝<br>批量<br>命令</button><button>🔌<br>Web<br>Socket</button>
+      <button>📊<br>MOD<br>BUS</button><button>🌐<br>网络<br>调试</button><button>🔧<br>OPC<br>UA</button>
+      <button class="sp">🎯<br>任务<br>中心</button><button>⚙<br>设置</button>
+    </div>
+    <div class="main">
+      <div class="menubar"><span>文件</span><span>部署</span><span>帮助</span></div>
+      <div class="busrow"><span class="el pill sel" data-w="胶囊">S7-1500 10.20.3.11:21 ×</span><span class="el pill sel" data-w="胶囊">AM580 10.20.3.21:22 ×</span><span class="el pill off" data-w="胶囊">PLC-B 10.20.3.31:21 ×</span><span class="el addbtn" data-w="min-width:0">+ 添加</span></div>
+      <div class="tbarwrap" style="padding-bottom:0">
+        <div class="tbar">
+          <div class="grp">
+            <span class="el lb" data-w="文本">协议:</span><span class="el cmb w80" data-w="setFixedWidth(80) :587">FTP</span>
+            <span class="el lb" data-w="文本">设备:</span><span class="el cmb w160" data-w="setMinimumWidth(160) :607">S7-1500</span>
+            <span class="el lb" data-w="文本">端口:</span><span class="el spn wspin" data-w="无定宽：sizeHint">21</span>
+            <span class="el cbx" data-w="FTPS 加密"><i></i>FTPS 加密</span><span class="el dot ok" data-w="状态点"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="grp">
+            <span class="el btn" data-w="85+20">⟳ 刷新</span>
+            <span class="el btn pri nbtn" data-w="随台数增长">▶ 部署到 3 台设备</span>
+            <span class="el btn" data-w="85+20">保存为模板</span>
+          </div>
+        </div>
+      </div>
+      <div class="tbarwrap">
+        <div class="tbar">
+          <div class="grp">
+            <span class="el cbx" data-w="清空远程"><i></i>部署前清空远程</span>
+            <span class="el cbx on" data-w="部署后重启"><i>✓</i>部署后重启</span>
+            <span class="el lb" data-w="文本">协议:</span><span class="el cmb w70" data-w="setFixedWidth(70) :665">Telnet</span>
+            <span class="el lb" data-w="文本">命令:</span><span class="el edt w110" data-w="setFixedWidth(110) :669">reboot</span>
+            <span class="el lb" data-w="文本">超时:</span><span class="el spn w55" data-w="setFixedWidth(55) :676">10s</span>
+            <span class="el lb" data-w="文本">重试:</span><span class="el spn w45" data-w="setFixedWidth(45) :682">1</span>
+          </div>
+          <div class="sep"></div>
+          <div class="grp">
+            <span class="el btn dis" data-w="85+20">⬇ 导出报告</span>
+            <span class="el btn dis" data-w="文本>85">↻ 重试失败设备</span>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar"><b>两行：上=连上并执行，下=怎么执行与结果去向</b><span style="margin-left:auto">v2.14.1</span></div>
+    </div>
+  </div>
+</div>
+<div class="acct" id="acctC"></div>
+
+<h2>决策对照 <span class="tag">只选一个作为本波实现；其余留 v2.16</span></h2>
+<table class="cmp">
+  <tr><th style="width:96px">方案</th><th>1366 可容纳</th><th>可发现性</th><th>Qt 实现路径</th><th>回归面</th><th>纵向代价</th></tr>
+  <tr><td>A 图标化</td><td class="mono" id="tA">—</td><td><b class="r">下降</b>：新按钮「保存为模板」变图标，老用户需重新学</td><td>resizeEvent 手写断点 + min-width:0 覆盖</td><td>对象名不变；<b>无既有钉桩</b>覆盖按钮文字，需新增断点用例</td><td>0</td></tr>
+  <tr><td>B ⋯ 折叠</td><td class="mono" id="tB">—</td><td><b class="g">主行更聚焦</b>，但溢出项要两步才够到</td><td>QHBoxLayout→QToolBar，启用现死样式 qss:530</td><td>QToolBar 会改按钮父级与间距，<b>刷新/部署/保存为模板的既有定位选择器要复核</b></td><td>0</td></tr>
+  <tr class="rec"><td><b>C 两行（推荐）</b></td><td class="mono" id="tC">—</td><td><b class="g">零损失</b>：全部文字与标签原位</td><td>setupToolbar 内部两行 QVBoxLayout，控件与信号接线一字不改</td><td><b class="g">最小</b>：对象名/控件类型/间距全保留，钉桩原样命中</td><td>+34px</td></tr>
+</table>
+
+<div class="foot">
+  <p><b>我的建议：</b>C 为本波实现，B 作为 <code>&lt;1000px</code> 的兜底留 v2.16（现场最窄的是 1366 笔记本，C 已覆盖；YAGNI）。
+  A 的"图标化"与 C 不冲突，但会牺牲刚交付的「保存为模板」可发现性，不建议现在做。</p>
+  <p><b>本稿未覆盖、需你裁定是否同波处理：</b>设备总线胶囊行（<code>DeviceBusWidget.cpp:405-428</code>）同样是
+  <code>QHBoxLayout</code> 且随设备台数线性增宽（每台 ≈130–180px），24 台时一样会把窗口撑爆。
+  规格 §4 只点了"工具栏"，所以稿子里它只作为背景出现、未给方案。</p>
+  <p><b>实现后实测回填（2026-10-20，方案 C 已落地）：</b>用 <code>totalMinimumSize().width()</code> 在<b>与生产同口径</b>（先 <code>QStyleFactory::create("Fusion")</code>，再加载生产 darkstyle.qss；未选设备、设备下拉取下限 160）量得 <b>单行 1866px → 两行 933px</b>（单行数由一次性变异工装复跑得，改动未入库）。读法要小心两件事：<b>稿内推算 1737 对实测 1866 偏乐观（少算 132px）</b>，而方案 C 的推算需求 1231 对实测 933 偏保守——方向不同，不能一句话说成「稿子保守」。锚点 2010 与本波实测 1866 之差来自设备名长度与窗口边框/DPI。钉桩见 <code>tests/deploy/tst_deploy_toolbar_layout.cpp</code> 的 <code>toolbarFitsNarrowScreen</code>（阈值 <b>1270</b> = 1366 − 导航栏 56 − 右侧 VBox margin 8+8 − 页面 margin 12+12；本稿初版写 1286，漏了右侧 VBox margin，已就实）。另实测：主按钮文案换成「▶ 部署到 24 台设备」不影响最小宽（QSS min-width 主导），所以「现场台数」不会推翻窄屏判定。</p>
+  <p><b>可落地性声明：</b>稿中界面区域只用纯色填充 + 1px 边框，均为 Qt QSS 可表达；外围网格、红虚线裁切标尺、金色宽度标注属审校辅助层，不进产品。
+  <b>宽度账性质：</b>逐项为按代码定宽与 QSS <code>min-width</code> 的推算，合计由脚本实测 DOM；<code>~2010px</code> 才是实测锚点。</p>
+</div>
+
+<script>
+/* 宽度账：DOM 实测（本稿控件按 Qt 盒模型摆放）+ 实测锚点 2010 校准 */
+var VP = 1920, N = 3, ZMODE = 'fit';
+var ANCHOR = 2010;      // v2.14 双屏诊断实测：工具栏单行最小宽（CHANGELOG:35）
+var PAD = 24, RAIL = 56; // 页面左右 margin(12×2) + 导航栏 56
+var shots = [
+  {id:'vp0', acct:'acct0', rows:'.tbarwrap>.tbar',      name:'现状单行',  key:'cur'},
+  {id:'vpA', acct:'acctA', rows:'.tbarwrap>.tbar',      name:'方案 A 图标化', key:'A'},
+  {id:'vpB', acct:'acctB', rows:'.tbarwrap>.tbar',      name:'方案 B ⋯ 折叠', key:'B', auto:true},
+  {id:'vpC', acct:'acctC', rows:'.tbarwrap>.tbar',      name:'方案 C 两行',  key:'C'}
+];
+var CAL = 0;            // 推算合计与实测锚点之差，apply() 里由现状节反推
+function fmt(n){ n=Math.round(n); return (n<0?'−':'')+Math.abs(n)+'px'; }
+function measure(){
+  shots.forEach(function(s){ s.ns=[]; s.max=0; });
+  shots.forEach(function(s){
+    var vp=document.getElementById(s.id);
+    vp.querySelectorAll(s.rows).forEach(function(r){ s.ns.push(r.scrollWidth); s.max=Math.max(s.max,r.scrollWidth); });
+  });
+  CAL = Math.max(0, ANCHOR - shots[0].max);   // 锚点 − 推算现状 ⇒ 校准量（逐元素不可分，整份折算）
+}
+function apply(){
+  measure();
+  var scale=(ZMODE==='one')?1:Math.min(1,(window.innerWidth-72)/VP);   // 适合窗口时缩放，1:1 时靠横向滚动看全幅
+  document.querySelectorAll('.viewport').forEach(function(v){ v.style.zoom=scale; });
+  shots.forEach(function(s){
+    var vp=document.getElementById(s.id); if(!vp) return;
+    vp.style.width=VP+'px';
+    vp.querySelector('.vp-label').textContent=VP+' px 视口'+(scale<1?(' · 显示缩放 '+Math.round(scale*100)+'%'):'');
+    var anchored = s.max + CAL;               // 保守值：推算 + 校准量
+    var need = anchored + PAD + RAIL;
+    var over = need - VP;
+    var clip=vp.querySelector('.clip'), hatch=vp.querySelector('.hatch');
+    if(s.auto){ clip.style.display='none'; hatch.style.display='none'; }
+    else if(over>0){
+      clip.style.display=''; clip.style.left=(VP-2)+'px';
+      clip.querySelector('span').textContent='缺 '+fmt(over);
+      var w=Math.min(over,220);
+      hatch.style.display=''; hatch.style.left=(VP-w)+'px'; hatch.style.width=w+'px';
+    } else { clip.style.display='none'; hatch.style.display='none'; }
+    var rowTxt = s.ns.map(function(w,i){ return (s.ns.length>1?('行'+(i+1)+' 推算 '+fmt(w)):'推算 '+fmt(w)); }).join(' ｜ ');
+    var verdict = s.auto
+      ? 'QToolBar 按视口<b>自动</b>继续折叠，不缺宽；代价=折叠集合由 Qt 决定（稿中所示为主操作 High 优先级后的一种形态）'
+      : over>0
+      ? '窗口需求 <b>'+fmt(need)+'</b> ＞ '+VP+' ⇒ <b>缺 '+fmt(over)+'</b>（≈'+(over/107).toFixed(1)+' 个短标签按钮）'
+      : '窗口需求 <b>'+fmt(need)+'</b> ≤ '+VP+' ⇒ 余量 <b>'+fmt(-over)+'</b>（≈'+(-over/107).toFixed(1)+' 个短标签按钮）';
+    document.getElementById(s.acct).innerHTML =
+      '<span class="'+(over>0?'bad':'good')+'">'+s.name+'：'+rowTxt+
+      ' + 校准 <b>'+fmt(CAL)+'</b>（锚点 '+ANCHOR+'） ⇒ '+verdict+'</span>';
+    s.need = need;
+  });
+  var t=function(k){ var s=shots.filter(function(x){return x.key===k})[0]; return s? Math.round(s.need):0; };
+  var put=function(id,v){ var e=document.getElementById(id); if(e) e.innerHTML=v; };
+  var ok=function(need){ return need<=VP
+      ? '可（需求 <b class="g">'+fmt(need)+'</b>，余 <b class="g">'+fmt(VP-need)+'</b>）'
+      : '不可（需求 <b class="r">'+fmt(need)+'</b>，缺 <b class="r">'+fmt(need-VP)+'</b>）'; };
+  put('tA', ok(t('A'))); put('tB', '自动折叠 ⇒ <b class="g">永不缺宽</b>（集合不可控）'); put('tC', ok(t('C')));
+  document.querySelectorAll('.nbtn').forEach(function(b){ b.textContent='▶ 部署到 '+N+' 台设备'; });
+}
+document.querySelectorAll('#segVp button').forEach(function(b){b.onclick=function(){
+  document.querySelectorAll('#segVp button').forEach(function(x){x.classList.remove('on')});
+  b.classList.add('on'); VP=+b.dataset.vp; apply();};});
+document.querySelectorAll('#segN button').forEach(function(b){b.onclick=function(){
+  document.querySelectorAll('#segN button').forEach(function(x){x.classList.remove('on')});
+  b.classList.add('on'); N=+b.dataset.n; apply();};});
+document.querySelectorAll('#segTheme button').forEach(function(b){b.onclick=function(){
+  document.querySelectorAll('#segTheme button').forEach(function(x){x.classList.remove('on')});
+  b.classList.add('on'); document.documentElement.dataset.theme=b.dataset.themeVal;};});
+document.querySelectorAll('#segZoom button').forEach(function(b){b.onclick=function(){
+  document.querySelectorAll('#segZoom button').forEach(function(x){x.classList.remove('on')});
+  b.classList.add('on'); ZMODE=b.dataset.z; apply();};});
+document.getElementById('ckAnnot').onclick=function(){
+  this.classList.toggle('on');
+  var on=this.classList.contains('on');
+  document.querySelectorAll('.viewport').forEach(function(v){
+    v.classList.toggle('annot',on);
+    v.querySelectorAll('.el').forEach(function(e){e.classList.toggle('annot',on);});
+  });
+};
+apply();
+window.addEventListener('resize',apply);
+</script>
+</body>
+</html>

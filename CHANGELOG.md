@@ -20,6 +20,10 @@
 - **波2 收口（T10）**：`tst_deploy_loop` 增**真盘目录树环回集成用例**（scanDir 实扫→deployentry::build 装配→Backend/Job 显式条目模式→TransferExecutor 确保步→LocalTransferChannel 真盘单层 mkdir→目标树与源树镜像逐文件一致，路径集合+字节双断言、无 .part 残留）——"远端子目录由执行器创建"这条新链路的唯一端到端防线（摘除确保步即红的 neuter 取证）。勘误三处（RELEASE_NOTES v2.14.1/CHANGELOG [2.14.1] 段末注记 + 用户手册就地改实况）、接口参考 makeDirectory/能力位/DeployJob 双路径与 uploadFolder 预留口径就实、用户手册目录语义+5000 上限+SFTP 落点变更+teAddDir 行为补写、规格 §3.1 与计划初稿装配措辞勘误注记、`tests/AGENTS.md` 计数定版 **51**（波2 新增 `tst_folder_expand`/`tst_deploy_entry_builder` 两目标；计划初稿写 50 系未计任务9 新增目标）。
   > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。
 
+### v2.15 波3（性能债与编辑器体验，开发中——定版归波4）
+
+- **部署页工具栏两行化（任务13 方案 C，窄屏右侧裁切根治）**：`FtpDeployWidget::setupToolbar` 原单行 `QHBoxLayout` 承载 23 控件、超过 1920 屏宽（本波实测，与生产同口径=Fusion 样式 + `:/styles/darkstyle.qss` + 默认内容，`totalMinimumSize().width()`=**1866px**；v2.14 双屏诊断现场实测约 2010px，差值归因设备名长度与窗口边框/DPI），而 `QHBoxLayout` 最小宽=子控件之和且从不换行 → 右侧「导出报告/重试失败设备」在 1366/1280 屏被裁。改为容器 `deployToolbar` 内 `QVBoxLayout`（行距 4）+ 两个 `QHBoxLayout` 行：**第 1 行=连接组（协议/设备/端口/FTPS/状态点）│ 分隔条 │ 主操作（⟳ 刷新 / ▶ 部署到 N 台设备 / 保存为模板）**，**第 2 行=部署选项（清空/重启 + 协议/命令/超时/重试四参）│ 分隔条 │ 结果操作（⬇ 导出报告 / ↻ 重试失败设备）**，各行尾 `addStretch()`。既有控件的创建顺序/对象名/初值/tooltip/ConfigStore `ftp.deploy.prefs` 读写/32 处 `connect` 逐字不变（仅归属布局改变）；新增对象名仅容器 `deployToolbar` 一个，供布局回归定位。**窄屏不再右侧裁切**（同一测法两行态实测 **933px**，1366 屏可用宽 1270、1280 屏可用宽 1184 均在内；台数文案实测不影响最小宽——QSS `min-width` 主导最小宽、长文案只涨 sizeHint），代价工具栏垂直 +1 行 ~34px。新目标 `tst_deploy_toolbar_layout`（6 用例）直构 widget 断言两行结构、逐行成员归属（连接组三件套与重启四参、分隔条、含反向归属）与**目的钉桩** `toolbarFitsNarrowScreen`（`totalMinimumSize` ≤1270），并配 `qssFloorIsInEffect` 守卫——无生产 QSS 时量得 834px 会伪装成「宽度过关」。CTest 计数 **51→52**。
+
 ## [2.14.1] — 2026-10-18
 
 ### 修复与就实（2026-10-18，v2.14 代码评审后续波补丁，评审 I-1/I-2/Minor）
