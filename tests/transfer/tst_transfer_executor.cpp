@@ -3,6 +3,7 @@
 #include <QtTest>
 
 #include "transfer/TransferExecutor.h"
+#include "transfer/EnsuredDirCache.h"
 #include "transfer/LocalTransferChannel.h"
 #include "transfer/LocalPanelTransfer.h"
 
@@ -831,6 +832,115 @@ private slots:
         QCOMPARE(channel.makeDirectoryPaths, QVector<QString>({QStringLiteral("/gone2")}));
         QCOMPARE(channel.uploadCalls, 0);
         QCOMPARE(channel.renameCalls, 0);
+    }
+
+    // ===== v2.15 波3（任务 11 / 波2 终审 I-3）：运行级已确保远端目录复用 =====
+
+    void ensuredDirCacheContainsOnlyInsertedPaths()
+    {
+        // 纯头直测：insert 前 contains 为 false；insert 后为 true；不同路径互不串；
+        // 大小写敏感（与远端 POSIX 目录名口径一致，不引入 caseFold）
+        xfer::EnsuredDirCache cache;
+        QVERIFY(!cache.contains(QStringLiteral("/opt")));
+        cache.insert(QStringLiteral("/opt"));
+        QVERIFY(cache.contains(QStringLiteral("/opt")));
+        QVERIFY(!cache.contains(QStringLiteral("/opt/deep")));
+        QVERIFY(!cache.contains(QStringLiteral("/OPT")));
+        cache.insert(QStringLiteral("/opt/deep"));
+        QVERIFY(cache.contains(QStringLiteral("/opt/deep")));
+        QVERIFY(cache.contains(QStringLiteral("/opt")));
+    }
+
+    void cacheHitSkipsAncestorStatForLaterFiles()
+    {
+        // 同一缺失父目录下两个文件（DeployJob 形态：每文件新建执行器、共享 job 级
+        // 缓存）：首个文件确保步经 mkdir 成功臂确认三层后，第二个文件不得再 stat
+        // 这些层，也不得重复 makeDirectory——波2 终审 I-3 的核心收益钉桩。
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localA = directory.filePath(QStringLiteral("a.bin"));
+        const QString localB = directory.filePath(QStringLiteral("b.bin"));
+        QVERIFY(writeFile(localA, QByteArray("payload")));
+        QVERIFY(writeFile(localB, QByteArray("payload")));
+
+        MockChannel channel;
+        // 父层恒报缺失 → 第一文件走「mkdir 幂等成功」臂逐层确认
+        makeAtomicUploadStat(channel, 7);
+        xfer::EnsuredDirCache cache;
+
+        TransferExecutor first(channel, [](int) {}, &cache);
+        const auto resultA = first.execute(
+            uploadRequest(localA, QStringLiteral("/opt/deep/dir/a.bin")), m_cancel);
+        QCOMPARE(resultA.state, TransferState::Succeeded);
+
+        TransferExecutor second(channel, [](int) {}, &cache);
+        const auto resultB = second.execute(
+            uploadRequest(localB, QStringLiteral("/opt/deep/dir/b.bin")), m_cancel);
+        QCOMPARE(resultB.state, TransferState::Succeeded);
+
+        // stat 序列精确钉桩（本用例的 RED 点一：现状第二文件必然重新 stat /opt）：
+        // 第二文件的父探测段整体消失，仅剩 基线→临时校验→目标复核
+        QCOMPARE(channel.statPaths, QVector<QString>({
+            QStringLiteral("/opt/deep/dir/a.bin"),
+            QStringLiteral("/opt"),
+            channel.uploadTargets.at(0),
+            QStringLiteral("/opt/deep/dir/a.bin"),
+            QStringLiteral("/opt/deep/dir/b.bin"),
+            channel.uploadTargets.at(1),
+            QStringLiteral("/opt/deep/dir/b.bin")}));
+        // 建目录仅第一文件的三层调用；第二文件零重复创建
+        QCOMPARE(channel.makeDirectoryPaths,
+                 QVector<QString>({QStringLiteral("/opt"),
+                                   QStringLiteral("/opt/deep"),
+                                   QStringLiteral("/opt/deep/dir")}));
+        // 三层经「mkdir 幂等成功」臂确认后全部记入缓存（记录点断言后置，
+        // 保证上方序列断言先命中现状红）
+        QVERIFY(cache.contains(QStringLiteral("/opt")));
+        QVERIFY(cache.contains(QStringLiteral("/opt/deep")));
+        QVERIFY(cache.contains(QStringLiteral("/opt/deep/dir")));
+    }
+
+    void nullEnsuredDirCacheKeepsParentProbeSequence()
+    {
+        // 默认参守卫（反向用例）：ensuredDirs=nullptr（全部既有调用点）时两个连续
+        // 文件的 stat 序列与波2 现状逐字一致——第二文件仍重新 stat /opt、走 mkdir
+        // 幂等臂逐层重建。本用例同时是可执行化的「nullptr 复现今日序列」证据。
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localA = directory.filePath(QStringLiteral("a.bin"));
+        const QString localB = directory.filePath(QStringLiteral("b.bin"));
+        QVERIFY(writeFile(localA, QByteArray("payload")));
+        QVERIFY(writeFile(localB, QByteArray("payload")));
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 7);
+
+        TransferExecutor first(channel, [](int) {});
+        const auto resultA = first.execute(
+            uploadRequest(localA, QStringLiteral("/opt/deep/dir/a.bin")), m_cancel);
+        QCOMPARE(resultA.state, TransferState::Succeeded);
+
+        TransferExecutor second(channel, [](int) {});
+        const auto resultB = second.execute(
+            uploadRequest(localB, QStringLiteral("/opt/deep/dir/b.bin")), m_cancel);
+        QCOMPARE(resultB.state, TransferState::Succeeded);
+
+        QCOMPARE(channel.statPaths, QVector<QString>({
+            QStringLiteral("/opt/deep/dir/a.bin"),
+            QStringLiteral("/opt"),
+            channel.uploadTargets.at(0),
+            QStringLiteral("/opt/deep/dir/a.bin"),
+            QStringLiteral("/opt/deep/dir/b.bin"),
+            QStringLiteral("/opt"),
+            channel.uploadTargets.at(1),
+            QStringLiteral("/opt/deep/dir/b.bin")}));
+        QCOMPARE(channel.makeDirectoryPaths,
+                 QVector<QString>({QStringLiteral("/opt"),
+                                   QStringLiteral("/opt/deep"),
+                                   QStringLiteral("/opt/deep/dir"),
+                                   QStringLiteral("/opt"),
+                                   QStringLiteral("/opt/deep"),
+                                   QStringLiteral("/opt/deep/dir")}));
     }
 
     void cancellationBeforeTransferHasOneTerminalResult()

@@ -187,8 +187,11 @@ void DeployJob::run()
             if (m_params.progressSink) m_params.progressSink(int((completed * 100 + std::clamp(pct, 0, 100)) / items.size()));
         });
         // 每文件使用新的凭据副本；Executor 终态断开连接并擦除这个副本。
+        // v2.15 波3 任务11（波2 终审 I-3）：传入 job 成员级已确保目录缓存——同一
+        // 目标目录下多文件时，首个文件确认过的祖先层后续直接跳过 stat 探测。
         AuthInfo fileAuth = m_params.auth;
-        TransferExecutor executor(*channel, m_params.device, fileAuth, m_params.retrySleeper);
+        TransferExecutor executor(*channel, m_params.device, fileAuth, m_params.retrySleeper,
+                                  &m_ensuredDirs);
         log("上传: " + item.label);
         const auto result = executor.execute({QString::fromUtf8(item.local), QString::fromUtf8(item.remote)}, *cancel);
         channel->setProgressCallback({});
