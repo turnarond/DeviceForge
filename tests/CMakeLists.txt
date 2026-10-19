@@ -46,6 +46,7 @@ endif()
 add_executable(tst_transfer_channel
     transfer/tst_transfer_channel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/FtpAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
@@ -230,9 +231,12 @@ endif()
 #     FtpListParser.cpp（被 FtpAdapter.cpp 引用），并链接 Qt6::Concurrent
 #     （QtConcurrent::run）+ Qt6::Sql（ConfigStore SQLite）+ lwserverbase
 #     （ServiceTask 生命周期 + lwlog）+ libcurl（FtpAdapter 依赖）。
+# v2.15 波2 任务10：环回集成用例以 LocalTransferChannel（真盘单层 mkdir + 真盘
+#     upload/rename）作为注入通道，验证执行器侧父目录确保全链，故编入该 TU。
 add_executable(tst_deploy_loop
     deploy/tst_deploy_loop.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/AdapterTransferChannel.cpp
+    ${CMAKE_SOURCE_DIR}/src/transfer/LocalTransferChannel.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferExecutor.cpp
     ${CMAKE_SOURCE_DIR}/src/transfer/TransferTypes.cpp
     ${CMAKE_SOURCE_DIR}/src/adapter/SshAdapter.cpp
@@ -269,6 +273,32 @@ target_link_libraries(tst_deploy_template_map PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME tst_deploy_template_map COMMAND tst_deploy_template_map)
 if(_qt_bin_dir)
     set_tests_properties(tst_deploy_template_map PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- v2.15 波2 任务7 目录展开纯头（FolderExpand.h 纯逻辑，注入 scanner 脱盘直测；不编产品源码）---
+add_executable(tst_folder_expand
+    deploy/tst_folder_expand.cpp
+)
+target_include_directories(tst_folder_expand PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_folder_expand PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_folder_expand COMMAND tst_folder_expand)
+if(_qt_bin_dir)
+    set_tests_properties(tst_folder_expand PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
+# --- v2.15 波2 任务9 评审修复 部署入口装配纯头（DeployEntryBuilder.h 直测；不编产品源码）---
+# 覆盖：混合选择扁平+镜像条目、超上限逐字拒绝（I-1 闭环）、全空目录拒绝、
+# 无目录 v2.14 扁平口径、快照过期按点击时刻实况重分类（评审 I-2 可测缝）
+add_executable(tst_deploy_entry_builder
+    deploy/tst_deploy_entry_builder.cpp
+)
+target_include_directories(tst_deploy_entry_builder PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_deploy_entry_builder PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_deploy_entry_builder COMMAND tst_deploy_entry_builder)
+if(_qt_bin_dir)
+    set_tests_properties(tst_deploy_entry_builder PROPERTIES
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 

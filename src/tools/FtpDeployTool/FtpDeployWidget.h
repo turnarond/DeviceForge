@@ -10,12 +10,15 @@
  *              左侧本地（LocalFileSource），右侧远程（RemoteFileSource），
  *              工具栏保留工具级批量部署配置（协议/设备/FTPS/端口/清空/重启），
  *              文件浏览/操作能力全部下沉到 FileBrowserPanel（Task 2/3）。
- *              批量部署链路零改动（FtpDeployBackend 不变）。
+ *              v2.15 任务9：部署/保存为模板两腿在入口展开目录（deployentry::build
+ *              装配纯头，评审修复轮薄调用方化），含目录时经每条目远端路径平行向量
+ *              贯通 Backend/Job/Runner；纯文件扁平口径与 v2.14 逐字不变。
  */
 
 #pragma once
 #include "framework/ToolWidget.h"
 #include "framework/DeviceInfo.h"
+#include "deploy/FolderExpand.h"
 #include "ui/DirCompare.h"
 #include "task/TaskTemplateTypes.h"
 #include <memory>
@@ -24,6 +27,7 @@
 #include <vector>
 #include <string>
 #include <QString>
+#include <QList>
 #include <QComboBox>
 #include <QPushButton>
 #include <QCheckBox>
@@ -110,16 +114,22 @@ private:
     void updateDirectoryCompare();
     void exitDirectoryCompare();
     void appendLog(const QString& msg);
-    std::vector<std::string> collectLocalFiles() const;
+    // v2.15 任务9：采集左面板本地选中条目为 folderexpand::Selection 清单
+    // （isDir 取面板行快照口径，仅作输入信息——装配腿 deployentry::build 一律按
+    // 点击时刻磁盘实况重分类，评审 I-1，注释详见 cpp）
+    QList<folderexpand::Selection> collectLocalSelection() const;
     void connectBackendSignals();
     // 既有部署路径收口（v2.8 Task 5）：绑定凭证/设备 + 进度行初始化 + 日志 +
     // startUpload。onDeployClicked 与 onRetryFailedClicked 共用，logPrefix
-    // 区分普通部署与重试（重试传「【重试】」）
+    // 区分普通部署与重试（重试传「【重试】」）。
+    // entryRemotePaths（v2.15 任务9）：与 files 同长的每条目远端全路径平行向量，
+    // 空=扁平口径逐字不变；非空=入口展开后的显式条目模式（透传后端贯通三层）。
     void startDeployment(const std::vector<DeviceInfo>& devices,
                          const std::vector<std::string>& files,
                          const QString& remotePath,
                          bool clearBefore, bool rebootAfter,
                          const std::string& protocol, bool useFtps, int port,
+                         const std::vector<std::string>& entryRemotePaths,
                          const QString& logPrefix);
     std::string currentProtocol() const;
     void setConnState(RemoteConnState state);
@@ -195,7 +205,13 @@ private:
     QPushButton*          m_retryBtn = nullptr;
     // 上次部署请求缓存（重试依据）：仅在实际启动一轮部署后更新
     std::vector<DeviceInfo> m_lastDevices;             // 上次绑定的完整设备集（含成功台）
-    std::vector<std::string> m_lastFiles;              // 上次部署的本地文件清单
+    // 上次部署的本地文件清单。v2.15 任务9 缓存口径=**展开产物**（含目录时
+    // files=展开后的普通文件清单、m_lastEntryRemotePaths=每条目远端全路径）：
+    // 重试与首轮同清单、requestKey 逐字一致才能正确续传（缓存原始选择再展开
+    // 会因目录内容漂移改变请求身份，把「续传」错成「全量重部署」）；
+    // 重试日志明示「沿用上轮展开清单」，口径诚实。
+    std::vector<std::string> m_lastFiles;
+    std::vector<std::string> m_lastEntryRemotePaths;   // 空=扁平口径（v2.14 逐字）
     std::string            m_lastRemotePath;           // 上次部署目标目录
     bool                   m_lastClearBefore = false;
     bool                   m_lastRebootAfter = false;

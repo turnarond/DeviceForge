@@ -11,10 +11,20 @@
 - **telnet 工装有界化（D）**：`tst_telnet_timeout` 挂 ctest `TIMEOUT 60`（独立无条件属性调用，置于 `_qt_bin_dir` 守卫外），负载下挂起形态从拖死整轮降为单目标有界红；分诊口径（单跑复核+全量两遍）登记 `tests/AGENTS.md`。
 - **波1 文档收口（本票）**：用户手册同名策略版本口径就实（覆盖=继承 ID + 版本取较大值；导入与保存为模板共用落库通道；设备/模板清单无隐性条数上限就实）、`TaskTemplateStore` 注释失效引用清理（"不重构导入路径（留债观察）"与 widget 侧改名循环同源引用已失效）、CHANGELOG 汇总腿与规格执行注记（残余 limit 站点清点入册）。
 
+### v2.15 波2（文件夹支持，开发中——定版归波4）
+
+- **目录展开纯头（T7）**：新纯逻辑头 `src/deploy/FolderExpand.h`（`folderexpand::expand`/`scanDir`/`composeRemotePath`）——目录以**自身名为镜像相对路径首段**、顶层文件 rel 空扁平、递归全深度不追符号链接（QDir::Files|NoSymLinks）、展开后文件条目 > `kMaxExpandedItems=5000` **整体拒绝**（中文文案携实际数与上限数）、空目录 0 条不算错、文件系统根退化（dirName 空）整体拒绝。新目标 `tst_folder_expand`（scanner 注入脱盘直测）。
+- **传输层父目录确保能力（T8）**：`ITransferChannel` 末尾追加**可选虚函数** `makeDirectory`（单层创建，默认实现返回不支持——旧通道零改动向前兼容），`TransferCapabilities` 末尾增 `makeDirectory` 能力位（默认 false）；`TransferExecutor` 上传前对**不存在**的目标做父目录逐级确保（stat 自最浅缺失层起、序贯创建、建目录失败后复检该层存在则继续——闭合瞬断被收口成确定性红的窗口，评审 I-1）。FtpAdapter 单层 MKD 经 SylixOS 三禁核对（根 URL+绝对路径、MULTICWD 逐级、显式 `CURLOPT_FTP_USE_EPSV=0`），SshAdapter 走 sftpMakeDirectory，LocalTransferChannel 单层真 mkdir。`tst_transfer_executor` 增父目录确保用例组与既有钉桩（目标存在即跳过确保步、stat 增量零漂移）。
+- **三入口目录展开接线（T9）**：新装配纯头 `src/deploy/DeployEntryBuilder.h`（`deployentry::build`：分类以**点击时刻磁盘实况** QFileInfo::isDir 为准、面板行快照丢弃重算——闭合快照过期绕过 5000 上限的窗口，评审 I-1/I-2）；部署页单发、模板编辑器 teAddDir（`addDeployDirectoryEntries` 直调缝，展开即文件条目入表、拒绝纯头文案逐字弹显表格零改动）、部署页保存为模板三入口同口径。`DeployJob` 增**每条目远端路径贯通**（`entryRemotePaths` 平行向量：非空=显式条目模式，Job 不派生 basename、不目录遍历、跳过自身 mkdir 环，远端子目录全由执行器确保步创建；requestKey 纳入每条目远端路径——同清单仅布局变化不再误判同一请求）；空向量=v2.14 扁平口径逐字不变。新目标 `tst_deploy_entry_builder`；`tst_deploy_loop`/`tst_task_center_widget` 增镜像与直调用例。
+- **SFTP 单发落点加深一层（行为变更，用户批准裁定）**：放弃 v2.14 及更早 `DeployJob` legacy 目录展开的协议不对称（FTP 包含顶层目录名 / SFTP 上传目录内容），三入口统一为**镜像口径（目录名为首段）**——由此 **SFTP 单发部署所选目录的远端落点比 v2.14 深一层**（此前 `/apps` 选 `pkg/` 内容直落 `/apps/`，现落 `/apps/pkg/`；FTP 落点不变）。属现场可见变更，依赖旧 SFTP 落点的脚本/站点需在 v2.15 发布说明中知悉并复核目标路径。
+- **波2 收口（T10）**：`tst_deploy_loop` 增**真盘目录树环回集成用例**（scanDir 实扫→deployentry::build 装配→Backend/Job 显式条目模式→TransferExecutor 确保步→LocalTransferChannel 真盘单层 mkdir→目标树与源树镜像逐文件一致，路径集合+字节双断言、无 .part 残留）——"远端子目录由执行器创建"这条新链路的唯一端到端防线（摘除确保步即红的 neuter 取证）。勘误三处（RELEASE_NOTES v2.14.1/CHANGELOG [2.14.1] 段末注记 + 用户手册就地改实况）、接口参考 makeDirectory/能力位/DeployJob 双路径与 uploadFolder 预留口径就实、用户手册目录语义+5000 上限+SFTP 落点变更+teAddDir 行为补写、规格 §3.1 与计划初稿装配措辞勘误注记、`tests/AGENTS.md` 计数定版 **51**（波2 新增 `tst_folder_expand`/`tst_deploy_entry_builder` 两目标；计划初稿写 50 系未计任务9 新增目标）。
+  > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。
+
 ## [2.14.1] — 2026-10-18
 
 ### 修复与就实（2026-10-18，v2.14 代码评审后续波补丁，评审 I-1/I-2/Minor）
 - **传输层目录条目口径钉桩**：`tst_transfer_executor` 新增用例断言文件夹作为上传源在触碰远端前即失败（LocalIo/零通道调用）——单发部署与任务模板同走 TransferExecutor，本就无「单发能传文件夹」分叉；`FtpDeployWidget::collectLocalFiles` 处宣称 backend uploadFolder 递归处理文件夹的失实注释改写为实况（uploadFolder 全仓无调用方）。用户手册文件部署首段与操作步骤、保存为模板映射表同批改就实（仅普通文件可部署）。
+  > 勘误（2026-10-20，v2.15 波2 收口自陈）：执行器层钉桩本身成立（裸目录进执行器确实于触碰远端前失败），失实的是「单发与模板同走 TransferExecutor 故无分叉」的推断——当时取证 grep 范围未打开 `DeployJob.cpp`，其单发路径一直有本地目录遍历与自建远端目录，选文件夹部署实际可成；「仅普通文件可部署」对单发路径不成立。据以改写的手册三处表述已随波2 就地改回实况（见下一未发布段「波2 文件夹支持」）；`collectLocalFiles` 注释与钉桩用例本身不受勘误影响（注释此后再度就实为入口展开口径，用例保留为执行器侧纵深防御）。历史正文不改写，就此注记归位。
 - **主窗口初始几何主屏优先兑现**：`WindowPlacement.h` 契约写明「调用方按主屏优先传」，`DeviceForge.cpp` 实际按 `QGuiApplication::screens()` 任意序传——收集屏几何改为 primaryScreen 置顶再补其余，兑现文档与测试意图。
 - **文档失效引用勘误**：v2.13 编辑器规格中「至少一条命令」文案已被 #49-3 单源为「缺少命令列表」，段末补勘误注记（历史正文不改写）。
 

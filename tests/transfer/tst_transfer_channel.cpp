@@ -9,6 +9,7 @@
 #include "adapter/IProtocolAdapter.h"
 #include "adapter/SshAdapter.h"
 #include "transfer/AdapterTransferChannel.h"
+#include "transfer/LocalTransferChannel.h"
 
 class MockAdapter final : public IProtocolAdapter
 {
@@ -75,6 +76,8 @@ struct OpsProbe
     QString renameTo;
     QString removedPath;
     QString listedPath;
+    QString makeDirectoryPath;
+    bool makeDirectoryResult = true;
     QVector<TransferChannelEntry> entries;
     bool listResult = true;
     int progressValue = -1;
@@ -102,6 +105,10 @@ static TransferChannelOps makeOps(const std::shared_ptr<OpsProbe>& probe)
     ops.remove = [probe](const QString& path) {
         probe->removedPath = path;
         return true;
+    };
+    ops.makeDirectory = [probe](const QString& path) {
+        probe->makeDirectoryPath = path;
+        return probe->makeDirectoryResult;
     };
     ops.list = [probe](const QString& path, QVector<TransferChannelEntry>& entries) {
         probe->listedPath = path;
@@ -134,6 +141,7 @@ private slots:
         QVERIFY(cap.rename);
         QVERIFY(cap.remove);
         QVERIFY(cap.stat);
+        QVERIFY(cap.makeDirectory);   // v2.15 波2：ops 注入含 makeDirectory 时能力位必须亮
     }
 
     void sftpCapabilitiesAndUnknownProtocol()
@@ -142,12 +150,12 @@ private slots:
         AdapterTransferChannel sftp("sftp", std::make_shared<MockAdapter>(), makeOps(probe));
         const auto sftpCap = sftp.capabilities();
         QVERIFY(sftpCap.upload && sftpCap.download && sftpCap.rename && sftpCap.remove
-                && sftpCap.stat);
+                && sftpCap.stat && sftpCap.makeDirectory);
 
         AdapterTransferChannel unknown("telnet", std::make_shared<MockAdapter>());
         const auto unknownCap = unknown.capabilities();
         QVERIFY(!unknownCap.upload && !unknownCap.download && !unknownCap.rename
-                && !unknownCap.remove && !unknownCap.stat);
+                && !unknownCap.remove && !unknownCap.stat && !unknownCap.makeDirectory);
     }
 
     void productionBindingsExposeOnlyCallableCapabilities()
@@ -155,18 +163,19 @@ private slots:
         AdapterTransferChannel ftp("ftp", std::make_shared<FtpAdapter>());
         const auto ftpCap = ftp.capabilities();
         QVERIFY(ftpCap.upload && ftpCap.download && ftpCap.rename && ftpCap.remove && ftpCap.stat);
+        QVERIFY(ftpCap.makeDirectory);   // FtpAdapter::makeDirectory 已接线（SylixOS 三禁核对见其实现）
 
         AdapterTransferChannel sftp("sftp", std::make_shared<SshAdapter>());
         const auto sftpCap = sftp.capabilities();
         QVERIFY(sftpCap.upload && sftpCap.download && sftpCap.rename && sftpCap.remove
-                && sftpCap.stat);
+                && sftpCap.stat && sftpCap.makeDirectory);
         QVERIFY(!sftp.upload(QStringLiteral("missing.bin"), QStringLiteral("/missing.bin")));
         QVERIFY(sftp.lastError().code != TransferErrorCode::Unsupported);
 
         AdapterTransferChannel mismatched("ftp", std::make_shared<MockAdapter>());
         const auto mismatchedCap = mismatched.capabilities();
         QVERIFY(!mismatchedCap.upload && !mismatchedCap.download && !mismatchedCap.rename
-                && !mismatchedCap.remove && !mismatchedCap.stat);
+                && !mismatchedCap.remove && !mismatchedCap.stat && !mismatchedCap.makeDirectory);
         QVERIFY(!mismatched.upload(QStringLiteral("a.bin"), QStringLiteral("/a.bin")));
         QCOMPARE(mismatched.lastError().code, TransferErrorCode::Unsupported);
     }
@@ -377,6 +386,68 @@ private slots:
         QVERIFY(!channel.remove(QStringLiteral("/source.bin")));
         QCOMPARE(channel.lastError().code, TransferErrorCode::Cancelled);
         QVERIFY(probe->removedPath.isEmpty());
+    }
+
+    // v2.15 波2（任务 8）：单层 makeDirectory 能力接线
+    void makeDirectoryForwardsToOperationsAndReportsCapabilityGap()
+    {
+        auto probe = std::make_shared<OpsProbe>();
+        AdapterTransferChannel channel("ftp", std::make_shared<MockAdapter>(), makeOps(probe));
+        QVERIFY(channel.makeDirectory(QStringLiteral("/opt/new")));
+        QCOMPARE(probe->makeDirectoryPath, QStringLiteral("/opt/new"));
+
+        auto failingProbe = std::make_shared<OpsProbe>();
+        failingProbe->makeDirectoryResult = false;
+        AdapterTransferChannel failing("sftp", std::make_shared<MockAdapter>(),
+                                       makeOps(failingProbe));
+        QVERIFY(!failing.makeDirectory(QStringLiteral("/opt/new")));
+        // ops 已注入：失败来自底层原语而非能力缺口
+        QVERIFY(failing.lastError().code != TransferErrorCode::Unsupported);
+
+        TransferChannelOps opsWithoutMakeDirectory = makeOps(std::make_shared<OpsProbe>());
+        opsWithoutMakeDirectory.makeDirectory = nullptr;
+        AdapterTransferChannel unsupported("ftp", std::make_shared<MockAdapter>(),
+                                           std::move(opsWithoutMakeDirectory));
+        QVERIFY(!unsupported.capabilities().makeDirectory);
+        QVERIFY(!unsupported.makeDirectory(QStringLiteral("/opt/new")));
+        QCOMPARE(unsupported.lastError().code, TransferErrorCode::Unsupported);
+    }
+
+    void localMakeDirectoryCreatesSingleLevelAndIsIdempotent()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        LocalTransferChannel channel;
+        QVERIFY(channel.capabilities().makeDirectory);
+
+        const QString target = QDir(directory.path()).filePath(QStringLiteral("bundle"));
+        QVERIFY(channel.makeDirectory(target));
+        QVERIFY(QFileInfo(target).isDir());
+        // 已存在=幂等成功（执行器 stat 竞态窗口下的兜底臂）
+        QVERIFY(channel.makeDirectory(target));
+        QCOMPARE(channel.lastError().code, TransferErrorCode::None);
+    }
+
+    void localMakeDirectoryRejectsMissingIntermediateParentAndFileConflict()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        LocalTransferChannel channel;
+
+        // 单层语义：中间父不存在→失败（递归逐级创建归执行器确保步，通道不 mkpath 全路径）
+        const QString deep = QDir(directory.path()).filePath(QStringLiteral("missing/deep"));
+        QVERIFY(!channel.makeDirectory(deep));
+        QCOMPARE(channel.lastError().code, TransferErrorCode::LocalIo);
+        QVERIFY(!QFileInfo::exists(QDir(directory.path()).filePath(QStringLiteral("missing"))));
+
+        // 同名普通文件占位→拒绝
+        const QString taken = QDir(directory.path()).filePath(QStringLiteral("taken.bin"));
+        QFile file(taken);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+        file.close();
+        QVERIFY(!channel.makeDirectory(taken));
+        QCOMPARE(channel.lastError().code, TransferErrorCode::InvalidPath);
     }
 
     void productionFtpBindingOpensUtf8LocalPath()

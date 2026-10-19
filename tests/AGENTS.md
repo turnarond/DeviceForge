@@ -1,6 +1,6 @@
 # tests — QtTest/CTest 单元测试
 
-49 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48；v2.14 双屏窗口放置 +1 = 49），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
+51 个测试目标（v2.12 MODBUS 重构 +4 = 43；文件管理增强 +2 = 45；v2.13 模板编解码 +1 = 46；v2.14 部署模板映射 +1 = 47；v2.14 步骤参数校验 +1 = 48；v2.14 双屏窗口放置 +1 = 49；v2.15 波2 文件夹支持 +2 = 51，计数定版 2026-10-20；波2 计划初稿写 50 系未计任务9 新增 `tst_deploy_entry_builder`），**子目录名 = 被测模块**，目标名 `tst_<模块>`。
 
 ## 目录 ↔ 被测模块映射
 
@@ -9,8 +9,10 @@
 | NetRelayTool/ | tst_nrec | RelayRecorder/Recording/Player | 录制回放（编入产品源码） |
 | NetRelayTool/ | tst_relay_addr | NetRelayTypes.h | 纯逻辑（仅头文件） |
 | config/ | tst_config_store / tst_dpapi_crypto | ConfigStore / DpapiCrypto | SQLite 持久化 / DPAPI |
-| deploy/ | tst_deploy_loop | IDeployable 部署循环 | 协议化逻辑 |
+| deploy/ | tst_deploy_loop | IDeployable 部署循环（v2.15 波2 含真盘目录树环回集成用例：入口装配→Job 显式条目模式→执行器父目录确保→LocalTransferChannel 实盘 mkdir/上传，目标树镜像逐文件断言） | 协议化逻辑 + 环回集成 |
 | deploy/ | tst_deploy_template_map | DeployTemplateMap.h OnceConfig→TaskTemplate 纯映射（简写参数/未勾选=未绑定/重启步与空命令回退） | 纯逻辑（仅头文件，v2.14 #49-2） |
+| deploy/ | tst_folder_expand | FolderExpand.h 目录展开纯头（镜像首段/顶层扁平/5000 上限整体拒绝/根退化拒绝/空目录不算错；scanner 注入脱盘） | 纯逻辑（仅头文件，v2.15 波2 任务7） |
+| deploy/ | tst_deploy_entry_builder | DeployEntryBuilder.h 入口装配纯头（混合选择扁平+镜像条目、超上限逐字拒绝、全空目录拒绝、无目录 v2.14 扁平口径、快照过期按点击时刻实况重分类） | 纯逻辑（仅头文件，v2.15 波2 任务9） |
 | file_source/ | tst_file_source | IFileSource Local 实现 + readFile/writeFile 原语 | 文件系统 |
 | dir_compare/ | tst_dir_compare | DirCompare.h/.cpp 目录对比纯逻辑（分类/对齐/分钟精度） | 纯逻辑 |
 | file_encoding/ | tst_file_encoding | FileEncoding 编码探测/转换/冲突谓词（Win32 CP，禁 QTextCodec） | 纯逻辑 |
@@ -61,4 +63,4 @@ cd build && ctest -C Release -R tst_nrec --output-on-failure # 单目标
 
 ## 已知覆盖空白
 
-FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。模板编辑器对话框（v2.13 #54）的 tePageDeploy 文件选择器 leg（teAddFiles/teAddDir 弹 QFileDialog 选人）与新建/编辑按钮的模态对话框流程为人工冒烟覆盖，其余（validate/collect/面板往返/落库编排/e2e「新建→执行」链）均经 tst_task_center_widget 直调缝覆盖。部署页「保存为模板」按钮（v2.14 #49-2）→TaskTemplateEditorDialog 模态流（含同名冲突三分支弹窗）为人工冒烟覆盖（对话框 exec() 沿 #54 teAddFiles 先例不设自动化 UI 目标），映射/落库腿已由 tst_deploy_template_map / tst_task_template_store 直调覆盖。
+FtpAdapter/TelnetAdapter 协议交互、ToolRegistry/ToolHost、NavBar 尚无专属目标（DeviceBusWidget 已由 tst_task_center_widget 覆盖）——新增相关行为时优先在此补测。模板编辑器对话框（v2.13 #54）的 tePageDeploy 文件选择器 leg：teAddDir 的**目录展开逻辑自 v2.15 波2 起已直测**（addDeployDirectoryEntries 直调缝经 tst_task_center_widget 覆盖展开/镜像预填与根退化逐字拒绝文案；超上限（5000）拒绝**不经该直调缝**——由 tst_folder_expand `overCapRejectedWithBothNumbers` 与 tst_deploy_entry_builder `overCapRejectsWithPureHeaderErrorVerbatim` 两处钉桩，条目表用例刻意不造 5000 条目夹具；装配语义由 tst_deploy_entry_builder 直测），**仅余 QFileDialog 选人腿**（teAddDir 选目录与 teAddFiles 选文件弹窗）与新建/编辑按钮的模态对话框流程为人工冒烟覆盖，其余（validate/collect/面板往返/落库编排/e2e「新建→执行」链）均经 tst_task_center_widget 直调缝覆盖。部署页「保存为模板」按钮（v2.14 #49-2）→TaskTemplateEditorDialog 模态流（含同名冲突三分支弹窗）为人工冒烟覆盖（对话框 exec() 沿 #54 teAddFiles 先例不设自动化 UI 目标），映射/落库腿已由 tst_deploy_template_map / tst_task_template_store 直调覆盖，其中**文件夹条目**的展开映射腿自 v2.15 波2 起由 tst_deploy_entry_builder（装配）+ tst_task_center_widget（条目表直调）覆盖。真盘目录树环回集成用例（tst_deploy_loop）跑 Local↔Local 通道，而 `LocalTransferChannel::stat` 对目录返回失败（「本地路径不是普通文件」），确保步在盘符/已存在目录层因此全部落入 mkdir 幂等成功臂；真实服务端形态「父存在→stat 短路跳过创建」仅由 tst_transfer_executor 的 MockChannel 用例钉桩（`parentEnsureSkippedWhenParentExists` 与 `parentEnsureStopsAtExistingAncestorAndCreatesOnlyDeeperLevels` 的 makeDirectory 零调用/仅深层调用断言），环回用例不构成对该臂的实证。

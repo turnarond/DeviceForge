@@ -138,6 +138,17 @@ public:
         return takeResult(removeResults, true);
     }
 
+    // v2.15 波2：单层创建远端目录（父缺失即失败），执行器自最浅缺失层起逐级调用。
+    bool makeDirectory(const QString& remotePath) override
+    {
+        ++makeDirectoryCalls;
+        makeDirectoryPaths.push_back(remotePath);
+        const bool result = takeResult(makeDirectoryResults, true);
+        if (result && onMakeDirectory)
+            onMakeDirectory();
+        return result;
+    }
+
     void setProgressCallback(std::function<void(int)> callback) override
     {
         progressCallback = std::move(callback);
@@ -170,16 +181,19 @@ public:
         return result;
     }
 
-    TransferCapabilities caps{true, true, true, true, true};
+    // makeDirectory=true 对齐真实 FTP/SFTP 通道波2 能力口径；关闭臂由专项用例显式置 false。
+    TransferCapabilities caps{true, true, true, true, true, true};
     std::deque<bool> connectResults;
     std::deque<bool> reconnectResults;
     std::deque<bool> uploadResults;
     std::deque<bool> downloadResults;
     std::deque<bool> renameResults;
     std::deque<bool> removeResults;
+    std::deque<bool> makeDirectoryResults;
     std::deque<TransferError> operationErrors;
     std::function<bool(const QString&, TransferFileStat&)> statHandler;
     std::function<void()> onUpload;
+    std::function<void()> onMakeDirectory;
     std::function<void(const QString&)> onDownload;
     std::function<void(const QString&, bool)> onDownloadAttempt;
     QByteArray downloadPayload;
@@ -194,6 +208,7 @@ public:
     QVector<QString> downloadTargets;
     QVector<QString> statPaths;
     QVector<QString> removedPaths;
+    QVector<QString> makeDirectoryPaths;
     QString renameFrom;
     QString renameTo;
     DeviceInfo connectedDevice;
@@ -205,6 +220,7 @@ public:
     int statCalls = 0;
     int renameCalls = 0;
     int removeCalls = 0;
+    int makeDirectoryCalls = 0;
     int clearCredentialsCalls = 0;
 };
 
@@ -365,8 +381,10 @@ private slots:
 
     void directoryUploadSourceFailsBeforeAnyChannelCall()
     {
-        // 部署页选中文件夹条目 → 单发与任务模板同走本执行器：目录源必须在
-        // 触碰远端之前失败（评审 I-1 钉桩：两条路径口径一致，无"单发能传文件夹"分叉）
+        // 目录源必须在触碰远端之前失败（评审 I-1 钉桩：两条路径口径一致，无
+        // 「单发能传文件夹」分叉）。v2.15 任务9 就实：单发/编辑器/保存为模板三入口
+        // 已在入口层展开目录（folderexpand::expand），条目级不再有目录源到达本
+        // 执行器——本钉桩降为执行器侧纵深防御，断言逐字不变。
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         QVERIFY(QDir(directory.path()).mkpath(QStringLiteral("bundle")));
@@ -419,6 +437,400 @@ private slots:
         QCOMPARE(channel.clearCredentialsCalls, 1);
         QVERIFY(QFileInfo::exists(localPath));
         QCOMPARE(readFile(localPath), QByteArray("blocked"));
+    }
+
+    // ===== v2.15 波2（任务 8）：上传前远端父目录确保 =====
+
+    void parentEnsureCreatesMissingLevelsShallowestFirst()
+    {
+        // ① 镜像子路径首上传：父缺失且通道支持 → 自最浅缺失层起序贯 makeDirectory
+        //（stat 只需探测到第一个缺失层，其后深层直接创建），随后上传照常成功
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 7);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/opt/deep/dir/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryPaths,
+                 QVector<QString>({QStringLiteral("/opt"),
+                                   QStringLiteral("/opt/deep"),
+                                   QStringLiteral("/opt/deep/dir")}));
+        QCOMPARE(channel.statPaths.at(0), QStringLiteral("/opt/deep/dir/a.bin"));
+        QCOMPARE(channel.statPaths.at(1), QStringLiteral("/opt"));
+        QCOMPARE(channel.uploadCalls, 1);
+        QCOMPARE(channel.renameCalls, 1);
+    }
+
+    void parentEnsureSkippedWhenParentExists()
+    {
+        // ② stat 判定父目录已存在 → 零建目录调用
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("x.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.statHandler = [](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/opt"))
+                out = {true, 0, QStringLiteral("dir")};
+            else if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/opt/x.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryCalls, 0);
+        QCOMPARE(channel.uploadCalls, 1);
+    }
+
+    void parentEnsureStopsAtExistingAncestorAndCreatesOnlyDeeperLevels()
+    {
+        // ② ' 变体臂：浅层存在、深层缺失——stat 逐层探测到第一个缺失层后仅创建该层
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("app.log"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.statHandler = [](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/data"))
+                out = {true, 0, QStringLiteral("dir")};
+            else if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/data/logs/app.log")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryPaths, QVector<QString>({QStringLiteral("/data/logs")}));
+        QCOMPARE(channel.statPaths.at(1), QStringLiteral("/data"));
+        QCOMPARE(channel.statPaths.at(2), QStringLiteral("/data/logs"));
+    }
+
+    void makeDirectoryFailureIsDeterministicWithoutRetry()
+    {
+        // ③ 建目录失败=确定性失败（与 deterministicFailure 同族）：中文「远端目录创建失败」
+        // 入结果、零上传、零重连、零退避延时
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("blocked.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.makeDirectoryResults = {false};
+        channel.operationErrors = {permissionError()};
+        makeAtomicUploadStat(channel, 7);
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/secure/dir/blocked.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::Permission);
+        QVERIFY(result.error.message.contains(QStringLiteral("远端目录创建失败")));
+        QVERIFY(result.error.message.contains(QStringLiteral("/secure")));
+        QVERIFY(result.error.message.contains(QStringLiteral("权限不足")));
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(channel.makeDirectoryCalls, 1);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+    }
+
+    void makeDirectoryFailureRevealsExistingParentAndUploadContinues()
+    {
+        // 修复轮 1（评审 I-1）：瞬断闭合臂——父目录实际存在、仅 ensure 层 stat 恰逢
+        // 瞬断报缺失，随后 MKD 对已存在目录报 550/QUOTE_ERROR 形态失败；执行器必须
+        // 复检同一层，确认存在则视为已确保并继续遍历，让上传照常进行（进正常传输环），
+        // 而非把瞬断收口成确定性红（makeError retryable 恒 false）。
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.makeDirectoryResults = {false};
+        channel.operationErrors = {connectionLostError()};  // MKD 已存在目录的连接层失败形态
+        int optStatCount = 0;
+        channel.statHandler = [&channel, &optStatCount](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/opt")) {
+                // 首探报缺失（瞬断形态）；建目录失败后的复检报存在
+                out = optStatCount++ == 0
+                    ? TransferFileStat{}
+                    : TransferFileStat{true, 0, QStringLiteral("dir")};
+                return true;
+            }
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/opt/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(result.attempts, 1);
+        QCOMPARE(channel.makeDirectoryCalls, 1);
+        QCOMPARE(channel.makeDirectoryPaths, QVector<QString>({QStringLiteral("/opt")}));
+        // stat 序列精确钉桩：目标基线 → /opt 首探（缺失）→ 建失败后复检 /opt（存在）
+        // → 临时文件校验 → 目标复核——复检确实发生且就位于建目录失败之后
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/opt/a.bin"),
+                                   QStringLiteral("/opt"),
+                                   QStringLiteral("/opt"),
+                                   channel.uploadTargets.front(),
+                                   QStringLiteral("/opt/a.bin")}));
+        QCOMPARE(channel.uploadCalls, 1);
+        QCOMPARE(channel.renameCalls, 1);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+    }
+
+    void makeDirectoryFailureWithStillMissingReStatStaysDeterministic()
+    {
+        // 修复轮 1 互补臂：建目录失败且同层复检仍报缺失 → 维持确定性失败族
+        // （真不存在且不可建的硬失败不被软化）；stat 序列钉桩复检发生，收口后零上传，
+        // attempts 与既有确定性失败口径一致（makeDirectoryFailureIsDeterministicWithoutRetry 同族）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("blocked.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.makeDirectoryResults = {false};
+        channel.operationErrors = {permissionError()};
+        makeAtomicUploadStat(channel, 7);
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/secure/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::Permission);
+        QVERIFY(result.error.message.contains(QStringLiteral("远端目录创建失败")));
+        QVERIFY(result.error.message.contains(QStringLiteral("/secure")));
+        QVERIFY(result.error.message.contains(QStringLiteral("权限不足")));
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(channel.makeDirectoryCalls, 1);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+        // stat 序列：目标基线 → /secure 首探（缺失）→ 建失败后复检（仍缺失）→ 确定性收口
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/secure/a.bin"),
+                                   QStringLiteral("/secure"),
+                                   QStringLiteral("/secure")}));
+    }
+
+    void unsupportedChannelNamesCapabilityGapWhenParentMissing()
+    {
+        // ④ 缺失且通道不支持 → 失败文案点名「通道不支持自动创建」，且绝不触碰 makeDirectory
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.caps.makeDirectory = false;
+        makeAtomicUploadStat(channel, 7);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/brand/newdir/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Failed);
+        QCOMPARE(result.error.code, TransferErrorCode::Unsupported);
+        QVERIFY(result.error.message.contains(
+            QStringLiteral("远端目标父目录不存在且通道不支持自动创建")));
+        QCOMPARE(result.attempts, 0);
+        QCOMPARE(channel.makeDirectoryCalls, 0);
+        QCOMPARE(channel.uploadCalls, 0);
+        // stat 序列：目标基线 → 第一个缺失层即止
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/brand/newdir/a.bin"),
+                                   QStringLiteral("/brand")}));
+    }
+
+    void existingTargetSkipsParentEnsureEntirely()
+    {
+        // 重构钉桩：目标存在即证明父目录存在——父目录检查整体跳过，stat 调用序列
+        // 与波1 完全一致（既有计数钉桩契约零漂移的守卫）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("target.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.statHandler = [](const QString& path, TransferFileStat& out) {
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {true, 7, QStringLiteral("baseline")};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/deep/dir/target.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryCalls, 0);
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/deep/dir/target.bin"),
+                                   channel.uploadTargets.front(),
+                                   QStringLiteral("/deep/dir/target.bin")}));
+    }
+
+    void rootLevelAndRelativeTargetsSkipParentEnsure()
+    {
+        // "/" 父（根恒存在）与无父段（相对文件名）两臂：不 stat 任何父路径、不建目录
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 7);
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto rootLevel = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/root-level.bin")), m_cancel);
+        QCOMPARE(rootLevel.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryCalls, 0);
+        QCOMPARE(channel.statPaths,
+                 QVector<QString>({QStringLiteral("/root-level.bin"),
+                                   channel.uploadTargets.front(),
+                                   QStringLiteral("/root-level.bin")}));
+
+        MockChannel relative;
+        makeAtomicUploadStat(relative, 7);
+        TransferExecutor relativeExecutor(relative, [](int) {});
+        const auto relativeTarget = relativeExecutor.execute(
+            uploadRequest(localPath, QStringLiteral("relative.bin")), m_cancel);
+        QCOMPARE(relativeTarget.state, TransferState::Succeeded);
+        QCOMPARE(relative.makeDirectoryCalls, 0);
+        QCOMPARE(relative.statPaths.size(), 3);  // 基线/临时/复核，无父探测
+    }
+
+    void parentStatErrorStillAttemptsCreationViaMakeDirectory()
+    {
+        // 真实通道形态：父目录缺失表现为 stat 列表失败而非 exists=false——同臂处理
+        // 尝试创建；确保步是确定性的，stat 错误不触发重连/退避
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.statHandler = [&channel](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/lost")) {
+                channel.currentError = permissionError();
+                return false;
+            }
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        QVector<int> delays;
+        TransferExecutor executor(channel, [&delays](int milliseconds) {
+            delays.push_back(milliseconds);
+        });
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/lost/dir/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Succeeded);
+        QCOMPARE(channel.makeDirectoryPaths,
+                 QVector<QString>({QStringLiteral("/lost"), QStringLiteral("/lost/dir")}));
+        QCOMPARE(channel.reconnectCalls, 0);
+        QVERIFY(delays.isEmpty());
+        QCOMPARE(channel.uploadCalls, 1);
+    }
+
+    void cancellationDuringParentStatPreventsMakeDirectory()
+    {
+        // stat 期间到达的取消不得再开始建目录（与既有取消检查点口径一致）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        channel.statHandler = [this](const QString& path, TransferFileStat& out) {
+            if (path == QStringLiteral("/gone")) {
+                out = {};
+                m_cancel.store(true);
+                return true;
+            }
+            if (path.contains(QStringLiteral(".deviceforge-part-")))
+                out = {true, 7, QStringLiteral("temporary")};
+            else
+                out = {};
+            return true;
+        };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/gone/dir/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Cancelled);
+        QCOMPARE(channel.makeDirectoryCalls, 0);
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.renameCalls, 0);
+    }
+
+    void cancellationDuringFirstMakeDirectoryStopsDeeperLevels()
+    {
+        // 最浅层建目录期间到达的取消不得再向更深层级续建（逐级循环顶检查点）
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString localPath = directory.filePath(QStringLiteral("a.bin"));
+        QVERIFY(writeFile(localPath, QByteArray("payload")));
+
+        MockChannel channel;
+        makeAtomicUploadStat(channel, 7);
+        channel.onMakeDirectory = [this] { m_cancel.store(true); };
+        TransferExecutor executor(channel, [](int) {});
+
+        const auto result = executor.execute(
+            uploadRequest(localPath, QStringLiteral("/gone2/deep/a.bin")), m_cancel);
+
+        QCOMPARE(result.state, TransferState::Cancelled);
+        QCOMPARE(channel.makeDirectoryPaths, QVector<QString>({QStringLiteral("/gone2")}));
+        QCOMPARE(channel.uploadCalls, 0);
+        QCOMPARE(channel.renameCalls, 0);
     }
 
     void cancellationBeforeTransferHasOneTerminalResult()

@@ -15,6 +15,7 @@
 //   不在册者文案「id（本机无档案）」，默认勾选（悬空引用保留，已拍板）。
 #include "task/TaskTemplateEditorDialog.h"
 
+#include "deploy/FolderExpand.h"
 #include "task/TaskExecutionTypes.h"
 #include "task/TaskStepValidation.h"
 #include "task/TaskTemplateStore.h"
@@ -33,6 +34,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -430,7 +432,9 @@ void TaskTemplateEditorDialog::setupDeployPage(QWidget* page)
     });
 
     // 批量添加：非原生 QFileDialog（DontUseNativeDialog），每条/每个目录生成行；
-    // remotePath = teRemoteDir(去尾斜杠) + '/' + 文件/目录名，空前缀=根目录
+    // 文件行 remotePath = teRemoteDir(去尾斜杠) + '/' + 文件名，空前缀=根目录；
+    // 目录行自 v2.15 任务9 起不再存在——teAddDir 经 addDeployDirectoryEntries
+    // 入口展开为文件条目批量入表（镜像相对段预填，「条目表所见即部署所得」）
     connect(m_addFiles, &QPushButton::clicked, this, [this] {
         const QStringList files = QFileDialog::getOpenFileNames(
             this, QStringLiteral("选择要部署的文件"), QString(),
@@ -451,11 +455,11 @@ void TaskTemplateEditorDialog::setupDeployPage(QWidget* page)
             QFileDialog::DontUseNativeDialog | QFileDialog::ShowDirsOnly);
         if (dir.trimmed().isEmpty())
             return;
-        const QString name = QFileInfo(dir).fileName();
-        if (name.isEmpty())
-            return;                       // 盘符根等无目录名路径：无法生成远端名，跳过
-        appendDeployRow(dir, joinRemotePath(m_remoteDir->text(), name),
-                        QStringLiteral("upload"), QStringLiteral("overwrite"));
+        // 入口展开直调缝（与自动化用例同函数）：拒绝时纯头中文文案逐字弹显、
+        // 表格零改动停留编辑（不丢已编辑内容）
+        QString error;
+        if (addDeployDirectoryEntries(dir, &error) < 0 && !error.isEmpty())
+            QMessageBox::warning(this, QStringLiteral("添加目录"), error);
     });
 }
 
@@ -815,4 +819,80 @@ void TaskTemplateEditorDialog::accept()
         return;                                     // 校验不过停留编辑，不关闭窗口
     }
     QDialog::accept();
+}
+
+// v2.15 任务9 目录展开直调缝（teAddDir 与自动化用例共用）：单目录 Selection 走
+// folderexpand::expand 缺省 scanDir（QDirIterator 递归全深度、不追符号链接），
+// 展开产物逐行 appendDeployRow——与 teAddFiles 同款即时写回纪律（appendDeployRow
+// 内 setItem 触发 cellChanged → flushDeployTable 写回当前 deploy 步，绑定守卫
+// 窗口内忽略；按钮腿必然非绑定态，直调缝同样不设守卫以复现表格行为）。
+// 拒绝口径（返回 -1）：① dirPath 空白——本缝自有防御，非纯头文案；② 文件系统
+// 根退化（FolderExpand.h 契约 ⑧）与超 kMaxExpandedItems 上限——纯头中文 error
+// 逐字直传（三入口同文案纪律），且表格零改动、编辑内容不丢；③ 远端目标冲突
+// （规格 §3.1 条款 4，波2 终审 I-1）——本次展开行的远端路径与条目表既有行相同
+// 即整体拒绝（本缝中文 error、追加任何行之前判定、表格零改动），杜绝同名目录多次
+// 添加静默累积重复远端目标、部署后写覆盖。
+int TaskTemplateEditorDialog::addDeployDirectoryEntries(const QString& dirPath, QString* error)
+{
+    if (error)
+        error->clear();
+    if (dirPath.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("目录路径为空，未添加条目");
+        return -1;
+    }
+    QList<folderexpand::Selection> selections;
+    selections.append({dirPath, true});
+    const folderexpand::ScanResult expanded = folderexpand::expand(selections);
+    if (!expanded.ok) {
+        if (error)
+            *error = expanded.error;   // 纯头文案逐字直传，不改写、不加前后缀
+        return -1;
+    }
+    const QString prefix = m_remoteDir ? m_remoteDir->text().trimmed() : QString();
+
+    // v2.15 波2 终审 I-1（规格 §3.1 条款 4「远端目标冲突检测」落地）：把展开产物
+    // 入条目表前，逐条比对新行远端路径与表内既有行的远端路径——同名不同父目录
+    // （如 D:/a/bin 与 D:/b/bin）各自展开出「bin/…」同一远端首段，两次添加会得到
+    // 同一 remotePath 的重复行、部署时后写覆盖静默累积。命中冲突即整体拒绝（返回
+    // -1 + 中文 error，与上限/根退化同族拒绝形态），**在追加任何行之前**判定、表格
+    // 零改动——既有 flush 纪律（appendDeployRow→cellChanged→flushDeployTable）只在
+    // 全部校验通过后才被触发，冲突路径绝不出半入表状态。
+    // 只比对「既有行 vs 本次新增」：单个目录展开内 rel 天然互异（文件系统路径互斥），
+    // 本次添加不自冲突；扁平模式既有的同名散落文件后写覆盖语义不变（非本缝范围）。
+    QSet<QString> existingRemotePaths;
+    if (m_itemTable) {
+        for (int row = 0; row < m_itemTable->rowCount(); ++row) {
+            const QTableWidgetItem* remoteCell = m_itemTable->item(row, 1);
+            if (remoteCell)
+                existingRemotePaths.insert(remoteCell->text().trimmed());
+        }
+    }
+    for (const folderexpand::ExpandedFile& file : expanded.files) {
+        const QString rel = file.remoteRel.isEmpty()
+            ? QFileInfo(file.localPath).fileName()
+            : file.remoteRel;
+        const QString remotePath = folderexpand::composeRemotePath(prefix, rel);
+        if (existingRemotePaths.contains(remotePath)) {
+            if (error)
+                *error = QStringLiteral("添加目录的远端目标与条目表已有条目冲突（「%1」），"
+                                        "请勿重复添加同名目录或先移除冲突条目")
+                             .arg(remotePath);
+            return -1;
+        }
+    }
+
+    int added = 0;
+    for (const folderexpand::ExpandedFile& file : expanded.files) {
+        // 顶层扁平文件 rel 空 → 取文件名为远端末段（与映射层 items 组装同口径）；
+        // 目录镜像项 rel 带「目录名/」首段 → composeRemotePath 单源拼接
+        const QString rel = file.remoteRel.isEmpty()
+            ? QFileInfo(file.localPath).fileName()
+            : file.remoteRel;
+        appendDeployRow(file.localPath,
+                        folderexpand::composeRemotePath(prefix, rel),
+                        QStringLiteral("upload"), QStringLiteral("overwrite"));
+        ++added;
+    }
+    return added;
 }

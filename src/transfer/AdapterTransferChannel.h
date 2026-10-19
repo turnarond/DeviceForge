@@ -25,6 +25,9 @@ struct TransferChannelOps
     std::function<bool(const QString&, const QString&)> download;
     std::function<bool(const QString&, const QString&)> rename;
     std::function<bool(const QString&)> remove;
+    // 单层创建远端目录：父不存在时失败（与 FtpAdapter::makeDirectory / SFTP MKD
+    // 同口径）；逐级编排在 TransferExecutor 的上传前父目录确保步。
+    std::function<bool(const QString&)> makeDirectory;
     std::function<bool(const QString&, QVector<TransferChannelEntry>&)> list;
     std::function<void(std::function<void(int)>)> setProgressCallback;
     std::function<void(std::atomic_bool*)> setCancelFlag;
@@ -48,6 +51,7 @@ public:
     bool stat(const QString& path, TransferFileStat& out) override;
     bool rename(const QString& from, const QString& to) override;
     bool remove(const QString& path) override;
+    bool makeDirectory(const QString& remotePath) override;
 
     void setProgressCallback(std::function<void(int)> callback) override;
     void setCancelFlag(std::atomic_bool* flag) override;

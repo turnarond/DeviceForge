@@ -75,6 +75,14 @@ void DeployJob::run()
         m_result.lastError = error;
         log(file + " 上传失败: " + error);
     };
+    // v2.15 任务9 组装错误防线：entryRemotePaths 非空但长度与 files 不符 =
+    // 上游贯通 bug，失败向拒绝且不触碰远端（m_result.state 保持 #25 失败向默认）。
+    const bool explicitEntries = !m_params.entryRemotePaths.empty();
+    if (explicitEntries && m_params.entryRemotePaths.size() != m_params.files.size()) {
+        m_result.lastError = "每条目远端路径与文件清单长度不一致（组装错误，未触碰远端）";
+        log(m_result.lastError);
+        return;
+    }
     if (isCancelled()) { m_result.state = DeviceResult::Cancelled; return; }
     auto adapter = ProtocolRegistry::instance()->create(m_params.protocol);
     cleanup.adapter = adapter;
@@ -103,17 +111,36 @@ void DeployJob::run()
     struct Item { std::string local, remote, label; };
     std::vector<Item> items;
     std::vector<std::string> directories;
+    std::size_t sourceIndex = 0;
     for (const auto& source : m_params.files) {
         if (isCancelled()) break;
         std::error_code ec;
         auto local = fs::u8path(source).lexically_normal();
         if (local.filename().empty()) local = local.parent_path();
+        if (explicitEntries) {
+            // 显式条目模式（v2.15 任务9 入口展开）：local 已在入口展开为普通
+            // 文件，远端全路径（含镜像相对段）由 entryRemotePaths 预填——不派生
+            // basename、不目录遍历（快照窗口内条目若已变为目录，Executor 会在
+            // 触碰远端前失败，与 tst_transfer_executor 钉桩同口径）。
+            // label 仅日志展示用（deliveredFiles 匹配键为 local+remote 全对，
+            // 续传语义不受影响，与扁平模式最小差异收口）。
+            items.push_back({source, m_params.entryRemotePaths[sourceIndex],
+                             local.filename().u8string()});
+            ++sourceIndex;
+            continue;
+        }
         if (!fs::is_directory(local, ec)) {
             if (ec) fail(source, "无法访问本地路径");
             else items.push_back({source, joinPath(m_params.remotePath, local.filename().u8string()),
                                   local.filename().u8string()});
+            ++sourceIndex;
             continue;
         }
+        // v2.14 legacy 目录展开（评审修复轮注记）：受 5000 上限的整体拒绝在**入口
+        // 装配腿**（deployentry::build）闭合——生产三入口含目录时必带显式
+        // entryRemotePaths 走上方显式分支，本目录遍历仅直接组装 Params 的历史
+        // 调用方/测试（tst_deploy_runner 回归契约）可达，保留以钉 v2.14 行为，
+        // 新调用方勿依赖。本分支无条目数上限，与入口口径的差异是刻意现状非漏洞。
         // 保留协议原有目录映射：FTP 包含顶层目录，SFTP 上传目录内容。
         auto base = m_params.protocol == "ssh" || m_params.protocol == "sftp"
             ? m_params.remotePath : joinPath(m_params.remotePath, local.filename().u8string());
@@ -130,6 +157,7 @@ void DeployJob::run()
                 items.push_back({it->path().u8string(), remote, relative});
         }
         if (ec) fail(source, "本地目录遍历失败: " + ec.message());
+        ++sourceIndex;
     }
     for (const auto& directory : directories) {
         if (isCancelled()) break;

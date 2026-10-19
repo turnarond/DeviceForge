@@ -38,6 +38,14 @@ public:
         AuthInfo auth;                      // 凭证（拷贝传入，Job 自持有）
         std::vector<std::string> files;     // 本地文件/文件夹上传列表
         std::string remotePath;             // 远程目标目录
+        // v2.15 任务9 每条目远端路径贯通（与 files 同长的平行向量）：
+        // 非空且长度==files.size() → 显式条目模式——files 为入口（Widget/编辑器）
+        // folderexpand::expand 展开后的普通文件清单，entryRemotePaths[i] 即该条
+        // 完整远端目标路径（镜像相对段已拼好）；Job 不再派生 basename、不再做
+        // 目录遍历（目录在触碰 Job 前已展开，Executor 钉桩保证目录源零远端接触）。
+        // 空（缺省）→ v2.14 扁平口径：basename 派生 + Job 内目录展开，逐字不变。
+        // 非空但长度不符 = 组装错误，run() 头部拒绝（失败向，不触远端）。
+        std::vector<std::string> entryRemotePaths;
         bool clearBefore = false;           // 部署前清空远程目录
         bool useFtps = false;               // FTPS 开关（仅 protocol=="ftp" 生效）
         std::string protocol;               // 协议注册键（"ftp"/"ssh"，SFTP 复用 "ssh"）

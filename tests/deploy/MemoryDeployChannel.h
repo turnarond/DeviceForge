@@ -49,6 +49,9 @@ inline DeployJob::Params::ChannelFactory memoryDeployChannelFactory(
             storage->files.remove(path);
             return true;
         };
+        // v2.15 波2：执行器上传前确保远端父目录（capabilities().makeDirectory）——
+        // 真实 FTP/SFTP 通道具备单层 mkdir，内存假文件系统无目录概念、恒成功。
+        ops.makeDirectory = [](const QString&) { return true; };
         ops.setProgressCallback = [deploy](auto cb) { deploy->setProgressCallback(std::move(cb)); };
         ops.setCancelFlag = [deploy](auto flag) { deploy->setCancelFlag(flag); };
         return std::make_unique<AdapterTransferChannel>(QStringLiteral("ftp"), adapter, std::move(ops));
