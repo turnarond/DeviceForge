@@ -1268,6 +1268,78 @@ private slots:
         QCOMPARE(row.value(QStringLiteral("overwrite")).toString(), QStringLiteral("skip"));
     }
 
+    // ── v2.15 任务9：teAddDir 目录展开直调缝（QFileDialog 选人腿仍人工冒烟，#54 先例）──
+    // 入口展开保证「条目表所见即部署所得」：目录不再以目录条目形态入表，而是
+    // 展开为文件条目批量入表，remotePath=composeRemotePath(teRemoteDir, rel) 镜像预填。
+    void editorDialog_addDeployDirectory_expandsIntoMirroredFileRows()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QVERIFY(QDir(tmp.path()).mkpath(QStringLiteral("pkg/bin")));
+        {
+            QFile f(tmp.filePath(QStringLiteral("pkg/bin/app.conf")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("a");
+        }
+        {
+            QFile f(tmp.filePath(QStringLiteral("pkg/notes.txt")));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("b");
+        }
+
+        TaskTemplate in;
+        in.name = QStringLiteral("目录展开").toStdString();   // TaskTemplate::name 是 std::string
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        auto* remoteDir = dlg.findChild<QLineEdit*>(QStringLiteral("teRemoteDir"));
+        QVERIFY(remoteDir);
+        remoteDir->setText(QStringLiteral("/opt/app"));
+
+        QString error;
+        const int added = dlg.addDeployDirectoryEntries(tmp.filePath(QStringLiteral("pkg")), &error);
+        QCOMPARE(added, 2);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+        QCOMPARE(table->rowCount(), 2);          // 目录以文件条目形态入表（非目录行）
+        QStringList remotes;
+        for (int row = 0; row < table->rowCount(); ++row) {
+            QVERIFY2(!table->item(row, 0)->text().endsWith(QStringLiteral("/pkg")),
+                     "本地列必须是展开后的普通文件而非目录");
+            remotes << table->item(row, 1)->text();
+        }
+        QVERIFY(remotes.contains(QStringLiteral("/opt/app/pkg/bin/app.conf")));   // 镜像相对段
+        QVERIFY(remotes.contains(QStringLiteral("/opt/app/pkg/notes.txt")));
+
+        TaskTemplate out;
+        QVERIFY(dlg.collect(&out));
+        const QVariantList items = out.steps[0].parameters.value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 2);
+        QVERIFY(!out.steps[0].parameters.contains(QStringLiteral("files")));
+    }
+    // 根目录退化（FolderExpand.h 契约 ⑧）：纯头中文拒绝串逐字直传（三入口同文案，
+    // 本用例独立于 tst_folder_expand 钉桩，防入口侧改写文案）。
+    void editorDialog_addDeployDirectory_rootRejectionPassesPureHeaderVerbatim()
+    {
+        TaskTemplate in;
+        in.name = QStringLiteral("根拒绝").toStdString();
+        TaskStep step;
+        step.type = TaskStepType::DeployFiles;
+        in.steps.push_back(step);
+        TaskTemplateEditorDialog dlg(in, {});
+        QString error;
+        QCOMPARE(dlg.addDeployDirectoryEntries(QDir::rootPath(), &error), -1);
+        QCOMPARE(error,
+                 QStringLiteral("部署目录不能为文件系统根目录（「%1」无法解析出目录名），"
+                                "请在根目录下选择具体子目录")
+                     .arg(QDir::rootPath()));
+        auto* table = dlg.findChild<QTableWidget*>(QStringLiteral("teItemList"));
+        QVERIFY(table);
+        QCOMPARE(table->rowCount(), 0);          // 拒绝时表格零改动，停留编辑不丢内容
+    }
+
     // ── ⑫ v2.13 #54 Task 4：commands/recover 面板（多行命令 + timeoutSec + protocol）──
     void editorDialog_commandsPanelSplitsLinesAndClamps()
     {
