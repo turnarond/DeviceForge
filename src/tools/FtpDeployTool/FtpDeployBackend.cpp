@@ -108,7 +108,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
                                     const std::string& protocol,
                                     bool useFtps,
                                     int port,
-                                    const RebootOptions& rebootOptions)
+                                    const RebootOptions& rebootOptions,
+                                    const std::vector<std::string>& entryRemotePaths)
 {
     // 先等上一轮批量彻底收尾（工作线程返回、Runner 注销），再复位批量取消
     // 标志——顺序不能反：先复位会把在途批量的取消请求静默吞掉
@@ -132,6 +133,14 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
     appendKey(m_auth.user);
     appendKey(remotePath);
     for (const auto& file : localFiles) appendKey(file);
+    // v2.15 任务9：显式条目模式（入口目录展开）的每条目远端路径纳入恢复身份——
+    // 仅镜像结构变化（同本地清单、不同远端布局）必须判定为不同请求、禁止错误
+    // 续传；entryRemotePaths 为空（v2.14 扁平口径）时不追加任何键段，
+    // 键与 v2.14 逐字相同（既有续传行为零漂移）。
+    if (!entryRemotePaths.empty()) {
+        appendKey(QStringLiteral("__deploy_entries__").toStdString());
+        for (const auto& remote : entryRemotePaths) appendKey(remote);
+    }
     const bool resume = m_resumeNextUpload && requestKey == m_previousRequestKey;
     m_resumeNextUpload = false;
     m_previousRequestKey = std::move(requestKey);
@@ -141,7 +150,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
     // 值捕获进工作线程
     const int concurrency = loadConcurrency();
 
-    m_uploadFuture = QtConcurrent::run([this, localFiles, protocol, useFtps, port, concurrency, resume, previousReport]() {
+    m_uploadFuture = QtConcurrent::run([this, localFiles, entryRemotePaths, protocol,
+                                        useFtps, port, concurrency, resume, previousReport]() {
         if (m_devices.empty()) {
             if (m_logCb) m_logCb("错误：没有绑定设备，请先在设备总线中添加目标设备");
             if (m_finishedCb) m_finishedCb(false, {}, {});
@@ -163,6 +173,8 @@ void FtpDeployBackend::startUpload(const std::vector<std::string>& localFiles,
             params.auth = m_auth;   // 凭证拷贝传入，Job 自持有
             params.files = localFiles;
             params.remotePath = m_remotePath;
+            // v2.15 任务9：每条目远端路径平行向量逐台透传（空=v2.14 扁平口径）
+            params.entryRemotePaths = entryRemotePaths;
             params.clearBefore = m_clearBeforeDeploy;
             params.useFtps = useFtps;
             params.protocol = protocol;

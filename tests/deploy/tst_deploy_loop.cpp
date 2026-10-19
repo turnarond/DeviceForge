@@ -1,5 +1,6 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
+#include <QDir>        // v2.15 任务9 单发镜像用例夹具建子目录
 #include <QFile>
 #include "adapter/IProtocolAdapter.h"
 #include "adapter/IDeployable.h"
@@ -274,6 +275,83 @@ private slots:
         QVERIFY(overallEvents.load() >= 1);   // 总进度通道存活（含强制末次）
         QCOMPARE(ok.size(), 2);
         QCOMPARE(fail.size(), 0);
+        backend.OnStop();
+    }
+
+    // v2.15 任务9 单发镜像用例（控制器裁定：每条目远端路径贯通 Backend/Job/Runner）：
+    // ① entryRemotePaths 非空 → 每条目按传入远端全路径交付（镜像相对段直达 Job，
+    //    不再派生 basename）；② 同本地清单仅远端布局变化 → requestKey 不同，
+    //    显式续传请求**不得**误判同一请求（防错误续传）；③ entryRemotePaths 为空
+    //    （纯文件扁平口径）→ 键与 v2.14 逐字相同——与显式条目模式的同文件清单
+    //    互不误配，且既有扁平续传用例（explicitBackendRetry_…）继续绿即为零漂移证据。
+    void singleShotEntryRemotePaths_mirrorAndResumeIdentity() {
+        // 夹具：pkg/bin/app.conf（模拟入口展开产物：本地普通文件+镜像远端段）
+        QVERIFY(QDir(m_tmpDir.filePath(QStringLiteral("pkg"))).mkpath(QStringLiteral("bin")));
+        const QString appConf = m_tmpDir.filePath(QStringLiteral("pkg/bin/app.conf"));
+        {
+            QFile f(appConf);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("mirror-fixture");
+        }
+        const std::string mirrorLocal = appConf.toStdString();
+        const std::string mirrorRemote = "/apps/pkg/bin/app.conf";   // 相对段随条目贯通
+        auto* mock = new MockDeployable;
+        ProtocolRegistry::instance()->registerFactory("mock_mirror",
+            [mock] { return std::shared_ptr<IProtocolAdapter>(mock, [](IProtocolAdapter*) {}); });
+        mock->releaseGate = true;
+        FtpDeployBackend backend;
+        backend.setTransferChannelFactory(memoryDeployChannelFactory());
+        QCOMPARE(backend.OnStart(0, nullptr), 0);
+        backend.bindDevices({{"192.168.1.9", 21, "", "", ""}});
+        backend.bindCredentials({"u", "p"});
+        std::atomic<bool> finished{false};
+        backend.setFinishedCallback([&](bool, const auto&, const auto&) { finished = true; });
+
+        const std::vector<std::string> files = {m_fixtureFile, mirrorLocal};
+        const std::vector<std::string> entry = {"/apps/a.txt", mirrorRemote};
+        // 首轮：镜像远端布局全量交付（entry 直达 Executor 目标路径）
+        backend.startUpload(files, "/apps", false, false, "mock_mirror",
+                            false, 0, RebootOptions{}, entry);
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        {
+            // lastReport() 按值返回：先持副本再引用内部向量（防悬垂）
+            const DeployReport first = backend.lastReport();
+            QCOMPARE(first.results.front().state, DeviceResult::Ok);
+            const auto& delivered = first.results.front().deliveredFiles;
+            QCOMPARE(delivered.size(), std::size_t{2});
+            QCOMPARE(delivered[0].remotePath, std::string("/apps/a.txt"));
+            QCOMPARE(delivered[1].remotePath, mirrorRemote);   // 相对段未被拍平
+        }
+
+        // 仅结构变化（同本地清单、不同远端布局）+ 显式续传 → 禁止误判同一请求
+        const int callsBefore = mock->uploadCalls.load();
+        finished = false;
+        backend.resumePreviousFailures();
+        backend.startUpload(files, "/apps", false, false, "mock_mirror",
+                            false, 0, RebootOptions{},
+                            {"/apps/a.txt", "/apps/pkg/moved.conf"});
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        // requestKey 已纳入每条目远端路径：误续传会 0 次上传（全部「跳过已交付」）
+        QCOMPARE(mock->uploadCalls.load() - callsBefore, 2);
+
+        // 扁平口径（entry 空）：键与 v2.14 逐字相同——与显式条目模式的同清单
+        // 互不误配（键空间分离），且部分失败续传仍按 local+remote 全对命中
+        mock->failedLocal = mirrorLocal;
+        finished = false;
+        backend.startUpload(files, "/apps", false, false, "mock_mirror",
+                            false, 0, RebootOptions{}, {});
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Failed);
+        mock->failedLocal.clear();
+        const int callsMid = mock->uploadCalls.load();
+        finished = false;
+        backend.resumePreviousFailures();
+        backend.startUpload(files, "/apps", false, false, "mock_mirror",
+                            false, 0, RebootOptions{}, {});
+        QTRY_VERIFY_WITH_TIMEOUT(finished.load(), 5000);
+        QCOMPARE(backend.lastReport().results.front().state, DeviceResult::Ok);
+        // 续传命中：首条 basename 目标 /apps/a.txt 已交付被跳过，仅补传第二条
+        QCOMPARE(mock->uploadCalls.load() - callsMid, 1);
         backend.OnStop();
     }
 };

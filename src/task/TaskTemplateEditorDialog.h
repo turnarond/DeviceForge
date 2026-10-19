@@ -52,6 +52,15 @@ public:
     // 保存按钮（AcceptRole）路径统一闸口：校验不过弹警告停留，不关闭对话框
     void accept() override;
 
+    // v2.15 任务9：目录展开直调缝——把 dirPath 经 folderexpand::expand 展开为
+    // 普通文件条目批量入条目表（remotePath=composeRemotePath(teRemoteDir, rel)
+    // 镜像预填；目录不以「目录条目」形态存在于表中）。返回成功新增条数；
+    // 拒绝（文件系统根退化/超 kMaxExpandedItems 上限）返回 -1 并把纯头中文
+    // error 串**逐字**写入 *error（三入口同文案纪律，禁止改写），表格零改动、
+    // 停留编辑不丢内容。teAddDir 按钮与自动化用例共用本缝（QFileDialog 选人腿
+    // 仍按 #54 先例人工冒烟）。
+    int addDeployDirectoryEntries(const QString& dirPath, QString* error);
+
 private:
     // 表单 → 候选模板（collect/validate 共用组装逻辑，只读快照）
     TaskTemplate assemble() const;

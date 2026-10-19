@@ -53,6 +53,11 @@ public:
     // --- FTP 部署特有操作 ---
     // protocol: "ftp" / "ssh"（按 ProtocolRegistry 注册的协议 id 取部署通道；
     // SFTP 复用 "ssh" 注册键，widget 的 currentProtocol() 对 SFTP 即返回 "ssh"）
+    // entryRemotePaths（v2.15 任务9 单发腿每条目远端路径贯通）：与 localFiles 同长
+    // 的**平行向量**——非空即启用显式条目模式，localFiles 为入口目录展开后的普通
+    // 文件清单、entryRemotePaths[i] 为其完整远端目标路径（含镜像相对段），Job 不再
+    // 派生 basename/不再目录遍历；空（缺省）= v2.14 扁平口径，行为与键形态逐字不变
+    // （选平行向量而非成对结构体的理由：既有调用方与既有测试零改动、空态即旧态）。
     void startUpload(const std::vector<std::string>& localFiles,
                      const std::string& remotePath,
                      bool clearBeforeDeploy,
@@ -60,7 +65,8 @@ public:
                      const std::string& protocol = "ftp",
                      bool useFtps = false,
                      int port = 0,
-                     const RebootOptions& rebootOptions = {});
+                     const RebootOptions& rebootOptions = {},
+                     const std::vector<std::string>& entryRemotePaths = {});
     void cancelUpload();
     // 显式恢复下一次请求；startUpload 消费一次，普通部署始终重新执行。
     void resumePreviousFailures() { m_resumeNextUpload = true; }

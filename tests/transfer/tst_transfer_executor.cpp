@@ -381,8 +381,10 @@ private slots:
 
     void directoryUploadSourceFailsBeforeAnyChannelCall()
     {
-        // 部署页选中文件夹条目 → 单发与任务模板同走本执行器：目录源必须在
-        // 触碰远端之前失败（评审 I-1 钉桩：两条路径口径一致，无"单发能传文件夹"分叉）
+        // 目录源必须在触碰远端之前失败（评审 I-1 钉桩：两条路径口径一致，无
+        // 「单发能传文件夹」分叉）。v2.15 任务9 就实：单发/编辑器/保存为模板三入口
+        // 已在入口层展开目录（folderexpand::expand），条目级不再有目录源到达本
+        // 执行器——本钉桩降为执行器侧纵深防御，断言逐字不变。
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         QVERIFY(QDir(directory.path()).mkpath(QStringLiteral("bundle")));
