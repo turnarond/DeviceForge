@@ -41,6 +41,24 @@ private:
         return QString::fromUtf8(f.readAll());
     }
 
+    // v2.16-B 任务7 样式口径守卫：本版设备栏**每主题最多新增一行** QSS（裁定③/规格 §2.3）——
+    // 空态提示 `QLabel#deviceBusHint` 之外不得再为设备栏发明专属规则。判据：
+    // ① deviceBusHint 选择器全主题恰出现一次（注释里也不许写这个名字，写进注释=分叉预备）；
+    // ② 其余四个对象名（selectedPillHost/devicePickerBtn/devicePillMore/deviceSearchEdit）
+    //    零命中——chips 沿用现成 #devicePill 节，入口/「+M 台」沿用通用 QPushButton 节
+    //   （min-width:85px 够用，第二版稿已核），搜索框沿用通用 QLineEdit 节。
+    static void assertDeviceBarQssBudget(const QString& qss) {
+        QCOMPARE(qss.count(QStringLiteral("deviceBusHint")), 1);
+        QVERIFY2(!qss.contains(QStringLiteral("selectedPillHost")),
+                 "为 selectedPillHost 发明了专属规则——本版口径是至多一行 deviceBusHint");
+        QVERIFY2(!qss.contains(QStringLiteral("devicePickerBtn")),
+                 "为 devicePickerBtn 发明了专属规则——入口应按通用 QPushButton 节渲染");
+        QVERIFY2(!qss.contains(QStringLiteral("devicePillMore")),
+                 "为 devicePillMore 发明了专属规则——「+M 台」应按通用 QPushButton 节渲染");
+        QVERIFY2(!qss.contains(QStringLiteral("deviceSearchEdit")),
+                 "为 deviceSearchEdit 发明了专属规则——搜索框应按通用 QLineEdit 节渲染");
+    }
+
 private slots:
     // ===== 色值字符串断言（CTest 渲染不可用的保底） =====
 
@@ -118,6 +136,30 @@ private slots:
         bar.setTextVisible(false);
         bar.setValue(100);
         QCOMPARE(samplePixel(&bar, 100, 10), QColor(QStringLiteral("#2FA88A")));
+    }
+
+    // ===== v2.16-B 任务7：设备栏空态提示样式（每主题恰一行 QLabel#deviceBusHint） =====
+    // 提示语「未选择设备——点「设备 ▾」选目标」（src/ui/DeviceBusWidget.cpp:475-477）
+    // 既无"提示"也无"拖拽"，QLabel[text*=…]（:22-25）命中不了；不补行就按通用
+    // QLabel 主文字色渲染（暗 #C8CCD4/亮 #2A2F38），比主内容还亮。色值取次级文字
+    // 现成用法（暗 :23/:28 = #7B8494；亮 :23/:28 = #6B7480），不是新 token。
+
+    void deviceBusHintQss_dark() {
+        const QString qss = readQss(QStringLiteral(":/styles/darkstyle.qss"));
+        QVERIFY(!qss.isEmpty());
+        QVERIFY2(blockContains(qss, QStringLiteral("QLabel#deviceBusHint"),
+                               QStringLiteral("#7B8494")),
+                 "darkstyle.qss 缺 QLabel#deviceBusHint { color:#7B8494; }（次级文字色，现成用法 :23/:28）");
+        assertDeviceBarQssBudget(qss);
+    }
+
+    void deviceBusHintQss_light() {
+        const QString qss = readQss(QStringLiteral(":/styles/darkstyle-light.qss"));
+        QVERIFY(!qss.isEmpty());
+        QVERIFY2(blockContains(qss, QStringLiteral("QLabel#deviceBusHint"),
+                               QStringLiteral("#6B7480")),
+                 "darkstyle-light.qss 缺 QLabel#deviceBusHint { color:#6B7480; }（次级文字色，现成用法 :23/:28）");
+        assertDeviceBarQssBudget(qss);
     }
 };
 QTEST_MAIN(TstQssPixels)

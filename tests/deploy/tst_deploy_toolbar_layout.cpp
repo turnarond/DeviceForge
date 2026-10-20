@@ -18,6 +18,10 @@
  *              v2.16-B 任务4b 追加：未选择设备＝没有目标（行为变更钉桩）——
  *              空选中点部署被拒绝（日志「未选择目标设备…」+ 按钮文案「▶ 部署（未选择设备）」），
  *              对照组（恰勾 1 台）走「Backend 未就绪」分支，证明两条分支各自可达。
+ *              v2.16-B 任务7 追加：设备栏布局守卫（行最小宽 >0、2 台→80 台行高不换行，
+ *              屏宽无关）+ 视觉稿/规格 §7 实测数字量测步 +「×」命中区在生产 QSS 下的
+ *              像素级覆盖钉桩——本目标 Fusion + 生产 darkstyle.qss 口径，
+ *              地板复用 qssFloorIsInEffect（无 QSS 时量到的都是默认风格，非用户所见）。
  */
 
 #include <QtTest>
@@ -26,21 +30,30 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QList>
+#include <QMenu>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
 #include <QStyleFactory>
+#include <QStyleOptionButton>
+#include <QFontMetricsF>
+#include <QPixmap>
 #include <QVBoxLayout>
+#include <QVector>
 #include <QWidget>
 #include <QDir>
 #include <QFile>
 #include <QUuid>
+#include <cmath>
+#include <climits>
 
 #include "config/ConfigStore.h"
 #include "tools/FtpDeployTool/FtpDeployWidget.h"
@@ -126,6 +139,83 @@ int loggedCount(const QStringList& logs, const QString& needle)
         if (line.contains(needle))
             ++n;
     return n;
+}
+
+// ---- v2.16-B 任务7 布局守卫夹具 ----
+// n 台旧行设备（persist=false 不落库；alias 空 → chips 回落纯地址），
+// ip=10.77.1.<101..180>：整数互不为子串（101..180 区间），过滤词取整条 ip 时
+// matchesFilter 恰命中一台——"勾 2 台"用两条过滤词各勾一台（集合是并集）。
+void fillBusWithLegacyDevices(DeviceBusWidget& bus, int n)
+{
+    for (int i = 1; i <= n; ++i)
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.1.%1").arg(100 + i)), false);
+}
+
+// 经 deviceSearchEdit 过滤词勾选指定 ip（公开选择缝，同 oneSelectedDeviceReachesBackendGuard）
+void selectDeviceByFilter(DeviceBusWidget& bus, const QString& ip)
+{
+    auto* search = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+    QVERIFY(search);
+    search->setText(ip);
+    bus.selectAllVisible();
+}
+
+// chips 宿主里第一枚未显式隐藏的胶囊（chips 形态下可见 == 已选）
+QPushButton* firstVisibleChip(DeviceBusWidget& bus)
+{
+    const auto pills = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
+    for (QPushButton* pill : pills) {
+        if (!pill->isHidden())
+            return pill;
+    }
+    return nullptr;
+}
+
+// 胶囊离屏渲染后的**尾枚字形**水平包络 [left, right]（px，胶囊自身坐标）。
+// 判据：与 #devicePill 暗底 #232A36 的 RGB 距离 >150 记为"墨像素"——文字
+// #C8CCD4（距离 ~581）计入，石墨边框 #333B48（距离 ~51）与圆角外黑（~131）排除。
+// 尾标 "  ×" 的两个前导空格无墨，从最右墨列向左回走、空列 >3 即停 ⇒ 得到
+// 的是渲染后「×」字形（而非整个 caption）的左缘。这是"用户看得见的 ×"的
+// 唯一机械化取法——QStyleSheetStyle 解析出的 font-size/padding 不流经任何
+// QWidget 公共 API（任务5报告 §F3 口径限制），像素即事实。
+bool scanCloseMarkEnvelope(QPushButton& pill, int* left, int* right)
+{
+    QPixmap pix(pill.size());
+    pix.fill(Qt::transparent);
+    pill.render(&pix);
+    const QImage img = pix.toImage();
+    const QColor bg(QStringLiteral("#232A36"));
+    QVector<bool> inkColumn(img.width(), false);
+    for (int x = 3; x < img.width() - 3; ++x) {          // 两侧留 3px 躲边框/圆角 AA
+        for (int y = 4; y < img.height() - 4; ++y) {
+            const QColor c = img.pixelColor(x, y);
+            const int dist = qAbs(c.red() - bg.red()) + qAbs(c.green() - bg.green())
+                             + qAbs(c.blue() - bg.blue());
+            if (dist > 150) {
+                inkColumn[x] = true;
+                break;
+            }
+        }
+    }
+    int r = -1;
+    for (int x = img.width() - 4; x >= 0; --x) {
+        if (inkColumn[x]) { r = x; break; }
+    }
+    if (r < 0)
+        return false;
+    int l = r;
+    int gap = 0;
+    for (int x = r; x >= 0; --x) {
+        if (inkColumn[x]) {
+            l = x;
+            gap = 0;
+        } else if (++gap > 3) {
+            break;
+        }
+    }
+    *left = l;
+    *right = r;
+    return true;
 }
 
 } // namespace
@@ -492,6 +582,205 @@ private slots:
         // 未命中不得发射（也不得动右面板）
         QCOMPARE(signalSpy.count(), 1);
         QCOMPARE(rightPanelDeviceCombo->currentText(), QStringLiteral("10.77.0.2"));
+    }
+
+    // ---- v2.16-B 任务7：设备栏布局守卫（屏宽无关，规格 §3.7；地板复用上方 qssFloorIsInEffect）----
+    // 两条判据都与屏宽/折算枚数无关（tests/AGENTS.md 约定 6）：
+    // ① 设备行 totalMinimumSize().width() > 0——量出 0 == 布局从未参与计算，是本用例
+    //    自身的失效信号（同 toolbarFitsNarrowScreen 的口径）；
+    // ② 已选 2 台 → 全选 80 台，设备栏 sizeHint().height() 一字不动——溢出走「+M 台」
+    //    折算、**不换行**（规格 §2.3 单行 QHBoxLayout + §3.7）。可见枚数随宽度折叠是
+    //    合法形态，故只断高度不变与"布局参与"，不断具体枚数（0 台/2 台/80 台三态都量）。
+    // bus.resize(1200,·) 是给 applyPillOverflow 一个确定的人造宽度让折叠发生；
+    // 两条断言都不读该宽度——换任何宽度结论不变（枚数会变，但没人断枚数）。
+    void deviceBarRowGuardMinWidthPositiveAndNoSecondRow()
+    {
+        DeviceBusWidget bus;
+        bus.resize(1200, 160);
+        fillBusWithLegacyDevices(bus, 80);
+        QCOMPARE(bus.allDevices().size(), std::size_t{80});   // 全集硬线顺带再过一遍
+
+        auto* mainV = qobject_cast<QVBoxLayout*>(bus.layout());
+        QVERIFY2(mainV && mainV->count() == 2,
+                 "DeviceBusWidget 主布局不再是『设备行 + 凭证行』两行结构");
+        auto* deviceRow = qobject_cast<QHBoxLayout*>(mainV->itemAt(0)->layout());
+        QVERIFY2(deviceRow, "设备栏第 1 行不是 QHBoxLayout——溢出折算依赖单行形态（规格 §2.3）");
+
+        // 空态（0 台已选，提示可见）
+        const int minW0 = deviceRow->totalMinimumSize().width();
+        QVERIFY2(minW0 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
+        const int h0 = bus.sizeHint().height();
+        QVERIFY2(h0 > 0, "设备栏 sizeHint 高度算出 0，布局未参与计算（用例失效信号）");
+
+        // 勾 2 台（两条过滤词各勾一台，集合为并集；撤过滤不动已选）
+        selectDeviceByFilter(bus, QStringLiteral("10.77.1.101"));
+        selectDeviceByFilter(bus, QStringLiteral("10.77.1.102"));
+        auto* search = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(search);
+        search->setText(QString());
+        QCOMPARE(bus.selectedIds().size(), 2);
+        const int minW2 = deviceRow->totalMinimumSize().width();
+        QVERIFY2(minW2 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
+        const int h2 = bus.sizeHint().height();
+        QCOMPARE(h2, h0);
+
+        // 全选 80 台：行高不得长第二行
+        bus.clearSelection();
+        bus.selectAllVisible();
+        QCOMPARE(bus.selectedIds().size(), 80);
+        const int minW80 = deviceRow->totalMinimumSize().width();
+        QVERIFY2(minW80 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
+        const int h80 = bus.sizeHint().height();
+        QVERIFY2(h80 == h2,
+                 qPrintable(QStringLiteral("80 台全选的已选让设备栏长高了 %1px——溢出必须折进「+M 台」，"
+                                            "不得换行（规格 §2.3/§3.7）").arg(h80 - h2)));
+        qInfo().noquote() << QStringLiteral(
+            "deviceBar guard measured (artificial width 1200, Fusion+darkstyle.qss): "
+            "rowTotalMinimumSize 0sel=%1px 2sel=%2px 80sel=%3px | bus sizeHint height=%4px/%5px/%6px")
+            .arg(minW0).arg(minW2).arg(minW80).arg(h0).arg(h2).arg(h80);
+    }
+
+    // ---- v2.16-B 任务7：「×」命中区在生产 QSS 形态下的钉桩（任务5报告 §F6.3 的"届时复核"）----
+    // 任务5 移交的偏差口径是"QSS padding 8px vs PM_ButtonMargin 6px ⇒ 区左缘漂约 2px"。
+    // 生产 QSS 加载后实测修正该口径（数字见本槽 qInfo 留证）：#devicePill 有 QSS padding 时
+    // QStyleSheetStyle 把 PM_ButtonMargin 解析为 **0**（padding 接管了样式层边距），
+    // 区宽 = ceil(尾标字宽 16) + 0 = 16px（默认样式下是 16+6=22，任务5 量的是那套）；
+    // 画出的 × 包络 [W-17, W-9]（QSS padding 8 + border 1 把文字推离右缘），区 [W-16, W]
+    // ⇒ 字形最左 1 列（× 左尖端）差 1px 出区，方向安全——落该区外的 release 是主体单击
+    // ＝不改选择，不存在"误删"面。功能契约钉两条：① 区必须盖过 × 中心列（左半都不到
+    // 就是真缺陷，先报告再动码）；② 真行为——× 中心 release 移出选择、主体 release 不移出。
+    // 区宽按头注释登记的同款公式（胶囊 font() + PM_ButtonMargin）在测试侧独立复算
+    // （pillCloseZoneWidth 是 private，不为此扩 API），行为部分走的是生产分派本体。
+    void chipCloseZoneCoversDrawnMarkUnderProductionQss()
+    {
+        DeviceBusWidget bus;
+        bus.resize(1000, 160);
+        DeviceInfo d = makeBusDevice(QStringLiteral("10.77.9.77"));
+        d.alias = "S7-1500-01";        // 有名档案形态：caption=名称，chip 文案 "S7-1500-01  ×"
+        bus.addDevice(d, false);
+        selectDeviceByFilter(bus, QStringLiteral("10.77.9.77"));
+        QPushButton* pill = firstVisibleChip(bus);
+        QVERIFY2(pill, "勾了 1 台却没有可见 chip（chips 只显已选形态失效）");
+        pill->resize(pill->sizeHint());
+        QVERIFY2(pill->width() >= 60,
+                 qPrintable(QStringLiteral("chip 仅 %1px 宽，主体/×区没有可分辨的注入点（夹具失效信号）")
+                                .arg(pill->width())));
+
+        QStyleOptionButton opt;
+        opt.initFrom(pill);
+        const int pm = pill->style()->pixelMetric(QStyle::PM_ButtonMargin, &opt, pill);
+        const int markAdv = int(std::ceil(
+            QFontMetricsF(pill->font()).horizontalAdvance(QStringLiteral("  \xC3\x97"))));
+        const int zone = markAdv + pm;
+
+        int markLeft = 0;
+        int markRight = 0;
+        QVERIFY2(scanCloseMarkEnvelope(*pill, &markLeft, &markRight),
+                 "离屏渲染没扫到任何墨像素——× 不可见？（渲染降级/样式未生效，取证失败而非通过）");
+        const int markCenter = (markLeft + markRight) / 2;
+        qInfo().noquote() << QStringLiteral(
+            "close-zone under Fusion+darkstyle.qss: markAdvance=%1px PM_ButtonMargin=%2px zone=%3px "
+            "| drawn mark x=[%4, %5] center=%6 pillWidth=%7 zoneLeftEdge=%8")
+            .arg(markAdv).arg(pm).arg(zone).arg(markLeft).arg(markRight)
+            .arg(markCenter).arg(pill->width()).arg(pill->width() - zone);
+        QVERIFY2(markCenter >= pill->width() - zone,
+                 qPrintable(QStringLiteral("画出的 × 中心列 x=%1 落在命中区 [W-%2, W] 之外（W=%3）："
+                                            "QSS padding 与 PM_ButtonMargin 的分叉已吃掉点击目标"
+                                            "——先报告再动码").arg(markCenter).arg(zone)
+                                .arg(pill->width())));
+
+        // 真行为复核：主体（x=4）不移出，× 中心列 release 移出（生产分派，非测试复算公式）
+        QSignalSpy broadcast(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QTest::mouseClick(pill, Qt::LeftButton, Qt::NoModifier, QPoint(4, pill->height() / 2));
+        QCOMPARE(bus.selectedDevices().size(), std::size_t{1});   // 主体单击不改选择
+        QTest::mouseClick(pill, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(markCenter, pill->height() / 2));
+        QVERIFY2(bus.selectedDevices().empty(),
+                 qPrintable(QStringLiteral("release 落在画出的 × 中心（x=%1，W=%2，zone=%3）"
+                                            "却没移出选择——真用户点 × 点不动").arg(markCenter)
+                                .arg(pill->width()).arg(zone)));
+        QCOMPARE(broadcast.count(), 1);   // 两次点击合计只广播 1 次（主体 0 + 移出 1）
+    }
+
+    // ---- v2.16-B 任务7：视觉稿注记段与规格 §7 的实测数字来源（量测步）----
+    // 只断"量得出 + 结构关系"（pre-mod 裸铺 80 chips 的最小宽必然远超新形态行），
+    // 具体数字全部 qInfo 留证后回填文档；回填后稿面不得再留同项估算值。
+    void deviceBarVisualBaselineMeasurements()
+    {
+        // ① 改前基线：v2.15 形态复刻——80 枚 devicePill 裸 QHBoxLayout 平铺
+        //   （文案=旧 pillCaption 无名称回落：纯地址 + 尾标 "  ×"）
+        QWidget pre;
+        auto* preRow = new QHBoxLayout(&pre);
+        preRow->setContentsMargins(0, 2, 0, 2);
+        preRow->setSpacing(4);
+        for (int i = 1; i <= 80; ++i) {
+            auto* pill = new QPushButton(QStringLiteral("10.77.1.%1  \xC3\x97").arg(100 + i), &pre);
+            pill->setObjectName(QStringLiteral("devicePill"));
+            pill->setFixedHeight(26);
+            preRow->addWidget(pill);
+        }
+        const int preMin = preRow->totalMinimumSize().width();
+        QVERIFY2(preMin > 0, "改前形态复刻行最小宽为 0（量测失效信号）");
+
+        // ② 改后：DeviceBusWidget 设备行（空态 / 3 chips 两态）
+        DeviceBusWidget bus;
+        bus.resize(1200, 160);
+        fillBusWithLegacyDevices(bus, 80);
+        auto* mainV = qobject_cast<QVBoxLayout*>(bus.layout());
+        QVERIFY(mainV && mainV->count() == 2);
+        auto* deviceRow = qobject_cast<QHBoxLayout*>(mainV->itemAt(0)->layout());
+        QVERIFY(deviceRow);
+        const int postMinEmpty = deviceRow->totalMinimumSize().width();
+        selectDeviceByFilter(bus, QStringLiteral("10.77.1.101"));
+        selectDeviceByFilter(bus, QStringLiteral("10.77.1.102"));
+        selectDeviceByFilter(bus, QStringLiteral("10.77.1.103"));
+        auto* search = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(search);
+        search->setText(QString());
+        QCOMPARE(bus.selectedIds().size(), 3);
+        const int postMin3Chips = deviceRow->totalMinimumSize().width();
+        QVERIFY2(postMin3Chips > 0, "改后设备行最小宽为 0（量测失效信号）");
+        QVERIFY2(preMin > postMin3Chips,
+                 qPrintable(QStringLiteral("改前裸铺 80 chips 最小宽 %1px 竟 ≤ 新形态 %2px——"
+                                            "量测口径或形态复刻可疑，回填数字不可信")
+                                .arg(preMin).arg(postMin3Chips)));
+
+        // ③ 单枚 chip / 入口 / +M 台 / 搜索框 外框（sizeHint，生产 QSS 下）
+        QPushButton chipA(QStringLiteral("S7-1500-01  \xC3\x97"));
+        chipA.setObjectName(QStringLiteral("devicePill"));
+        chipA.setFixedHeight(26);
+        chipA.ensurePolished();
+        QPushButton chipB(QStringLiteral("甲 ·10.0.0.7  \xC3\x97"));   // 重名 ·ip 尾标形态
+        chipB.setObjectName(QStringLiteral("devicePill"));
+        chipB.setFixedHeight(26);
+        chipB.ensurePolished();
+        QPushButton picker(QStringLiteral("设备 ▾ 已选 12 台"));
+        picker.setObjectName(QStringLiteral("devicePickerBtn"));
+        picker.setFixedHeight(26);
+        picker.setMenu(new QMenu(&picker));   // 生产入口 setMenu——menu-indicator 占宽，桩件同形态
+        picker.ensurePolished();
+        QPushButton more(QStringLiteral("+8 台"));
+        more.setObjectName(QStringLiteral("devicePillMore"));
+        more.setFixedHeight(26);
+        more.setMenu(new QMenu(&more));       // 「+M 台」挂的是同一个菜单实例（生产形态）
+        more.ensurePolished();
+        QLineEdit lineEdit;
+        lineEdit.setObjectName(QStringLiteral("deviceSearchEdit"));
+        lineEdit.setFixedHeight(26);
+        lineEdit.setClearButtonEnabled(true);
+        lineEdit.setPlaceholderText(QStringLiteral("搜索 名称 / IP / 标签"));
+        lineEdit.ensurePolished();
+
+        QVERIFY(chipA.sizeHint().width() > 0);
+        QVERIFY(picker.sizeHint().width() > 0);
+        qInfo().noquote() << QStringLiteral(
+            "visual-baseline (Fusion+darkstyle.qss, 96dpi): preMod80PillRow=%1px | postRow minW empty=%2px "
+            "3chips=%3px | chip \"S7-1500-01  x\"=%4px \"甲 ·10.0.0.7  x\"=%5px | picker=%6px more=%7px "
+            "search=%8px")
+            .arg(preMin).arg(postMinEmpty).arg(postMin3Chips)
+            .arg(chipA.sizeHint().width()).arg(chipB.sizeHint().width())
+            .arg(picker.sizeHint().width()).arg(more.sizeHint().width())
+            .arg(lineEdit.sizeHint().width());
     }
 };
 

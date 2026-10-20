@@ -20,23 +20,23 @@
      虚线、行号小标签、控制条属审校辅助层，不进产品。
    · 琴色（dark #F0A030 / light #D48820）只用于信号态：选中 chips、本稿控制条当前档、
      QMenu::item:selected 高亮行、文档标题房式（审校层）。结构边框一律石墨色。
-   · 禁画在线/离线状态（规格 §8：#devicePill[online=…] darkstyle.qss:676-677 有钩子无数据源，
+   · 禁画在线/离线状态（规格 §8：#devicePill[online=…] darkstyle.qss:680-681 有钩子无数据源，
      setOnlineStatus 全仓零调用方）——本页任何胶囊/菜单项均无状态色条，也不承诺。
-   · 本稿所有 px 数字均为【估算】（DOM border-box），非 Qt 实测；
-     实测值由任务 7 布局量测测试（v2.15 波3 totalMinimumSize().width() 同法）产出后
-     回填本页「注记」节（当前空置）与规格 §7 回填位。跑不出来的数字不进稿。
+   · 本稿审校示意按 DOM border-box 渲染（随字体漂移）；Qt 实测基线已由任务 7 布局量测
+     （v2.15 波3 totalMinimumSize().width() 同法）回填本页「注记」表与规格 §7 回填位
+     （2026-10-21，tst_deploy_toolbar_layout）——两处的数字以注记表为准。
    ============================================================ */
 :root[data-theme="dark"]{
   --bg:#0B0E14;         /* QWidget/QMainWindow 底 darkstyle.qss:5,12 */
   --panel:#141820;      /* 面板底 QGroupBox :33 / QMenu 底 :424 */
   --line:#252A33;       /* 结构石墨边 :34 */
-  --line2:#333B48;      /* 胶囊边框 :658 / QMenu 边 :425 / QLineEdit 边 :122 / QPushButton 边 :56 */
-  --hov:#7B8494;        /* 胶囊 hover 边框 :667-669 */
-  --text:#C8CCD4;       /* 正文/胶囊字 :6,:660 */
-  --pill-bg:#232A36;    /* 胶囊底 :656-664 */
+  --line2:#333B48;      /* 胶囊边框 :662 / QMenu 边 :425 / QLineEdit 边 :122 / QPushButton 边 :56 */
+  --hov:#7B8494;        /* 胶囊 hover 边框 :671-673 */
+  --text:#C8CCD4;       /* 正文 :6 / 胶囊字 :664 */
+  --pill-bg:#232A36;    /* 胶囊底 :660-668 */
   --muted:#7B8494;      /* 次级文字 :23,:28（命中路径见状态①注记） */
-  --gold:#F0A030;       /* 琴色·仅信号态 :671-674 */
-  --gold-bg:#2A2518;    /* 选中胶囊底 :671-674 */
+  --gold:#F0A030;       /* 琴色·仅信号态 :675-678 */
+  --gold-bg:#2A2518;    /* 选中胶囊底 :675-678 */
   --btn-ink:#E4E7EC;    /* QPushButton 通用节文字 :59（入口按钮沿用） */
   --btn-hov-bg:#2C3543; /* QPushButton:hover 底 :66 */
   --btn-hov-line:#3A4250;/* QPushButton:hover 边 :67 */
@@ -51,13 +51,13 @@
   --bg:#F5F6F8;         /* darkstyle-light.qss:5,12 */
   --panel:#FFFFFF;      /* :33（面板）/ :424（QMenu） */
   --line:#D0D5DD;       /* :34 */
-  --line2:#C4CAD4;      /* :658 / :425 / :122 / :56 */
-  --hov:#B8C0CC;        /* :667-669 */
-  --text:#2A2F38;       /* :6,:660 */
-  --pill-bg:#E4E8EE;    /* :656-664 */
+  --line2:#C4CAD4;      /* :662 / :425 / :122 / :56 */
+  --hov:#B8C0CC;        /* :671-673 */
+  --text:#2A2F38;       /* :6,:664 */
+  --pill-bg:#E4E8EE;    /* :660-668 */
   --muted:#6B7480;      /* :23,:28 */
-  --gold:#D48820;       /* :671-674 */
-  --gold-bg:#F5E3C8;    /* :671-674 */
+  --gold:#D48820;       /* :675-678 */
+  --gold-bg:#F5E3C8;    /* :675-678 */
   --btn-ink:#2A2F38;    /* :59 */
   --btn-hov-bg:#D0D5DD; /* :66 */
   --btn-hov-line:#B8C0CC;/* :67 */
@@ -102,9 +102,9 @@ p.note{color:var(--note);font-size:11px;margin:0 0 12px;max-width:1150px}
 .chipHost{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto;position:relative}
 .chipHost.empty{border:1px dashed var(--muted);border-radius:4px;min-width:120px;height:26px} /* 虚线=审校辅助层，标示 selectedPillHost 空容器 */
 .pill{background:var(--pill-bg);border:1px solid var(--line2);border-radius:4px;color:var(--text);
-  padding:2px 8px;font:400 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* #devicePill 节 :656-664；高 26 为代码事实 cpp:566 */
-.pill.hov{border-color:var(--hov)} /* :667-669 */
-.pill.sel{border-color:var(--gold);background:var(--gold-bg)} /* [selected="true"] :671-674——chips 存在即已选，恒为此态 */
+  padding:2px 8px;font:400 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* #devicePill 节 :660-668；高 26 为代码事实 cpp:715 */
+.pill.hov{border-color:var(--hov)} /* :671-673 */
+.pill.sel{border-color:var(--gold);background:var(--gold-bg)} /* [selected="true"] :675-678——chips 存在即已选，恒为此态 */
 .pill.more{color:var(--text)} /* +M 台：结构石墨（裁定②已定：静态入口非信号态，不升琴色） */
 .hint{color:var(--muted);font-size:12px;white-space:nowrap} /* 空态提示 token 出处见状态①注记 */
 .pickbtn{background:var(--pill-bg);border:1px solid var(--line2);border-radius:5px;color:var(--btn-ink);
@@ -158,7 +158,7 @@ td code{font-family:Consolas,monospace;font-size:11px}
   依据规格 §0（重画后形态）/ §2.1 规则 1–5 / §2.3 UI 装配 / §3 第 4·5·6·7 条 / §7 第二版八态清单 / §8 不做清单｜
   <b>第一版"横向铺段"方案（段头 + 横向 QScrollArea + 折叠持久化）已作废，本稿不再出现任何段头元素</b>；
   色值逐项取自 <code>src/app/darkstyle.qss</code> 与 <code>src/app/darkstyle-light.qss</code>（出处见文末来源表）｜
-  <b>本稿所有 px 数字一律为估算（DOM border-box），非 Qt 实测</b>；实测由任务 7 布局量测产出后回填「注记」节。
+  <b>本稿审校示意为 DOM 渲染近似（随字体漂移）</b>；Qt 实测基线（任务 7）见文末「注记 · 实测基线」表与规格 §7 回填位。
 </div>
 
 <div class="bar">
@@ -223,8 +223,8 @@ td code{font-family:Consolas,monospace;font-size:11px}
   </div>
 </div>
 <p class="note">
-  chips 全部为选中样式（琴色边＝信号态，<code>:671-674</code>）——<b>chips 的存在本身即等于已选中</b>；
-  第二枚展示 hover 边框 <code>#7B8494</code>（<code>:667-669</code>；hover 边框转浅石墨，<b>不升琴色</b>——琴色位已被选中态占用，hover 再上琴色会混淆信号语义）。
+  chips 全部为选中样式（琴色边＝信号态，<code>:675-678</code>）——<b>chips 的存在本身即等于已选中</b>；
+  第二枚展示 hover 边框 <code>#7B8494</code>（<code>:671-673</code>；hover 边框转浅石墨，<b>不升琴色</b>——琴色位已被选中态占用，hover 再上琴色会混淆信号语义）。
   交互：<b>左键单击＝取消选中（移出）</b>、双击＝打开这台设备、右键＝三项菜单（状态⑧）。
   文案尾部「×」是现状胶囊字面（<code>DeviceBusWidget.cpp:564</code> 在 <code>pillCaption(...)</code> 之后拼 <code>"  ×"</code>）。<b>裁定 ① 已定：保留 ×</b>——
   左键＝移出选择，与 × 字面同向自解释，本稿按"沿用 ×"绘制即最终形态。
@@ -276,8 +276,8 @@ td code{font-family:Consolas,monospace;font-size:11px}
 <p class="note">
   <b>可见 5 枚是本视口宽度下的示意渲染，不承诺固定枚数</b>——可见枚数由 <code>widthForHeight</code>/尺寸事件算，实现形态（逐个 <code>setVisible(false)</code> 试到达标、<code>resizeEvent</code> 重算）留给计划（§9.1a）。
   用例只断两件事（§3 第 7 条）：<b>可见枚数 + M == 选中总数（5 + 75 == 80）</b>；<b>点「+M 台」打开的就是同一个「设备 ▾」分组菜单</b>。
-  「+75 台」按结构石墨绘制（<code>#devicePill</code> 默认节 <code>:656-664</code>，非选中设备本身）——<b>裁定 ② 已定：石墨，不升琴色</b>（静态入口不是信号态；琴色位只留给选中 chips 与菜单高亮行）。
-  搜索框在溢出态仍保底可见：chips 容器弹性收缩（<code>min-width:0</code> <code>:663</code>），先折 chips 再谈别的，行尾 <code>+ 添加</code>/搜索不挤没。
+  「+75 台」按结构石墨绘制（生产是普通 <code>QPushButton</code> 通用节 <code>:54-63</code>——底 <code>#232A36</code>/边 <code>#333B48</code> 与 <code>#devicePill</code> 同值，静止态不抢眼；<code>min-width:85px</code> 生效，实测外框 107px，见盒模型注记）——<b>裁定 ② 已定：石墨，不升琴色</b>（静态入口不是信号态；琴色位只留给选中 chips 与菜单高亮行）。
+  搜索框在溢出态仍保底可见：chips 容器弹性收缩（<code>min-width:0</code> <code>:667</code>），先折 chips 再谈别的，行尾 <code>+ 添加</code>/搜索不挤没。
 </p>
 
 <!-- ==================== 状态⑤ ==================== -->
@@ -450,25 +450,29 @@ td code{font-family:Consolas,monospace;font-size:11px}
 <h2>盒模型注记（代码事实 vs 估算，逐字分开）</h2>
 <div class="box">
   <p><b>chips（<code>QPushButton#devicePill</code>）外框算式（代码事实，非估算）：</b></p>
-  <p class="mono">外框宽 = 文本宽 + padding(2px 8px) + 1px 边框×2，<code>min-width:0</code>——出处 <code>darkstyle.qss:656-664</code>（light 同行号）</p>
-  <p class="mono">外框高 = 26——代码事实 <code>setFixedHeight(26)</code>，<code>DeviceBusWidget.cpp:566</code></p>
-  <p>示例文本 <code>S7-1500-01 ×</code> 文本宽估算 ≈72px ⇒ 外框估算 ≈90px；<code>甲 ·10.0.0.7 ×</code> 外框估算 ≈112px。<b>72/90/112 等宽度一律【估算】</b>（DOM border-box，字体渲染随 DPI/字体漂移）。</p>
+  <p class="mono">外框宽 = 文本宽 + padding(2px 8px) + 1px 边框×2，<code>min-width:0</code>——出处 <code>darkstyle.qss:660-668</code>（light 同行号）</p>
+  <p class="mono">外框高 = 26——代码事实 <code>setFixedHeight(26)</code>，<code>DeviceBusWidget.cpp:715</code></p>
+  <p>示例文本外框实测（Qt <code>sizeHint</code>，Fusion + 生产 <code>darkstyle.qss</code>，96dpi/100% 缩放，
+  <code>tst_deploy_toolbar_layout::deviceBarVisualBaselineMeasurements</code>，2026-10-21）：
+  <code>「S7-1500-01」+ 尾标「··×」</code>（尾标为两个半角空格 + U+00D7，逐字同 <code>kPillCloseMark</code>）= <b>101px</b>；
+  重名形态 <code>「甲 ·10.0.0.7」+ 尾标「··×」</code> = <b>97px</b>。<b>旧估算 72/90/112px 作废</b>（DOM 渲染随字体漂移，仅供审校看图，不再作为数字依据）。</p>
   <p>入口按钮 <code>devicePickerBtn</code>：<b>裁定 ⑤ 已定：沿用现有 <code>QPushButton</code> 通用节（<code>:54-63</code>，padding 4px 10px、<code>min-width:85px</code> 系 QSS 事实 <code>darkstyle.qss:60</code>），本版不补样式</b>；
-  通用节 <code>min-width:85px</code> 对"设备 ▾ 未选择"这种短文案不会显得过宽，本稿不预设定宽。</p>
-  <p>「+M 台」<code>devicePillMore</code>：同 chips 盒模型（<code>:656-664</code> + 高 26），外框估算 ≈54px。</p>
-  <p>菜单项：padding 8px 28px、font-size 9.5pt 为 QSS 事实（<code>:430-433</code>）；菜单宽度由最长项决定，<b>估算</b>。</p>
-  <p>搜索框 <code>deviceSearchEdit</code>：QLineEdit 节 padding 6px 8px（<code>:120-128</code>）与 26 行高取齐方式属实现细节；稿内宽度 200px 为<b>估算·待确认</b>。</p>
-  <p>chips 间距 6px、行内边距 6px 10px：<b>估算（审校渲染值）</b>，现状代码事实为 <code>deviceRow->setSpacing(4)</code>（<code>cpp:406</code>），以现有 spacing 为准。</p>
+  实测文案「设备 ▾ 已选 12 台」（生产带 <code>setMenu</code>，menu-indicator 占宽）<b>= 130px</b>（旧「不预设定宽」兑现为实测数，通用节无过宽问题）。</p>
+  <p>「+M 台」<code>devicePillMore</code>：生产是普通 <code>QPushButton</code>（通用节 <code>min-width:85px</code>，<b>不是</b> chips 的 <code>min-width:0</code> 模型——旧注"同 chips 盒模型、外框估算 ≈54px"与代码不符，作废），实测「+8 台」（带同一菜单）<b>= 107px</b>。</p>
+  <p>菜单项：padding 8px 28px、font-size 9.5pt 为 QSS 事实（<code>:430-433</code>）；菜单宽度由最长项决定，Qt 直测受弹层 harness 限制（任务 5 报告在册），维持审校示意。</p>
+  <p>搜索框 <code>deviceSearchEdit</code>：QLineEdit 节 padding 6px 8px（<code>:120-128</code>）+ 高 26（<code>setFixedHeight(26)</code>，<code>cpp:504</code>）；占位文案「搜索 名称 / IP / 标签」下 <code>sizeHint</code> 实测 <b>= 141px</b>（稿内 200px 系 DOM 示意，作废为估算依据）。</p>
+  <p>chips 间距与行内边距代码事实：<code>deviceRow->setSpacing(4)</code>（<code>cpp:451</code>）、主布局 <code>setContentsMargins(0, 2, 0, 2)</code>（<code>cpp:444</code>）；稿面按 6px 渲染属审校辅助层，以现有代码为准。</p>
 </div>
 
-<!-- ==================== 实测回填位（空置） ==================== -->
-<h2>注记 · 实测回填位（当前空置——回填前本页一切数字均视为估算）</h2>
+<!-- ==================== 实测回填（任务 7 已产出） ==================== -->
+<h2>注记 · 实测基线（2026-10-21 任务 7 回填；量测目标 Fusion + 生产 darkstyle.qss，96dpi/100% 缩放）</h2>
 <table>
-  <tr><th style="width:320px">待回填项</th><th style="width:140px">实测值</th><th>量法</th></tr>
-  <tr><td>设备栏整行最小宽 · 改前基线（80 台裸 QHBoxLayout）</td><td>待回填</td><td rowspan="4">任务 7 布局量测用例（<code>totalMinimumSize().width()</code>，v2.15 波3 同法）；数字产出后回写本表并同步规格 §7 回填位。<b>跑不出来的数字不进稿。</b></td></tr>
-  <tr><td>设备栏整行最小宽 · 改后（图标 + selectedPillHost + 入口 + 搜索 + 添加）</td><td>待回填</td></tr>
-  <tr><td>单枚 chip 实测外框宽（示例文本各一条）</td><td>待回填</td></tr>
-  <tr><td><code>devicePickerBtn</code> / <code>devicePillMore</code> 实测外框宽</td><td>待回填</td></tr>
+  <tr><th style="width:320px">项</th><th style="width:140px">实测值</th><th>量法</th></tr>
+  <tr><td>设备栏整行最小宽 · 改前基线（80 台裸 QHBoxLayout，无名回落纯地址 chip 复刻）</td><td><b>1756px</b></td><td rowspan="4"><code>tst_deploy_toolbar_layout::deviceBarVisualBaselineMeasurements</code> 与 <code>deviceBarRowGuardMinWidthPositiveAndNoSecondRow</code>（<code>totalMinimumSize().width()</code>，v2.15 波3 同法）。改前复刻口径：80 枚 <code>QPushButton#devicePill</code>（高 26）文案「<code>10.77.1.101··××</code>」逐字，spacing 4、margins (0,2,0,2) 同 v2.15 主分支行装配。</td></tr>
+  <tr><td>设备栏整行最小宽 · 改后（图标 + selectedPillHost + 提示/入口 + 搜索 + 添加）</td><td><b>396px</b>（0/2/3/80 台已选恒为 396——chips <code>min-width:0</code> 可收缩，行最小宽与台数无关；溢出由「+M 台」折算而非撑宽）</td></tr>
+  <tr><td>单枚 chip 实测外框宽（<code>sizeHint</code>）</td><td><b>101px</b>（"S7-1500-01"+尾标"··×"）/ <b>97px</b>（"甲 ·10.0.0.7"+尾标"··×"）</td></tr>
+  <tr><td><code>devicePickerBtn</code> / <code>devicePillMore</code> / 搜索框实测宽</td><td><b>130px / 107px / 141px</b></td></tr>
+  <tr><td>设备栏整体高度（两行：设备行 + 凭证行）· 2 台已选 → 全选 80 台</td><td><b>58px → 58px 不变</b></td><td>同上守卫用例：<code>bus.sizeHint().height()</code>，溢出折进「+M 台」不换行（规格 §2.3/§3.7）；人造宽 1200px 下量得，断言本身与宽度无关。</td></tr>
 </table>
 
 <!-- ==================== 色值来源表 ==================== -->
@@ -482,10 +486,10 @@ td code{font-family:Consolas,monospace;font-size:11px}
   <tr><td>chips 底 / 边框 / 文字</td>
     <td><span class="sw" style="background:#232A36"></span><code>#232A36</code>｜<span class="sw" style="background:#333B48"></span><code>#333B48</code>｜<span class="sw" style="background:#C8CCD4"></span><code>#C8CCD4</code></td>
     <td><span class="sw" style="background:#E4E8EE"></span><code>#E4E8EE</code>｜<span class="sw" style="background:#C4CAD4"></span><code>#C4CAD4</code>｜<span class="sw" style="background:#2A2F38"></span><code>#2A2F38</code></td>
-    <td><code>#devicePill :656-664</code>（两文件同行号）</td></tr>
-  <tr><td>chips hover 边框</td><td><code>#7B8494</code></td><td><code>#B8C0CC</code></td><td><code>:667-669</code></td></tr>
-  <tr><td>选中 chip（琴色，仅信号态）</td><td>边框 <code>#F0A030</code>｜底 <code>#2A2518</code></td><td>边框 <code>#D48820</code>｜底 <code>#F5E3C8</code></td><td><code>[selected="true"] :671-674</code></td></tr>
-  <tr><td>次级文字（空态提示/标签/说明行）</td><td><code>#7B8494</code></td><td><code>#6B7480</code></td><td><code>:23</code>（QLabel[提示/拖拽]）·<code>:28</code>（#panelBreadcrumb）；<code>deviceBusHint</code> 按裁定 ③ 两主题各补一行 <code>QLabel#deviceBusHint</code>（取值同 <code>:23</code>/<code>:28</code>，非零新增），命中路径理由见状态①注记</td></tr>
+    <td><code>#devicePill :660-668</code>（两文件同行号）</td></tr>
+  <tr><td>chips hover 边框</td><td><code>#7B8494</code></td><td><code>#B8C0CC</code></td><td><code>:671-673</code></td></tr>
+  <tr><td>选中 chip（琴色，仅信号态）</td><td>边框 <code>#F0A030</code>｜底 <code>#2A2518</code></td><td>边框 <code>#D48820</code>｜底 <code>#F5E3C8</code></td><td><code>[selected="true"] :675-678</code></td></tr>
+  <tr><td>次级文字（空态提示/标签/说明行）</td><td><code>#7B8494</code></td><td><code>#6B7480</code></td><td><code>:23</code>（QLabel[提示/拖拽]）·<code>:28</code>（#panelBreadcrumb）；<code>deviceBusHint</code> 按裁定 ③ 已落地两主题各一行 <code>QLabel#deviceBusHint</code>（暗 <code>:658</code>／亮 <code>:658</code>，取值同 <code>:23</code>/<code>:28</code>，非零新增），由 <code>tst_qss_pixels::deviceBusHintQss_dark/light</code> 钉色值与"每主题恰一行"预算，命中路径理由见状态①注记</td></tr>
   <tr><td>入口按钮 底/边/字（沿用通用 QPushButton 节）</td>
     <td><code>#232A36</code>｜<code>#333B48</code>｜<span class="sw" style="background:#E4E7EC"></span><code>#E4E7EC</code></td>
     <td><code>#E4E8EE</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td>
@@ -499,7 +503,7 @@ td code{font-family:Consolas,monospace;font-size:11px}
   <tr><td>菜单项高亮（信号态）</td><td>底 <code>#3A2E12</code>｜字 <code>#F0A030</code></td><td>底 <code>#F5E3C8</code>｜字 <code>#D48820</code></td><td><code>QMenu::item:selected :435-438</code></td></tr>
   <tr><td>搜索框 底/边/字</td><td><span class="sw" style="background:#0E1219"></span><code>#0E1219</code>｜<code>#333B48</code>｜<code>#FFFFFF</code></td><td><span class="sw" style="background:#ECEFF3"></span><code>#ECEFF3</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td><td><code>QLineEdit :120-128</code>（底 :121 / 边 :122 / 字 :125）；占位色走次级文字（沿用，待确认）</td></tr>
   <tr><td>+ 添加按钮 边/字（底 transparent）</td><td>虚线边 <code>#333B48</code>｜字 <code>#7B8494</code></td><td>虚线边 <code>#C4CAD4</code>｜字 <code>#6B7480</code></td><td><code>#btnAddDevice :640-648</code>（边 :642 / 字 :644）——现状保留，非本次被审对象</td></tr>
-  <tr><td><b>不进页</b>：在线/离线色条</td><td colspan="2"><code>#40C8A0 / #E85848（dark）· #2FA88A / #D6453A（light）</code></td><td><code>:676-677</code>——§8：有钩子无数据源，<b>本稿一处不画</b></td></tr>
+  <tr><td><b>不进页</b>：在线/离线色条</td><td colspan="2"><code>#40C8A0 / #E85848（dark）· #2FA88A / #D6453A（light）</code></td><td><code>:680-681</code>——§8：有钩子无数据源，<b>本稿一处不画</b></td></tr>
 </table>
 <p class="note" style="margin-top:8px">
   <b>就实一句（第一版教训沿用）：</b>计划初稿曾在"窗体/面板底"写过 <code>#1A1F27</code>，两套 QSS 全文 grep <b>零命中</b>（本轮复核 <code>grep -c 1A1F27</code> 两文件均为 0）——该值不存在，不进表、不进页。
@@ -510,12 +514,12 @@ td code{font-family:Consolas,monospace;font-size:11px}
 <div class="foot">
   <p><b>关卡与流程：</b>本稿覆盖规格 §7 第二版八态清单（①空态 ②少量已选 ③重名对照 ④80 台溢出折算 ⑤主菜单 ⑥分组子菜单 ⑦搜索命中/全不命中 ⑧chips 右键三项），
   深/浅双主题经右上角控制条整页切换（产品里为应用级主题切换，同一批 token 两主题各自取节）。
-  五处裁定已定并回写本页（规格 §2.3 / 计划已同步订正）：<b>①</b> chip 尾部「×」保留——现成 <code>createPill</code> 即「文案 + <code>"  ×"</code>」（<code>DeviceBusWidget.cpp:564</code>），左键＝移出选择；
-  <b>②</b>「+M 台」用石墨不升琴色（静态入口不是信号态）；<b>③</b> 空态提示两主题各补一行 <code>QLabel#deviceBusHint</code>（暗 <code>#7B8494</code>／亮 <code>#6B7480</code>），<b>本版不是"零新增 QSS 节"</b>（理由见状态①注记）；
+  五处裁定已定并回写本页（规格 §2.3 / 计划已同步订正）：<b>①</b> chip 尾部「×」保留——现成 <code>createPill</code> 即「文案 + <code>"  ×"</code>」（<code>DeviceBusWidget.cpp:711-713</code>），左键命中区见 §2.3 订正本（主体单击不移出，尾部「×」区移出）；
+  <b>②</b>「+M 台」用石墨不升琴色（静态入口不是信号态）；<b>③</b> 空态提示两主题各补一行 <code>QLabel#deviceBusHint</code>（暗 <code>#7B8494</code>／亮 <code>#6B7480</code>），<b>本版不是"零新增 QSS 节"</b>（理由见状态①注记；已落地并钉桩，见来源表次级文字行）；
   <b>④</b> 全不命中时底部「全选可见 N 台」「清空选择」一并撤下；<b>⑤</b> 入口按钮沿用 <code>QPushButton</code> 通用节（<code>min-width:85px</code>，<code>darkstyle.qss:60</code>），不补样式。<br>
-  <b>批准之前不动 <code>src/</code> 一行代码</b>；批准后规格 §7 回填位填「已批准 YYYY-MM-DD」，实测宽度基线由任务 7 量测后同时回填本页「注记」表（当前空置）。</p>
+  <b>批准与回填（关卡状态）：</b>本稿已于 <b>2026-10-20 获用户批准（第二版，"可以"）</b>，批准后 <code>src/</code> 改动随任务 4-6 落地；规格 §7 回填位与本页「注记 · 实测基线」表已由任务 7（2026-10-21，<code>tst_deploy_toolbar_layout</code> 布局量测用例）填实。</p>
   <p><b>可落地性声明：</b>界面区域全部为纯色填充 + 1px 边框 + 3~8px 圆角，均为 Qt QSS 可表达；<b>无渐变、无阴影</b>。
-  虚线占位框、objectName 小标签、步骤说明、主题控制条属审校辅助层，不进产品。宽度均为 DOM border-box <b>估算</b>，实测回填见「注记」节。
+  虚线占位框、objectName 小标签、步骤说明、主题控制条属审校辅助层，不进产品。稿内 DOM border-box 宽度是审校近似（随字体漂移），Qt 实测数字以本页「注记 · 实测基线」表（任务 7 回填）为准。
   <code>QMenu</code> 超出屏幕的上下滚箭头＝Qt 内建、<b>无公开可调 API</b>（本地 <code>qmenu.h</code> 实读），稿上不画可调滚动条。</p>
 </div>
 
