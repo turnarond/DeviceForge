@@ -428,6 +428,41 @@ private slots:
         QCOMPARE(loggedCount(logs, QStringLiteral("未选择目标设备，请在设备栏选择至少一台")), 0);
         QCOMPARE(loggedCount(logs, QStringLiteral("设备总线未关联")), 0);
     }
+
+    // ---- v2.16-B 任务6：部署页 selectDeviceByIp（「打开这台设备」编排落在部署页的一步）----
+    // 部署页设备下拉以纯 ip 为条目键（setDeviceBusWidget 里 addItem(d.ip)），选中键与
+    // deviceopen::Route.ip 同源。本用例走与用户同一条 currentTextChanged 路径（实现
+    // 不 blockSignals），命中→切到该 ip 并返回 true，未命中→不动并返回 false。
+    void selectDeviceByIpSwitchesCombo()
+    {
+        DeviceBusWidget bus;
+        FtpDeployWidget w;
+        w.setDeviceBusWidget(&bus);
+        QStringList logs;
+        w.setGlobalLogCallback([&logs](const QString& line) { logs << line; });
+
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.1")), false);
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.2")), false);
+
+        // 设备下拉按特征定位（min width 160，见 row1 用例同款判据），不加 objectName
+        QComboBox* deviceCombo = nullptr;
+        const auto combos = w.findChildren<QComboBox*>();
+        for (QComboBox* c : combos) {
+            if (c->minimumWidth() >= 160) { deviceCombo = c; break; }
+        }
+        QVERIFY2(deviceCombo, "未找到设备下拉（min width 160）");
+        // 下拉以纯 ip 填充，条目键与 Route.ip 同源
+        QCOMPARE(deviceCombo->count(), 2);
+        QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.1"));   // 首台
+
+        // 命中第二台 → 返回 true 且 currentText 切到该 ip
+        QVERIFY(w.selectDeviceByIp(QStringLiteral("10.77.0.2")));
+        QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.2"));
+
+        // 未命中 → 返回 false 且 currentText 不变（不得回落到首台或清空）
+        QVERIFY(!w.selectDeviceByIp(QStringLiteral("10.77.9.9")));
+        QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.2"));
+    }
 };
 
 QTEST_MAIN(TstDeployToolbarLayout)

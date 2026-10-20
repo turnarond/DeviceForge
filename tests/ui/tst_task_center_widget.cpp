@@ -1537,6 +1537,34 @@ private slots:
         QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);
     }
 
+    // ── v2.16-B 任务6 Step3：搜索过滤单独绝不动 allDevices()（规格 §2.4 硬线机械守卫）──
+    // 与任务4 allDevicesStaysFullRegardlessOfSelectionAndFilter 的分工：那条把过滤、
+    // 全选、清空混在一起验；本条只碰搜索框（设词→换词→0 命中→清空），不勾不选，
+    // 专证「搜索=视图」这条独立成立——批量命令页(TelnetWidget.cpp:252)读的就是
+    // allDevices()，搜索框绝不能把它变小。
+    void searchFilterNeverChangesAllDevices()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 5; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("sf-%1").arg(i),
+                                              QStringLiteral("搜索设备%1").arg(i),
+                                              QStringLiteral("10.9.0.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+
+        const int total = static_cast<int>(bus.allDevices().size());
+        QCOMPARE(total, 5);
+        edit->setText(QStringLiteral("搜索设备1"));   // 子串只命中一台
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+        edit->setText(QStringLiteral("zzz无此设备")); // 全不命中（菜单撤下两动作，视图为空）
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+        edit->setText(QString());                    // 清空过滤
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+    }
+
     // ── v2.16-B 任务4 Step4：「设备 ▾」弹层结构（分组即子菜单，勾选即选中）──
     // 规格 §2.3：每次 aboutToShow 重建；主菜单一行一个分组「组名 命中/总数」；
     // 「未分组」最后；底部两动作在分隔线之后。夹具经 invokeMethod 直发

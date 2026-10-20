@@ -8,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QStatusBar>   // Task 5: 状态栏版本标签
+#include <QDebug>       // v2.16-B 任务6：openDeviceAt 脱敏日志
 #include <QMenuBar>     // Task 5: 帮助菜单(检查更新)
 #include <QTimer>
 #include <QAction>      // Task 5: 菜单项
@@ -29,6 +30,7 @@
 
 #include "src/framework/ToolHost.h"
 #include "src/ui/DeviceBusWidget.h"
+#include "src/ui/DeviceOpenRouter.h"   // v2.16-B 任务6：profile→目标页唯一判定纯头
 #include "src/tools/TelnetTool/TelnetWidget.h"
 #include "src/tools/TelnetTool/TelnetBackend.h"
 #include "src/tools/NetRelayTool/NetRelayWidget.h"
@@ -163,6 +165,12 @@ DeviceForge::DeviceForge(QWidget* parent)
     m_navBar->setActiveItem(0);
     m_toolStack->setCurrentIndex(0);
 
+    // v2.16-B 任务6：「打开这台设备」编排接线——各 Tab 已建成（页指针可用），
+    // 设备栏双击/右键「打开这台设备」发射 openDeviceRequested → openDeviceAt 按
+    // 端点协议跳页（规格 §2.2：只有部署页另有选中该 ip，其余页只切页）。
+    connect(m_deviceBusWidget, &DeviceBusWidget::openDeviceRequested,
+            this, &DeviceForge::openDeviceAt);
+
     // v2.14 双屏「看不全」修复：工具栏单行最小宽度可超单屏可用宽，OS 默认放置
     // 可能落在装不下它的屏上致右侧裁切；启动时按「能否完整容纳」选屏并居中
     //（决策纯函数见 app/WindowPlacement.h，此处仅收集屏几何并应用）。
@@ -249,6 +257,62 @@ DeviceForge::DeviceForge(QWidget* parent)
 void DeviceForge::initToolTabs()
 {
     // 所有 Tool 已在构造函数中创建（按导航栏顺序），此处无需操作
+}
+
+// v2.16-B 任务6：路由页名的日志用字符串（脱敏：只作 [device-open] 日志的 page= 字段，
+// 与 route.page 分支同源，杜绝 brief 草稿里 page=FtpDeploy 写死的错日志）。
+static const char* deviceOpenPageName(deviceopen::Page page)
+{
+    switch (page) {
+    case deviceopen::Page::FtpDeploy:    return "FtpDeploy";
+    case deviceopen::Page::BatchCommand: return "BatchCommand";
+    case deviceopen::Page::Modbus:       return "Modbus";
+    case deviceopen::Page::OpcUa:        return "OpcUa";
+    case deviceopen::Page::None:         return "None";
+    }
+    return "Unknown";
+}
+
+// v2.16-B 任务6：「打开这台设备」编排终点（规格 §2.2/§2.4/§3.9）。
+// 页定位一律 indexOf(页指针)——工具页索引随任务中心懒建而漂，不写魔数。
+void DeviceForge::openDeviceAt(const DeviceProfile& profile)
+{
+    const auto route = deviceopen::routeTo(profile);
+    if (route.page == deviceopen::Page::None) {
+        // 无可用端点：只提示，不切页（§2.2 表 + §3 第 9 条）
+        statusBar()->showMessage(route.statusHint, 4000);
+        return;
+    }
+
+    QWidget* page = nullptr;
+    switch (route.page) {
+    case deviceopen::Page::FtpDeploy:    page = m_ftpDeployTab;      break;
+    case deviceopen::Page::BatchCommand: page = m_telnetDeployTab;   break;
+    case deviceopen::Page::Modbus:       page = m_modbusWidget;      break;
+    case deviceopen::Page::OpcUa:        page = m_opcUaClientWidget; break;
+    default: break;
+    }
+    if (!page || m_toolStack->indexOf(page) < 0) {
+        // 页指针空（该 Tool 启动失败未建）或尚未入栈：给中文提示，不切页
+        statusBar()->showMessage(QStringLiteral("该设备对应的工具页尚未就绪"), 4000);
+        return;
+    }
+
+    const int idx = m_toolStack->indexOf(page);
+    m_toolStack->setCurrentIndex(idx);
+    m_navBar->setActiveItem(idx);
+
+    // 只有部署页有"选中这台"语义（§2.2 实测表）：Telnet/MODBUS/OPC UA 一律只切页，
+    // 绝不为了"看起来选中了"去动它们的目标集（§2.4 allDevices() 硬线）。
+    if (route.page == deviceopen::Page::FtpDeploy) {
+        if (auto* deploy = qobject_cast<FtpDeployWidget*>(page))
+            deploy->selectDeviceByIp(route.ip);
+    }
+
+    // 日志脱敏（仓库硬线）：只记设备名 + 协议 + 页名，无凭据、无端点口令、无内容。
+    qDebug().noquote() << QStringLiteral("[device-open] name=%1 protocol=%2 page=%3")
+                              .arg(QString::fromStdString(profile.name), route.protocol,
+                                   QString::fromLatin1(deviceOpenPageName(route.page)));
 }
 
 // 在初始化函数中（如 setupUi 后）

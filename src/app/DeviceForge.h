@@ -23,6 +23,7 @@ class DeviceRegistry;      // v2.11 设备档案注册表（device.profile + dev
 class TaskTemplateStore;   // v2.11 任务模板存储
 class TaskRunStore;        // v2.11 执行记录存储
 class TaskCenterWidget;    // v2.11 设备任务中心三栏 UI
+struct DeviceProfile;      // v2.16-B 任务6：openDeviceAt 形参（仅 const 引用，前置声明即可）
 
 class DeviceForge : public QMainWindow
 {
@@ -60,6 +61,11 @@ public slots:
 
 private slots:
     void onClearLogClicked();
+
+    // v2.16-B 任务6：「打开这台设备」编排终点——消费 DeviceBusWidget::openDeviceRequested，
+    // 经 deviceopen::routeTo 按端点协议切到目标工具页；只有部署页另有"把设备下拉
+    // 切到该 ip"一步（其余页只切页，不假装选中）。Page::None 只给状态栏提示、不切页。
+    void openDeviceAt(const DeviceProfile& profile);
 
 private:
     void setupFtpDeployTab();

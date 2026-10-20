@@ -1499,6 +1499,22 @@ void FtpDeployWidget::onRightSourceChanged(const QString& proto, const QString& 
     onRefreshRemote();   // 按新配置重建远程源（Task 2 异步链路就绪）
 }
 
+// v2.16-B 任务6：「打开这台设备」在部署页的选中步。仿 onRightSourceChanged 的
+// findText 定位，但刻意**不 blockSignals**——setCurrentIndex 触发 currentTextChanged
+// 走的就是用户手动切换设备的同一条路径（右面板 setSourceDevice + onRefreshRemote），
+// 于是"打开这台设备"= 页到位 + 远程源真正重建就绪，而不只是下拉换个字。
+// onRefreshRemote 全程不引用 m_backend（首道守卫即 !m_deviceBus 早退），故 UI-only
+// 场景（本方法被主窗口在无后端装配的部署页调用）不会解引用空后端；其真正耗时的
+// 连接走 QtConcurrent 异步工作线程、以 QPointer(this) 守卫回调，不阻塞调用栈。
+bool FtpDeployWidget::selectDeviceByIp(const QString& ip)
+{
+    if (!m_deviceCombo) return false;
+    const int idx = m_deviceCombo->findText(ip);
+    if (idx < 0 || m_deviceCombo->currentIndex() == idx) return idx >= 0;
+    m_deviceCombo->setCurrentIndex(idx);   // 用户路径：右面板源同步 + onRefreshRemote
+    return true;
+}
+
 // 左面板远程浏览源连接失败统一 detach：面板置无源 + 缓存清空（与右面板 I-1 同方案）
 void FtpDeployWidget::detachLeftPanel()
 {
