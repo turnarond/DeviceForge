@@ -105,7 +105,7 @@ p.note{color:var(--note);font-size:11px;margin:0 0 12px;max-width:1150px}
   padding:2px 8px;font:400 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* #devicePill 节 :656-664；高 26 为代码事实 cpp:566 */
 .pill.hov{border-color:var(--hov)} /* :667-669 */
 .pill.sel{border-color:var(--gold);background:var(--gold-bg)} /* [selected="true"] :671-674——chips 存在即已选，恒为此态 */
-.pill.more{color:var(--text)} /* +M 台：结构石墨（是否升级信号态琴色属评审裁定，见状态④注记） */
+.pill.more{color:var(--text)} /* +M 台：结构石墨（裁定②已定：静态入口非信号态，不升琴色） */
 .hint{color:var(--muted);font-size:12px;white-space:nowrap} /* 空态提示 token 出处见状态①注记 */
 .pickbtn{background:var(--pill-bg);border:1px solid var(--line2);border-radius:5px;color:var(--btn-ink);
   padding:4px 10px;font:600 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* 入口按钮：沿用 QPushButton 通用节 :54-63 */
@@ -200,10 +200,10 @@ td code{font-family:Consolas,monospace;font-size:11px}
   </div>
 </div>
 <p class="note">
-  <b>次级文字 token 取证注记（实现期决定点，不属本稿承诺）：</b>空态提示按简报取 <code>#7B8494</code>（dark <code>:23</code>/<code>:28</code>），
-  但现 QSS 里让 <code>QLabel</code> 命中该色的只有两条路径——<code>QLabel[text*="提示"]/[text*="拖拽"]</code>（<code>:22-25</code>）与
-  <code>#panelBreadcrumb</code>（<code>:27-29</code>）；<code>deviceBusHint</code> 两条都不命中（文案不含「提示」「拖拽」，objectName 也不是面包屑）。
-  规格 §2.3 又写"本版预计零新增 QSS 节"。落地三选一（实现期裁定）：(a) 文案含「提示」二字；(b) 给 <code>#deviceBusHint</code> 补一条两主题小规则；(c) 接受提示走默认正文色 <code>#C8CCD4</code>（<code>:6</code>，同样有出处）。
+  <b>次级文字 token 取证注记（裁定 ③ 已定）：</b>空态提示取 <code>#7B8494</code>（dark）/<code>#6B7480</code>（light）（与 <code>:23</code>/<code>:28</code> 同值），
+  <b>并给 <code>QLabel#deviceBusHint</code> 两主题各补一行——本版不是"零新增 QSS 节"</b>（规格 §2.3 已同步此口径）。理由（实读）：通用 <code>QLabel</code> 节（<code>darkstyle.qss:16-19</code>）给的是主文字色 <code>#C8CCD4</code>；
+  <code>QLabel[text*="提示"]/[text*="拖拽"]</code>（<code>:22-25</code>）按文本属性匹配、本页空态文案里没有「提示」二字，命中不了；<code>#panelBreadcrumb</code>（<code>:27-29</code>）按 objectName 匹配、不是我们的。
+  不补这一行，提示会和主内容一样亮；落地口径 = 每主题一行、最多新增两行。
 </p>
 
 <!-- ==================== 状态② ==================== -->
@@ -226,8 +226,8 @@ td code{font-family:Consolas,monospace;font-size:11px}
   chips 全部为选中样式（琴色边＝信号态，<code>:671-674</code>）——<b>chips 的存在本身即等于已选中</b>；
   第二枚展示 hover 边框 <code>#7B8494</code>（<code>:667-669</code>；hover 边框转浅石墨，<b>不升琴色</b>——琴色位已被选中态占用，hover 再上琴色会混淆信号语义）。
   交互：<b>左键单击＝取消选中（移出）</b>、双击＝打开这台设备、右键＝三项菜单（状态⑧）。
-  文案尾部「×」是现状胶囊字面（<code>DeviceBusWidget.cpp:574</code> 在 <code>pillCaption</code> 后拼 <code>"  ×"</code>），规格 §2.3 只写"去掉 ip:port 段"、未提及去掉 ×，
-  本稿按"沿用 ×"绘制——<b>若裁定去掉 ×（左键移出已自解释）请评审时指明，属一行改动</b>。
+  文案尾部「×」是现状胶囊字面（<code>DeviceBusWidget.cpp:564</code> 在 <code>pillCaption(...)</code> 之后拼 <code>"  ×"</code>）。<b>裁定 ① 已定：保留 ×</b>——
+  左键＝移出选择，与 × 字面同向自解释，本稿按"沿用 ×"绘制即最终形态。
 </p>
 
 <!-- ==================== 状态③ ==================== -->
@@ -276,7 +276,7 @@ td code{font-family:Consolas,monospace;font-size:11px}
 <p class="note">
   <b>可见 5 枚是本视口宽度下的示意渲染，不承诺固定枚数</b>——可见枚数由 <code>widthForHeight</code>/尺寸事件算，实现形态（逐个 <code>setVisible(false)</code> 试到达标、<code>resizeEvent</code> 重算）留给计划（§9.1a）。
   用例只断两件事（§3 第 7 条）：<b>可见枚数 + M == 选中总数（5 + 75 == 80）</b>；<b>点「+M 台」打开的就是同一个「设备 ▾」分组菜单</b>。
-  「+75 台」本稿按结构石墨绘制（<code>#devicePill</code> 默认节 <code>:656-664</code>，非选中设备本身）——若评审裁定它属信号态可升琴色，请一并定夺。
+  「+75 台」按结构石墨绘制（<code>#devicePill</code> 默认节 <code>:656-664</code>，非选中设备本身）——<b>裁定 ② 已定：石墨，不升琴色</b>（静态入口不是信号态；琴色位只留给选中 chips 与菜单高亮行）。
   搜索框在溢出态仍保底可见：chips 容器弹性收缩（<code>min-width:0</code> <code>:663</code>），先折 chips 再谈别的，行尾 <code>+ 添加</code>/搜索不挤没。
 </p>
 
@@ -396,7 +396,7 @@ td code{font-family:Consolas,monospace;font-size:11px}
       <div class="mitem dis">无匹配设备（80 台）</div>
     </div>
     <p class="stepcap" style="margin-top:8px;max-width:280px">N=设备总数（§2.1 规则 4 原文口径），菜单<b>只此一行</b>、不可点。说明行的淡化渲染走 Qt disabled 调色板，本稿以次级文字 token 近似（非新 token）。
-      <b>既有选择绝不清空</b>（§3 第 4 条）——第 1 行 chips 在整个过滤/清空过程中纹丝不动（见下方行快照）。<b>⚠ 一处口径张力请裁定：</b>规则 4 写"只留一项说明行"，§2.3 又写底部"固定两项"——本稿按规则 4 取"全不命中时底部两项也不出"（此时两项无事可做）；若裁定照旧保留「全选可见 0 台／清空选择」请指明。</p>
+      <b>既有选择绝不清空</b>（§3 第 4 条）——第 1 行 chips 在整个过滤/清空过程中纹丝不动（见下方行快照）。<b>裁定 ④ 已定：</b>全不命中时底部「全选可见 N 台」「清空选择」一并撤下（规则 4"只留一行"口径优先，此时两项无事可做），本稿即最终形态。</p>
   </div>
 </div>
 <div class="viewport" style="margin-top:12px">
@@ -453,8 +453,8 @@ td code{font-family:Consolas,monospace;font-size:11px}
   <p class="mono">外框宽 = 文本宽 + padding(2px 8px) + 1px 边框×2，<code>min-width:0</code>——出处 <code>darkstyle.qss:656-664</code>（light 同行号）</p>
   <p class="mono">外框高 = 26——代码事实 <code>setFixedHeight(26)</code>，<code>DeviceBusWidget.cpp:566</code></p>
   <p>示例文本 <code>S7-1500-01 ×</code> 文本宽估算 ≈72px ⇒ 外框估算 ≈90px；<code>甲 ·10.0.0.7 ×</code> 外框估算 ≈112px。<b>72/90/112 等宽度一律【估算】</b>（DOM border-box，字体渲染随 DPI/字体漂移）。</p>
-  <p>入口按钮 <code>devicePickerBtn</code>：沿用现有 <code>QPushButton</code> 通用节（<code>:54-63</code>：padding 4px 10px、<code>min-width:85px</code> 为 QSS 事实）；
-  通用节 <code>min-width:85px</code> 对"设备 ▾ 未选择"这种短文案<b>不会显得过宽</b>，故本稿不预设定宽；若实现要收窄再按 §2.3"需要定宽再补节"处理——届时属新增 QSS 节，须回到本关卡补审。</p>
+  <p>入口按钮 <code>devicePickerBtn</code>：<b>裁定 ⑤ 已定：沿用现有 <code>QPushButton</code> 通用节（<code>:54-63</code>，padding 4px 10px、<code>min-width:85px</code> 系 QSS 事实 <code>darkstyle.qss:60</code>），本版不补样式</b>；
+  通用节 <code>min-width:85px</code> 对"设备 ▾ 未选择"这种短文案不会显得过宽，本稿不预设定宽。</p>
   <p>「+M 台」<code>devicePillMore</code>：同 chips 盒模型（<code>:656-664</code> + 高 26），外框估算 ≈54px。</p>
   <p>菜单项：padding 8px 28px、font-size 9.5pt 为 QSS 事实（<code>:430-433</code>）；菜单宽度由最长项决定，<b>估算</b>。</p>
   <p>搜索框 <code>deviceSearchEdit</code>：QLineEdit 节 padding 6px 8px（<code>:120-128</code>）与 26 行高取齐方式属实现细节；稿内宽度 200px 为<b>估算·待确认</b>。</p>
@@ -485,7 +485,7 @@ td code{font-family:Consolas,monospace;font-size:11px}
     <td><code>#devicePill :656-664</code>（两文件同行号）</td></tr>
   <tr><td>chips hover 边框</td><td><code>#7B8494</code></td><td><code>#B8C0CC</code></td><td><code>:667-669</code></td></tr>
   <tr><td>选中 chip（琴色，仅信号态）</td><td>边框 <code>#F0A030</code>｜底 <code>#2A2518</code></td><td>边框 <code>#D48820</code>｜底 <code>#F5E3C8</code></td><td><code>[selected="true"] :671-674</code></td></tr>
-  <tr><td>次级文字（空态提示/标签/说明行）</td><td><code>#7B8494</code></td><td><code>#6B7480</code></td><td><code>:23</code>（QLabel[提示/拖拽]）·<code>:28</code>（#panelBreadcrumb）；deviceBusHint 命中路径问题见状态①注记</td></tr>
+  <tr><td>次级文字（空态提示/标签/说明行）</td><td><code>#7B8494</code></td><td><code>#6B7480</code></td><td><code>:23</code>（QLabel[提示/拖拽]）·<code>:28</code>（#panelBreadcrumb）；<code>deviceBusHint</code> 按裁定 ③ 两主题各补一行 <code>QLabel#deviceBusHint</code>（取值同 <code>:23</code>/<code>:28</code>，非零新增），命中路径理由见状态①注记</td></tr>
   <tr><td>入口按钮 底/边/字（沿用通用 QPushButton 节）</td>
     <td><code>#232A36</code>｜<code>#333B48</code>｜<span class="sw" style="background:#E4E7EC"></span><code>#E4E7EC</code></td>
     <td><code>#E4E8EE</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td>
@@ -510,9 +510,9 @@ td code{font-family:Consolas,monospace;font-size:11px}
 <div class="foot">
   <p><b>关卡与流程：</b>本稿覆盖规格 §7 第二版八态清单（①空态 ②少量已选 ③重名对照 ④80 台溢出折算 ⑤主菜单 ⑥分组子菜单 ⑦搜索命中/全不命中 ⑧chips 右键三项），
   深/浅双主题经右上角控制条整页切换（产品里为应用级主题切换，同一批 token 两主题各自取节）。
-  请过目并裁定五处：<b>(a)</b> chip 文案尾「×」去留（现状字面 vs"只显名称"的字面读法）；<b>(b)</b>「+M 台」按石墨还是升琴色信号态；
-  <b>(c)</b> <code>deviceBusHint</code> 次级色的落地路径（状态①注记三选一）；<b>(d)</b> 入口按钮是否接受通用节 <code>min-width:85px</code> 现成形态；
-  <b>(e)</b> 状态⑦-b 全不命中时底部两项出不出（规则 4"只留一行" vs §2.3"固定两项"，本稿按前者）。<br>
+  五处裁定已定并回写本页（规格 §2.3 / 计划已同步订正）：<b>①</b> chip 尾部「×」保留——现成 <code>createPill</code> 即「文案 + <code>"  ×"</code>」（<code>DeviceBusWidget.cpp:564</code>），左键＝移出选择；
+  <b>②</b>「+M 台」用石墨不升琴色（静态入口不是信号态）；<b>③</b> 空态提示两主题各补一行 <code>QLabel#deviceBusHint</code>（暗 <code>#7B8494</code>／亮 <code>#6B7480</code>），<b>本版不是"零新增 QSS 节"</b>（理由见状态①注记）；
+  <b>④</b> 全不命中时底部「全选可见 N 台」「清空选择」一并撤下；<b>⑤</b> 入口按钮沿用 <code>QPushButton</code> 通用节（<code>min-width:85px</code>，<code>darkstyle.qss:60</code>），不补样式。<br>
   <b>批准之前不动 <code>src/</code> 一行代码</b>；批准后规格 §7 回填位填「已批准 YYYY-MM-DD」，实测宽度基线由任务 7 量测后同时回填本页「注记」表（当前空置）。</p>
   <p><b>可落地性声明：</b>界面区域全部为纯色填充 + 1px 边框 + 3~8px 圆角，均为 Qt QSS 可表达；<b>无渐变、无阴影</b>。
   虚线占位框、objectName 小标签、步骤说明、主题控制条属审校辅助层，不进产品。宽度均为 DOM border-box <b>估算</b>，实测回填见「注记」节。
