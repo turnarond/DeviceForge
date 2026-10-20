@@ -609,8 +609,11 @@ QString DeviceBusWidget::selectionKey(const QPushButton* pill) const
 
 QString DeviceBusWidget::keyForDevice(size_t index) const
 {
-    return makeSelectionKey(m_deviceIds[index],
-                            QString::fromStdString(m_devices[index].ip));
+    // 修复轮1 finding5：m_deviceIds ↔ m_devices 是 lockstep 平行视图；用 .at() 而非
+    // operator[]，未来若新增变更点漏同步 → std::out_of_range 响亮失败（Release 下
+    // Q_ASSERT 被编译掉、min() 守卫只会掩盖分叉，两者都不读越界内存也不装无事发生）。
+    return makeSelectionKey(m_deviceIds.at(index),
+                            QString::fromStdString(m_devices.at(index).ip));
 }
 
 QString DeviceBusWidget::ipPartForDevice(size_t index) const
@@ -630,7 +633,7 @@ QVector<DeviceBusWidget::BusEntry> DeviceBusWidget::collectEntries() const
     entries.reserve(static_cast<int>(m_devices.size()));
     for (size_t i = 0; i < m_devices.size(); ++i) {
         BusEntry entry;
-        entry.deviceId = m_deviceIds[i];
+        entry.deviceId = m_deviceIds.at(i);  // 修复轮1 finding5：lockstep 分叉即响亮失败
         entry.name = QString::fromStdString(m_devices[i].alias);
         entry.ipPart = ipPartForDevice(i);
         entry.key = keyForDevice(i);
@@ -984,13 +987,21 @@ void DeviceBusWidget::selectAllVisible()
         for (const int index : segment.profileIndexes)
             m_selectedIds.insert(entries[index].key);
     }
+    // 修复轮1 finding1：本场菜单会话若先勾过成员（pending），底部动作的即时
+    // 广播已覆盖整场——必须吃掉 pending，否则 aboutToHide 会补发第二次广播，
+    // 违反"一场会话一次广播"（规格 §3.8）。
+    m_pendingSelectionBroadcast = false;
     rebuildChips();
     emit deviceSelectionChanged();
 }
 
 void DeviceBusWidget::clearSelection()
 {
+    // 规格 §2.3（2026-10-21 订正本）：清空是逃生门——清的是**整个**选中集合，
+    // 不受当前过滤可见集限制（过滤态下只清可见的会留下一堆看不见的选中项
+    // 继续当部署目标）；范围由菜单项文案自述（buildPickerMenuInto）。
     m_selectedIds.clear();
+    m_pendingSelectionBroadcast = false;     // 同 selectAllVisible：即时广播覆盖整场
     rebuildChips();
     emit deviceSelectionChanged();
 }
@@ -1054,7 +1065,13 @@ void DeviceBusWidget::buildPickerMenuInto(QMenu* menu)
     menu->addSeparator();
     QAction* selectAll = menu->addAction(QStringLiteral("全选可见 %1 台").arg(visibleTotal));
     connect(selectAll, &QAction::triggered, this, &DeviceBusWidget::selectAllVisible);
-    menu->addAction(QStringLiteral("清空选择"), this, &DeviceBusWidget::clearSelection);
+    // 修复轮1 finding3（规格 §2.3 订正本）：两条底部动作作用域刻意不对称——过滤生效时
+    // 清空项文案必须自述范围（M=已选总数，含被过滤不可见的已选），否则用户会以为漏清；
+    // 无过滤时保持朴素「清空选择」。
+    const QString clearText = m_filterText.isEmpty()
+        ? QStringLiteral("清空选择")
+        : QStringLiteral("清空选择（全部 %1 台）").arg(static_cast<int>(m_selectedIds.size()));
+    menu->addAction(clearText, this, &DeviceBusWidget::clearSelection);
 }
 
 void DeviceBusWidget::rebuildChips()
@@ -1106,7 +1123,10 @@ int DeviceBusWidget::visiblePillBudget() const
         return (w && !w->isHidden()) ? w->sizeHint().width() : 0;
     };
     int overhead = 40;   // 图标 + 布局 margin/spacing 的保守预留
-    overhead += widthOf(m_hintLabel) + widthOf(m_pickerBtn) + widthOf(m_moreBtn)
+    // 修复轮1 finding6：m_moreBtn 不进本预算——它的占位宽度改由 applyPillOverflow
+    // 在"确认要折叠"时预留。若按当前可见性计入，预算随按钮上屏/收起摆动，
+    // 首折瞬间整行恰好超出一个按钮宽（折叠抖动）。
+    overhead += widthOf(m_hintLabel) + widthOf(m_pickerBtn)
               + widthOf(m_searchEdit) + widthOf(m_addButton);
     return width() - overhead;
 }
@@ -1115,34 +1135,48 @@ void DeviceBusWidget::applyPillOverflow()
 {
     if (!m_moreBtn || m_pills.empty())
         return;
-    const int budget = visiblePillBudget();
     const int spacing = 4;
-    int shown = 0;
-    int folded = 0;
-    int selectedTotal = 0;
-    int used = 0;
     const size_t n = std::min(m_devices.size(), m_pills.size());
-    for (size_t i = 0; i < n; ++i) {
-        if (!m_selectedIds.contains(keyForDevice(i))) {
-            m_pills[i]->setVisible(false);              // 未选 → 收起（chips 只显已选）
-            continue;
+    struct Fold { int shown = 0; int folded = 0; int selectedTotal = 0; };
+    // 单遍折算：未选→收起；已选按预算从尾部起折进 +M 台。可见性一律重设
+    //（两遍调用幂等，守恒 shown+folded==selectedTotal 由循环构造保证）。
+    auto foldPass = [&](int budget) -> Fold {
+        Fold f;
+        int used = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (!m_selectedIds.contains(keyForDevice(i))) {
+                m_pills[i]->setVisible(false);          // 未选 → 收起（chips 只显已选）
+                continue;
+            }
+            ++f.selectedTotal;
+            const int w = m_pills[i]->sizeHint().width();
+            const int cost = (f.shown > 0 ? spacing : 0) + w;
+            if (used + cost > budget) {
+                m_pills[i]->setVisible(false);          // 从尾部起折进 +M 台
+                ++f.folded;
+            } else {
+                m_pills[i]->setVisible(true);
+                used += cost;
+                ++f.shown;
+            }
         }
-        ++selectedTotal;
-        const int w = m_pills[i]->sizeHint().width();
-        const int cost = (shown > 0 ? spacing : 0) + w;
-        if (used + cost > budget) {
-            m_pills[i]->setVisible(false);              // 从尾部起折进 +M 台
-            ++folded;
-        } else {
-            m_pills[i]->setVisible(true);
-            used += cost;
-            ++shown;
-        }
+        return f;
+    };
+    int budget = visiblePillBudget();
+    Fold f = foldPass(budget);
+    // 修复轮1 finding6：折叠一旦发生，+M 台按钮上屏占据行宽——预算必须预留它的
+    // sizeHint（按钮带来的一个 spacing 槽由 overhead 的 40px 保守预留覆盖），并复算一遍。
+    // 第二遍预算只会更小 → folded 不减、shown 不多，按钮可见性判定与两遍结果一致
+    //（folded>0 ⇔ 按钮可见），无振荡；守恒断言（tests：shown+folded==选中总数）不依
+    // 赖具体枚数（tests/AGENTS.md 约定 6）。
+    if (f.folded > 0) {
+        budget -= m_moreBtn->sizeHint().width();
+        f = foldPass(budget);
     }
-    m_moreBtn->setVisible(folded > 0);
-    m_moreBtn->setText(QStringLiteral("+%1 台").arg(folded));   // 守恒：shown + folded == selectedTotal
+    m_moreBtn->setVisible(f.folded > 0);
+    m_moreBtn->setText(QStringLiteral("+%1 台").arg(f.folded));   // 守恒：shown + folded == selectedTotal
     qInfo("DeviceBus chips overflow: budget=%d shown=%d folded=%d selected=%d",
-          budget, shown, folded, selectedTotal);
+          budget, f.shown, f.folded, f.selectedTotal);
 }
 
 void DeviceBusWidget::resizeEvent(QResizeEvent* event)

@@ -348,8 +348,11 @@ private slots:
         // Step7 迁移：先经菜单勾中（chips 只显已选），双击对象是真实可见的 chip；
         // 编辑链/信号/持久化断言逐条原样保留
         selectDeviceViaMenu(bus, QStringLiteral("id:dev-plc"));
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        // 修复轮1 finding4：双击目标改取「可见 chips」首枚——firstPill 不过滤可见性，
+        // 夹具只有一枚可见胶囊时两者同物，但"第 N 枚胶囊==第 N 台"不得在测试层回潜
+        const auto chips = visibleChips(bus);
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
@@ -407,9 +410,13 @@ private slots:
         QVERIFY(ConfigStore::instance().exists(
             QStringLiteral("device.profile"), QStringLiteral("dev-plc")));
 
-        // 胶囊文案即时刷新为新名称
+        // 胶囊文案即时刷新为新名称（修复轮1 finding4：判据对象=可见 chips——且必须
+        // 每次轮询重新 findChildren：保存触发 refreshFromRegistry 删建全部胶囊，
+        // 缓存旧 pill 指针是悬垂读（QTRY 内解引用 == UAF，绝不允许）
         QTRY_VERIFY_WITH_TIMEOUT(
-            firstPill(bus)->text().startsWith(QStringLiteral("新名称")), 5000);
+            !visibleChips(bus).isEmpty() &&
+                visibleChips(bus).first()->text().startsWith(QStringLiteral("新名称")),
+            5000);
 
         // 对话框取消按钮唯一（修复回归：曾因 addButton 重复渲染两个「取消」）
         QVERIFY2(m_editorRejectButtonCount >= 0,
@@ -445,8 +452,9 @@ private slots:
         bus.resize(1400, 100);
         // Step7 迁移：先经菜单勾中再双击（编辑链与旧行清扫断言逐条原样保留）
         selectDeviceViaMenu(bus, QStringLiteral("id:dev-ip"));
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        const auto chips = visibleChips(bus);   // 修复轮1 finding4：双击目标=可见 chip（防胶囊位置配对回潜）
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
@@ -545,8 +553,9 @@ private slots:
         bus.resize(1400, 100);
         // Step7 迁移：先经菜单勾中再双击（下拉取证与落库断言逐条原样保留）
         selectDeviceViaMenu(bus, QStringLiteral("id:dev-dd"));
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        const auto chips = visibleChips(bus);   // 修复轮1 finding4：双击目标=可见 chip（防胶囊位置配对回潜）
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
@@ -934,6 +943,116 @@ private slots:
         QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 2);   // 甲仍在 + 乙补入
         QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);
         QCOMPARE(spy.count(), 1);                        // 全选动作整场只广播一次
+    }
+
+    // ── 修复轮1 finding1：混合菜单会话的单广播规矩 ──
+    // 同一场会话里先勾成员（置 pending），再点底部动作（自身即时广播）——
+    // aboutToHide 不得因残留 pending 补发第二次广播（规格 §2.3/§3.8：一场一次）。
+    void menuBottomActionAfterTickBroadcastsOnce()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 3; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-x%1").arg(i),
+                                              QStringLiteral("混%1").arg(i),
+                                              QStringLiteral("10.8.8.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+
+        auto bottomAction = [menu](const QString& prefix) -> QAction* {
+            const auto acts = menu->actions();
+            for (QAction* a : acts) {
+                if (a->text().startsWith(prefix))
+                    return a;
+            }
+            return nullptr;
+        };
+
+        // 场次1：勾一台成员 → 同场点「全选可见」→ 关菜单。整场只许 1 次广播。
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        menuMemberActions(menu).first()->toggle();       // toggled → pending=true
+        QAction* selectAll = bottomAction(QStringLiteral("全选可见"));
+        QVERIFY(selectAll);
+        selectAll->trigger();                             // 动作自身即时广播
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 1);                         // 缺陷形态：pending 未清 → 2
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 3);
+
+        // 场次2：勾掉一台（全勾态下 toggle=取消）→ 同场点「清空选择」→ 关菜单。
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        menuMemberActions(menu).first()->toggle();
+        QAction* clearAll = bottomAction(QStringLiteral("清空选择"));
+        QVERIFY(clearAll);
+        clearAll->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 2);                         // 第二场同样只补 1 次
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);
+    }
+
+    // ── 修复轮1 finding2+3：过滤态「清空选择」清的是全量集合，且文案必须自述范围 ──
+    // 规格 §2.3（2026-10-21 订正本）：两条底部动作作用域刻意不对称——全选受可见边界，
+    // 清空是逃生门清全部；过滤生效时清空项文案 `清空选择（全部 M 台）`（M=已选总数），
+    // 无过滤时保持朴素 `清空选择`。行为与两条文案（两分支）在此同批钉桩。
+    void clearUnderFilterDropsWholeSetAndLabelStatesScope()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile jia = makeProfile(QStringLiteral("dev-jia"), QStringLiteral("甲"),
+                                        QStringLiteral("10.8.9.1"), 21);
+        jia.tags = {"组A"};
+        QVERIFY(registry.save(jia));
+        DeviceProfile yi = makeProfile(QStringLiteral("dev-yi"), QStringLiteral("乙"),
+                                       QStringLiteral("10.8.9.2"), 21);
+        yi.tags = {"组B"};
+        QVERIFY(registry.save(yi));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+
+        // 先（无过滤）经菜单勾中甲+乙
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-jia"));
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-yi"));
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 2);
+
+        // 过滤「乙」：甲被排除在菜单可见集之外，但仍是已选
+        edit->setText(QStringLiteral("乙"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const auto tops = menu->actions();
+        QCOMPARE(tops.size(), 4);                         // 组B + 分隔 + 全选可见 1 台 + 清空
+        QCOMPARE(tops.at(2)->text(), QStringLiteral("全选可见 1 台"));
+        // finding3：过滤态清空项文案必须带范围说明（M=已选总数=2，含被过滤掉的甲）
+        QCOMPARE(tops.at(3)->text(), QStringLiteral("清空选择（全部 2 台）"));
+        // finding2：经真实菜单项触发清空
+        tops.at(3)->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);   // 全量清空：不可见的甲也被清掉
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);        // 硬线：全集纹丝不动
+
+        // finding3 另一分支：无过滤时清空项保持朴素「清空选择」
+        edit->setText(QString());
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* plain = nullptr;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->text() == QStringLiteral("清空选择"))
+                plain = a;
+        }
+        QVERIFY2(plain, qPrintable(QStringLiteral("无过滤时清空项应保持朴素文案，实际末项: %1")
+                                       .arg(acts.isEmpty() ? QStringLiteral("(空)")
+                                                           : acts.last()->text())));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
     }
 
     // ── v2.16-B 任务4 Step5：chips 只显已选（视觉态只切可见性）+ 左键移出选择 ──

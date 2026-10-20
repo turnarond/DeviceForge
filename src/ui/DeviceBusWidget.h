@@ -22,8 +22,9 @@
  *              一枚与全集平行创建销毁——"只显已选"与溢出收纳只切可见性，
  *              allDevices() 恒为全集（批量命令页目标集硬线）；菜单每次
  *              aboutToShow 重建，组项「组名 命中/总数」，「未分组」最后，
- *              底部「全选可见 N 台」「清空选择」，全不命中时两动作撤下；
- *              溢出折成「+M 台」并与入口共用同一菜单实例。
+ *              底部「全选可见 N 台」（只作用可见集）与「清空选择」（清全量，
+ *              过滤态文案自述范围「清空选择（全部 M 台）」），全不命中时两动作
+ *              撤下；溢出折成「+M 台」并与入口共用同一菜单实例。
  */
 
 #pragma once
@@ -85,7 +86,9 @@ public:
     QSet<QString> selectedIds() const { return m_selectedIds; }
     // 菜单底部两条公开动作（与弹层内按钮同一条路径）：
     // selectAllVisible —— 按当前过滤词把「可见」设备并入选中集合（全选可见 N 台）
-    // clearSelection  —— 清空选中集合（清空选择；规格状态⑤：清空整个选中集合）
+    // clearSelection  —— 清空整个选中集合，不受过滤可见集限制（规格 §2.3 订正本：
+    // 清空是逃生门；过滤生效时菜单项文案自述范围「清空选择（全部 M 台）」）。
+    // 两者即时广播并吃掉 m_pendingSelectionBroadcast——同一场菜单会话只广播一次。
     void selectAllVisible();
     void clearSelection();
 
@@ -142,8 +145,9 @@ private:
     // 胶囊仍一台一枚与 m_devices 平行创建/销毁，选中/折叠只 setVisible）
     //  chips 可见性同步 + 空态提示/入口文案 + 溢出折算（Step5）
     void rebuildChips();
-    // 行宽预算 = 设备栏自身宽度 − 同行固定控件（可见者）宽度（不读未布局子控件的
-    // 瞬态宽度）；预算 ≤0（极窄）时全部折进 +M 台，是合法收纳态
+    // 行宽预算 = 设备栏自身宽度 − 同行固定控件（可见者；+M 台按钮除外——其占位宽度
+    // 由 applyPillOverflow 在确认折叠时预留并复算，防首折瞬间超一个按钮宽的抖动）。
+    // 预算 ≤0（极窄）时全部折进 +M 台，是合法收纳态
     int  visiblePillBudget() const;
     // 从尾部起收起超预算的 chips，被折数量写进 +M 台按钮（守恒：可见+M==已选总数）
     void applyPillOverflow();
