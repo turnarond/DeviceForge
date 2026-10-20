@@ -109,8 +109,14 @@ DeviceProfile DeviceRegistry::normalize(const DeviceProfile& profile)
     normalized.name = trim(normalized.name);
     normalized.note = trim(normalized.note);
 
-    // v2.16-B §4：标签规范化单源化——行为等值的真源替换（现状本就 trim+去重+丢空）。
-    // normalizeTag 额外把纯分隔符标签（如 "/"）判为空不入库，与 §2.1 口径一致。
+    // v2.16-B §4：标签规范化单源化（现状本就"去首尾空白 + 丢空 + 保序去重"）。**不是平铺等值**，
+    // 两条不等的形态（§4 补记 + CHANGELOG 同批交代，勿回退成"行为等值"一句话）：
+    // ① 纯分隔符标签（"/"、",;"、"、"、"|"）——旧代码入库保留，本版按 §2.1 经 normalizeTag
+    //    判空丢弃（tst_device_registry 的 normalizeTagSurroundingSpacesTrimmedAndEmptiesDropped 钉桩）。
+    // ② Unicode 空白（全角空格 U+3000、NBSP U+00A0）——本文件匿名 trim 是 std::isspace(unsigned char)
+    //    的 ASCII 逐字节口径（见 :17-26），而 normalizeTag 用 QString::trimmed()（UTF-8 解码后按
+    //    QChar::isSpace），故 "　车间A" 这类标签过去整串保留、本版去掉。该偏移与本版意图同向
+    //    （放宽匹配），且档案对话框那条腿本就已是 QString::trimmed()、从该路径不可触达，不是回退。
     std::vector<std::string> tags;
     for (const auto& tag : normalized.tags) {
         const QString one = devicebus::normalizeTag(QString::fromStdString(tag));
