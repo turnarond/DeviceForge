@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """smoke 工具的单元测试（TDD 红-绿，Windows 平台）。"""
+import os
 import subprocess
 import sys
 import unittest
@@ -171,6 +172,9 @@ class SmokeCliTest(unittest.TestCase):
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
+            # smoke 侧 main() 现把输出钉成 UTF-8（跨码页可用），读它的人必须显式声明编码，
+            # 否则父进程按本地码页（GBK）解 UTF-8 中文会在读线程抛 UnicodeDecodeError。
+            encoding="utf-8",
             check=False,
         )
 
@@ -184,12 +188,32 @@ class SmokeCliTest(unittest.TestCase):
             [sys.executable, str(script), "DeviceForge.exe", "unexpected"],
             capture_output=True,
             text=True,
+            # smoke 侧 main() 现把输出钉成 UTF-8（跨码页可用），读它的人必须显式声明编码，
+            # 否则父进程按本地码页（GBK）解 UTF-8 中文会在读线程抛 UnicodeDecodeError。
+            encoding="utf-8",
             check=False,
         )
 
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(completed.stdout.strip(), "用法: python smoke.py <exe路径>")
         self.assertEqual(completed.stderr, "")
+
+    def test_cli_usage_under_legacy_console_codepage_still_exits_two(self):
+        """CI 取证用红-绿用例：cp1252 控制台下打印中文用法行曾抛 UnicodeEncodeError，
+        于是退出码从约定的 2 变成 1（CI 实况：AssertionError: 1 != 2）。"""
+        script = Path(sm.__file__).resolve()
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            check=False,
+        )
+
+        self.assertNotIn("UnicodeEncodeError", completed.stderr)
+        self.assertEqual(completed.returncode, 2)
 
 
 if __name__ == "__main__":

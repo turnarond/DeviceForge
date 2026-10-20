@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """versioncheck 工具的单元测试（TDD 红-绿）。"""
+import io
 import sys
 import unittest
 import uuid
@@ -207,6 +208,26 @@ class CliTest(unittest.TestCase):
         tmp = _build_tree()
         _write(tmp, "README.md", "**版本**：9.9.9\n")
         self.assertNotEqual(vc.main(["--root", str(tmp)]), 0)
+
+
+class ConsoleEncodingTest(unittest.TestCase):
+    """CI 取证用红-绿用例：控制台不是 UTF-8 码页时，中文报告行不得让工具崩。
+
+    实况（2026-10-20）：GitHub windows runner 上本文件 4 个用例记为 ERROR，traceback 落在
+    versioncheck.py:168 的 print（f-string 里带 docs/01-白皮书/… 的中文路径）；
+    本地 `PYTHONIOENCODING=cp1252 python -m unittest test_versioncheck test_smoke`
+    复现出与 CI 同计数 failures=2 / errors=4。Git Bash/GBK 控制台下不复现，故必须把码页钉进断言里。
+    """
+
+    def test_main_survives_legacy_console_codepage(self):
+        tmp = _build_tree(omit="docs/01-白皮书/产品路线图.md")
+        original = sys.stdout
+        sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        try:
+            code = vc.main(["--root", str(tmp)])
+        finally:
+            sys.stdout = original
+        self.assertNotEqual(code, 0)
 
 
 if __name__ == "__main__":
