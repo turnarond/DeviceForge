@@ -197,12 +197,10 @@ public:
         profile.name = m_nameEdit->text().trimmed().toStdString();
         profile.note = m_noteEdit->text().trimmed().toStdString();
         profile.tags.clear();
-        // v2.16-B §4：对话框切分改用规范化真源（现状本就 trimmed()+跳空，等值替换；
-        // 纯分隔符标签如 "/" 按 §2.1 判空不入库）
-        // Qt6 split 默认跳过空段（CI Qt 6.9.2 兼容，不用 Qt::SplitBehavior 弃用重载）
-        // —— 实读勘误：本地 Qt 6.11.1 的 qstring.h:708 该重载默认实为 Qt::KeepEmptyParts，
-        // 空段靠下面循环里 normalizeTag 判空丢弃，本行不依赖 split 的默认值；这个单参形态在
-        // CI 的 Qt 6.9.2 与本地签名一致，保持原样即可（别按"默认跳空段"的旧口径去改写它）
+        // v2.16-B §4：对话框切分改用规范化真源（纯分隔符标签如 "/" 按 §2.1 判空不入库）
+        // split 的单参形态在 CI 的 Qt 6.9.2 与本地 6.11.1 默认值一致，都是 Qt::KeepEmptyParts
+        // （实读 qstring.h:708）⇒ 空段靠下面 normalizeTag 判空丢弃，本行不依赖 split 的默认值。
+        // 这行注释曾被写成"Qt6 split 默认跳过空段"，那是误记、已证伪；别按那个口径改写本调用。
         const QStringList rawTags = m_tagsEdit->text().split(QLatin1Char(','));
         for (const QString& raw : rawTags) {
             const QString normalized = devicebus::normalizeTag(raw);
