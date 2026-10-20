@@ -807,11 +807,12 @@ void DeviceBusWidget::dispatchPillMenuAction(QPushButton* pill, const QString& r
 
 // chip 尾部「×」命中区宽度（规格 §2.3 订正本：宽度判据"算出来，不许拍脑袋"）：
 // QFontMetricsF 按胶囊**自身 font** 实量尾标 "  ×" 的字宽，向上取整，再加样式层
-// 的按钮内部 padding（PM_ButtonMargin，覆盖文字与按钮右缘之间的空白），下限 0 兜
-// 异常样式。口径限制如实登记：QStyleSheetStyle 的 font-size 覆盖不进 QWidget::font()
-// （QSS 字体在 style 绘制层解析），故生产 QSS 若把 #devicePill 字号改成与应用默认
-// 字体不同的值，区宽会有几像素漂移——区恒贴按钮右缘、注入判据几何独立，漂移只影响
-// 区的左边界位置，不影响「×」可达性。默认字体下实测数字见任务 5 修复报告。
+// 的按钮内部 padding（PM_ButtonMargin），下限 0 兜异常样式。口径限制如实登记（两处
+// 都是实测结论，别照抄旧说法）：① QSS 的 `font-size` **会**灌进 `QWidget::font()`
+// （任务 7 修复轮实测：应用默认 Microsoft YaHei UI 9pt，而胶囊 `font()` 已是
+// `#devicePill` 的 12px——本函数此前记的"覆盖不进"是错的，已订正）；② 区宽随样式层
+// 而变：默认样式下 `PM_ButtonMargin`=6 ⇒ 22px，生产 QSS 下为 0 ⇒ 16px。两者都只影响
+// 区的**左边界**位置（区恒贴按钮右缘、注入判据几何独立），不影响「×」可达性。
 int DeviceBusWidget::pillCloseZoneWidth(const QPushButton* pill)
 {
     const QFontMetricsF fm(pill->font());

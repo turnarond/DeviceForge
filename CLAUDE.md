@@ -442,7 +442,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 20 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 的 `add_test()` 为准），覆盖 NetRelay 录制回放与组播/转发地址校验、OTA 更新检查与文件替换回滚、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、FTP LIST 解析、部署循环与并发调度、CSV/HTML 部署报告、远程列表排序、主题映射、文件源抽象、面板异步加载、双主题像素验证、Modbus 映射及 Telnet 超时。Phase 0-1 设计规划的 FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充，计划在后续迁移时同步完善
+- **测试现状**：**以 `tests/AGENTS.md` 为准**（目标计数、逐目标被测物、在册特例与已知覆盖空白都在那一处单源维护，本文件不再抄数字以免两处分叉）。历史口径提醒：本条曾长期停留"20 个目标、FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充"的写法，而 `tst_task_center_widget`（v2.11 起）与 `tst_device_bus_groups`（v2.16-B 起）早已补上 DeviceBusWidget 侧的定向覆盖——读到旧数字别据此判断"没有测试保护"
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
