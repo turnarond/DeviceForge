@@ -737,8 +737,9 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     m_deployBtn->setObjectName("btnPrimary");
     m_deployBtn->setMinimumHeight(30);
     connect(m_deployBtn, &QPushButton::clicked, this, &FtpDeployWidget::onDeployClicked);
-    // 初始文本「▶ 部署」：设备总线同步前不显示「0 台设备」；
-    // 同步后由 setDeviceBusWidget → updateDeployBtnText() 更新为「▶ 部署到 N 台设备」
+    // 初始文本「▶ 部署」：设备总线同步前不显示台数；
+    // 同步后由 setDeviceBusWidget → updateDeployBtnText() 更新为
+    // 「▶ 部署到 N 台设备」（N=已选中数）或「▶ 部署（未选择设备）」（v2.16-B 任务4b）
     m_deployBtn->setText(QStringLiteral("▶ 部署"));
     row1->addWidget(m_deployBtn);
 
@@ -878,12 +879,20 @@ void FtpDeployWidget::connectBackendSignals()
 
 void FtpDeployWidget::onDeployClicked()
 {
-    if (!m_backend) { appendLog("Backend 未就绪"); return; }
     if (!m_deviceBus) { appendLog("设备总线未关联"); return; }
 
+    // v2.16-B 任务4b（规格 §3 第 5 条、§6①）：未选择设备＝没有目标——废除
+    // 「空选中隐式展开为全部设备」兜底（现场"开程序直接点部署=全量刷"自此被拒）。
+    // 检查排在 m_backend 判空**之前**：没有目标时「后端未就绪」还不是操作员的问题；
+    // 也与任务模板执行链同口径（空目标即拒绝早已是模板链四处的一致语义），
+    // 本条消除的正是"单发/模板两套语义并存"。两条分支各自可达由
+    // tst_deploy_toolbar_layout 实验组+对照组钉桩。
     auto devices = m_deviceBus->selectedDevices();
-    if (devices.empty()) devices = m_deviceBus->allDevices(); // 未选中时部署到全部
-    if (devices.empty()) { appendLog("错误：设备总线中没有目标设备"); return; }
+    if (devices.empty()) {
+        appendLog("未选择目标设备，请在设备栏选择至少一台");
+        return;
+    }
+    if (!m_backend) { appendLog("Backend 未就绪"); return; }
     // 左侧面板可切远程浏览源（Task 3）：部署语义=从左侧本地收集文件，远程源时拒绝——
     // 后端按本地路径上传，远程路径会误传（批量部署目标始终按工具栏配置执行）
     if (m_leftPanel->source() && m_leftPanel->source()->sourceId() != "local") {
@@ -1359,17 +1368,17 @@ void FtpDeployWidget::setConnState(RemoteConnState state)
         QStringLiteral("background-color: %1;").arg(color));
 }
 
-// 部署按钮文本「▶ 部署到 N 台设备」：N = 已选中设备数（未选中时与部署语义一致，取全部设备）
+// 部署按钮文本：N = 已选中设备数；N=0 显示「▶ 部署（未选择设备）」——与执行路径
+// 同口径（v2.16-B 任务4b：未选择设备＝没有目标，点部署会被拒；不再有"未选中时
+// 取全部设备"的旧回退，allDevices() 只服务全集消费方如批量命令页）
 void FtpDeployWidget::updateDeployBtnText()
 {
     if (!m_deployBtn) return;
     int n = 0;
-    if (m_deviceBus) {
-        auto devs = m_deviceBus->selectedDevices();
-        if (devs.empty()) devs = m_deviceBus->allDevices();
-        n = static_cast<int>(devs.size());
-    }
-    m_deployBtn->setText(QStringLiteral("▶ 部署到 %1 台设备").arg(n));
+    if (m_deviceBus)
+        n = static_cast<int>(m_deviceBus->selectedDevices().size());
+    m_deployBtn->setText(n == 0 ? QStringLiteral("▶ 部署（未选择设备）")
+                                : QStringLiteral("▶ 部署到 %1 台设备").arg(n));
 }
 
 // 连接失败/重连失败/无设备统一 detach（I-1 / M-2 / M-3）：

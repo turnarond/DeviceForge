@@ -15,6 +15,9 @@
  *              ③ 目的：工具栏最小宽落进 1366 窄屏可用宽之内（阈值推导见 toolbarFitsNarrowScreen）。
  *              既有控件一律不新增 objectName（按可见文本/类型/尺寸特征定位）；
  *              容器对象名 deployToolbar 是本改动新增的唯一对象名。
+ *              v2.16-B 任务4b 追加：未选择设备＝没有目标（行为变更钉桩）——
+ *              空选中点部署被拒绝（日志「未选择目标设备…」+ 按钮文案「▶ 部署（未选择设备）」），
+ *              对照组（恰勾 1 台）走「Backend 未就绪」分支，证明两条分支各自可达。
  */
 
 #include <QtTest>
@@ -31,6 +34,7 @@
 #include <QList>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStringList>
 #include <QStyleFactory>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -40,6 +44,7 @@
 
 #include "config/ConfigStore.h"
 #include "tools/FtpDeployTool/FtpDeployWidget.h"
+#include "ui/DeviceBusWidget.h"
 
 namespace {
 
@@ -99,6 +104,28 @@ QFrame* separatorIn(QLayout* row)
             return frame;
     }
     return nullptr;
+}
+
+// v2.16-B 任务4b 夹具：旧行设备（无注册表；选中键 = "ip:<地址>"，见
+// DeviceBusWidget::makeSelectionKey）。ip 取互不前缀重叠的三段，保证过滤
+// 「10.77.0.2」时子串匹配只命中一台（matchesFilter 为大小写不敏感子串式）。
+DeviceInfo makeBusDevice(const QString& ip)
+{
+    DeviceInfo d;
+    d.ip = ip.toStdString();
+    d.port = 21;
+    d.protocol = "ftp";
+    return d;
+}
+
+// 含 needle 的日志行数（appendLog 每行带 [hh:mm:ss] 前缀，按子串判定）
+int loggedCount(const QStringList& logs, const QString& needle)
+{
+    int n = 0;
+    for (const QString& line : logs)
+        if (line.contains(needle))
+            ++n;
+    return n;
 }
 
 } // namespace
@@ -316,6 +343,90 @@ private slots:
         const int minWLabel = bar->layout()->totalMinimumSize().width();
         QVERIFY2(minWLabel <= 1270,
                  qPrintable(QStringLiteral("主按钮带台数文案后工具栏最小宽 %1px 超过 1270px").arg(minWLabel)));
+    }
+
+    // ---- v2.16-B 任务4b：未选择设备＝没有目标（行为变更钉桩）----
+    // 夹具要点（均为定死口径，缺一用例就假绿）：
+    // ① 必须注入 DeviceBusWidget——m_deviceBus 默认空指针，不注入则点部署恒走
+    //    「设备总线未关联」分支，与空选中拒绝无关；
+    // ② 空选中拒绝检查排在 !m_backend 之前（onDeployClicked 定死顺序），
+    //    所以本 UI-only 目标（m_backend 恒空）能走到拒绝分支；
+    // ③ 对照组恰勾 1 台——若拒绝文案其实来自 backend 空指针分支，对照组
+    //    的「Backend 未就绪」断言与实验组的「未出现 Backend 未就绪」断言同时失效。
+    // 日志经 setGlobalLogCallback 采集（appendLog 唯一出口，无回调即静默）。
+
+    // 实验组：3 台设备、一台不勾 → 点部署被拒，拒绝文案出自空选中分支；
+    // 按钮文案为「▶ 部署（未选择设备）」（旧行为：空选中回退全量，文案显示 3 台）
+    void emptySelectionRefusesDeployAndSaysSo()
+    {
+        DeviceBusWidget bus;
+        FtpDeployWidget w;
+        w.setDeviceBusWidget(&bus);              // m_deviceBus 注入（须在 addDevice 前，桩件走同一信号链）
+        QStringList logs;
+        w.setGlobalLogCallback([&logs](const QString& line) { logs << line; });
+
+        // addDevice(persist=false) 不落库；新设备默认未选中（"新设备未选 → 先收起"）
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.1")), false);
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.2")), false);
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.3")), false);
+        QVERIFY2(bus.selectedDevices().empty(), "夹具失效：新设备本应未选中");
+        // 硬线守卫：allDevices() 恒为全集（本任务只废"空选中回退全集"，不动全集本身）
+        QCOMPARE(bus.allDevices().size(), std::size_t{3});
+
+        auto* btn = w.findChild<QPushButton*>(QStringLiteral("btnPrimary"));
+        QVERIFY(btn);
+        QCOMPARE(btn->text(), QStringLiteral("▶ 部署（未选择设备）"));
+
+        btn->click();
+
+        QVERIFY2(loggedCount(logs, QStringLiteral("未选择目标设备，请在设备栏选择至少一台")) == 1,
+                 qPrintable(QStringLiteral("空选中未见拒绝日志（或重复出现），日志=%1")
+                                .arg(logs.join(QStringLiteral(" | ")))));
+        // 拒绝必须出自空选中分支而不是 backend 空指针分支
+        QCOMPARE(loggedCount(logs, QStringLiteral("Backend 未就绪")), 0);
+        QCOMPARE(loggedCount(logs, QStringLiteral("设备总线未关联")), 0);
+        // 被拒不落传输：后续执行路径日志一条都不该出现
+        QCOMPARE(loggedCount(logs, QStringLiteral("请先在左侧本地面板中选中要部署的文件")), 0);
+    }
+
+    // 对照组：3 台设备、恰好勾 1 台（过滤只显该台 → selectAllVisible → 撤过滤）
+    // → 点部署走「Backend 未就绪」（选中检查放行、后端判空兜底可达），
+    // 按钮文案「▶ 部署到 1 台设备」（非空选中下新旧文案同值，本格钉台数口径，
+    // 行为变更的判别力在日志断言与实验组）
+    void oneSelectedDeviceReachesBackendGuard()
+    {
+        DeviceBusWidget bus;
+        FtpDeployWidget w;
+        w.setDeviceBusWidget(&bus);
+        QStringList logs;
+        w.setGlobalLogCallback([&logs](const QString& line) { logs << line; });
+
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.1")), false);
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.2")), false);
+        bus.addDevice(makeBusDevice(QStringLiteral("10.77.0.3")), false);
+
+        // 精确勾一台：隐藏 chips 不可 mouseClick，走公开选择缝——
+        // deviceSearchEdit 文本直连 m_filterText（cpp:497-498），过滤到唯一命中后全选可见
+        auto* search = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(search);
+        search->setText(QStringLiteral("10.77.0.2"));
+        bus.selectAllVisible();
+        search->setText(QString());               // 撤过滤：只动可见集，不动已选
+        QCOMPARE(bus.selectedIds().size(), 1);
+        QCOMPARE(bus.selectedDevices().size(), std::size_t{1});
+
+        auto* btn = w.findChild<QPushButton*>(QStringLiteral("btnPrimary"));
+        QVERIFY(btn);
+        QCOMPARE(btn->text(), QStringLiteral("▶ 部署到 1 台设备"));
+
+        btn->click();
+
+        QVERIFY2(loggedCount(logs, QStringLiteral("Backend 未就绪")) == 1,
+                 qPrintable(QStringLiteral("勾 1 台后未落到 backend 判空分支，日志=%1")
+                                .arg(logs.join(QStringLiteral(" | ")))));
+        // 非空选中不得触发空选中拒绝（两条分支互斥即顺序正确的证明）
+        QCOMPARE(loggedCount(logs, QStringLiteral("未选择目标设备，请在设备栏选择至少一台")), 0);
+        QCOMPARE(loggedCount(logs, QStringLiteral("设备总线未关联")), 0);
     }
 };
 
