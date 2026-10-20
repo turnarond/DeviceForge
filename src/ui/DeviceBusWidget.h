@@ -5,7 +5,8 @@
  * File: DeviceBusWidget.h
  *
  * Date: 2026-07-25（2026-10 v2.11 Task 6：设备档案名称优先展示 + 档案编辑对话框；
- *       2026-10-20 v2.16-B 任务4：只显已选 chips + 分组菜单收纳）
+ *       2026-10-20 v2.16-B 任务4：只显已选 chips + 分组菜单收纳；
+ *       2026-10-21 v2.16-B 任务5：双击改判「打开这台设备」+ 右键三项置顶入口）
  *
  * Author: turnarond
  *
@@ -13,10 +14,11 @@
  *              分组菜单收纳（v2.16-B 重画形态），支持添加/删除/选中，
  *              凭证输入。工业仪表盘风格。
  *              v2.11：接入 DeviceRegistry 后胶囊名称优先（地址为次级信息），
- *              悬浮显示协议端点与备注，双击打开档案编辑对话框（保存经
- *              registry->saveReplacing 以端点替换语义持久化并发射
- *              deviceProfileEdited）；未接入注册表时保持旧 ip:port 行为与
- *              device.list 回退写入。
+ *              悬浮显示协议端点与备注。v2.16-B 任务5：双击改判「打开这台设备」
+ *              （发射 openDeviceRequested，按端点协议跳页的编排归任务 6），
+ *              档案编辑退到右键菜单第二项（保存仍经 registry->saveReplacing
+ *              以端点替换语义持久化并发射 deviceProfileEdited，能力零丢失）；
+ *              未接入注册表时保持旧 ip:port 行为与 device.list 回退写入。
  *              v2.16-B 任务4：选中态改为显式 deviceId 集合（位置配对废弃）；
  *              chips 只显名称（重名才加 ·ip 尾标、空名回落地址）；胶囊仍一台
  *              一枚与全集平行创建销毁——"只显已选"与溢出收纳只切可见性，
@@ -36,6 +38,7 @@
 #include <QList>
 #include <QStringList>
 #include <QVector>
+#include <optional>
 #include <vector>
 #include "device/DeviceProfile.h"
 #include "framework/DeviceInfo.h"
@@ -104,9 +107,16 @@ signals:
     void credentialsChanged(const QString& user, const QString& password);
     // 档案新增/编辑保存成功后发射（宿主 Tool 可即时刷新设备视图）
     void deviceProfileEdited(const DeviceProfile& profile);
+    // v2.16-B 任务5（规格 §2.2/§2.4 纯加法）：双击 chips 或右键「打开这台设备」
+    // 发射。载荷=胶囊对应的档案（旧行经 profileForPill 的 fromDeviceInfo 合成）。
+    // 本组件只发射、不切页；DeviceForge::openDeviceAt 经 deviceopen::routeTo
+    // 按端点协议跳对应工具页并处理 Page::None 提示（任务 6 接线）。
+    void openDeviceRequested(const DeviceProfile& profile);
 
 protected:
-    // 双击胶囊打开档案编辑对话框（仅接入注册表后启用）
+    // v2.16-B 任务5：双击胶囊＝「打开这台设备」——吞掉双击事件并发射
+    // openDeviceRequested(profileForPill(pill))（仅接入注册表后启用；原
+    // 「打开档案编辑对话框」角色让位，编辑退到右键菜单第二项，规格 §6②）
     bool eventFilter(QObject* watched, QEvent* event) override;
     // v2.16-B 任务4 Step5：行宽预算随窗口尺寸变化，重排 chips 可见性（§3.7）
     void resizeEvent(QResizeEvent* event) override;
@@ -153,7 +163,25 @@ private:
     void applyPillOverflow();
     // 「设备 ▾」弹层：每次 aboutToShow 清空重建（勾选态==m_selectedIds 成员判定）
     void buildPickerMenuInto(QMenu* menu);
-    // 双击编辑入口：打开档案对话框，保存经 registry 持久化
+    // 胶囊→档案装配唯一单源（v2.16-B 任务5，从 editProfileFor 装配段抽出，
+    // 双击/右键「打开这台设备」/右键「编辑档案」三处共用）：两条路径口径一致——
+    // 胶囊带持久 deviceId 走 registry->find，旧 device.list ip:port 胶囊（无 id）
+    // 按纯 IP 回查 m_devices 经 fromDeviceInfo 合成；任一路径查不到＝档案不可用，
+    // 返回空 optional（绝不返回默认构造空档案），调用方各自早退。
+    std::optional<DeviceProfile> profileForPill(const QPushButton* pill) const;
+    // ── v2.16-B 任务5：右键弹层"构建/分派"双段单源 ──
+    // 生产 contextMenuRequested 用 exec 返回值→dispatchPillMenuAction 分派
+    //（时序与旧实现一致：弹层关闭后才开对话框）。QMenu::exec 真弹层自动化在本环境
+    // 不可达（QTest 右键不产生 customContextMenuRequested，且弹层可见性恒 0 挂死
+    // exec 嵌套循环——任务5报告留证），故测试经 QMetaObject::invokeMethod 直调
+    // 同一对生产方法驱动"构建→按文本找项→分派"。覆盖范围如实登记：这对方法是生产
+    // 真用的方法（非测试专用脚手架），但 customContextMenuRequested 里 menu->exec
+    // 的那段弹层/取返回值 wiring 不经自动化，归任务 9 人工/实机验收。Q_INVOKABLE
+    // 仅为让测试借元对象可达这两个内部方法，不改可见性、不扩公开 API。
+    Q_INVOKABLE QMenu* buildPillMenu();
+    Q_INVOKABLE void dispatchPillMenuAction(QPushButton* pill, const QString& role);
+    // 右键菜单「编辑档案」入口：打开档案对话框，保存经 registry 持久化
+    // （v2.16-B 任务5 起对话框角色自让位给双击，此处不再是双击目标）
     void editProfileFor(QPushButton* pill);
     // 旧 device.list ip:port 行写入/删除（回退兼容，registry 路径同样保留）
     void persistLegacyRow(const DeviceInfo& device);

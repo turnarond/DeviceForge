@@ -714,7 +714,12 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
 
     // v2.16-B Step5：chip 的存在本身即选中——左键语义＝移出选择（不再是"切换"，
     // 切两次没有意义，规格 §2.3）；键式与菜单勾选共用 selectionKey（Step2 单源）。
-    // 右键删除设备、双击编辑档案保持现状（跳转与三项菜单在任务 6 落地）。
+    // v2.16-B 任务5：右键三项「打开这台设备／编辑档案／移除设备」（规格 §2.3/§6②，
+    // 首项是自解释器——老用户双击发现行为变了，右键一看就知道新含义叫什么、老含义
+    // 搬去了哪）；双击的档案编辑角色已让位给「打开这台设备」（eventFilter，编辑
+    // 能力零丢失）。跳转编排（openDeviceAt 接 openDeviceRequested）归任务 6。
+    // 构建与分派都收口在 buildPillMenu/dispatchPillMenuAction 单源方法——
+    // 测试经同一对方法驱动（exec 真弹层自动化在本环境证伪，见任务5报告）。
     pill->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(pill, &QPushButton::clicked, this, [this, pill]() {
         m_selectedIds.remove(selectionKey(pill));
@@ -722,28 +727,57 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
         emit deviceSelectionChanged();
     });
     connect(pill, &QPushButton::customContextMenuRequested, this, [this, pill]() {
-        QString ip = pill->property("deviceIp").toString();
-        QMenu menu(this);
-        QAction* editAction = nullptr;
-        if (m_registry)
-            editAction = menu.addAction(QStringLiteral("\xE7\xBC\x96\xE8\xBE\x91\xE6\xA1\xA3\xE6\xA1\x88"));
-        QAction* removeAction = menu.addAction(QStringLiteral("\xE7\xA7\xBB\xE9\x99\xA4\xE8\xAE\xBE\xE5\xA4\x87"));
-        QAction* chosen = menu.exec(pill->mapToGlobal(QPoint(0, pill->height())));
-        if (chosen == editAction) {
-            editProfileFor(pill);
-            return;
-        }
-        if (!chosen)
-            return;
-        // 确认后删除（removeDevice 会同步移除 ConfigStore 持久化记录）
-        auto ans = QMessageBox::question(this, "移除设备",
-            QString("确定要移除设备 \"%1\" 吗？").arg(ip));
-        if (ans == QMessageBox::Yes) {
-            removeDevice(ip);
-        }
+        QMenu* menu = buildPillMenu();
+        QAction* chosen = menu->exec(pill->mapToGlobal(QPoint(0, pill->height())));
+        const QString role = chosen
+            ? chosen->property("pillMenuRole").toString()
+            : QString();                     // 弹层被撤销＝chosen 空＝静默（同旧行为）
+        menu->deleteLater();
+        dispatchPillMenuAction(pill, role);
     });
     pill->installEventFilter(this);
     return pill;
+}
+
+// 右键弹层唯一构建真源：三项按「打开这台设备／编辑档案／移除设备」次序返回；
+// 「编辑档案」显示门槛是 m_registry（§3.1 旧行胶囊在生产形态三项齐全）；
+// 每项以 pillMenuRole 属性携带分派键，菜单所有权归调用方（exec 用完即弃）。
+// 三项内容与具体胶囊无关（ip 在分派侧按属性回查），故无入参——不留死形参。
+QMenu* DeviceBusWidget::buildPillMenu()
+{
+    auto* menu = new QMenu(this);
+    QAction* openAction = menu->addAction(QStringLiteral("打开这台设备"));
+    openAction->setProperty("pillMenuRole", QStringLiteral("open"));
+    if (m_registry) {
+        QAction* editAction = menu->addAction(QStringLiteral("编辑档案"));
+        editAction->setProperty("pillMenuRole", QStringLiteral("edit"));
+    }
+    QAction* removeAction = menu->addAction(QStringLiteral("移除设备"));
+    removeAction->setProperty("pillMenuRole", QStringLiteral("remove"));
+    return menu;
+}
+
+// exec 返回值与测试直调共用的分派函数。role 为空＝用户撤销弹层，静默。
+void DeviceBusWidget::dispatchPillMenuAction(QPushButton* pill, const QString& role)
+{
+    if (role == QLatin1String("open")) {
+        if (const auto profile = profileForPill(pill))
+            emit openDeviceRequested(*profile);
+        return;
+    }
+    if (role == QLatin1String("edit")) {
+        editProfileFor(pill);
+        return;
+    }
+    if (role != QLatin1String("remove"))
+        return;
+    // 确认后删除（removeDevice 会同步移除 ConfigStore 持久化记录）
+    const QString ip = pill->property("deviceIp").toString();
+    auto ans = QMessageBox::question(this, "移除设备",
+        QString("确定要移除设备 \"%1\" 吗？").arg(ip));
+    if (ans == QMessageBox::Yes) {
+        removeDevice(ip);
+    }
 }
 
 bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
@@ -751,7 +785,18 @@ bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
     if (event->type() == QEvent::MouseButtonDblClick && m_registry) {
         if (auto* pill = qobject_cast<QPushButton*>(watched)) {
             if (pill->objectName() == QStringLiteral("devicePill")) {
-                editProfileFor(pill);
+                // v2.16-B 任务5（规格 §2.3/§6②）：双击＝「打开这台设备」。
+                // 原 editProfileFor 角色让位给右键菜单第二项；本函数吞掉双击
+                // 事件（return true），QAbstractButton 收不到事件就不会补发
+                // clicked——chips 选中态不受双击影响。选中态净零的基线来自改动前
+                // HEAD eaf7bfc 的取证（旧 eventFilter 亦是 editProfileFor(pill);
+                // return true 吞同一事件，QTest::mouseDClick 只投单个 DblClick 不
+                // 经 press/release，clicked 恒为 0；三个已提交编辑槽先勾中、双击后
+                // 不再重勾即完成编辑，反证选中跨双击未变），并非在改后代码上重测旧
+                // 行为。新语义向前由 doubleClickEmitsTwoClickedAndKeepsSelection
+                // 实钉（clicked=0/广播=0/仍选中/恰好发一次 openDeviceRequested）。
+                if (const auto profile = profileForPill(pill))
+                    emit openDeviceRequested(*profile);
                 return true;
             }
         }
@@ -759,29 +804,48 @@ bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
     return QWidget::eventFilter(watched, event);
 }
 
-// 双击/右键编辑入口：对话框确认 → registry->save 持久化 device.profile →
+// 胶囊→档案装配唯一单源（v2.16-B 任务5 从 editProfileFor 装配段抽出——双击、
+// 右键「打开这台设备」、右键「编辑档案」三条路径共用，不再复制装配代码）：
+// 两条路径口径一致，查不到一律返回空 optional——有持久 deviceId 走 registry->find
+//（find 未命中即 nullopt）；旧 device.list ip:port 胶囊按纯 IP 回查 m_devices 经
+// fromDeviceInfo 合成（端点身份即 ip:port，口径与 selectedDeviceProfiles()/
+// collectEntries() 一致），m_devices 里查不到同样返回 nullopt（不发空档案）。
+std::optional<DeviceProfile> DeviceBusWidget::profileForPill(const QPushButton* pill) const
+{
+    if (!pill)
+        return std::nullopt;
+    const QString deviceId = pill->property("deviceId").toString();
+    if (!deviceId.isEmpty()) {
+        if (!m_registry)
+            return std::nullopt;
+        const auto found = m_registry->find(deviceId.toStdString());
+        if (!found)
+            return std::nullopt;
+        return *found;
+    }
+    // 旧 device.list 胶囊（未接入注册表前添加）：由 DeviceInfo 合成档案
+    const QString ip = pill->property("deviceIp").toString();
+    for (const auto& device : m_devices) {
+        if (QString::fromStdString(device.ip) == ip)
+            return fromDeviceInfo(device);
+    }
+    // 查不到＝档案不可用（ip 不在设备全集，如陈旧/错配的胶囊）：与 deviceId 路径
+    // 一致返回空 optional，调用方各自早退——绝不发默认构造的空档案（否则任务 6 会
+    // 把 ip 为空、无端点的载荷路由到 Page::None，用户双击却收到「无可用端点」提示）
+    return std::nullopt;
+}
+
+// 右键菜单「编辑档案」入口：对话框确认 → registry->save 持久化 device.profile →
 // 同步旧 device.list ip:port 行（回退兼容）→ 以档案视图重建胶囊 → 发射信号。
+// v2.16-B 任务5：档案装配段改走 profileForPill 单源（原双击入口已让位）。
 void DeviceBusWidget::editProfileFor(QPushButton* pill)
 {
     if (!m_registry || !pill)
         return;
-    const QString deviceId = pill->property("deviceId").toString();
-    DeviceProfile profile;
-    if (!deviceId.isEmpty()) {
-        const auto found = m_registry->find(deviceId.toStdString());
-        if (!found)
-            return;
-        profile = *found;
-    } else {
-        // 旧 device.list 胶囊（未接入注册表前添加）：由 DeviceInfo 合成档案
-        const QString ip = pill->property("deviceIp").toString();
-        for (const auto& device : m_devices) {
-            if (QString::fromStdString(device.ip) == ip) {
-                profile = fromDeviceInfo(device);
-                break;
-            }
-        }
-    }
+    const auto assembled = profileForPill(pill);
+    if (!assembled)
+        return;
+    const DeviceProfile profile = *assembled;
 
     DeviceProfileEditorDialog dialog(profile, this);
     if (dialog.exec() != QDialog::Accepted)
