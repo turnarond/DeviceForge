@@ -28,15 +28,19 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QEvent>
+#include <QFontMetricsF>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPoint>
 #include <QSet>
 #include <QStyle>
+#include <QStyleOptionButton>
 #include <QComboBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QDebug>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace devicebus {
@@ -93,10 +97,16 @@ QString pillCaption(const QString& ipPart, const QString& name, bool duplicateNa
     return name;
 }
 
-// 胶囊显示文本（含尾部 ×——裁定①保留，"移出选择"的视觉语言）
+// v2.16-B 修复轮1（规格 §2.3 订正本）：胶囊尾部「×」尾标单源——文案拼接与
+// 命中区宽度计算都读这一处。它自本版本起不再是纯视觉语言而是**点击目标**：
+// 一次 release 落在尾部「×」区 ⇒ 移出选择；落在主体 ⇒ 不改选择（主体只服务
+// 双击与右键）。字面 "  \xC3\x97" ＝两个半角空格 + U+00D7 乘号（UTF-8）。
+const QString kPillCloseMark = QStringLiteral("  \xC3\x97");
+
+// 胶囊显示文本（含尾部 ×——修复轮1 起为「移出选择」的真命中区，见 kPillCloseMark）
 QString pillText(const QString& ipPart, const QString& name, bool duplicateName)
 {
-    return pillCaption(ipPart, name, duplicateName) + QStringLiteral("  \xC3\x97");
+    return pillCaption(ipPart, name, duplicateName) + kPillCloseMark;
 }
 
 // 重名判定集合：判据与 DeviceRegistry::rebuildWarnings（非空原始名出现 >1 次）
@@ -712,8 +722,10 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
     if (!toolTip.isEmpty())
         pill->setToolTip(toolTip);
 
-    // v2.16-B Step5：chip 的存在本身即选中——左键语义＝移出选择（不再是"切换"，
-    // 切两次没有意义，规格 §2.3）；键式与菜单勾选共用 selectionKey（Step2 单源）。
+    // v2.16-B Step5/修复轮1：chip 的存在本身即选中。左键语义已拆分（规格 §2.3
+    // 订正本）——尾部「×」命中区＝移出选择，主体＝不改选择（只服务双击与右键，
+    // 双击"打开这台设备"因此在真鼠标下可达）；键式与菜单勾选共用 selectionKey
+    //（Step2 单源）。
     // v2.16-B 任务5：右键三项「打开这台设备／编辑档案／移除设备」（规格 §2.3/§6②，
     // 首项是自解释器——老用户双击发现行为变了，右键一看就知道新含义叫什么、老含义
     // 搬去了哪）；双击的档案编辑角色已让位给「打开这台设备」（eventFilter，编辑
@@ -721,7 +733,20 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
     // 构建与分派都收口在 buildPillMenu/dispatchPillMenuAction 单源方法——
     // 测试经同一对方法驱动（exec 真弹层自动化在本环境证伪，见任务5报告）。
     pill->setContextMenuPolicy(Qt::CustomContextMenu);
+    // v2.16-B 修复轮1（规格 §2.3 订正本/§10 第 8 条）：移出选择自"整枚按钮的
+    // clicked"收窄到尾部「×」命中区——真鼠标的双击第一下 release 若仍移出并隐藏
+    // 胶囊（clicked→m_selectedIds.remove→rebuildChips 同步 setVisible(false)），
+    // 第二下 MouseButtonDblClick 永远落不到隐藏件上，"打开这台设备"对真实用户
+    // 不可达。鼠标路径由 eventFilter 在 release 上打标记、此处同步消费：主体
+    // 单击⇒标记存在且不在区⇒不改选择；区单击⇒移出。键盘 Space/Enter 与程序化
+    // click() 无前置鼠标事件⇒标记为空⇒一律移出（可达性不丢）。
     connect(pill, &QPushButton::clicked, this, [this, pill]() {
+        if (m_chipReleasePill == pill) {
+            const bool inCloseZone = m_chipReleaseInCloseZone;
+            m_chipReleasePill = nullptr;         // 标记只服务这一次 clicked
+            if (!inCloseZone)
+                return;                          // 主体单击：选择不变（规格 §5 ①）
+        }
         m_selectedIds.remove(selectionKey(pill));
         rebuildChips();
         emit deviceSelectionChanged();
@@ -780,8 +805,58 @@ void DeviceBusWidget::dispatchPillMenuAction(QPushButton* pill, const QString& r
     }
 }
 
+// chip 尾部「×」命中区宽度（规格 §2.3 订正本：宽度判据"算出来，不许拍脑袋"）：
+// QFontMetricsF 按胶囊**自身 font** 实量尾标 "  ×" 的字宽，向上取整，再加样式层
+// 的按钮内部 padding（PM_ButtonMargin，覆盖文字与按钮右缘之间的空白），下限 0 兜
+// 异常样式。口径限制如实登记：QStyleSheetStyle 的 font-size 覆盖不进 QWidget::font()
+// （QSS 字体在 style 绘制层解析），故生产 QSS 若把 #devicePill 字号改成与应用默认
+// 字体不同的值，区宽会有几像素漂移——区恒贴按钮右缘、注入判据几何独立，漂移只影响
+// 区的左边界位置，不影响「×」可达性。默认字体下实测数字见任务 5 修复报告。
+int DeviceBusWidget::pillCloseZoneWidth(const QPushButton* pill)
+{
+    const QFontMetricsF fm(pill->font());
+    const int markWidth = int(std::ceil(fm.horizontalAdvance(kPillCloseMark)));
+    QStyleOptionButton opt;
+    opt.initFrom(pill);
+    const int padding =
+        qMax(0, pill->style()->pixelMetric(QStyle::PM_ButtonMargin, &opt, pill));
+    return markWidth + padding;
+}
+
+bool DeviceBusWidget::pillCloseZoneContains(const QPushButton* pill, const QPoint& pos)
+{
+    return pos.x() >= pill->width() - pillCloseZoneWidth(pill);
+}
+
 bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
 {
+    // v2.16-B 修复轮1：clicked 的鼠标/键盘分道标记在此维护（协议见成员注释）。
+    // 顺序保证：事件过滤器先于 QAbstractButton 收到事件；release 直落本胶囊
+    // 且在 rect 内时先置标记，随后按钮同步 emit clicked 消费；press/dblclick/
+    // keypress 一律清空，杜绝跨激活残留。
+    if (auto* pill = qobject_cast<QPushButton*>(watched)) {
+        if (pill->objectName() == QStringLiteral("devicePill")) {
+            switch (event->type()) {
+            case QEvent::MouseButtonPress:
+            case QEvent::MouseButtonDblClick:
+            case QEvent::KeyPress:
+                m_chipReleasePill = nullptr;
+                break;
+            case QEvent::MouseButtonRelease: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() == Qt::LeftButton &&
+                    pill->rect().contains(me->position().toPoint())) {
+                    m_chipReleasePill = pill;
+                    m_chipReleaseInCloseZone = pillCloseZoneContains(
+                        pill, me->position().toPoint());
+                }
+                break;
+            }
+            default:
+                break;
+            }
+        }
+    }
     if (event->type() == QEvent::MouseButtonDblClick && m_registry) {
         if (auto* pill = qobject_cast<QPushButton*>(watched)) {
             if (pill->objectName() == QStringLiteral("devicePill")) {

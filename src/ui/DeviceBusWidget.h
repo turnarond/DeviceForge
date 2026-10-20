@@ -33,6 +33,7 @@
 #include <QWidget>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QPointer>
 #include <QSet>
 #include <QVariantMap>
 #include <QList>
@@ -169,6 +170,12 @@ private:
     // 按纯 IP 回查 m_devices 经 fromDeviceInfo 合成；任一路径查不到＝档案不可用，
     // 返回空 optional（绝不返回默认构造空档案），调用方各自早退。
     std::optional<DeviceProfile> profileForPill(const QPushButton* pill) const;
+    // v2.16-B 修复轮1（规格 §2.3 订正本/§10 第 8 条）：chip 尾部「×」命中区判据。
+    // 区宽＝胶囊自身 font 下尾标 "  ×" 的字宽（QFontMetricsF 实算，不拍脑袋）
+    // + 样式按钮内部 padding（PM_ButtonMargin）；区为按钮右缘起覆盖该区宽的矩形。
+    // 实测数字与口径限制（QSS font-size 覆盖不进 QWidget::font()）见任务5修复报告。
+    static int pillCloseZoneWidth(const QPushButton* pill);
+    static bool pillCloseZoneContains(const QPushButton* pill, const QPoint& pos);
     // ── v2.16-B 任务5：右键弹层"构建/分派"双段单源 ──
     // 生产 contextMenuRequested 用 exec 返回值→dispatchPillMenuAction 分派
     //（时序与旧实现一致：弹层关闭后才开对话框）。QMenu::exec 真弹层自动化在本环境
@@ -200,6 +207,14 @@ private:
     std::vector<QString> m_deviceIds;
     // 搜索框会话态过滤词（不持久化，规格 §2.5）：只作用于下一次菜单构建的可见集
     QString m_filterText;
+    // v2.16-B 修复轮1（规格 §2.3/§10 第 8 条）：chip 的 clicked 激活源判别标记。
+    // QAbstractButton 对鼠标 release 与键盘 Space/Enter 都 emit clicked()，二者必须
+    // 分道——鼠标：仅尾部「×」命中区移出选择（主体单击不改选择，双击因此才可达）；
+    // 键盘：一律移出（可达性不丢）。eventFilter 在胶囊的鼠标 press/release/key-press
+    // 上维护本标记，clicked 处理器同步消费（release 直达 clicked 无事件间隙）；
+    // 无鼠标事件的激活（键盘/程序化 click()）看到的恒是空标记。QPointer 防悬挂。
+    QPointer<QPushButton> m_chipReleasePill;
+    bool m_chipReleaseInCloseZone = false;
 
     // v2.16-B 任务4 Step3：第 1 行新形态控件（chips 宿主复用 m_pillContainer/
     // m_pillLayout，objectName=selectedPillHost）
