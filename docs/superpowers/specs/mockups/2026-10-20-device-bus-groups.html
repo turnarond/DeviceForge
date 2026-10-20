@@ -2,68 +2,83 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>DeviceForge · 设备栏标签分组视觉稿（v2.16-B 任务 0 关卡）</title>
+<title>DeviceForge · 设备栏第二版视觉稿：只显已选 chips + 「设备 ▾」分组菜单（v2.16-B 任务 0 关卡）</title>
 <style>
 /* ============================================================
+   第二版（重画）。第一版"横向铺段"方案已于 2026-10-20 被用户否掉方向
+   （"展开一个分组的时候设备太多的话也是不行"），本稿形态 = 规格 §0 第 7 条重画后的：
+   第 1 行只显已选 chips（只显名称、不带 ip:port）+「设备 ▾」QMenu 分组收纳（子菜单即折叠）。
+   旧稿的段头按钮（deviceTagHeader）、横向 QScrollArea、折叠持久化键等元素在本稿一律不再出现。
+
    色值来源（唯一依据，未自由发挥）：
    src/app/darkstyle.qss       —— data-theme="dark"
-   src/app/darkstyle-light.qss —— data-theme="light"
-   逐行出处见页尾「色值来源表」。
-   QSS 硬约束：Qt QSS 不支持 box-shadow / CSS 渐变，本稿界面区域一律
-   纯色填充 + 1px 边框；虚线裁切标尺与标注文字属审校辅助层，不进产品。
-   禁画在线/离线状态（规格 §8：#devicePill[online=…] 两条规则当前永不命中，
-   setOnlineStatus 全仓零调用方）——本稿任何胶囊均无状态色条，也不承诺。
-   本稿所有 px 数字均为【估算】（DOM border-box），非 Qt 实测；
-   实测值由布局量测测试产出后回填本页「注记」节（见规格 §7 落点行）。
+   src/app/darkstyle-light.qss —— data-theme="light"（节行号与 dark 同位，已逐行核对）
+   逐行出处见页尾「色值来源表」。计划初稿造过的 #1A1F27 两套 QSS 全文 grep 零命中，不进本页。
+
+   硬约束：
+   · Qt QSS 不支持 box-shadow / CSS 渐变 —— 本稿界面区域一律纯色填充 + 1px 边框；
+     虚线、行号小标签、控制条属审校辅助层，不进产品。
+   · 琴色（dark #F0A030 / light #D48820）只用于信号态：选中 chips、本稿控制条当前档、
+     QMenu::item:selected 高亮行、文档标题房式（审校层）。结构边框一律石墨色。
+   · 禁画在线/离线状态（规格 §8：#devicePill[online=…] darkstyle.qss:676-677 有钩子无数据源，
+     setOnlineStatus 全仓零调用方）——本页任何胶囊/菜单项均无状态色条，也不承诺。
+   · 本稿所有 px 数字均为【估算】（DOM border-box），非 Qt 实测；
+     实测值由任务 7 布局量测测试（v2.15 波3 totalMinimumSize().width() 同法）产出后
+     回填本页「注记」节（当前空置）与规格 §7 回填位。跑不出来的数字不进稿。
    ============================================================ */
 :root[data-theme="dark"]{
-  --bg:#0B0E14;         /* QMainWindow/QWidget 底 darkstyle.qss:5,12 */
-  --panel:#141820;      /* 面板底 QGroupBox :33 / QMenu :424 */
+  --bg:#0B0E14;         /* QWidget/QMainWindow 底 darkstyle.qss:5,12 */
+  --panel:#141820;      /* 面板底 QGroupBox :33 / QMenu 底 :424 */
   --line:#252A33;       /* 结构石墨边 :34 */
-  --line2:#333B48;      /* 胶囊边框 :658 / 菜单边框 :425 / 输入框边框 :122 */
-  --hov:#7B8494;        /* 胶囊 hover 边框 :668 */
-  --text:#C8CCD4;       /* 胶囊/正文 :660 */
-  --pill-bg:#232A36;    /* 胶囊底 :657 */
-  --muted:#7B8494;      /* 次级文字 :23,28 */
-  --gold:#F0A030;       /* 琴色·仅信号态 :672 */
-  --gold-bg:#2A2518;    /* 选中胶囊底 :673 */
+  --line2:#333B48;      /* 胶囊边框 :658 / QMenu 边 :425 / QLineEdit 边 :122 / QPushButton 边 :56 */
+  --hov:#7B8494;        /* 胶囊 hover 边框 :667-669 */
+  --text:#C8CCD4;       /* 正文/胶囊字 :6,:660 */
+  --pill-bg:#232A36;    /* 胶囊底 :656-664 */
+  --muted:#7B8494;      /* 次级文字 :23,:28（命中路径见状态①注记） */
+  --gold:#F0A030;       /* 琴色·仅信号态 :671-674 */
+  --gold-bg:#2A2518;    /* 选中胶囊底 :671-674 */
+  --btn-ink:#E4E7EC;    /* QPushButton 通用节文字 :59（入口按钮沿用） */
+  --btn-hov-bg:#2C3543; /* QPushButton:hover 底 :66 */
+  --btn-hov-line:#3A4250;/* QPushButton:hover 边 :67 */
   --input-bg:#0E1219;   /* QLineEdit 底 :121 */
   --input-ink:#FFFFFF;  /* QLineEdit 字 :125 */
   --menu-ink:#FFFFFF;   /* QMenu 字 :426 */
   --menu-sel-bg:#3A2E12;/* QMenu::item:selected 底 :436 */
-  --menu-sel-ink:#F0A030;
-  --add:#7B8494;        /* 次级文字（按钮文案）:23 */
+  --menu-sel-ink:#F0A030; /* :437 */
   --note:#7B8494;
 }
 :root[data-theme="light"]{
   --bg:#F5F6F8;         /* darkstyle-light.qss:5,12 */
   --panel:#FFFFFF;      /* :33（面板）/ :424（QMenu） */
   --line:#D0D5DD;       /* :34 */
-  --line2:#C4CAD4;      /* :658 / :425 / :122 */
-  --hov:#B8C0CC;        /* :668 */
-  --text:#2A2F38;       /* :660 */
-  --pill-bg:#E4E8EE;    /* 胶囊底 :657 */
-  --muted:#6B7480;      /* :23,28 */
-  --gold:#D48820;       /* :672 */
-  --gold-bg:#F5E3C8;    /* :673 */
+  --line2:#C4CAD4;      /* :658 / :425 / :122 / :56 */
+  --hov:#B8C0CC;        /* :667-669 */
+  --text:#2A2F38;       /* :6,:660 */
+  --pill-bg:#E4E8EE;    /* :656-664 */
+  --muted:#6B7480;      /* :23,:28 */
+  --gold:#D48820;       /* :671-674 */
+  --gold-bg:#F5E3C8;    /* :671-674 */
+  --btn-ink:#2A2F38;    /* :59 */
+  --btn-hov-bg:#D0D5DD; /* :66 */
+  --btn-hov-line:#B8C0CC;/* :67 */
   --input-bg:#ECEFF3;   /* :121 */
   --input-ink:#2A2F38;  /* :125 */
   --menu-ink:#2A2F38;   /* :426 */
   --menu-sel-bg:#F5E3C8;/* :436 */
-  --menu-sel-ink:#D48820;
-  --add:#6B7480;        /* :23 */
+  --menu-sel-ink:#D48820;/* :437 */
   --note:#6B7480;
 }
 *{box-sizing:border-box}
 body{margin:0;padding:30px 34px 70px;background:var(--bg);color:var(--text);
   font:12px/1.55 "Microsoft YaHei","Segoe UI",sans-serif}
 h1{font-size:19px;margin:0 0 4px;color:var(--text);letter-spacing:.4px}
-h1 em{font-style:normal;color:var(--gold)}
+h1 em{font-style:normal;color:var(--gold)} /* 审校辅助层，不进产品 */
 .meta{color:var(--note);font-size:11px;margin-bottom:20px;max-width:1180px}
 .meta code,.mono{font-family:Consolas,Monaco,monospace}
-h2{font-size:14px;color:var(--gold);margin:34px 0 2px;letter-spacing:.3px}
+h2{font-size:14px;color:var(--gold);margin:34px 0 2px;letter-spacing:.3px} /* 审校辅助层 */
 h2 .tag{font-size:10px;font-weight:400;color:var(--muted);margin-left:8px}
 p.note{color:var(--note);font-size:11px;margin:0 0 12px;max-width:1150px}
+.rowlab{font-size:10px;color:var(--muted);margin:2px 0 4px}
 
 /* ---- 控制条（审校辅助层） ---- */
 .bar{position:sticky;top:0;z-index:40;display:flex;flex-wrap:wrap;gap:16px;align-items:center;
@@ -73,56 +88,55 @@ p.note{color:var(--note);font-size:11px;margin:0 0 12px;max-width:1150px}
 .seg button{background:var(--input-bg);border:0;border-right:1px solid var(--line2);color:var(--text);
   padding:4px 14px;font:600 11px/1.4 "Microsoft YaHei";cursor:pointer}
 .seg button:last-child{border-right:0}
-.seg button.on{background:var(--gold);color:var(--bg)} /* 活跃态＝信号态，琴色（focus/选中/主按钮 允许） */
+.seg button.on{background:var(--gold);color:var(--bg)} /* 活跃档＝信号态，允许琴色 */
 
-/* ---- 窗口仿真 ---- */
-.viewport{position:relative;border:1px solid var(--line2);border-radius:8px;overflow:hidden;
-  margin-bottom:10px;background:var(--bg);width:1366px}
-.vp-label{position:absolute;top:0;right:0;z-index:30;background:var(--panel);border-left:1px solid var(--line2);
-  border-bottom:1px solid var(--line2);color:var(--muted);font:600 10px/1 "Microsoft YaHei";padding:5px 8px}
-.win{background:var(--bg);display:flex;min-height:150px}
-.rail{flex:0 0 56px;background:var(--panel);border-right:1px solid var(--line);padding:8px 0;
-  display:flex;flex-direction:column;gap:2px}
-.rail button{width:56px;height:48px;background:transparent;border:0;border-left:2px solid transparent;
-  color:var(--muted);font:10px/1.25 "Microsoft YaHei";cursor:default;white-space:pre-line}
-.rail button.on{color:var(--gold);background:var(--bg);border-left-color:var(--gold)} /* 活跃 tab＝信号态 */
-.rail .sp{margin-top:auto}
-.main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+/* ---- 窗口仿真（只画设备栏所在的顶部一条，导航栏非本次被审对象） ---- */
+.viewport{position:relative;border:1px solid var(--line2);border-radius:8px;overflow:visible;
+  margin-bottom:14px;background:var(--bg);width:1080px}
 .menubar{display:flex;gap:18px;padding:5px 12px;background:var(--bg);border-bottom:1px solid var(--line);
   color:var(--text);font-size:12px}
 
-/* ---- 设备栏（被设计对象）：横向 QScrollArea 内一行分段 ---- */
+/* ---- 设备栏第 1 行（被设计对象）：图标 → chips 容器 → 空态提示 → 设备 ▾ 入口 → 搜索 → + 添加 ---- */
 .busrow{display:flex;align-items:center;padding:6px 10px;gap:6px;background:var(--bg);
-  border-bottom:1px solid var(--line);overflow:hidden;position:relative;min-height:38px}
-.strip{display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0}
+  border-bottom:1px solid var(--line);min-height:38px;position:relative}
+.chipHost{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto;position:relative}
+.chipHost.empty{border:1px dashed var(--muted);border-radius:4px;min-width:120px;height:26px} /* 虚线=审校辅助层，标示 selectedPillHost 空容器 */
 .pill{background:var(--pill-bg);border:1px solid var(--line2);border-radius:4px;color:var(--text);
-  padding:2px 8px;font:400 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* 底/边/字＝胶囊节 :656-664 */
-.pill.hov{border-color:var(--hov)}
-.pill.sel{border-color:var(--gold);background:var(--gold-bg)} /* 选中＝琴色信号态，仅此处用琴色 */
-.seghdr{background:var(--panel);border:1px solid var(--line2);border-radius:4px;color:var(--text);
-  padding:2px 8px;font:600 12px/18px "Microsoft YaHei";height:26px;white-space:nowrap}
-.seghdr.dim{color:var(--muted);border-color:var(--line)} /* 搜索未命中自动折叠＝标灰 */
-.vsep{width:1px;height:20px;background:var(--line);flex:0 0 1px}
-.addbtn{background:transparent;border:1px dashed var(--line2);border-radius:4px;color:var(--add);
-  padding:2px 8px;font-size:11px;white-space:nowrap;height:26px}
+  padding:2px 8px;font:400 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* #devicePill 节 :656-664；高 26 为代码事实 cpp:566 */
+.pill.hov{border-color:var(--hov)} /* :667-669 */
+.pill.sel{border-color:var(--gold);background:var(--gold-bg)} /* [selected="true"] :671-674——chips 存在即已选，恒为此态 */
+.pill.more{color:var(--text)} /* +M 台：结构石墨（是否升级信号态琴色属评审裁定，见状态④注记） */
+.hint{color:var(--muted);font-size:12px;white-space:nowrap} /* 空态提示 token 出处见状态①注记 */
+.pickbtn{background:var(--pill-bg);border:1px solid var(--line2);border-radius:5px;color:var(--btn-ink);
+  padding:4px 10px;font:600 12px/18px "Microsoft YaHei";white-space:nowrap;height:26px} /* 入口按钮：沿用 QPushButton 通用节 :54-63 */
+.pickbtn.hovbtn{background:var(--btn-hov-bg);border-color:var(--btn-hov-line)} /* 菜单打开态按其 hover 帧绘制：QPushButton:hover :65-68 现成节，石墨系非琴色 */
 .srch{background:var(--input-bg);border:1px solid var(--line2);border-radius:4px;color:var(--input-ink);
-  padding:3px 8px;font-size:12px;height:26px;width:200px;white-space:nowrap}
+  padding:3px 8px;font-size:12px;height:26px;width:200px;white-space:nowrap;flex:0 0 auto;margin-left:auto}
 .srch .ph{color:var(--muted)}
 .srch .q{color:var(--input-ink)}
-.nomatch{color:var(--muted);font-size:12px;padding:4px 8px}
-.clipmark{position:absolute;top:0;bottom:0;right:0;width:0;border-left:2px dashed var(--muted);z-index:20;pointer-events:none}
-.clipmark span{position:absolute;top:44%;left:-4px;transform:translateX(-100%) writing-mode:vertical-rl;
-  background:var(--panel);border:1px solid var(--line2);color:var(--muted);font:600 9px/1.3 "Microsoft YaHei";
-  padding:6px 3px;border-radius:3px;white-space:nowrap}
+.addbtn{background:transparent;border:1px dashed var(--line2);border-radius:4px;color:var(--muted);
+  padding:2px 8px;font-size:11px;white-space:nowrap;height:26px;flex:0 0 auto} /* #btnAddDevice :640-648 */
+.oname{font:600 9px/1 Consolas,monospace;color:var(--muted);border:1px solid var(--line);
+  border-radius:3px;padding:2px 4px;white-space:nowrap} /* objectName 小标签：审校辅助层 */
+.objrow{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px}
 
-/* ---- 右键菜单（QMenu 仿真） ---- */
+/* ---- 菜单仿真（QMenu 节 :423-438；item padding 8px 28px 为 QSS 事实 :430-433） ---- */
 .menuhost{position:relative;display:inline-block;vertical-align:top}
-.menu{position:absolute;z-index:30;top:calc(100% + 4px);left:0;min-width:150px;background:var(--panel);
-  border:1px solid var(--line2);border-radius:6px;padding:2px 0}
-.menu:before{content:"";position:absolute;top:-6px;left:16px;width:9px;height:9px;background:var(--panel);
-  border-left:1px solid var(--line2);border-top:1px solid var(--line2);transform:rotate(45deg)}
-.menu div{padding:8px 28px;font-size:12px;color:var(--menu-ink);white-space:nowrap}
-.menu div.hi{background:var(--menu-sel-bg);color:var(--menu-sel-ink)} /* QMenu::item:selected＝信号态 */
+.menu{position:relative;z-index:30;background:var(--panel);border:1px solid var(--line2);
+  border-radius:6px;padding:2px 0;font-size:12px;width:max-content}
+.menu.drop{position:absolute;top:calc(100% + 4px);left:0}
+.mitem{padding:8px 28px;color:var(--menu-ink);white-space:nowrap;position:relative}
+.mitem.hi{background:var(--menu-sel-bg);color:var(--menu-sel-ink)} /* ::item:selected :435-438＝信号态 */
+.mitem .arw{position:absolute;right:10px}
+.mitem.dis{color:var(--muted)} /* 不可点说明行：Qt 对 disabled 项走原生淡化调色板，此处以次级文字 token 近似渲染（非新 token） */
+.msep{height:1px;background:var(--line2);margin:2px 0} /* 分隔线：结构石墨（QSS 无 ::separator 定制节） */
+.msub{position:absolute;left:calc(100% + 2px);top:-2px} /* 子菜单挂主菜单右侧：Qt 内建行为 */
+.menuPair{display:flex;gap:14px;align-items:flex-start}
+.stepcap{font-size:10px;color:var(--muted);margin:0 0 4px}
+
+/* ---- 瑕疵标注框（审校辅助层） ---- */
+.flaw{border:1px dashed var(--gold);border-radius:7px;padding:10px 14px;margin:10px 0 14px;max-width:1150px}
+.flaw b{color:var(--gold)}
 
 /* ---- 表格与注记 ---- */
 table{border-collapse:collapse;margin-top:10px;font-size:11.5px;max-width:1220px}
@@ -134,17 +148,17 @@ td code{font-family:Consolas,monospace;font-size:11px}
 .box p{margin:4px 0}
 .foot{margin-top:40px;border-top:1px solid var(--line);padding-top:14px;font-size:11px;color:var(--note);max-width:1180px}
 .foot code{font-family:Consolas,monospace;color:var(--text)}
-.rowlab{font-size:10px;color:var(--muted);margin:2px 0 4px}
 </style>
 </head>
 <body>
 
-<h1>DeviceForge · <em>设备栏标签分组 + 打开这台设备</em> 视觉稿</h1>
+<h1>DeviceForge · <em>设备栏第二版</em>：只显已选 chips +「设备 ▾」分组菜单 视觉稿</h1>
 <div class="meta">
   v2.16-B 任务 0（硬关卡：<b>用户批准本稿之前不写 <code>src/</code> 任何产品代码</b>）｜基线 <code>main@a33ad43</code>｜
-  依据规格 §1 取证基线 / §2.3 UI 装配 / §3 异常态 / §7 关卡 / §8 不做清单｜
+  依据规格 §0（重画后形态）/ §2.1 规则 1–5 / §2.3 UI 装配 / §3 第 4·5·6·7 条 / §7 第二版八态清单 / §8 不做清单｜
+  <b>第一版"横向铺段"方案（段头 + 横向 QScrollArea + 折叠持久化）已作废，本稿不再出现任何段头元素</b>；
   色值逐项取自 <code>src/app/darkstyle.qss</code> 与 <code>src/app/darkstyle-light.qss</code>（出处见文末来源表）｜
-  <b>本稿所有 px 数字一律为估算（DOM border-box），非 Qt 实测</b>；实测由布局量测测试产出后回填「注记」节。
+  <b>本稿所有 px 数字一律为估算（DOM border-box），非 Qt 实测</b>；实测由任务 7 布局量测产出后回填「注记」节。
 </div>
 
 <div class="bar">
@@ -153,205 +167,368 @@ td code{font-family:Consolas,monospace;font-size:11px}
     <button data-theme-val="dark" class="on">深色 darkstyle</button><button data-theme-val="light">浅色 darkstyle-light</button>
   </span>
   <b>数据口径</b>
-  <span style="font-size:11px;color:var(--muted)">80 台 × 平均 2 标签（72 台各有 2 个标签、8 台无标签 → 6 个标签段 + 「未分组」，规格 §3.6 压力场景）</span>
+  <span style="font-size:11px;color:var(--muted)">80 台 × 平均 2 标签（72 台各 2 标签 → 6 个标签组各 24 台，8 台无标签 →「未分组」；规格 §2.1 规则 1/2）。重名演示：两台档案名同为「甲」（§3 第 6 条）。</span>
 </div>
 
-<h2>状态① · 80 台压力态：分段前 vs 分段后 <span class="tag">§0 问题现场 → §2.3 外层横向 QScrollArea + 标签分段</span></h2>
+<div class="objrow">
+  <span class="oname">selectedPillHost＝chips 容器</span>
+  <span class="oname">deviceBusHint＝空态提示</span>
+  <span class="oname">devicePickerBtn＝设备 ▾ 入口</span>
+  <span class="oname">devicePillMore＝+M 台折算按钮</span>
+  <span class="oname">deviceSearchEdit＝行尾搜索框</span>
+  <span class="oname">devicePill＝chips（沿用现成节）</span>
+</div>
+
+<!-- ==================== 状态① ==================== -->
+<h2>状态① · 空态（未选择任何设备） <span class="tag">§3 第 5 条：未选＝没有目标，不再有"默认对全部设备生效"兜底</span></h2>
 <p class="note">
-  <b>分段前（现状）：</b>胶囊行是裸 <code>QHBoxLayout</code>（<code>DeviceBusWidget.h:104-105</code>、<code>cpp:413-418</code>），
-  无滚动、无换行、无分组。80 台的自然宽度远超 1366（每台外框估算 150–190px，合计估算约 12000–15000px），
-  右侧胶囊被裁掉、整行互相挤压变形——<b>不会出现滚动条</b>（QHBoxLayout 的 minimum 是子项之和，装不下就裁）。
-  虚线标尺 = 视口右边界（审校辅助层）。
+  chips 容器 <code>selectedPillHost</code> 为空（虚线框仅为审校辅助层，标示空容器占位，不进产品）；
+  空态提示 <code>deviceBusHint</code> 文案逐字：<b>「未选择设备——点「设备 ▾」选目标」</b>；
+  入口按钮 <code>devicePickerBtn</code> N=0 文案逐字：<b>「设备 ▾ 未选择」</b>；
+  右侧照常并排搜索框与 <code>+ 添加</code>（现状保留）。<b>未选＝无目标</b>连带部署页：点「▶ 部署」被拒绝并给日志
+  「未选择目标设备，请在设备栏选择至少一台」，按钮文案「▶ 部署（未选择设备）」（§3 第 5 条 / §6①，本页只画设备栏，部署页文案随任务 4 验收）。
 </p>
-<div class="rowlab">分段前 · 现状（80 枚胶囊一行，右侧被裁；示意渲染全部 80 枚）</div>
-<div id="vp0"></div>
-
-<p class="note" style="margin-top:18px">
-  <b>分段后（本设计）：</b>外层横向 <code>QScrollArea</code>（<code>setWidgetResizable(true)</code>，两向 scrollbar <code>AlwaysOff</code>，
-  viewport 滚轮事件转水平滚动，§2.3）——内容仍是一行，按<b>标签分段</b>：段头按钮
-  <code>objectName="deviceTagHeader"</code>（<code>deviceTag</code> 属性＝标签串）文本 <code>标签名 显示数/总数 ▾</code>，
-  左键切折叠、右键出段菜单；段内为该标签的设备胶囊（沿用 <code>devicePill</code>，交互不变）。
-  段序按标签 Unicode 码点升序（与 Qt <code>QString</code> 比较同口径，§2.1 规则 2），<b>「未分组」永远最后</b>。
-  一台设备有 N 个标签就在 N 个段各出现一枚胶囊（§8：本版接受重复显示，选中集合按 <code>deviceId</code> 去重兜正确性）。
-  行尾常驻搜索框 <code>objectName="deviceSearchEdit"</code>，占位「搜索 名称 / IP / 标签」。<b>全程无任何在线/离线状态绘制</b>（§8）。
-</p>
-<div class="rowlab">分段后 · 6 个标签段 + 未分组，全部展开（内容宽 &gt; 视口，超出部分经滚轮水平滚动到达，稿中以右缘虚线示意"仍可滚"）</div>
-<div id="vp1"></div>
-
-<h2>状态② · 折叠态（段头计数，段体整段消失、行高不变） <span class="tag">§2.1 规则 5 + §3.6 + §5 验收 1</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost empty" title="objectName=selectedPillHost（空）"></span>
+    <span class="hint">未选择设备——点「设备 ▾」选目标</span>
+    <span class="pickbtn">设备 ▾ 未选择</span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
 <p class="note">
-  用户点段头（▾/▸ 切换）后该段胶囊整行不可见（<code>setVisible(false)</code>，<b>绝不少挂</b>——折叠/过滤只改可见性，
-  <code>selectedDevices()</code> 位置配对与"空选中＝全部设备"语义不破，§2.3）。
-  <b>折叠时段头只显示段内总数</b>（规格 §2.1 规则 5 原文）：写作 <code>标签名 24 ▸</code>。
-  折叠任一节后<b>行高不变</b>（仍是一行，胶囊高 26【估算，代码事实 <code>setFixedHeight(26)</code> <code>cpp:566</code>】）。
-  折叠态持久化于 ConfigStore 键 <code>device.bus.collapsedTags</code>（缺键＝全展开；含已删标签的键加载时丢弃，§2.1 规则 4）。
-  <br><b>⚠ 待裁定一处：</b>任务简报示例把折叠段头写成 <code>标签名 12/12 ▸</code>，与规格 §2.1 规则 5「折叠时只显示段内总数」不一致；
-  本稿按规格取 <code>标签名 24 ▸</code> 形态，请在评审时裁定口径。
+  <b>次级文字 token 取证注记（实现期决定点，不属本稿承诺）：</b>空态提示按简报取 <code>#7B8494</code>（dark <code>:23</code>/<code>:28</code>），
+  但现 QSS 里让 <code>QLabel</code> 命中该色的只有两条路径——<code>QLabel[text*="提示"]/[text*="拖拽"]</code>（<code>:22-25</code>）与
+  <code>#panelBreadcrumb</code>（<code>:27-29</code>）；<code>deviceBusHint</code> 两条都不命中（文案不含「提示」「拖拽」，objectName 也不是面包屑）。
+  规格 §2.3 又写"本版预计零新增 QSS 节"。落地三选一（实现期裁定）：(a) 文案含「提示」二字；(b) 给 <code>#deviceBusHint</code> 补一条两主题小规则；(c) 接受提示走默认正文色 <code>#C8CCD4</code>（<code>:6</code>，同样有出处）。
 </p>
-<div id="vp2"></div>
 
-<h2>状态③ · 搜索命中态 <span class="tag">§2.1 规则 3 + §3.4：命中段自动展开、未命中段自动折叠并标灰、全不命中给一行提示且绝不清空既有选择</span></h2>
-<div class="rowlab">③-a 关键词「车间」（标签源命中：车间A/车间B 及其孪生段产线1/产线2 共 4 段自动展开显示 显示数/总数——一台双标签设备在各命中段都出现一枚胶囊；其余 3 段（测试台/边缘网关/未分组）自动折叠并标灰。命中段内既有选中胶囊保留——搜索绝不清空选择；命中段自动展开覆盖用户折叠态但不改写持久化 collapsedTags，清空搜索后恢复原折叠态）</div>
-<div id="vp3"></div>
-<div class="rowlab" style="margin-top:18px">③-b 关键词「xyz9」（全不命中：段头区显示一行提示，<b>既有选择保留不清空</b>，§3.4）</div>
-<div id="vp3b"></div>
-
-<h2>状态④ · 两套右键菜单 <span class="tag">§2.3 胶囊三项按此次序 ／ 段头三项按此次序；菜单样式即现有 QMenu 节，未造新色</span></h2>
+<!-- ==================== 状态② ==================== -->
+<h2>状态② · 少量已选（3 台，chips 只显名称） <span class="tag">§0 第 1 条 + §2.3：去掉 pillCaption 的 ip:port 段；tooltip 仍带逐端点 协议 ip:port + 备注（profileToolTip 现成）</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="pill sel" title="tooltip：ftp 10.20.3.11:21（无凭据）… 逐端点+备注">S7-1500-01 ×</span>
+      <span class="pill sel hov">CNC-850-03 ×</span>
+      <span class="pill sel">温湿网关-06 ×</span>
+    </span>
+    <span class="pickbtn">设备 ▾ 已选 3 台</span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
 <p class="note">
-  胶囊右键（本版唯一手势改动配套）：<b>打开这台设备</b>（新动作置顶作自解释器）／<b>编辑档案</b>（原双击动作退居第二项，能力零丢失）／<b>移除设备</b>（沿用现状）。
-  旧 <code>ip:port</code> 无档案行三项<b>照常齐全</b>（「编辑档案」门槛是 <code>m_registry</code> 判空而非 deviceId，§3.1）。<br>
-  段头右键：<b>本段全选 ／ 本段反选 ／ 全部折叠</b>；「本段全选」后广播恰一次 <code>deviceSelectionChanged()</code>（重建走 blockSignals 窗口，§2.3）。
-  菜单高亮行＝QMenu::item:selected 现有 token（信号态）。
+  chips 全部为选中样式（琴色边＝信号态，<code>:671-674</code>）——<b>chips 的存在本身即等于已选中</b>；
+  第二枚展示 hover 边框 <code>#7B8494</code>（<code>:667-669</code>；hover 边框转浅石墨，<b>不升琴色</b>——琴色位已被选中态占用，hover 再上琴色会混淆信号语义）。
+  交互：<b>左键单击＝取消选中（移出）</b>、双击＝打开这台设备、右键＝三项菜单（状态⑧）。
+  文案尾部「×」是现状胶囊字面（<code>DeviceBusWidget.cpp:574</code> 在 <code>pillCaption</code> 后拼 <code>"  ×"</code>），规格 §2.3 只写"去掉 ip:port 段"、未提及去掉 ×，
+  本稿按"沿用 ×"绘制——<b>若裁定去掉 ×（左键移出已自解释）请评审时指明，属一行改动</b>。
 </p>
-<div id="menus"></div>
 
-<h2>盒模型算式与宽度口径（无任何实测承诺）</h2>
+<!-- ==================== 状态③ ==================== -->
+<h2>状态③ · 重名对照 <span class="tag">§3 第 6 条：当且仅当档案名重复（判据与 DeviceRegistry::rebuildWarnings :310-320 同源）才追加 ·ip 短尾标；不重名只显干净名称</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="pill sel">甲 ·10.0.0.7 ×</span>
+      <span class="pill sel">甲 ·10.0.0.9 ×</span>
+      <span class="pill sel">S7-1500-01 ×</span>
+      <span class="pill sel">10.20.3.45:21 ×</span>
+    </span>
+    <span class="pickbtn">设备 ▾ 已选 4 台</span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
+<p class="note">
+  前两枚：档案里两台同名「甲」⇒ 各加 <code>·ip</code> 尾标（<b>只有 ip、无端口</b>，§2.3 原文「名称 ·ip」）；
+  第三枚「S7-1500-01」名称唯一 ⇒ 干净名称不加尾标，与前两枚并排即对照；
+  第四枚：<b>名称为空的档案（旧 ip:port 行/未命名档案）回落显 <code>ip:port</code></b>（pillCaption 现成行为，<code>cpp:82-87</code>），保证栏里不出现空白胶囊（§3 第 6 条）。
+  尾标判定集合在 <code>rebuildRows()</code> 里算一次、逐胶囊查表，不在胶囊构造里重复扫描（§2.3）。
+</p>
+
+<!-- ==================== 状态④ ==================== -->
+<h2>状态④ · 全选 80 台的溢出态 <span class="tag">§3 第 7 条：行宽不够时可见若干 chips + 一枚 devicePillMore「+M 台」，点击打开同一个「设备 ▾」菜单</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="pill sel">S7-1500-01 ×</span>
+      <span class="pill sel">AM580-02 ×</span>
+      <span class="pill sel">CNC-850-03 ×</span>
+      <span class="pill sel">注塑机-04 ×</span>
+      <span class="pill sel">机械臂-05 ×</span>
+      <span class="pill more" title="objectName=devicePillMore">+75 台</span>
+    </span>
+    <span class="pickbtn">设备 ▾ 已选 80 台</span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
+<p class="note">
+  <b>可见 5 枚是本视口宽度下的示意渲染，不承诺固定枚数</b>——可见枚数由 <code>widthForHeight</code>/尺寸事件算，实现形态（逐个 <code>setVisible(false)</code> 试到达标、<code>resizeEvent</code> 重算）留给计划（§9.1a）。
+  用例只断两件事（§3 第 7 条）：<b>可见枚数 + M == 选中总数（5 + 75 == 80）</b>；<b>点「+M 台」打开的就是同一个「设备 ▾」分组菜单</b>。
+  「+75 台」本稿按结构石墨绘制（<code>#devicePill</code> 默认节 <code>:656-664</code>，非选中设备本身）——若评审裁定它属信号态可升琴色，请一并定夺。
+  搜索框在溢出态仍保底可见：chips 容器弹性收缩（<code>min-width:0</code> <code>:663</code>），先折 chips 再谈别的，行尾 <code>+ 添加</code>/搜索不挤没。
+</p>
+
+<!-- ==================== 状态⑤ ==================== -->
+<h2>状态⑤ · 「设备 ▾」主菜单 <span class="tag">§2.3：每次 aboutToShow 现建 QMenu；一行一个分组「组名 命中数/总数」；「未分组」永远最后；底部固定两项在分隔线之后</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="pill sel">S7-1500-01 ×</span>
+      <span class="pill sel">温湿网关-06 ×</span>
+    </span>
+    <span class="menuhost" style="position:relative">
+      <span class="pickbtn hovbtn">设备 ▾ 已选 2 台</span>
+      <div class="menu drop">
+        <div class="mitem hi">产线1 24/24<span class="arw">▸</span></div>
+        <div class="mitem">产线2 24/24<span class="arw">▸</span></div>
+        <div class="mitem">测试台 24/24<span class="arw">▸</span></div>
+        <div class="mitem">车间A 24/24<span class="arw">▸</span></div>
+        <div class="mitem">车间B 24/24<span class="arw">▸</span></div>
+        <div class="mitem">边缘网关 24/24<span class="arw">▸</span></div>
+        <div class="mitem">未分组 8/8<span class="arw">▸</span></div>
+        <div class="msep"></div>
+        <div class="mitem">全选可见 80 台</div>
+        <div class="mitem">清空选择</div>
+      </div>
+    </span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
+<p class="note" style="margin-top:250px">
+  组序 = 标签码点升序且<b>区分大小写</b>（§2.1 规则 2；<code>车间A</code>/<code>车间a</code> 是两个组，§3 第 3 条）；「未分组」永远最后（<code>ungroupedTag()</code> 是视图聚合名，<b>绝不写回 profile.tags</b>，§2.1）。
+  一台 N 标签设备在 N 个组子菜单里各出现一次（§2.1 规则 1）。「未分组」组<b>只有非空时才出现</b>（§2.1 规则 5）。
+  无过滤时命中数==总数，故本态各行显示 <code>24/24</code>。底部两项语义写死在文案里：<b>「全选可见 N 台」只作用当前过滤可见设备</b>（过滤词非空时 N=命中数，见状态⑦）；「清空选择」清空选中集合。
+  <b>不做</b>「仅选本组／本段反选」（§2.3 YAGNI）。菜单不持久化、不记忆展开态，关闭即弃，每次 <code>aboutToShow</code> 重建（成本 = 一次 <code>segments()</code>）。
+  高亮行（产线1）= hover 的 <code>QMenu::item:selected</code> 现成 token（<code>:435-438</code>，信号态）。<b>子菜单本身就是一次折叠</b>——没有折叠状态、没有持久化键（§2.5 零新增键）。<br>
+  <b>成员极多 / 整菜单超屏：</b>由 <code>QMenu</code> 内容超出屏幕高度时 <b>Qt 内建的上下滚箭头</b>兜住——这是 Qt 结构性行为、不是我们实现的：实读本地 <code>qmenu.h</code>（235 行）<code>grep -in scroll</code> 零命中，<b>公开 API 没有任何滚动可调项</b>。故本稿不画可调滚动条、规格不承诺"可调滚动行数"，只承诺"不会横向溢出"；超限表现由任务 4 用例如实登记（能不能限高属实现期实测，不预支）。
+</p>
+
+<!-- ==================== 状态⑥ ==================== -->
+<h2>状态⑥ · 某分组的子菜单（成员复选项） <span class="tag">§2.3：成员项 QAction(setCheckable(true))，checked == 该设备在选中集合里；组内成员顺序 = registry 顺序</span></h2>
+<div class="menuPair">
+  <div class="menuhost">
+    <div class="stepcap">主菜单（当前过滤为空，hover 在产线1）</div>
+    <div class="menu">
+      <div class="mitem hi">产线1 24/24<span class="arw">▸</span></div>
+      <div class="mitem">产线2 24/24<span class="arw">▸</span></div>
+      <div class="mitem">…（其余组省略）</div>
+    </div>
+  </div>
+  <div class="menuhost">
+    <div class="stepcap">点开 → 产线1 子菜单（成员即勾选面）</div>
+    <div class="menu">
+      <div class="mitem">✓ S7-1500-01</div>
+      <div class="mitem hi">✓ AM580-02</div>
+      <div class="mitem">注塑机-04</div>
+      <div class="mitem">CNC-850-03</div>
+      <div class="mitem">…（组内共 24 项，按 registry 顺序）</div>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-top:14px">
+  勾选态只以 <b>✓ 前缀</b>区分（S7-1500-01 / AM580-02 已勾）：<code>QMenu</code> 现有 QSS 节<b>没有</b> <code>QMenu::indicator</code> 定制（<code>:423-438</code>），
+  复选标记走 Qt 原生 indicator，已勾项<b>不会</b>整行变色——本稿如实按"只有勾、无底色"渲染，高亮行（AM580-02）只是 hover。
+  点勾即选中；在菜单里连勾多台，广播也只 <b>1 次</b> <code>deviceSelectionChanged()</code>（重建走 <code>blockSignals</code> 窗口，§2.3）。
+  勾选不影响 chips 之外任何全集：<code>allDevices()</code> 恒 80 台（§2.4 硬线）。
+</p>
+
+<!-- ==================== 瑕疵：勾选态不跨组联动 ==================== -->
+<h2>状态⑥-b · 本版接受的瑕疵：同一台设备在两个分组子菜单里勾选态不联动 <span class="tag">§8 不做清单第 3 条——明画，不藏</span></h2>
+<div class="flaw">
+  <p class="stepcap">第 1 步：用户在「测试台」子菜单里刚勾了 CNC-850-03</p>
+  <div class="menuhost">
+    <div class="menu">
+      <div class="mitem">温湿网关-06</div>
+      <div class="mitem hi">✓ CNC-850-03 ←刚勾上</div>
+      <div class="mitem">边缘服务器-08</div>
+    </div>
+  </div>
+  <p class="stepcap" style="margin-top:10px">第 2 步：同一个菜单会话不关，改挂「边缘网关」子菜单——CNC-850-03 仍显示<b>未勾</b></p>
+  <div class="menuhost">
+    <div class="menu">
+      <div class="mitem">机械臂-05</div>
+      <div class="mitem">CNC-850-03 ←同一台，此处未勾（陈旧快照）</div>
+      <div class="mitem">温湿网关-06</div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:10px;max-width:980px">
+    <b>为什么会这样（如实交代）：</b>菜单项在 <code>aboutToShow</code> 时一次性构建，<code>QAction</code> 的 checked 是构建那一刻选中集合的快照；
+    本版<b>不做</b>跨组实时联动（§8：要做就得让每个 QAction 监听集合并刷自己，属额外状态同步面，YAGNI）。
+    两栏展示的是同一个打开中的菜单的先后两瞥——Qt 里子菜单一次只开一个，本稿并排两栏仅为对照，<b>属审校辅助层的展示手法</b>。
+    <b>正确性不受影响：</b>选中真源是显式 <code>m_selectedIds</code>（§2.4），一台设备无论在哪几个组被勾到，集合里只有一个 id，<b>执行目标集绝不翻倍</b>；
+    显示不一致只持续到菜单关闭重建为止。接受的是显示瑕疵，不接受的是行为错误。
+  </p>
+</div>
+
+<!-- ==================== 状态⑦ ==================== -->
+<h2>状态⑦ · 搜索命中态 <span class="tag">§2.1 规则 3/4 + §3 第 4 条：0 命中组不进菜单；全不命中只留一行不可点说明；过滤全程不改已选集合</span></h2>
+<div class="menuPair">
+  <div class="menuhost">
+    <div class="stepcap">⑦-a 关键词「车间」：命中的组进菜单，其余 5 个组<b>压根不列</b>（不是折叠，是没有东西可看的就是噪声）</div>
+    <div class="menu">
+      <div class="mitem hi">车间A 3/24<span class="arw">▸</span></div>
+      <div class="mitem">车间B 2/24<span class="arw">▸</span></div>
+      <div class="msep"></div>
+      <div class="mitem">全选可见 5 台</div>
+      <div class="mitem">清空选择</div>
+    </div>
+    <p class="stepcap" style="margin-top:8px;max-width:280px">子菜单里只列命中成员（deviceIds=过滤后），<code>total</code> 仍是不过滤成员总数 ⇒「命中/总数」。
+      点「全选可见 5 台」只勾得着那 5 台——文案把范围说出来，防止用户以为全选=80。</p>
+  </div>
+  <div class="menuhost">
+    <div class="stepcap">⑦-b 关键词「xyz9」全不命中：菜单只留一行不可点说明</div>
+    <div class="menu">
+      <div class="mitem dis">无匹配设备（80 台）</div>
+    </div>
+    <p class="stepcap" style="margin-top:8px;max-width:280px">N=设备总数（§2.1 规则 4 原文口径），菜单<b>只此一行</b>、不可点。说明行的淡化渲染走 Qt disabled 调色板，本稿以次级文字 token 近似（非新 token）。
+      <b>既有选择绝不清空</b>（§3 第 4 条）——第 1 行 chips 在整个过滤/清空过程中纹丝不动（见下方行快照）。<b>⚠ 一处口径张力请裁定：</b>规则 4 写"只留一项说明行"，§2.3 又写底部"固定两项"——本稿按规则 4 取"全不命中时底部两项也不出"（此时两项无事可做）；若裁定照旧保留「全选可见 0 台／清空选择」请指明。</p>
+  </div>
+</div>
+<div class="viewport" style="margin-top:12px">
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="pill sel">S7-1500-01 ×</span>
+      <span class="pill sel">温湿网关-06 ×</span>
+    </span>
+    <span class="pickbtn">设备 ▾ 已选 2 台</span>
+    <span class="srch"><span class="q">xyz9</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
+<p class="note" style="margin-top:10px">
+  搜索框作用＝<b>过滤下一次打开菜单时的可见项</b>，不实时重开已开着的菜单（§0 第 3 条）；搜索串是会话态、不持久化（§2.5）。
+  匹配源＝名称/IP/标签，子串、大小写不敏感（§2.1 <code>matchesFilter</code>）。清空搜索后菜单恢复全量分组。
+</p>
+
+<!-- ==================== 状态⑧ ==================== -->
+<h2>状态⑧ · chips 右键菜单（三项，按此次序） <span class="tag">§2.3 chips 交互 / §6②：新动作置顶作自解释器，「编辑档案」退第二项能力零丢失</span></h2>
+<div class="viewport">
+  <div class="menubar"><span>文件</span><span>视图</span><span>工具</span><span>帮助</span></div>
+  <div class="busrow">
+    <span class="pill" style="background:transparent;border-color:var(--line);color:var(--muted)">⛁ 设备</span>
+    <span class="chipHost">
+      <span class="menuhost">
+        <span class="pill sel hov">S7-1500-01 ×</span>
+        <div class="menu" style="position:absolute;top:calc(100% + 2px);left:0">
+          <div class="mitem hi">打开这台设备</div>
+          <div class="mitem">编辑档案</div>
+          <div class="mitem">移除设备</div>
+        </div>
+      </span>
+      <span class="pill sel">温湿网关-06 ×</span>
+    </span>
+    <span class="pickbtn" style="margin-left:190px">设备 ▾ 已选 2 台</span>
+    <span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>
+    <span class="addbtn">+ 添加</span>
+  </div>
+</div>
+<p class="note" style="margin-top:200px">
+  <b>双击语义变更交代（§6②）：</b>现状双击胶囊＝打开档案编辑对话框（<code>cpp:610-621</code> 实测已接线）；本版改为<b>双击＝打开这台设备</b>
+  （<code>eventFilter</code> 里现有分支改发射 <code>openDeviceRequested(profile)</code>）：按该设备首个可解析端点的协议跳工具页（ftp/ftps/sftp→部署页且下拉切到该 ip；
+  telnet/ssh→批量命令页、modbus→MODBUS 页<b>只切页</b>不假装选中；有档案无可用端点→不切页、状态栏提示）。
+  老动作「编辑档案」原样活在右键第二项（显示门槛是 <code>m_registry</code> 非 deviceId，旧 <code>ip:port</code> 无档案行三项<b>照常齐全</b>，§3 第 1 条）。
+  四种情形双击后 chips 选中态不得被改变（§5 验收 4）。菜单样式全部走 <code>QMenu</code> 现成节，未造新色。
+</p>
+
+<!-- ==================== 盒模型注记 ==================== -->
+<h2>盒模型注记（代码事实 vs 估算，逐字分开）</h2>
 <div class="box">
-  <p><b>胶囊（<code>QPushButton#devicePill</code>）外框宽算式：</b></p>
-  <p class="mono" style="font-size:12px;color:var(--text)">外框宽 = 文本宽 + padding(左 8px + 右 8px) + 边框(左 1px + 右 1px)，<code>min-width:0</code> 不设下限（<code>darkstyle.qss:663-664</code>）</p>
-  <p class="mono" style="font-size:12px;color:var(--text)">外框高 = 26px（代码事实 <code>setFixedHeight(26)</code>，控件总高，<code>DeviceBusWidget.cpp:566</code>）</p>
-  <p>示例：文本 <code>S7-1500-01 10.20.3.11:21 ×</code> 宽估算 ≈150px ⇒ 外框估算 ≈168px。<b>150/168/18/26 等全部为估算</b>（DOM border-box 口径，字体渲染随 DPI/字体会漂移）。</p>
-  <p>段头（<code>deviceTagHeader</code>）沿用同一盒模型：文本 <code>标签名 24/24 ▾</code> + 估算 padding 2px 8px + 1px 边框、高 26（padding/高度为<b>建议值待确认</b>，QSS 新增节，实现时随胶囊同批定稿）。</p>
-  <p>搜索框 <code>deviceSearchEdit</code>：QSS <code>QLineEdit{padding:6px 8px}</code>（<code>:120-128</code>）与 26 行高的取齐方式属实现细节；稿内宽度 200px 为<b>估算·待确认</b>。</p>
-  <p><b>真实宽度不进稿规则：</b>设备栏改前/改后基线与胶囊/段头实测外框宽，由布局量测测试（v2.15 波3 <code>totalMinimumSize().width()</code> 同法）产出后回填下方「注记」节与规格 §7 落点行；<b>跑不出来的数字不进稿</b>。</p>
+  <p><b>chips（<code>QPushButton#devicePill</code>）外框算式（代码事实，非估算）：</b></p>
+  <p class="mono">外框宽 = 文本宽 + padding(2px 8px) + 1px 边框×2，<code>min-width:0</code>——出处 <code>darkstyle.qss:656-664</code>（light 同行号）</p>
+  <p class="mono">外框高 = 26——代码事实 <code>setFixedHeight(26)</code>，<code>DeviceBusWidget.cpp:566</code></p>
+  <p>示例文本 <code>S7-1500-01 ×</code> 文本宽估算 ≈72px ⇒ 外框估算 ≈90px；<code>甲 ·10.0.0.7 ×</code> 外框估算 ≈112px。<b>72/90/112 等宽度一律【估算】</b>（DOM border-box，字体渲染随 DPI/字体漂移）。</p>
+  <p>入口按钮 <code>devicePickerBtn</code>：沿用现有 <code>QPushButton</code> 通用节（<code>:54-63</code>：padding 4px 10px、<code>min-width:85px</code> 为 QSS 事实）；
+  通用节 <code>min-width:85px</code> 对"设备 ▾ 未选择"这种短文案<b>不会显得过宽</b>，故本稿不预设定宽；若实现要收窄再按 §2.3"需要定宽再补节"处理——届时属新增 QSS 节，须回到本关卡补审。</p>
+  <p>「+M 台」<code>devicePillMore</code>：同 chips 盒模型（<code>:656-664</code> + 高 26），外框估算 ≈54px。</p>
+  <p>菜单项：padding 8px 28px、font-size 9.5pt 为 QSS 事实（<code>:430-433</code>）；菜单宽度由最长项决定，<b>估算</b>。</p>
+  <p>搜索框 <code>deviceSearchEdit</code>：QLineEdit 节 padding 6px 8px（<code>:120-128</code>）与 26 行高取齐方式属实现细节；稿内宽度 200px 为<b>估算·待确认</b>。</p>
+  <p>chips 间距 6px、行内边距 6px 10px：<b>估算（审校渲染值）</b>，现状代码事实为 <code>deviceRow->setSpacing(4)</code>（<code>cpp:406</code>），以现有 spacing 为准。</p>
 </div>
 
-<h2>注记 · 实测回填位（当前全部空置，回填前一切数字视为估算）</h2>
+<!-- ==================== 实测回填位（空置） ==================== -->
+<h2>注记 · 实测回填位（当前空置——回填前本页一切数字均视为估算）</h2>
 <table>
-  <tr><th style="width:280px">待回填项</th><th style="width:140px">实测值</th><th>量法</th></tr>
-  <tr><td>设备栏整行最小宽 · 改前基线（80 台裸 QHBoxLayout）</td><td>待回填</td><td rowspan="3">布局量测测试（tests/ 内新增或扩展现有目标，QtTest + Fusion + 生产 QSS 同口径）；结果同时写规格 §7 落点行</td></tr>
-  <tr><td>设备栏整行最小宽 · 改后（分段 + 段头 + 搜索框）</td><td>待回填</td></tr>
-  <tr><td>单枚胶囊 / 单枚段头实测外框宽（示例文本各一条）</td><td>待回填</td></tr>
+  <tr><th style="width:320px">待回填项</th><th style="width:140px">实测值</th><th>量法</th></tr>
+  <tr><td>设备栏整行最小宽 · 改前基线（80 台裸 QHBoxLayout）</td><td>待回填</td><td rowspan="4">任务 7 布局量测用例（<code>totalMinimumSize().width()</code>，v2.15 波3 同法）；数字产出后回写本表并同步规格 §7 回填位。<b>跑不出来的数字不进稿。</b></td></tr>
+  <tr><td>设备栏整行最小宽 · 改后（图标 + selectedPillHost + 入口 + 搜索 + 添加）</td><td>待回填</td></tr>
+  <tr><td>单枚 chip 实测外框宽（示例文本各一条）</td><td>待回填</td></tr>
+  <tr><td><code>devicePickerBtn</code> / <code>devicePillMore</code> 实测外框宽</td><td>待回填</td></tr>
 </table>
 
-<h2>色值来源表（逐行核对，双主题）</h2>
+<!-- ==================== 色值来源表 ==================== -->
+<h2>色值来源表（逐行核对，双主题；无出处的值不进页）</h2>
 <table>
-  <tr><th style="width:190px">用途</th><th>深色（darkstyle.qss）</th><th>浅色（darkstyle-light.qss）</th><th style="width:250px">出处（行号）</th></tr>
-  <tr><td>胶囊底 / 边框 / 文字</td>
+  <tr><th style="width:210px">用途</th><th>深色（darkstyle.qss）</th><th>浅色（darkstyle-light.qss）</th><th style="width:230px">出处（行号）</th></tr>
+  <tr><td>窗体底 / 面板底</td>
+    <td><span class="sw" style="background:#0B0E14"></span><code>#0B0E14</code>｜<span class="sw" style="background:#141820"></span><code>#141820</code></td>
+    <td><span class="sw" style="background:#F5F6F8"></span><code>#F5F6F8</code>｜<span class="sw" style="background:#FFFFFF"></span><code>#FFFFFF</code></td>
+    <td>窗体 <code>:5</code>/<code>:12</code>；面板 QGroupBox 底 <code>:33</code>（QMenu 底同为 <code>:424</code> 的 <code>#141820/#FFFFFF</code>）</td></tr>
+  <tr><td>chips 底 / 边框 / 文字</td>
     <td><span class="sw" style="background:#232A36"></span><code>#232A36</code>｜<span class="sw" style="background:#333B48"></span><code>#333B48</code>｜<span class="sw" style="background:#C8CCD4"></span><code>#C8CCD4</code></td>
     <td><span class="sw" style="background:#E4E8EE"></span><code>#E4E8EE</code>｜<span class="sw" style="background:#C4CAD4"></span><code>#C4CAD4</code>｜<span class="sw" style="background:#2A2F38"></span><code>#2A2F38</code></td>
-    <td><code>:656-664</code>（两文件同行号）</td></tr>
-  <tr><td>胶囊 hover 边框</td><td><code>#7B8494</code></td><td><code>#B8C0CC</code></td><td><code>:667-669</code></td></tr>
-  <tr><td>选中胶囊（琴色，仅信号态）</td><td>边框 <code>#F0A030</code>｜底 <code>#2A2518</code></td><td>边框 <code>#D48820</code>｜底 <code>#F5E3C8</code></td><td><code>:671-674</code></td></tr>
-  <tr><td>页面底 / 面板底</td>
-    <td><code>#0B0E14</code>（QMainWindow）｜<code>#141820</code>（面板节）</td>
-    <td><code>#F5F6F8</code>（<code>:5</code>）｜<code>#FFFFFF</code>（<code>:33</code>）</td>
-    <td>各文件头 40 行。<b>就实一句：</b>计划色表该格写作「<code>#1A1F27</code> 系」，但两套 QSS 全文无此值（grep 零命中）；该格括注「沿用现有 QMainWindow/面板节」为操作口径，故本稿取实际节值 <code>#0B0E14/#141820</code>，未造新色。</td></tr>
-  <tr><td>次级文字（标灰/占位/提示）</td><td><code>#7B8494</code></td><td><code>#6B7480</code>（<code>:23</code>/<code>:28</code>）</td><td>同上</td></tr>
-  <tr><td>结构石墨边（段间分隔/窗口边线）</td><td><code>#252A33</code></td><td><code>#D0D5DD</code></td><td><code>:34</code>（QGroupBox 边，沿用既有节）</td></tr>
-  <tr><td>右键菜单 底/边/字</td><td><code>#141820</code>｜<code>#333B48</code>｜<code>#FFFFFF</code></td><td><code>#FFFFFF</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td><td>QMenu 节 <code>:423-428</code></td></tr>
+    <td><code>#devicePill :656-664</code>（两文件同行号）</td></tr>
+  <tr><td>chips hover 边框</td><td><code>#7B8494</code></td><td><code>#B8C0CC</code></td><td><code>:667-669</code></td></tr>
+  <tr><td>选中 chip（琴色，仅信号态）</td><td>边框 <code>#F0A030</code>｜底 <code>#2A2518</code></td><td>边框 <code>#D48820</code>｜底 <code>#F5E3C8</code></td><td><code>[selected="true"] :671-674</code></td></tr>
+  <tr><td>次级文字（空态提示/标签/说明行）</td><td><code>#7B8494</code></td><td><code>#6B7480</code></td><td><code>:23</code>（QLabel[提示/拖拽]）·<code>:28</code>（#panelBreadcrumb）；deviceBusHint 命中路径问题见状态①注记</td></tr>
+  <tr><td>入口按钮 底/边/字（沿用通用 QPushButton 节）</td>
+    <td><code>#232A36</code>｜<code>#333B48</code>｜<span class="sw" style="background:#E4E7EC"></span><code>#E4E7EC</code></td>
+    <td><code>#E4E8EE</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td>
+    <td><code>QPushButton :54-63</code>（底 :55 / 边 :56 / 字 :59）</td></tr>
+  <tr><td>入口按钮 hover（状态⑤菜单打开帧）</td>
+    <td>底 <span class="sw" style="background:#2C3543"></span><code>#2C3543</code>｜边 <code>#3A4250</code></td>
+    <td>底 <code>#D0D5DD</code>｜边 <code>#B8C0CC</code></td>
+    <td><code>QPushButton:hover :65-68</code>（底 :66 / 边 :67）——石墨系，非琴色</td></tr>
+  <tr><td>结构石墨边（窗口边线/分隔线）</td><td><span class="sw" style="background:#252A33"></span><code>#252A33</code></td><td><span class="sw" style="background:#D0D5DD"></span><code>#D0D5DD</code></td><td><code>:34</code>（QGroupBox 边，沿用既有节）</td></tr>
+  <tr><td>QMenu 本体 底/边/字</td><td><code>#141820</code>｜<code>#333B48</code>｜<code>#FFFFFF</code></td><td><code>#FFFFFF</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td><td><code>QMenu :423-428</code></td></tr>
   <tr><td>菜单项高亮（信号态）</td><td>底 <code>#3A2E12</code>｜字 <code>#F0A030</code></td><td>底 <code>#F5E3C8</code>｜字 <code>#D48820</code></td><td><code>QMenu::item:selected :435-438</code></td></tr>
-  <tr><td>搜索框 底/边/字</td><td><code>#0E1219</code>｜<code>#333B48</code>｜<code>#FFFFFF</code></td><td><code>#ECEFF3</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td><td>QLineEdit 节 <code>:120-128</code>；占位文案色用次级文字（沿用，待确认）</td></tr>
-  <tr><td>导航栏活跃项（信号态）</td><td><code>#F0A030</code></td><td><code>#D48820</code></td><td>沿用 NavBar 现有节口径（本稿仅作背景，非被审对象）</td></tr>
+  <tr><td>搜索框 底/边/字</td><td><span class="sw" style="background:#0E1219"></span><code>#0E1219</code>｜<code>#333B48</code>｜<code>#FFFFFF</code></td><td><span class="sw" style="background:#ECEFF3"></span><code>#ECEFF3</code>｜<code>#C4CAD4</code>｜<code>#2A2F38</code></td><td><code>QLineEdit :120-128</code>（底 :121 / 边 :122 / 字 :125）；占位色走次级文字（沿用，待确认）</td></tr>
+  <tr><td>+ 添加按钮 边/字（底 transparent）</td><td>虚线边 <code>#333B48</code>｜字 <code>#7B8494</code></td><td>虚线边 <code>#C4CAD4</code>｜字 <code>#6B7480</code></td><td><code>#btnAddDevice :640-648</code>（边 :642 / 字 :644）——现状保留，非本次被审对象</td></tr>
+  <tr><td><b>不进页</b>：在线/离线色条</td><td colspan="2"><code>#40C8A0 / #E85848（dark）· #2FA88A / #D6453A（light）</code></td><td><code>:676-677</code>——§8：有钩子无数据源，<b>本稿一处不画</b></td></tr>
 </table>
 <p class="note" style="margin-top:8px">
-  琴色纪律：本页琴色只出现在<b>信号态</b>——选中胶囊、活跃导航项、菜单高亮行、本稿控制条当前档；
-  段头、分隔线、窗口边线等静止结构一律石墨色。文档层标题（h1/h2）琴色沿用 v2.15 波3 稿的房式，属审校辅助层、不进产品。
-  胶囊上<b>没有</b>任何在线/离线左边框（QSS <code>:676-677</code> 两条规则有钩子无数据源，规格 §8 明令不得预先承诺，本稿与手册均不画、不写）。
+  <b>就实一句（第一版教训沿用）：</b>计划初稿曾在"窗体/面板底"写过 <code>#1A1F27</code>，两套 QSS 全文 grep <b>零命中</b>（本轮复核 <code>grep -c 1A1F27</code> 两文件均为 0）——该值不存在，不进表、不进页。
+  琴色纪律：本页琴色只出现在<b>信号态</b>——选中 chips、菜单高亮行、瑕疵标注框（审校辅助层）、本稿控制条当前档、文档标题房式（审校辅助层）；
+  结构边框（chips 默认边/分隔线/窗口边线）与入口按钮静止/hover 态（<code>QPushButton:hover :65-68</code> 石墨系）全部石墨。<b>菜单里的勾选 ✓ 不着色</b>（原生 indicator，无 QSS 定制节）。
 </p>
 
 <div class="foot">
-  <p><b>关卡与流程：</b>本稿对应规格 §7 四态清单（①80 台压力态前后对照 ②折叠态含计数 ③搜索命中态含无命中提示 ④两套右键菜单）与双主题。
-  请过目并裁定三处：<b>(a)</b> 折叠段头计数口径（§2.1 规则 5「只显示总数」vs 简报示例「12/12」）；
-  <b>(b)</b> 搜索框按「行尾常驻」画在滚动内容之外（右侧固定），若应随内容滚动请指出；
-  <b>(c)</b> 段头/搜索框盒模型建议值（padding 2px 8px、高 26、宽 200 估算）。
-  <b>批准（含上述裁定）之前不动 <code>src/</code> 一行代码</b>；批准后规格 §7 落点行回填「已批准 YYYY-MM-DD」。</p>
-  <p><b>可落地性声明：</b>界面区域全部为纯色填充 + 1px 边框 + 4/6px 圆角，均为 Qt QSS 可表达；无渐变、无阴影。
-  虚线标尺、行号标签、控制条属审校辅助层，不进产品。宽度均为 DOM border-box 估算，实测回填见「注记」节。</p>
+  <p><b>关卡与流程：</b>本稿覆盖规格 §7 第二版八态清单（①空态 ②少量已选 ③重名对照 ④80 台溢出折算 ⑤主菜单 ⑥分组子菜单 ⑦搜索命中/全不命中 ⑧chips 右键三项），
+  深/浅双主题经右上角控制条整页切换（产品里为应用级主题切换，同一批 token 两主题各自取节）。
+  请过目并裁定五处：<b>(a)</b> chip 文案尾「×」去留（现状字面 vs"只显名称"的字面读法）；<b>(b)</b>「+M 台」按石墨还是升琴色信号态；
+  <b>(c)</b> <code>deviceBusHint</code> 次级色的落地路径（状态①注记三选一）；<b>(d)</b> 入口按钮是否接受通用节 <code>min-width:85px</code> 现成形态；
+  <b>(e)</b> 状态⑦-b 全不命中时底部两项出不出（规则 4"只留一行" vs §2.3"固定两项"，本稿按前者）。<br>
+  <b>批准之前不动 <code>src/</code> 一行代码</b>；批准后规格 §7 回填位填「已批准 YYYY-MM-DD」，实测宽度基线由任务 7 量测后同时回填本页「注记」表（当前空置）。</p>
+  <p><b>可落地性声明：</b>界面区域全部为纯色填充 + 1px 边框 + 3~8px 圆角，均为 Qt QSS 可表达；<b>无渐变、无阴影</b>。
+  虚线占位框、objectName 小标签、步骤说明、主题控制条属审校辅助层，不进产品。宽度均为 DOM border-box <b>估算</b>，实测回填见「注记」节。
+  <code>QMenu</code> 超出屏幕的上下滚箭头＝Qt 内建、<b>无公开可调 API</b>（本地 <code>qmenu.h</code> 实读），稿上不画可调滚动条。</p>
 </div>
 
 <script>
-/* ================= 数据（80 台 × 平均 2 标签，规格 §3.6 场景） ================= */
-var TAGS=["产线1","产线2","测试台","车间A","车间B","边缘网关"].sort(); /* Unicode 码点升序＝Qt QString 比较同口径 */
-var BASE=["S7-1500","AM580","CNC-850","注塑机","机械臂","温湿网关","PLC-B","边缘服务器"];
-var DEV=[];
-for(var i=0;i<80;i++){
-  DEV.push({
-    name:BASE[i%8]+"-"+("0"+(i+1)).slice(-2),
-    ip:"10.20.3."+(11+i),
-    port:[21,22,23,502][i%4],
-    tags:i<72?[TAGS[i%6],TAGS[(i+3)%6]]:[]   /* 72 台各 2 标签、8 台无标签 → 每段 24 台、未分组 8 台 */
+/* 主题切换（沿用第一版骨架）：整页 data-theme 翻转，两套 CSS 变量各对应一份 QSS 文件 */
+(function(){
+  var seg=document.getElementById('segTheme');
+  seg.addEventListener('click',function(e){
+    var b=e.target.closest('button[data-theme-val]');if(!b)return;
+    document.documentElement.setAttribute('data-theme',b.getAttribute('data-theme-val'));
+    var bs=seg.querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('on',bs[i]===b);
   });
-}
-var UNG="未分组";
-function segMembers(tag,devs){var r=[];for(var i=0;i<devs.length;i++){var d=devs[i];
-  if(tag===UNG? d.tags.length===0 : d.tags.indexOf(tag)>=0) r.push(d);} return r;}
-function segments(){var s=[];for(var t=0;t<TAGS.length;t++)s.push({tag:TAGS[t],all:segMembers(TAGS[t],DEV)});
-  s.push({tag:UNG,all:segMembers(UNG,DEV),ung:true});return s;}
-function hit(d,q){q=q.toLowerCase();
-  if(d.name.toLowerCase().indexOf(q)>=0)return true;
-  if((""+d.ip+":"+d.port).indexOf(q)>=0)return true;
-  for(var i=0;i<d.tags.length;i++)if(d.tags[i].toLowerCase().indexOf(q)>=0)return true;return false;}
-
-/* ================= 渲染 ================= */
-var SEL={}; function pill(d,sel,cls){var k=d.name;var on=sel||(SEL[k]&&cls!=="plain");
-  return '<span class="pill'+(on?" sel":"")+(cls==="hov"?" hov":"")+'">'+d.name+' '+d.ip+':'+d.port+' ×</span>';}
-function strip(segs,opt){ /* opt:{sel:{name:true}, collapsedTag:{}, q, } */
-  var h='<div class="strip">';
-  for(var i=0;i<segs.length;i++){var s=segs[i];
-    var q=opt.q, vis=q?s.all.filter(function(d){return hit(d,q);}):s.all;
-    var dim=q&&vis.length===0;
-    var collapsed=dim||(opt.collapsedTag&&opt.collapsedTag[s.tag]);
-    if(i>0)h+='<span class="vsep"></span>';
-    h+='<span class="seghdr'+(dim?' dim':'')+'" title="objectName=deviceTagHeader · deviceTag='+s.tag+'">'+
-       s.tag+' '+(collapsed? s.all.length : vis.length+'/'+s.all.length)+' '+(collapsed?'▸':'▾')+'</span>';
-    if(!collapsed)for(var j=0;j<vis.length;j++)h+=pill(vis[j],opt.sel&&opt.sel[vis[j].name]);
-  }
-  return h+'</div>';}
-function rowAfter(segs,opts){
-  return '<div class="busrow">'+strip(segs,opts)+
-    '<span class="clipmark"><span>视口右边界 · 滚轮可续</span></span>'+
-    '<span class="vsep"></span><span class="addbtn" title="沿用现状 btnAddDevice，最终归属由任务 4 按 §2.3 定（估算）">+ 添加</span>'+
-    (opts.q? '<span class="srch"><span class="q">'+opts.q+'</span></span>'
-           : '<span class="srch"><span class="ph">搜索 名称 / IP / 标签</span></span>')+'</div>';}
-function rowNoMatch(segs,q){
-  return '<div class="busrow"><span class="nomatch">无匹配设备（80 台已隐藏）</span>'+
-    '<span class="clipmark"><span>视口右边界</span></span>'+
-    '<span class="vsep"></span><span class="addbtn">+ 添加</span><span class="srch"><span class="q">'+q+'</span></span></div>';}
-function windowSim(rowsHtml){
-  return '<div class="viewport"><span class="vp-label">1366 px 视口 · 宽度均为估算</span><div class="win">'+
-    '<div class="rail"><button class="on">📁<br>文件<br>部署</button><button>📝<br>批量<br>命令</button><button>🔌<br>Web<br>Socket</button>'+
-    '<button>📊<br>MOD<br>BUS</button><button>🌐<br>网络<br>调试</button><button>🔧<br>OPC<br>UA</button>'+
-    '<button class="sp">🎯<br>任务<br>中心</button><button>⚙<br>设置</button></div>'+
-    '<div class="main"><div class="menubar"><span>文件</span><span>部署</span><span>帮助</span></div>'+rowsHtml+
-    '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;border-bottom:1px solid var(--line)">（工具页主体非本稿对象，仅占位）</div></div></div></div>';}
-
-/* 状态① 前：裸 QHBoxLayout 一行 80 枚，右侧被裁 */
-var flat='';for(var i=0;i<DEV.length;i++)flat+=pill(DEV[i],undefined,"plain");
-document.getElementById('vp0').innerHTML=windowSim('<div class="busrow"><div class="strip">'+flat+
-  '<span class="addbtn">+ 添加</span></div><span class="clipmark"><span>视口右边界 · 超出被裁 · 无滚动条</span></span></div>');
-
-/* 状态① 后：分段全展开；选中两枚示意琴色仅信号态 */
-var SG=segments();
-SEL[DEV[0].name]=true;SEL[DEV[9].name]=true;
-document.getElementById('vp1').innerHTML=windowSim(rowAfter(SG,{}));
-
-/* 状态②：车间A、边缘网关、未分组 用户主动折叠，其余展开 —— 行高不变 */
-document.getElementById('vp2').innerHTML=windowSim(rowAfter(SG,{collapsedTag:{"车间A":1,"边缘网关":1,"未分组":1}}));
-
-/* 状态③-a：搜索 车间（标签源命中，未命中段自动折叠标灰） */
-document.getElementById('vp3').innerHTML=windowSim(rowAfter(SG,{q:"车间"}));
-/* 状态③-b：无命中 */
-document.getElementById('vp3b').innerHTML=windowSim(rowNoMatch(SG,"xyz9"));
-
-/* 状态④：两套右键菜单 */
-function menu(items,hi){var h='<div class="menu">';for(var i=0;i<items.length;i++)
-  h+='<div'+(i===hi?' class="hi"':'')+'>'+items[i]+'</div>';return h+'</div>';}
-var segPills=segMembers("产线1",DEV);
-var m1='<div class="menuhost" style="margin-right:60px">'+
-  '<span class="pill hov">'+segPills[0].name+' '+segPills[0].ip+':'+segPills[0].port+' ×</span>'+
-  '<div style="font-size:10px;color:var(--muted);margin-top:126px">胶囊右键（旧 ip:port 无档案行同样齐全，§3.1）</div>'+
-  menu(["打开这台设备","编辑档案","移除设备"],0)+'</div>';
-var m2='<div class="menuhost">'+
-  '<span class="seghdr">产线1 24/24 ▾</span>'+
-  '<div style="font-size:10px;color:var(--muted);margin-top:126px">段头右键（本段全选只广播一次选中变化，§2.3）</div>'+
-  menu(["本段全选","本段反选","全部折叠"],0)+'</div>';
-document.getElementById('menus').innerHTML='<div style="padding:14px 14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--bg);display:inline-flex;gap:90px;align-items:flex-start">'+m1+m2+'</div>';
-
-/* 主题切换 */
-document.querySelectorAll('#segTheme button').forEach(function(b){b.onclick=function(){
-  document.querySelectorAll('#segTheme button').forEach(function(x){x.classList.remove('on')});
-  b.classList.add('on');document.documentElement.dataset.theme=b.dataset.themeVal;};});
+})();
 </script>
 </body>
 </html>
