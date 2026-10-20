@@ -40,6 +40,7 @@
 #include <QList>
 #include <QMenu>
 #include <QPushButton>
+#include <QScreen>
 #include <QSpinBox>
 #include <QStringList>
 #include <QStyleFactory>
@@ -591,6 +592,9 @@ private slots:
     // ② 已选 2 台 → 全选 80 台，设备栏 sizeHint().height() 一字不动——溢出走「+M 台」
     //    折算、**不换行**（规格 §2.3 单行 QHBoxLayout + §3.7）。可见枚数随宽度折叠是
     //    合法形态，故只断高度不变与"布局参与"，不断具体枚数（0 台/2 台/80 台三态都量）。
+    //    ②′（修复轮1 Minor 5 补）同三态并判 mainV->totalMinimumSize().height()——
+    //    sizeHint 不吃 children 的 setMinimumHeight（M-G2 已证盲），布局地板吃，两口径
+    //    合起来才封住"长高"的两条通路。
     // bus.resize(1200,·) 是给 applyPillOverflow 一个确定的人造宽度让折叠发生；
     // 两条断言都不读该宽度——换任何宽度结论不变（枚数会变，但没人断枚数）。
     void deviceBarRowGuardMinWidthPositiveAndNoSecondRow()
@@ -607,10 +611,25 @@ private slots:
         QVERIFY2(deviceRow, "设备栏第 1 行不是 QHBoxLayout——溢出折算依赖单行形态（规格 §2.3）");
 
         // 空态（0 台已选，提示可见）
+        // 量测协议（修复轮 1 定）：每态读数前显式 invalidate+activate——children 的
+        // setVisible/setMinimumHeight 只发 LayoutRequest（未 show 的 offscreen 件不投递），
+        // totalMinimumSize 是带缓存的：初轮不激活连读三态得到的"恒 396"实为 setup 时
+        // 缓存值（勘误，见修复报告）；激活后才是运行期事件循环将兑现的真地板。
+        const auto activateLayout = [mainV]() {
+            mainV->invalidate();
+            mainV->activate();
+        };
+        activateLayout();
         const int minW0 = deviceRow->totalMinimumSize().width();
         QVERIFY2(minW0 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
         const int h0 = bus.sizeHint().height();
         QVERIFY2(h0 > 0, "设备栏 sizeHint 高度算出 0，布局未参与计算（用例失效信号）");
+        // 判据 B′（修复轮 1，评审 Minor 5）：布局地板高度——sizeHint 不读 minimum
+        // （变异 M-G2 用容器 setMinimumHeight(60) 证明过它盲），totalMinimumSize 会把
+        // children 的 setMinimumHeight 计入行高地板 ⇒ 两口径并判才封住「长高不换行」
+        // 的两条通路（生产折叠只动可见性，两个高度在 0/2/80 台三态都必须一字不动）。
+        const int floorH0 = mainV->totalMinimumSize().height();
+        QVERIFY2(floorH0 > 0, "设备栏布局最小高度算出 0，布局未参与计算（用例失效信号）");
 
         // 勾 2 台（两条过滤词各勾一台，集合为并集；撤过滤不动已选）
         selectDeviceByFilter(bus, QStringLiteral("10.77.1.101"));
@@ -619,25 +638,44 @@ private slots:
         QVERIFY(search);
         search->setText(QString());
         QCOMPARE(bus.selectedIds().size(), 2);
+        activateLayout();
         const int minW2 = deviceRow->totalMinimumSize().width();
         QVERIFY2(minW2 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
         const int h2 = bus.sizeHint().height();
         QCOMPARE(h2, h0);
+        const int floorH2 = mainV->totalMinimumSize().height();
+        QVERIFY2(floorH2 == floorH0,
+                 qPrintable(QStringLiteral("2 台已选让设备栏布局最小高度从 %1px 变到 %2px——"
+                                            "尺寸地板不得随已选台数增长（规格 §2.3/§3.7）")
+                                .arg(floorH0).arg(floorH2)));
 
         // 全选 80 台：行高不得长第二行
         bus.clearSelection();
         bus.selectAllVisible();
         QCOMPARE(bus.selectedIds().size(), 80);
+        activateLayout();
         const int minW80 = deviceRow->totalMinimumSize().width();
         QVERIFY2(minW80 > 0, "设备行最小宽算出 0，布局未参与计算（用例失效信号）");
         const int h80 = bus.sizeHint().height();
         QVERIFY2(h80 == h2,
                  qPrintable(QStringLiteral("80 台全选的已选让设备栏长高了 %1px——溢出必须折进「+M 台」，"
                                             "不得换行（规格 §2.3/§3.7）").arg(h80 - h2)));
+        const int floorH80 = mainV->totalMinimumSize().height();
+        QVERIFY2(floorH80 == floorH2,
+                 qPrintable(QStringLiteral("80 台全选（折叠生效）让设备栏布局最小高度从 %1px 变到 %2px——"
+                                            "折叠只得改可见性，不得撑尺寸地板（M-G2 形态，规格 §2.3/§3.7）")
+                                .arg(floorH2).arg(floorH80)));
+        // 行宽随提示控件可见性换档（空态提示在、已选态收起）与「+M 台」按钮进/出行
+        // 是**设计语义**（视觉稿状态①/②/④），非行数增长；修复轮 1 激活口径真值：
+        // 空态 396（含提示 ~196 宽）、2 台 200、80 台 311（折叠生效 +M 台按钮进地板，
+        // 通用节 min-width:85）——chips 本身依旧不进地板（min-width:0 可收缩，
+        // §9.1a"逐个 setVisible 试到达标"的结构前提仍在：地板由固定控件决定）。
         qInfo().noquote() << QStringLiteral(
-            "deviceBar guard measured (artificial width 1200, Fusion+darkstyle.qss): "
-            "rowTotalMinimumSize 0sel=%1px 2sel=%2px 80sel=%3px | bus sizeHint height=%4px/%5px/%6px")
-            .arg(minW0).arg(minW2).arg(minW80).arg(h0).arg(h2).arg(h80);
+            "deviceBar guard measured (artificial width 1200, Fusion+darkstyle.qss, activated layout): "
+            "rowTotalMinimumSize 0sel=%1px 2sel=%2px 80sel=%3px | bus sizeHint height=%4px/%5px/%6px "
+            "| layout floor height=%7px/%8px/%9px")
+            .arg(minW0).arg(minW2).arg(minW80).arg(h0).arg(h2).arg(h80)
+            .arg(floorH0).arg(floorH2).arg(floorH80);
     }
 
     // ---- v2.16-B 任务7：「×」命中区在生产 QSS 形态下的钉桩（任务5报告 §F6.3 的"届时复核"）----
@@ -680,9 +718,20 @@ private slots:
         const int markCenter = (markLeft + markRight) / 2;
         qInfo().noquote() << QStringLiteral(
             "close-zone under Fusion+darkstyle.qss: markAdvance=%1px PM_ButtonMargin=%2px zone=%3px "
-            "| drawn mark x=[%4, %5] center=%6 pillWidth=%7 zoneLeftEdge=%8")
+            "| drawn mark x=[%4, %5] center=%6 pillWidth=%7 zoneLeftEdge=%8 | pillFont=%9")
             .arg(markAdv).arg(pm).arg(zone).arg(markLeft).arg(markRight)
-            .arg(markCenter).arg(pill->width()).arg(pill->width() - zone);
+            .arg(markCenter).arg(pill->width()).arg(pill->width() - zone)
+            .arg(pill->font().toString());
+        // 不变式（修复轮1 Minor/裁决④配套格）：区宽必须至少覆盖画出的 × 墨包络**宽度**
+        // （markRight-markLeft+1 列）——这是对"区公式 ≥ 字形"的结构关系判定，与中心列
+        // 落点无关；下方 tripwire 判"中心列在区内"（位置关系，余量仅 1px，字体/DPI
+        // 变化敏感）。两格各管一类破坏：字体变大让字形宽超过区 ⇒ 本格红而 tripwire
+        // 未必红；区左缘整体右漂 ⇒ tripwire 红。谁红都先报告再动码。
+        QVERIFY2(zone >= (markRight - markLeft) + 1,
+                 qPrintable(QStringLiteral("「×」命中区宽 %1px 盖不住画出的墨包络宽 %2px（[%3,%4]）——"
+                                            "尾标实宽已超出区公式计算，区不再是「×」的超集"
+                                            "——先报告再动码").arg(zone)
+                                .arg(markRight - markLeft + 1).arg(markLeft).arg(markRight)));
         QVERIFY2(markCenter >= pill->width() - zone,
                  qPrintable(QStringLiteral("画出的 × 中心列 x=%1 落在命中区 [W-%2, W] 之外（W=%3）："
                                             "QSS padding 与 PM_ButtonMargin 的分叉已吃掉点击目标"
@@ -719,6 +768,8 @@ private slots:
             pill->setFixedHeight(26);
             preRow->addWidget(pill);
         }
+        preRow->invalidate();   // 与守卫槽同激活口径（修复轮 1）：读"布局将兑现"的地板
+        preRow->activate();
         const int preMin = preRow->totalMinimumSize().width();
         QVERIFY2(preMin > 0, "改前形态复刻行最小宽为 0（量测失效信号）");
 
@@ -730,6 +781,8 @@ private slots:
         QVERIFY(mainV && mainV->count() == 2);
         auto* deviceRow = qobject_cast<QHBoxLayout*>(mainV->itemAt(0)->layout());
         QVERIFY(deviceRow);
+        mainV->invalidate();
+        mainV->activate();
         const int postMinEmpty = deviceRow->totalMinimumSize().width();
         selectDeviceByFilter(bus, QStringLiteral("10.77.1.101"));
         selectDeviceByFilter(bus, QStringLiteral("10.77.1.102"));
@@ -738,6 +791,8 @@ private slots:
         QVERIFY(search);
         search->setText(QString());
         QCOMPARE(bus.selectedIds().size(), 3);
+        mainV->invalidate();
+        mainV->activate();
         const int postMin3Chips = deviceRow->totalMinimumSize().width();
         QVERIFY2(postMin3Chips > 0, "改后设备行最小宽为 0（量测失效信号）");
         QVERIFY2(preMin > postMin3Chips,
@@ -773,6 +828,16 @@ private slots:
 
         QVERIFY(chipA.sizeHint().width() > 0);
         QVERIFY(picker.sizeHint().width() > 0);
+        // 修复轮1 Minor 3：量测数字随应用字体走（× 区用 pill->font()，#devicePill 的
+        // font-size:12px 只在样式层生效、不落进 QWidget::font()），口径行必须记录
+        // 运行时**实际**字体，而非誊写记忆值。
+        qInfo().noquote() << QStringLiteral(
+            "measurement fonts @ runtime: QApplication::font=%1 | chipA.font=%2 | primaryScreen logicalDpi=%3")
+            .arg(QApplication::font().toString())
+            .arg(chipA.font().toString())
+            .arg(QGuiApplication::primaryScreen()
+                     ? QString::number(QGuiApplication::primaryScreen()->logicalDotsPerInch())
+                     : QStringLiteral("(no screen)"));
         qInfo().noquote() << QStringLiteral(
             "visual-baseline (Fusion+darkstyle.qss, 96dpi): preMod80PillRow=%1px | postRow minW empty=%2px "
             "3chips=%3px | chip \"S7-1500-01  x\"=%4px \"甲 ·10.0.0.7  x\"=%5px | picker=%6px more=%7px "
