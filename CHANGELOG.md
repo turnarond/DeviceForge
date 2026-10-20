@@ -1,8 +1,8 @@
 ﻿# Changelog
 
-## [未发布]
+## [2.15.0] — 2026-10-20
 
-### v2.15 波1（留池清零，开发中——定版归波4）
+### v2.15 波1（留池清零）
 
 - **ConfigStore 截断根治（#49-5）**：`list()` 默认 limit 1000→-1（-1=全表读取，offset 忽略）；显式传 limit 的调用方行为逐字不变。根治"遍历全表语义被默认 limit 静默截断"的潜在数据不可见类。`tst_config_store` 附 >1000 行夹具红-绿。
 - **legacy 清扫与模板清单全表化（#49-8）**：`DeviceRegistry` 三处 device.list 清扫/回退扫描（saveReplacing/load/remove）与 `TaskTemplateStore::list()` 去 1000 上限，>1000 行残留一条不漏；`tst_device_registry_store`/`tst_task_template_store` 各附超界可见性用例。收口评审补迁：`DeviceRegistry::load()` 主存储 device.profile 回读（清点残余站点，控制器裁定纳入波1）同去 1000 上限，回归钉 `loadAboveLegacyCapReadsEveryProfile`（1005 条档案一条不漏，RED 先证 actual 1000）——波1 limit 清点就此闭合，待裁残余 0。
@@ -11,18 +11,32 @@
 - **telnet 工装有界化（D）**：`tst_telnet_timeout` 挂 ctest `TIMEOUT 60`（独立无条件属性调用，置于 `_qt_bin_dir` 守卫外），负载下挂起形态从拖死整轮降为单目标有界红；分诊口径（单跑复核+全量两遍）登记 `tests/AGENTS.md`。
 - **波1 文档收口（本票）**：用户手册同名策略版本口径就实（覆盖=继承 ID + 版本取较大值；导入与保存为模板共用落库通道；设备/模板清单无隐性条数上限就实）、`TaskTemplateStore` 注释失效引用清理（"不重构导入路径（留债观察）"与 widget 侧改名循环同源引用已失效）、CHANGELOG 汇总腿与规格执行注记（残余 limit 站点清点入册）。
 
-### v2.15 波2（文件夹支持，开发中——定版归波4）
+### v2.15 波2（文件夹条目支持）
 
 - **目录展开纯头（T7）**：新纯逻辑头 `src/deploy/FolderExpand.h`（`folderexpand::expand`/`scanDir`/`composeRemotePath`）——目录以**自身名为镜像相对路径首段**、顶层文件 rel 空扁平、递归全深度不追符号链接（QDir::Files|NoSymLinks）、展开后文件条目 > `kMaxExpandedItems=5000` **整体拒绝**（中文文案携实际数与上限数）、空目录 0 条不算错、文件系统根退化（dirName 空）整体拒绝。新目标 `tst_folder_expand`（scanner 注入脱盘直测）。
 - **传输层父目录确保能力（T8）**：`ITransferChannel` 末尾追加**可选虚函数** `makeDirectory`（单层创建，默认实现返回不支持——旧通道零改动向前兼容），`TransferCapabilities` 末尾增 `makeDirectory` 能力位（默认 false）；`TransferExecutor` 上传前对**不存在**的目标做父目录逐级确保（stat 自最浅缺失层起、序贯创建、建目录失败后复检该层存在则继续——闭合瞬断被收口成确定性红的窗口，评审 I-1）。FtpAdapter 单层 MKD 经 SylixOS 三禁核对（根 URL+绝对路径、MULTICWD 逐级、显式 `CURLOPT_FTP_USE_EPSV=0`），SshAdapter 走 sftpMakeDirectory，LocalTransferChannel 单层真 mkdir。`tst_transfer_executor` 增父目录确保用例组与既有钉桩（目标存在即跳过确保步、stat 增量零漂移）。
 - **三入口目录展开接线（T9）**：新装配纯头 `src/deploy/DeployEntryBuilder.h`（`deployentry::build`：分类以**点击时刻磁盘实况** QFileInfo::isDir 为准、面板行快照丢弃重算——闭合快照过期绕过 5000 上限的窗口，评审 I-1/I-2）；部署页单发、模板编辑器 teAddDir（`addDeployDirectoryEntries` 直调缝，展开即文件条目入表、拒绝纯头文案逐字弹显表格零改动）、部署页保存为模板三入口同口径。`DeployJob` 增**每条目远端路径贯通**（`entryRemotePaths` 平行向量：非空=显式条目模式，Job 不派生 basename、不目录遍历、跳过自身 mkdir 环，远端子目录全由执行器确保步创建；requestKey 纳入每条目远端路径——同清单仅布局变化不再误判同一请求）；空向量=v2.14 扁平口径逐字不变。新目标 `tst_deploy_entry_builder`；`tst_deploy_loop`/`tst_task_center_widget` 增镜像与直调用例。
 - **SFTP 单发落点加深一层（行为变更，用户批准裁定）**：放弃 v2.14 及更早 `DeployJob` legacy 目录展开的协议不对称（FTP 包含顶层目录名 / SFTP 上传目录内容），三入口统一为**镜像口径（目录名为首段）**——由此 **SFTP 单发部署所选目录的远端落点比 v2.14 深一层**（此前 `/apps` 选 `pkg/` 内容直落 `/apps/`，现落 `/apps/pkg/`；FTP 落点不变）。属现场可见变更，依赖旧 SFTP 落点的脚本/站点需在 v2.15 发布说明中知悉并复核目标路径。
 - **波2 收口（T10）**：`tst_deploy_loop` 增**真盘目录树环回集成用例**（scanDir 实扫→deployentry::build 装配→Backend/Job 显式条目模式→TransferExecutor 确保步→LocalTransferChannel 真盘单层 mkdir→目标树与源树镜像逐文件一致，路径集合+字节双断言、无 .part 残留）——"远端子目录由执行器创建"这条新链路的唯一端到端防线（摘除确保步即红的 neuter 取证）。勘误三处（RELEASE_NOTES v2.14.1/CHANGELOG [2.14.1] 段末注记 + 用户手册就地改实况）、接口参考 makeDirectory/能力位/DeployJob 双路径与 uploadFolder 预留口径就实、用户手册目录语义+5000 上限+SFTP 落点变更+teAddDir 行为补写、规格 §3.1 与计划初稿装配措辞勘误注记、`tests/AGENTS.md` 计数定版 **51**（波2 新增 `tst_folder_expand`/`tst_deploy_entry_builder` 两目标；计划初稿写 50 系未计任务9 新增目标）。
-  > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。
+  > 待办（2026-10-20，波2 终审 I-3 登记波3，本波不实现）：`DeployJob` 每条目独立构造通道+执行器，对**非存在**目标会重复 stat 本轮已 ensure 的祖先目录，到 5000 条目上限时慢速 FTP 约多 ~15k 次控制往返；正解=运行级「已确保祖先集合」经 `DeployJob::Params` 贯穿供同轮复用。评审裁定「早修受益、非合并阻塞」，登记于波3（窄屏工具栏同波处理），本波仅记录不动码。**（波3 已落地，见下节首条。）**
 
-### v2.15 波3（性能债与编辑器体验，开发中——定版归波4）
+### v2.15 波3（性能债、编辑器体验与窄屏工具栏）
 
+- **运行级「已确保远端目录」复用（波2 终审 I-3）**：新纯头 `src/transfer/EnsuredDirCache.h`（QSet 容器，**刻意无锁**——每设备一份、由 `DeployJob` 值成员持有，job 内单线程；`DeploymentRunner` 的并发粒度是每 job 一线程）+ `TransferExecutor` 构造函数**末尾**追加可选指针参数 `xfer::EnsuredDirCache* ensuredDirs = nullptr`。传 nullptr 即逐字复现波2 的 stat 序列（既有计数钉桩零改动，另配 `nullEnsuredDirCacheKeepsParentProbeSequence` 钉住这层等价性）。缓存只在三条「已确认存在」臂上记入（该层 stat 报存在 / MKD 成功 / MKD 失败后复检报存在），同轮后续文件对这些祖先层直接跳过 stat——到 5000 条目上限、目录深 3-4 层的形态下按估算可省上万次控制往返（慢速 SylixOS FTP 现场收益最大）。新增钉桩 `statArmExistencePopulatesCacheForLaterFiles`、`reStatArmExistencePopulatesCacheForLaterFiles`。**口径更正**：实现报告里的「ABI 加法」应为**源码级兼容**——默认参/默认实现虚函数的形态保证源码向前兼容，二进制兼容未单独取证。
+- **目录展开批量刷表与空目录提示**：编辑器 `addDeployDirectoryEntries` 把整段插入包进 `blockSignals` 窗口，且仅在 `added > 0` 时**恰好一次**尾部 `flushDeployTable()`——近上限添加目录时的逐行 `cellChanged` 风暴（O(N²) 刷表）就此消失；钉桩断言批窗口内 `cellSpy` 计数为 0 且切步往返后条目序与 collect 结果保真。所选目录为空（或仅含空子目录）时不再静默返回，改给中文提示「所选目录为空，未添加任何文件条目」并仍返回 0。
 - **部署页工具栏两行化（任务13 方案 C，窄屏右侧裁切根治）**：`FtpDeployWidget::setupToolbar` 原单行 `QHBoxLayout` 承载 23 控件、超过 1920 屏宽（本波实测，与生产同口径=Fusion 样式 + `:/styles/darkstyle.qss` + 默认内容，`totalMinimumSize().width()`=**1866px**；v2.14 双屏诊断现场实测约 2010px，差值归因设备名长度与窗口边框/DPI），而 `QHBoxLayout` 最小宽=子控件之和且从不换行 → 右侧「导出报告/重试失败设备」在 1366/1280 屏被裁。改为容器 `deployToolbar` 内 `QVBoxLayout`（行距 4）+ 两个 `QHBoxLayout` 行：**第 1 行=连接组（协议/设备/端口/FTPS/状态点）│ 分隔条 │ 主操作（⟳ 刷新 / ▶ 部署到 N 台设备 / 保存为模板）**，**第 2 行=部署选项（清空/重启 + 协议/命令/超时/重试四参）│ 分隔条 │ 结果操作（⬇ 导出报告 / ↻ 重试失败设备）**，各行尾 `addStretch()`。既有控件的创建顺序/对象名/初值/tooltip/ConfigStore `ftp.deploy.prefs` 读写/32 处 `connect` 逐字不变（仅归属布局改变）；新增对象名仅容器 `deployToolbar` 一个，供布局回归定位。**窄屏不再右侧裁切**（同一测法两行态实测 **933px**，1366 屏可用宽 1270、1280 屏可用宽 1184 均在内；台数文案实测不影响最小宽——QSS `min-width` 主导最小宽、长文案只涨 sizeHint），代价工具栏垂直 +1 行 ~34px。新目标 `tst_deploy_toolbar_layout`（6 用例）直构 widget 断言两行结构、逐行成员归属（连接组三件套与重启四参、分隔条、含反向归属）与**目的钉桩** `toolbarFitsNarrowScreen`（`totalMinimumSize` ≤1270），并配 `qssFloorIsInEffect` 守卫——无生产 QSS 时量得 834px 会伪装成「宽度过关」。CTest 计数 **51→52**。
+
+### 工程与流水线（非产品行为）
+
+- **CI runner 钉版本**：`ci.yml` 与 `release-validation.yml` 的 `runs-on` 由 `windows-latest` 钉到 `windows-2022`。`windows-latest` 已切至 `windows-2025-vs2026` 镜像、其中**没有 VS2022 实例**，而工作流的 CMake 生成器串是 `"Visual Studio 17 2022"`，于是 configure 第一步即 `could not find any instance of Visual Studio`——查 `gh run list` 得**至少自 2026-10-08 起每次 push 全红**。钉版后 configure 与 build 转为通过，本仓 CI 十二天来第一次真正跑到 ctest（因此也首次暴露：`tst_ws_page_layout` 在 runner 上确定性红，而该工具与用例自 v2.14.1 起零改动，属环境相关红、非 v2.15 引入）。该红随后由下条修复，本仓 CI 自此首次全绿。
+- **配套工具输出契约=UTF-8**：`versioncheck.py` 与 `smoke.py` 的 CLI 入口把 `sys.stdout`/`sys.stderr` `reconfigure(encoding="utf-8", errors="replace")`。实测坏形态两条：cp1252 控制台打印中文报告行抛 `UnicodeEncodeError`（versioncheck 在 CI 上表现为 4 个用例 ERROR）；`smoke.py` 打印中文用法行同样崩，使约定退出码 **2 变成 1**——"工具自己崩了"冒充"参数校验未通过"。配套先红后绿的码页用例、读侧显式 `encoding="utf-8"`、以及规约（`tools/devtools/AGENTS.md` 第 6 条）同批落地。
+- **测试计数定版 52**（波3 新增 `tst_deploy_toolbar_layout`）；`tests/AGENTS.md` 新增**「零输出红的取证口径」**：`***Failed` 而无任何输出时，当轮必须补 `ctest -V` 取退出码 + 直跑 `-o file,txt` 非空守卫 + 终验留 `--output-junit`，未归因前不得写进 flake 基线。
+
+- **`tst_ws_page_layout` 几何断言改屏宽无关判据（PR #63，仅测试侧）**：`eventTableIsTheOnlyVerticalExpander` 假设顶层窗口真能拿到请求的 1400 逻辑宽。本地 `QT_SCALE_FACTOR=2` 复现出与 runner 同形的红——请求被窗口管理器钳到 962，`setChildrenCollapsible(false)` 让两栏按最小宽等比压缩成 360/580，「右栏 > 2×左栏」因此**假红而扩展策略未变**。改法：无条件判「序」（谁是扩展主体），「倍数」放进 `widget.width() >= 1100` 门内，并用 `qInfo()` 打出实走分支与实际尺寸（不留「这条断言在 CI 跑没跑」的悬案）。非虚设性以产品 `setStretchFactor` 主次对调做变异核，判序那格红在 738/640；`QT_SCALE_FACTOR=1/1.5/2/2.5` 下 16/16。规约入 `tests/AGENTS.md` 第 6 条（几何断言须与屏宽/缩放无关）。
+
+### 已知问题
+
+- **SylixOS FTP 三条禁令未单源化（GitHub #59，改动排 v2.16）**：波2 为上传前父目录确保新增的 `FtpAdapter` 单层 MKD 腿已按三禁写法（根 URL + 绝对路径、`CURLFTPMETHOD_MULTICWD` 逐级 CWD、显式 `CURLOPT_FTP_USE_EPSV=0`）。但 `FtpAdapter` 内**自建选项序列**的其余腿仍缺同一套：`downloadFile` / `readFileToMemory` / `writeFileFromMemory` 未设 `MULTICWD`；`listDirectory` 与四条 QUOTE 命令腿、以及 `downloadFile` 未设 `EPSV=0`。后果：对不支持多级 CWD 与扩展被动模式的 SylixOS FTP 服务端，**下载 / 列目录 / 改名删除**等腿可能失败（上传与本次新增的建目录腿不受影响）。裁定=本版本不动协议控制序：本仓对 FtpAdapter 协议交互无专属自动化目标，且缺真机复跑证据，把未取证的改动放进发版波不可取；单源化改造与真机验证清单留 v2.16。现场若命中，请先核对服务端类型与具体命令腿，并参照 #59 复现清单。
 
 ## [2.14.1] — 2026-10-18
 
