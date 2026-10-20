@@ -8,7 +8,8 @@
  *
  * Author: turnarond
  *
- * Description: 设备总线 UI 组件实现 — 胶囊式紧凑布局 + DeviceRegistry 档案视图。
+ * Description: 设备总线 UI 组件实现 — 只显已选 chips + 「设备 ▾」分组菜单收纳
+ *              （v2.16-B 任务4）+ DeviceRegistry 档案视图。
  */
 
 #include "DeviceBusWidget.h"
@@ -35,6 +36,8 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QDebug>
+#include <algorithm>
+#include <limits>
 
 namespace devicebus {
 
@@ -79,12 +82,38 @@ namespace {
 const QString kCredNone = QStringLiteral("（无凭据）");
 const QString kCredCreate = QStringLiteral("＋ 新建凭据…");
 
-// 胶囊主文案：名称优先（v2.11），地址为次级信息；无名称退回纯地址（旧行为）
-QString pillCaption(const QString& ipPart, const QString& name)
+// v2.16-B Step6 胶囊主文案（规格 §2.3 重画）：只显名称、不带 ip:port；
+// 空名必须回落地址（否则栏里出空白胶囊，比长更糟）；重名才追加 ·ip 短尾标。
+QString pillCaption(const QString& ipPart, const QString& name, bool duplicateName)
 {
-    if (!name.isEmpty() && name != ipPart)
-        return QStringLiteral("%1 %2").arg(name, ipPart);
-    return ipPart;
+    if (name.isEmpty())
+        return ipPart;
+    if (duplicateName)
+        return QStringLiteral("%1 ·%2").arg(name, ipPart.section(QLatin1Char(':'), 0, 0));
+    return name;
+}
+
+// 胶囊显示文本（含尾部 ×——裁定①保留，"移出选择"的视觉语言）
+QString pillText(const QString& ipPart, const QString& name, bool duplicateName)
+{
+    return pillCaption(ipPart, name, duplicateName) + QStringLiteral("  \xC3\x97");
+}
+
+// 重名判定集合：判据与 DeviceRegistry::rebuildWarnings（非空原始名出现 >1 次）
+// 同源。每次重建/每次开菜单算一次，逐胶囊查表，不在胶囊构造里重复扫全表。
+QSet<QString> duplicateNameSet(const QStringList& names)
+{
+    QMap<QString, int> counts;
+    for (const QString& name : names) {
+        if (!name.isEmpty())
+            ++counts[name];
+    }
+    QSet<QString> duplicates;
+    for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
+        if (it.value() > 1)
+            duplicates.insert(it.key());
+    }
+    return duplicates;
 }
 
 // 档案悬浮详情：逐端点 "协议 ip:port" + 备注（规格 §8：悬停可查看协议端点和备注）
@@ -405,7 +434,9 @@ void DeviceBusWidget::setupUi()
     mainLayout->setContentsMargins(0, 2, 0, 2);
     mainLayout->setSpacing(4);
 
-    // ── 第一行：设备胶囊 + 添加按钮 ──
+    // ── 第一行（v2.16-B 任务4 重画形态，规格 §2.3 / 视觉稿状态①-④）：
+    //    图标 → chips 宿主（只显已选，视觉态只切可见性）→ +M 台 → 空态提示
+    //    → 「设备 ▾」入口 → 行尾搜索框 → + 添加 ──
     auto* deviceRow = new QHBoxLayout();
     deviceRow->setSpacing(4);
 
@@ -413,13 +444,60 @@ void DeviceBusWidget::setupUi()
     deviceIcon->setStyleSheet(QStringLiteral("font-size: 14px;"));
     deviceRow->addWidget(deviceIcon);
 
-    // 设备胶囊容器（水平流式布局）
+    // 设备胶囊容器（水平流式布局）：一台设备一枚胶囊与 m_devices 平行；
+    // chips 形态下"只显示已选"由 rebuildChips()/applyPillOverflow() 切可见性兑现
     m_pillContainer = new QWidget(this);
+    m_pillContainer->setObjectName(QStringLiteral("selectedPillHost"));
     m_pillLayout = new QHBoxLayout(m_pillContainer);
     m_pillLayout->setContentsMargins(0, 0, 0, 0);
     m_pillLayout->setSpacing(4);
     m_pillLayout->addStretch(); // 胶囊左对齐
     deviceRow->addWidget(m_pillContainer, 1);
+
+    // 溢出折算按钮：+M 台（M>0 才显示）；挂"同一个"菜单实例（不是复制品）
+    m_moreBtn = new QPushButton(QStringLiteral("+0 台"), this);
+    m_moreBtn->setObjectName(QStringLiteral("devicePillMore"));
+    m_moreBtn->setFixedHeight(26);
+    m_moreBtn->hide();
+    deviceRow->addWidget(m_moreBtn);
+
+    // 空态提示（规格 §3.5：未选择任何设备＝没有目标）
+    m_hintLabel = new QLabel(QStringLiteral("未选择设备——点「设备 ▾」选目标"), this);
+    m_hintLabel->setObjectName(QStringLiteral("deviceBusHint"));
+    deviceRow->addWidget(m_hintLabel);
+
+    // 「设备 ▾」入口：QPushButton::setMenu()（setPopupMode 是 QToolButton 成员，
+    // QPushButton 没有——实读本地 qpushbutton.h 零命中，别照抄工具按钮写法）。
+    // 菜单必须每次 aboutToShow 重建，否则勾选态停在第一次构建的样子（Step 4）。
+    m_pickerBtn = new QPushButton(QStringLiteral("设备 ▾ 未选择"), this);
+    m_pickerBtn->setObjectName(QStringLiteral("devicePickerBtn"));
+    m_pickerBtn->setFixedHeight(26);
+    m_pickerMenu = new QMenu(this);
+    m_pickerBtn->setMenu(m_pickerMenu);
+    m_moreBtn->setMenu(m_pickerMenu);
+    connect(m_pickerMenu, &QMenu::aboutToShow, this, [this]() {
+        m_pickerMenu->clear();                                   // 每次重建
+        buildPickerMenuInto(m_pickerMenu);
+    });
+    connect(m_pickerMenu, &QMenu::aboutToHide, this, [this]() {
+        if (!m_pendingSelectionBroadcast) return;
+        m_pendingSelectionBroadcast = false;
+        rebuildChips();
+        emit deviceSelectionChanged();           // 勾 5 台 = 广播 1 次（用例断计数==1）
+    });
+    deviceRow->addWidget(m_pickerBtn);
+
+    // 行尾搜索框：过滤"下一次打开菜单时的可见项"（不实时重开菜单，规格 §0.3）；
+    // chips 显示的是已选集合，过滤全程不动已选（§3.4）
+    m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setObjectName(QStringLiteral("deviceSearchEdit"));
+    m_searchEdit->setFixedHeight(26);
+    m_searchEdit->setClearButtonEnabled(true);
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索 名称 / IP / 标签"));
+    connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
+        m_filterText = text;
+    });
+    deviceRow->addWidget(m_searchEdit);
 
     // + 添加按钮
     m_addButton = new QPushButton(QStringLiteral("+ \xE6\xB7\xBB\xE5\x8A\xA0"), this);
@@ -514,22 +592,67 @@ void DeviceBusWidget::setRegistry(DeviceRegistry* registry)
     refreshFromRegistry();
 }
 
+// ── v2.16-B 任务4 Step2：选中态显式 id 集合（规格 §2.4——chips 形态下
+// m_devices[i] ↔ m_pills[i] 的位置配对从机制上不能再作选中真相源）──
+QString DeviceBusWidget::makeSelectionKey(const QString& deviceId, const QString& ip)
+{
+    return deviceId.isEmpty()
+        ? QStringLiteral("ip:%1").arg(ip)          // 旧行无持久 id → ip 键
+        : QStringLiteral("id:%1").arg(deviceId);
+}
+
+QString DeviceBusWidget::selectionKey(const QPushButton* pill) const
+{
+    return makeSelectionKey(pill->property("deviceId").toString(),
+                            pill->property("deviceIp").toString());
+}
+
+QString DeviceBusWidget::keyForDevice(size_t index) const
+{
+    return makeSelectionKey(m_deviceIds[index],
+                            QString::fromStdString(m_devices[index].ip));
+}
+
+QString DeviceBusWidget::ipPartForDevice(size_t index) const
+{
+    const DeviceInfo& d = m_devices[index];
+    const QString ip = QString::fromStdString(d.ip);
+    if (m_registry)
+        return QStringLiteral("%1:%2").arg(ip).arg(d.port);   // 档案模式恒带端口
+    return (d.port > 0 && d.port != 21)
+        ? ip + QStringLiteral(":") + QString::number(d.port)  // 旧行为（addDevice 同式）
+        : ip;
+}
+
+QVector<DeviceBusWidget::BusEntry> DeviceBusWidget::collectEntries() const
+{
+    QVector<BusEntry> entries;
+    entries.reserve(static_cast<int>(m_devices.size()));
+    for (size_t i = 0; i < m_devices.size(); ++i) {
+        BusEntry entry;
+        entry.deviceId = m_deviceIds[i];
+        entry.name = QString::fromStdString(m_devices[i].alias);
+        entry.ipPart = ipPartForDevice(i);
+        entry.key = keyForDevice(i);
+        if (m_registry && !entry.deviceId.isEmpty()) {
+            if (const auto found = m_registry->find(entry.deviceId.toStdString()))
+                entry.profile = *found;
+        }
+        if (entry.profile.endpoints.empty())
+            entry.profile = fromDeviceInfo(m_devices[i]);    // 旧行合成（editProfileFor 同口径）
+        entry.toolTip = profileToolTip(entry.profile);
+        entries.push_back(entry);
+    }
+    return entries;
+}
+
 // 以注册表档案为唯一真相重建胶囊栏：名称优先、悬浮端点详情、双击编辑。
 // 只读不写库（device.list 回退行由 addDevice/编辑路径显式保留）。
-// 终审 Important 4：重建前快照选中档案 deviceId，重建后按 deviceId 恢复——
-// 任何档案新增/编辑/删除都不得清空胶囊选中范围（FtpDeployWidget 等宿主把
-// 空选中解释为「全部设备」，静默清空会放大单次部署的目标范围）。
+// 终审 Important 4：重建不得清空选中——v2.16-B Step2 起选中态真源是显式
+// m_selectedIds 集合，重建只需按当前档案集清理"已消失设备"的键（按 deviceId
+// 稳定的键跨新增/编辑保持；FtpDeployWidget 等宿主依赖"重建不清选择"语义）。
 void DeviceBusWidget::refreshFromRegistry()
 {
-    QSet<QString> selectedIds;
-    for (auto* pill : m_pills) {
-        if (pill->property("selected").toBool()) {
-            const QString id = pill->property("deviceId").toString();
-            if (!id.isEmpty())
-                selectedIds.insert(id);
-        }
-    }
-
     // 摘除旧胶囊与设备视图
     for (auto* pill : m_pills) {
         m_pillLayout->removeWidget(pill);
@@ -537,27 +660,35 @@ void DeviceBusWidget::refreshFromRegistry()
     }
     m_pills.clear();
     m_devices.clear();
-    if (!m_registry)
+    m_deviceIds.clear();
+    if (!m_registry) {
+        m_selectedIds.clear();   // 注册表解除：旧视图整体让位给 addDevice 路径，集合从零开始
+        emit deviceSelectionChanged();
         return;
+    }
 
+    QSet<QString> validKeys;
     for (const auto& profile : m_registry->list()) {
         if (profile.endpoints.empty())
             continue;
         DeviceInfo di = toDeviceInfo(profile, profile.endpoints.front());
         di.alias = profile.name;   // 空名回落旧地址展示（toDeviceInfo 会填 ip:port 占位）
         m_devices.push_back(di);
+        const QString deviceId = QString::fromStdString(profile.deviceId);
+        m_deviceIds.push_back(deviceId);
+        const QString key = makeSelectionKey(deviceId, QString::fromStdString(di.ip));
+        validKeys.insert(key);
 
         const QString ipPart = QStringLiteral("%1:%2")
             .arg(QString::fromStdString(di.ip))
             .arg(di.port);
-        const QString deviceId = QString::fromStdString(profile.deviceId);
         QPushButton* pill = createPill(ipPart, QString::fromStdString(profile.name),
                                        deviceId, profileToolTip(profile));
-        if (selectedIds.contains(deviceId))
-            pill->setProperty("selected", true);   // 选中范围跨重建保持
         m_pillLayout->insertWidget(m_pillLayout->count() - 1, pill);
         m_pills.push_back(pill);
     }
+    m_selectedIds.intersect(validKeys);   // 只清已消失设备的键，在册设备的选择原样保留
+    rebuildChips();                       // 选中范围跨重建保持（chips 可见性同步）
     emit deviceSelectionChanged();
 }
 
@@ -565,7 +696,8 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
                                          const QString& deviceId, const QString& toolTip)
 {
     auto* pill = new QPushButton(this);
-    pill->setText(pillCaption(ipPart, name) + QStringLiteral("  \xC3\x97"));
+    // 初始文案先按"非重名"落笔；rebuildChips() 每次重建时按重名集合单源修正
+    pill->setText(pillText(ipPart, name, false));
     pill->setObjectName(QStringLiteral("devicePill"));
     pill->setFixedHeight(26);
     pill->setCursor(Qt::PointingHandCursor);
@@ -577,13 +709,13 @@ QPushButton* DeviceBusWidget::createPill(const QString& ipPart, const QString& n
     if (!toolTip.isEmpty())
         pill->setToolTip(toolTip);
 
-    // 左键点击切换选中，右键点击删除设备，双击编辑档案
+    // v2.16-B Step5：chip 的存在本身即选中——左键语义＝移出选择（不再是"切换"，
+    // 切两次没有意义，规格 §2.3）；键式与菜单勾选共用 selectionKey（Step2 单源）。
+    // 右键删除设备、双击编辑档案保持现状（跳转与三项菜单在任务 6 落地）。
     pill->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(pill, &QPushButton::clicked, this, [this, pill]() {
-        bool sel = !pill->property("selected").toBool();
-        pill->setProperty("selected", sel);
-        pill->style()->unpolish(pill);
-        pill->style()->polish(pill);
+        m_selectedIds.remove(selectionKey(pill));
+        rebuildChips();
         emit deviceSelectionChanged();
     });
     connect(pill, &QPushButton::customContextMenuRequested, this, [this, pill]() {
@@ -740,6 +872,7 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
         if (d.ip == device.ip) return;
     }
     m_devices.push_back(device);
+    m_deviceIds.push_back(QString());   // 旧行无持久 deviceId → ip 键
 
     QString ipStr = QString::fromStdString(device.ip);
     QString ipPart = ipStr;
@@ -759,6 +892,7 @@ void DeviceBusWidget::addDevice(const DeviceInfo& device, bool persist)
     if (persist)
         persistLegacyRow(device);
 
+    rebuildChips();   // 新设备未选 → 先收起（chips 只显已选），可见性由集合统一判定
     emit deviceSelectionChanged();
 }
 
@@ -769,7 +903,9 @@ void DeviceBusWidget::removeDevice(const QString& ip)
     for (size_t i = 0; i < m_devices.size(); ++i) {
         if (m_devices[i].ip == ip.toStdString()) {
             port = m_devices[i].port;
+            m_selectedIds.remove(keyForDevice(i));   // v2.16-B Step2：设备消失即出集合
             m_devices.erase(m_devices.begin() + static_cast<ptrdiff_t>(i));
+            m_deviceIds.erase(m_deviceIds.begin() + static_cast<ptrdiff_t>(i));
             break;
         }
     }
@@ -794,17 +930,17 @@ void DeviceBusWidget::removeDevice(const QString& ip)
     ConfigStore::instance().remove(
         QStringLiteral("device.list"),
         QStringLiteral("%1:%2").arg(ip).arg(port));
+    rebuildChips();   // 视图/文案同步（被删胶囊已摘除，其余可见性不变）
     emit deviceSelectionChanged();
 }
 
 std::vector<DeviceInfo> DeviceBusWidget::selectedDevices() const
 {
+    // v2.16-B Step2：按显式集合从 m_devices 取，不再遍历 m_pills 的位置配对
     std::vector<DeviceInfo> result;
-    size_t n = std::min(m_devices.size(), m_pills.size());
-    for (size_t i = 0; i < n; ++i) {
-        if (m_pills[i]->property("selected").toBool()) {
+    for (size_t i = 0; i < m_devices.size(); ++i) {
+        if (m_selectedIds.contains(keyForDevice(i)))
             result.push_back(m_devices[i]);
-        }
     }
     return result;
 }
@@ -812,17 +948,17 @@ std::vector<DeviceInfo> DeviceBusWidget::selectedDevices() const
 std::vector<DeviceProfile> DeviceBusWidget::selectedDeviceProfiles() const
 {
     std::vector<DeviceProfile> result;
-    size_t n = std::min(m_devices.size(), m_pills.size());
-    for (size_t i = 0; i < n; ++i) {
-        if (!m_pills[i]->property("selected").toBool())
+    for (size_t i = 0; i < m_devices.size(); ++i) {
+        if (!m_selectedIds.contains(keyForDevice(i)))
             continue;
-        const QString deviceId = m_pills[i]->property("deviceId").toString();
+        const QString deviceId = m_deviceIds[i];
         if (m_registry && !deviceId.isEmpty()) {
-            if (const auto found = m_registry->find(deviceId.toStdString()))
+            if (const auto found = m_registry->find(deviceId.toStdString())) {
                 result.push_back(*found);
-        } else {
-            result.push_back(fromDeviceInfo(m_devices[i]));
+                continue;
+            }
         }
+        result.push_back(fromDeviceInfo(m_devices[i]));
     }
     return result;
 }
@@ -830,6 +966,189 @@ std::vector<DeviceProfile> DeviceBusWidget::selectedDeviceProfiles() const
 std::vector<DeviceInfo> DeviceBusWidget::allDevices() const
 {
     return m_devices;
+}
+
+// v2.16-B 任务4 Step2：菜单底部两条动作（真实实现；Step4 弹层按钮接同一缝）。
+// selectAllVisible 作用"当前过滤可见"的设备——可见集由 segments() 复算（与
+// 菜单构建同一条纯头真源；过滤词为空时可见=全集）。
+void DeviceBusWidget::selectAllVisible()
+{
+    const QVector<BusEntry> entries = collectEntries();
+    std::vector<DeviceProfile> profiles;
+    profiles.reserve(entries.size());
+    for (const auto& entry : entries)
+        profiles.push_back(entry.profile);   // 下标载体同源同序（规格 §2.1 定档）
+
+    const QList<devicebus::Segment> segments = devicebus::segments(profiles, m_filterText);
+    for (const auto& segment : segments) {
+        for (const int index : segment.profileIndexes)
+            m_selectedIds.insert(entries[index].key);
+    }
+    rebuildChips();
+    emit deviceSelectionChanged();
+}
+
+void DeviceBusWidget::clearSelection()
+{
+    m_selectedIds.clear();
+    rebuildChips();
+    emit deviceSelectionChanged();
+}
+
+// ── v2.16-B 任务4 Step4：「设备 ▾」弹层构建（分组即子菜单，勾选即选中）──
+// 每次 aboutToShow 清空重建：成本 = 一次 segments()；不持久化、不记忆展开态（§2.3）。
+// 成员 checked == 该设备在 m_selectedIds 里的成员判定——跨组一致性由集合兜住。
+void DeviceBusWidget::buildPickerMenuInto(QMenu* menu)
+{
+    const QVector<BusEntry> entries = collectEntries();
+    std::vector<DeviceProfile> profiles;
+    profiles.reserve(entries.size());
+    for (const auto& entry : entries)
+        profiles.push_back(entry.profile);   // 下标载体硬约束：与 entries 同源同序（§2.1 定档）
+
+    const QList<devicebus::Segment> segs = devicebus::segments(profiles, m_filterText);
+    int visibleTotal = 0;
+    for (const auto& seg : segs)
+        visibleTotal += seg.profileIndexes.size();   // 零命中组已由纯头排除，UI 不再判空
+
+    // 菜单项与 chips 同一文案真源（重名 ·ip 尾标，规格 §3.6）；每次开菜单算一次
+    QStringList allNames;
+    allNames.reserve(entries.size());
+    for (const auto& entry : entries)
+        allNames.append(entry.name);
+    const QSet<QString> duplicates = duplicateNameSet(allNames);
+
+    for (const auto& seg : segs) {
+        QMenu* sub = menu->addMenu(QStringLiteral("%1 %2/%3")
+                                       .arg(seg.tag)
+                                       .arg(seg.profileIndexes.size())
+                                       .arg(seg.total));
+        sub->setProperty("deviceGroup", seg.tag);
+        for (const int index : seg.profileIndexes) {
+            const BusEntry& entry = entries[index];
+            const QString text = pillCaption(entry.ipPart, entry.name,
+                                             duplicates.contains(entry.name));
+            QAction* act = sub->addAction(text);
+            act->setCheckable(true);
+            act->setProperty("deviceKey", entry.key);
+            act->setToolTip(entry.toolTip);      // 逐端点 协议 ip:port + 备注（profileToolTip）
+            const QString key = entry.key;
+            // 初始勾选态必须先于接线回灌：构建期 setChecked 不得计入 toggled 风暴
+            act->setChecked(m_selectedIds.contains(key));
+            connect(act, &QAction::toggled, this, [this, key](bool on) {
+                if (on)
+                    m_selectedIds.insert(key);
+                else
+                    m_selectedIds.remove(key);
+                m_pendingSelectionBroadcast = true;   // 由 aboutToHide 统一广播一次
+            });
+        }
+    }
+    if (visibleTotal == 0) {
+        // 规格 §3.4：全不命中只留一行不可点说明，底部两动作一并撤下
+        QAction* none = menu->addAction(QStringLiteral("无匹配设备（%1 台）")
+                                            .arg(static_cast<int>(entries.size())));
+        none->setEnabled(false);
+        return;
+    }
+    menu->addSeparator();
+    QAction* selectAll = menu->addAction(QStringLiteral("全选可见 %1 台").arg(visibleTotal));
+    connect(selectAll, &QAction::triggered, this, &DeviceBusWidget::selectAllVisible);
+    menu->addAction(QStringLiteral("清空选择"), this, &DeviceBusWidget::clearSelection);
+}
+
+void DeviceBusWidget::rebuildChips()
+{
+    // v2.16-B Step5：chips 视图同步——胶囊仍一台一枚与 m_devices 平行存在，
+    // "只显已选"与溢出收纳都只切可见性（视觉态不得删数据，规格 §2.3 +
+    // 本仓"少挂胶囊"事故教训：数据集合与视图必须分层）。
+    if (!m_pickerBtn || !m_hintLabel)
+        return;
+    // Step6：文案（含重名 ·ip 尾标）在每次重建时单源计算一次，逐胶囊查表
+    const QVector<BusEntry> entries = collectEntries();
+    QStringList allNames;
+    allNames.reserve(entries.size());
+    for (const auto& entry : entries)
+        allNames.append(entry.name);
+    const QSet<QString> duplicates = duplicateNameSet(allNames);
+
+    const size_t n = std::min(m_devices.size(), m_pills.size());
+    for (size_t i = 0; i < n; ++i) {
+        const bool sel = m_selectedIds.contains(keyForDevice(i));
+        QPushButton* pill = m_pills[i];
+        const QString text = pillText(entries[i].ipPart, entries[i].name,
+                                      duplicates.contains(entries[i].name));
+        if (pill->text() != text)
+            pill->setText(text);
+        if (pill->property("selected").toBool() != sel) {
+            pill->setProperty("selected", sel);         // 样式镜像（QSS/后续 eventFilter 消费）
+            pill->style()->unpolish(pill);
+            pill->style()->polish(pill);
+        }
+    }
+    m_hintLabel->setVisible(m_selectedIds.isEmpty());
+    m_pickerBtn->setText(m_selectedIds.isEmpty()
+        ? QStringLiteral("设备 ▾ 未选择")
+        : QStringLiteral("设备 ▾ 已选 %1 台").arg(static_cast<int>(m_selectedIds.size())));
+    applyPillOverflow();
+}
+
+int DeviceBusWidget::visiblePillBudget() const
+{
+    // 行宽预算 = 设备栏自身宽度 − 同行固定控件（可见者）的 sizeHint 宽度。
+    // 刻意不读 chips 宿主子控件的 width()：窗口未显示/布局瞬态时子控件宽度不可靠
+    //（实踩：隐藏窗口容器 100px 假预算把测试上下文折成全收起；show 时 0 宽瞬变
+    // 又反向放行全部，撑爆布局最小宽）。守恒用例只判数量不变，不判具体枚数
+    //（tests/AGENTS.md 约定 6）。预算 ≤0（极窄）时全部折进 +M 台，是合法收纳态。
+    if (!m_pickerBtn)
+        return std::numeric_limits<int>::max();   // setupUi 前（不可能有胶囊）= 永不折叠
+    const auto widthOf = [](const QWidget* w) {
+        return (w && !w->isHidden()) ? w->sizeHint().width() : 0;
+    };
+    int overhead = 40;   // 图标 + 布局 margin/spacing 的保守预留
+    overhead += widthOf(m_hintLabel) + widthOf(m_pickerBtn) + widthOf(m_moreBtn)
+              + widthOf(m_searchEdit) + widthOf(m_addButton);
+    return width() - overhead;
+}
+
+void DeviceBusWidget::applyPillOverflow()
+{
+    if (!m_moreBtn || m_pills.empty())
+        return;
+    const int budget = visiblePillBudget();
+    const int spacing = 4;
+    int shown = 0;
+    int folded = 0;
+    int selectedTotal = 0;
+    int used = 0;
+    const size_t n = std::min(m_devices.size(), m_pills.size());
+    for (size_t i = 0; i < n; ++i) {
+        if (!m_selectedIds.contains(keyForDevice(i))) {
+            m_pills[i]->setVisible(false);              // 未选 → 收起（chips 只显已选）
+            continue;
+        }
+        ++selectedTotal;
+        const int w = m_pills[i]->sizeHint().width();
+        const int cost = (shown > 0 ? spacing : 0) + w;
+        if (used + cost > budget) {
+            m_pills[i]->setVisible(false);              // 从尾部起折进 +M 台
+            ++folded;
+        } else {
+            m_pills[i]->setVisible(true);
+            used += cost;
+            ++shown;
+        }
+    }
+    m_moreBtn->setVisible(folded > 0);
+    m_moreBtn->setText(QStringLiteral("+%1 台").arg(folded));   // 守恒：shown + folded == selectedTotal
+    qInfo("DeviceBus chips overflow: budget=%d shown=%d folded=%d selected=%d",
+          budget, shown, folded, selectedTotal);
+}
+
+void DeviceBusWidget::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    applyPillOverflow();
 }
 
 void DeviceBusWidget::setOnlineStatus(const QString& ip, bool online)
