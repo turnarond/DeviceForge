@@ -834,7 +834,12 @@ bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
     // v2.16-B 修复轮1：clicked 的鼠标/键盘分道标记在此维护（协议见成员注释）。
     // 顺序保证：事件过滤器先于 QAbstractButton 收到事件；release 直落本胶囊
     // 且在 rect 内时先置标记，随后按钮同步 emit clicked 消费；press/dblclick/
-    // keypress 一律清空，杜绝跨激活残留。
+    // keypress 一律先清空——这挡掉的是**跨激活残留**：任何一次激活的 clicked 之前
+    // 必有 press 或 key 事件到达本过滤器并清空旧标记（终审项10 措辞订正：原写
+    // "杜绝跨激活残留"过头）。如实登记的例外：真双击的尾部 release 会重新置位标记
+    // 且没有 clicked 消费它（DblClick 已被吞、按钮无 down 态）——该残留在下一次
+    // press/key 时被清，真实键鼠路径读不到；唯一可被读到的误用是紧随真双击后对
+    // **同一枚**胶囊的程序化 click()，会被读成主体单击而不移出选择。
     if (auto* pill = qobject_cast<QPushButton*>(watched)) {
         if (pill->objectName() == QStringLiteral("devicePill")) {
             switch (event->type()) {
@@ -859,21 +864,29 @@ bool DeviceBusWidget::eventFilter(QObject* watched, QEvent* event)
         }
     }
     if (event->type() == QEvent::MouseButtonDblClick && m_registry) {
-        if (auto* pill = qobject_cast<QPushButton*>(watched)) {
-            if (pill->objectName() == QStringLiteral("devicePill")) {
-                // v2.16-B 任务5（规格 §2.3/§6②）：双击＝「打开这台设备」。
-                // 原 editProfileFor 角色让位给右键菜单第二项；本函数吞掉双击
-                // 事件（return true），QAbstractButton 收不到事件就不会补发
-                // clicked——chips 选中态不受双击影响。选中态净零的基线来自改动前
-                // HEAD eaf7bfc 的取证（旧 eventFilter 亦是 editProfileFor(pill);
-                // return true 吞同一事件，QTest::mouseDClick 只投单个 DblClick 不
-                // 经 press/release，clicked 恒为 0；三个已提交编辑槽先勾中、双击后
-                // 不再重勾即完成编辑，反证选中跨双击未变），并非在改后代码上重测旧
-                // 行为。新语义向前由 doubleClickEmitsTwoClickedAndKeepsSelection
-                // 实钉（clicked=0/广播=0/仍选中/恰好发一次 openDeviceRequested）。
-                if (const auto profile = profileForPill(pill))
-                    emit openDeviceRequested(*profile);
-                return true;
+        // 终审项2（2026-10-21，fix-before-merge）：双击只认**左键**——本分支此前不判
+        // button()，右键双击会既发射 openDeviceRequested（误触本版主打动作）又照常弹
+        // 出右键菜单（同函数 switch 的 MouseButtonRelease 臂判了左键、这里没判，两臂
+        // 口径不一致）。非左键的 DblClick 不吞事件，回落默认分发，右键语义只归右键
+        // 菜单一条路。
+        auto* dbl = static_cast<QMouseEvent*>(event);
+        if (dbl->button() == Qt::LeftButton) {
+            if (auto* pill = qobject_cast<QPushButton*>(watched)) {
+                if (pill->objectName() == QStringLiteral("devicePill")) {
+                    // v2.16-B 任务5（规格 §2.3/§6②）：双击＝「打开这台设备」。
+                    // 原 editProfileFor 角色让位给右键菜单第二项；本函数吞掉双击
+                    // 事件（return true），QAbstractButton 收不到事件就不会补发
+                    // clicked——chips 选中态不受双击影响。选中态净零的基线来自改动前
+                    // HEAD eaf7bfc 的取证（旧 eventFilter 亦是 editProfileFor(pill);
+                    // return true 吞同一事件，QTest::mouseDClick 只投单个 DblClick 不
+                    // 经 press/release，clicked 恒为 0；三个已提交编辑槽先勾中、双击后
+                    // 不再重勾即完成编辑，反证选中跨双击未变），并非在改后代码上重测旧
+                    // 行为。新语义向前由 doubleClickEmitsTwoClickedAndKeepsSelection
+                    // 实钉（clicked=0/广播=0/仍选中/恰好发一次 openDeviceRequested）。
+                    if (const auto profile = profileForPill(pill))
+                        emit openDeviceRequested(*profile);
+                    return true;
+                }
             }
         }
     }
@@ -1094,7 +1107,7 @@ std::vector<DeviceProfile> DeviceBusWidget::selectedDeviceProfiles() const
     for (size_t i = 0; i < m_devices.size(); ++i) {
         if (!m_selectedIds.contains(keyForDevice(i)))
             continue;
-        const QString deviceId = m_deviceIds[i];
+        const QString deviceId = m_deviceIds.at(i);   // 终审项6：lockstep 视图统一 .at() 响亮失败（同 :625/:646）
         if (m_registry && !deviceId.isEmpty()) {
             if (const auto found = m_registry->find(deviceId.toStdString())) {
                 result.push_back(*found);
@@ -1158,9 +1171,17 @@ void DeviceBusWidget::buildPickerMenuInto(QMenu* menu)
         profiles.push_back(entry.profile);   // 下标载体硬约束：与 entries 同源同序（§2.1 定档）
 
     const QList<devicebus::Segment> segs = devicebus::segments(profiles, m_filterText);
-    int visibleTotal = 0;
-    for (const auto& seg : segs)
-        visibleTotal += seg.profileIndexes.size();   // 零命中组已由纯头排除，UI 不再判空
+    // 终审项1（2026-10-21）：「全选可见 N 台」的 N = **按选中键去重后的台数**——多标签
+    // 设备在多个分组各出现一次，逐组求和（seg.profileIndexes.size() 直加）会把同一台
+    // 计进两组（80 台×2 标签 ⇒ 标 ~160、点完只入 80，标出数与实选数分叉）。去重键与
+    // m_selectedIds 同一个 selectionKey 口径（规格 §2.4），也与手册「选中集合里只算
+    // 一台」同源；selectAllVisible() 本就经集合插进去重，标出 N 与其实际补入台数恒等。
+    QSet<QString> visibleKeys;
+    for (const auto& seg : segs) {              // 零命中组已由纯头排除，UI 不再判空
+        for (const int index : seg.profileIndexes)
+            visibleKeys.insert(entries[index].key);
+    }
+    const int visibleTotal = visibleKeys.size();
 
     // 菜单项与 chips 同一文案真源（重名 ·ip 尾标，规格 §3.6）；每次开菜单算一次
     QStringList allNames;
@@ -1208,7 +1229,9 @@ void DeviceBusWidget::buildPickerMenuInto(QMenu* menu)
     // 修复轮1 finding3（规格 §2.3 订正本）：两条底部动作作用域刻意不对称——过滤生效时
     // 清空项文案必须自述范围（M=已选总数，含被过滤不可见的已选），否则用户会以为漏清；
     // 无过滤时保持朴素「清空选择」。
-    const QString clearText = m_filterText.isEmpty()
+    // 终审项8（2026-10-21）：已选为空时范围说明没有可自述的对象——过滤态+零已选曾渲染
+    // 字面「清空选择（全部 0 台）」，读起来像漏写；回退朴素文案（M>0 才带范围后缀）。
+    const QString clearText = (m_filterText.isEmpty() || m_selectedIds.isEmpty())
         ? QStringLiteral("清空选择")
         : QStringLiteral("清空选择（全部 %1 台）").arg(static_cast<int>(m_selectedIds.size()));
     menu->addAction(clearText, this, &DeviceBusWidget::clearSelection);
@@ -1315,8 +1338,21 @@ void DeviceBusWidget::applyPillOverflow()
     }
     m_moreBtn->setVisible(f.folded > 0);
     m_moreBtn->setText(QStringLiteral("+%1 台").arg(f.folded));   // 守恒：shown + folded == selectedTotal
-    qInfo("DeviceBus chips overflow: budget=%d shown=%d folded=%d selected=%d",
-          budget, f.shown, f.folded, f.selectedTotal);
+    // 终审项3（2026-10-21）：resizeEvent 每帧重算，此前每次 resize 都打一条 qInfo
+    // ⇒ 拖窗口=逐帧刷屏用户可见日志面板。改为**状态变化才记一行**（shown/folded/
+    // selected 三元组比对上次留档）——折叠态迁移本身是信息，同态重排是纯噪声；
+    // 不选"降级 qDebug"是因为 qInfo/qDebug 都经 LogBridge 进 lwlog、面板可见性由
+    // 级别过滤决定，本组件不可控——门控与级别配置无关，是更稳的口径。消息文本与
+    // 字段一字不改（tests/deploy/tst_deploy_toolbar_layout 各量测槽读的是自己的
+    // qInfo 打点，不消费本条，已先行核过）。
+    if (f.shown != m_lastOverflowShown || f.folded != m_lastOverflowFolded
+        || f.selectedTotal != m_lastOverflowSelected) {
+        qInfo("DeviceBus chips overflow: budget=%d shown=%d folded=%d selected=%d",
+              budget, f.shown, f.folded, f.selectedTotal);
+        m_lastOverflowShown = f.shown;
+        m_lastOverflowFolded = f.folded;
+        m_lastOverflowSelected = f.selectedTotal;
+    }
 }
 
 void DeviceBusWidget::resizeEvent(QResizeEvent* event)

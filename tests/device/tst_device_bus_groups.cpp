@@ -20,7 +20,6 @@
  */
 #include <QtTest>
 
-#include <QSet>
 #include <QStringList>
 #include <vector>
 

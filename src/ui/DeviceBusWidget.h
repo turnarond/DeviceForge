@@ -117,7 +117,9 @@ signals:
 protected:
     // v2.16-B 任务5：双击胶囊＝「打开这台设备」——吞掉双击事件并发射
     // openDeviceRequested(profileForPill(pill))（仅接入注册表后启用；原
-    // 「打开档案编辑对话框」角色让位，编辑退到右键菜单第二项，规格 §6②）
+    // 「打开档案编辑对话框」角色让位，编辑退到右键菜单第二项，规格 §6②）。
+    // 终审项2（2026-10-21）：只认**左键**双击——右键双击不再误发本信号（右键语义
+    // 唯一路径是右键菜单），非左键 DblClick 不吞事件、回落默认分发。
     bool eventFilter(QObject* watched, QEvent* event) override;
     // v2.16-B 任务4 Step5：行宽预算随窗口尺寸变化，重排 chips 可见性（§3.7）
     void resizeEvent(QResizeEvent* event) override;
@@ -173,7 +175,8 @@ private:
     // v2.16-B 修复轮1（规格 §2.3 订正本/§10 第 8 条）：chip 尾部「×」命中区判据。
     // 区宽＝胶囊自身 font 下尾标 "  ×" 的字宽（QFontMetricsF 实算，不拍脑袋）
     // + 样式按钮内部 padding（PM_ButtonMargin）；区为按钮右缘起覆盖该区宽的矩形。
-    // 实测数字与口径限制（QSS font-size 覆盖不进 QWidget::font()）见任务5修复报告。
+    // 口径限制见 cpp 侧 pillCloseZoneWidth 注释（终审项7 同批订正：QSS font-size 会
+    // 灌进 QWidget::font()；默认样式 22px、生产 QSS 16px）。
     static int pillCloseZoneWidth(const QPushButton* pill);
     static bool pillCloseZoneContains(const QPushButton* pill, const QPoint& pos);
     // ── v2.16-B 任务5：右键弹层"构建/分派"双段单源 ──
@@ -211,8 +214,12 @@ private:
     // QAbstractButton 对鼠标 release 与键盘 Space/Enter 都 emit clicked()，二者必须
     // 分道——鼠标：仅尾部「×」命中区移出选择（主体单击不改选择，双击因此才可达）；
     // 键盘：一律移出（可达性不丢）。eventFilter 在胶囊的鼠标 press/release/key-press
-    // 上维护本标记，clicked 处理器同步消费（release 直达 clicked 无事件间隙）；
-    // 无鼠标事件的激活（键盘/程序化 click()）看到的恒是空标记。QPointer 防悬挂。
+    // 上维护本标记，clicked 处理器同步消费（release 直达 clicked 无事件间隙）。
+    // 终审项10（2026-10-21 措辞订正，原句「杜绝跨激活残留」过头）：press/key 先于
+    // 每次 clicked 清空 ⇒ 键盘与后续鼠标激活读不到旧标记；唯一残留形态是真双击被吞
+    // 后的那次尾部 release 重新置位且无 clicked 消费——它在下一次 press/key 时被清，
+    // 真实键鼠路径不可达，唯一可被读到的误用是紧随真双击后对同一枚胶囊的程序化
+    // click()（会被读成主体单击而不移出）。QPointer 防悬挂。
     QPointer<QPushButton> m_chipReleasePill;
     bool m_chipReleaseInCloseZone = false;
 
@@ -224,6 +231,12 @@ private:
     QLineEdit*   m_searchEdit = nullptr;   // deviceSearchEdit：行尾搜索框
     QMenu*       m_pickerMenu = nullptr;   // 入口与 +M 台共用同一个菜单实例
     bool         m_pendingSelectionBroadcast = false;   // 菜单连勾多台→aboutToHide 只广播一次
+    // 终审项3（2026-10-21）：applyPillOverflow 的 qInfo 只在 shown/folded/selected
+    // 三元组变化时打印——resizeEvent 每帧重算，逐帧刷屏用户可见日志面板即缺陷；
+    // -1 哨兵=尚未记录过任何状态（首帧必打一条）。
+    int          m_lastOverflowShown = -1;
+    int          m_lastOverflowFolded = -1;
+    int          m_lastOverflowSelected = -1;
 
     QPushButton* m_addButton    = nullptr;
     QLineEdit*   m_userEdit     = nullptr;

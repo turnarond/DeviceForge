@@ -109,6 +109,19 @@ TaskStep makeStep(TaskStepType type, const QVariantMap& parameters = {})
 
 } // namespace
 
+// v2.16-B 终审项3 取证缝：捕获 applyPillOverflow 的生产 qInfo 行（"DeviceBus chips
+// overflow: ..."）。qInstallMessageHandler 收函数指针、带捕获 lambda 不可转换 ⇒
+// 文件作用域静态表；本进程 QtTest 串行执行槽函数，无并发写入窗口。
+static QStringList s_overflowLogLines;
+
+static void captureOverflowLog(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
+{
+    Q_UNUSED(type);
+    Q_UNUSED(ctx);
+    if (msg.contains(QLatin1String("DeviceBus chips overflow")))
+        s_overflowLogLines.append(msg);
+}
+
 class TstTaskCenterWidget : public QObject {
     Q_OBJECT
 
@@ -1087,6 +1100,43 @@ private slots:
         QVERIFY(!pill->isHidden());
     }
 
+    // ── 终审项2（2026-10-21，fix-before-merge）：双击只认左键 ──
+    // 缺陷形态：eventFilter 的 DblClick 分支不判 button() ⇒ 右键双击既发
+    // openDeviceRequested（误触本版主打动作）、又照常弹右键菜单（两臂口径不一致：
+    // release 臂判了左键、DblClick 臂没判）。注入单个构造的 DblClick(RightButton)
+    // （与 fullDoubleClickSequenceEmitsOpenOnce 同一投递通道 sendEvent）：必须
+    // 不发射 open；选中也不动——右双击事件未被吞、按钮置 down 但无 release，
+    // clicked 不会发生。左键双击仍发射由 fullDoubleClickSequenceEmitsOpenOnce 钉住。
+    void rightButtonDoubleClickDoesNotEmitOpen()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-rdbl"), QStringLiteral("右键双击机"),
+                                          QStringLiteral("10.8.33.1"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-rdbl"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+
+        const QPoint body(4, pill->height() / 2);
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(body),
+                        QPointF(pill->mapToGlobal(body)),
+                        Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(pill, &dbl);
+
+        QCOMPARE(openSpy.count(), 0);        // 缺陷形态：右键双击误发「打开这台设备」⇒ 1≠0 红
+        QCOMPARE(selectionSpy.count(), 0);   // 右键双击也不得改选择/广播
+        QVERIFY(bus.selectedIds().contains(QStringLiteral("id:dev-rdbl")));
+    }
+
     // ── ③ 尾部「×」区一次单击 ⇒ 移出选择并广播恰好一次（+命中区实测数字留证）──
     void closeZoneClickRemovesSelection()
     {
@@ -1106,7 +1156,11 @@ private slots:
                  qPrintable(QStringLiteral("夹具胶囊过窄（width=%1）").arg(pill->width())));
 
         // 取证（报告引用）：区宽实算＝「  ×」按胶囊自身 font 的字宽 + 样式内部 padding。
-        // 注意 QSS 的 font-size 覆盖不进 QWidget::font()，本数字是默认字体口径。
+        // 口径（终审项7 订正，任务 7 修复轮实测推翻旧句"QSS font-size 覆盖不进
+        // QWidget::font()"）：QSS 的 font-size **会**灌进 QWidget::font()——应用默认
+        // Microsoft YaHei UI 9pt，生产 QSS 下 #devicePill 的 12px 解析进 pill->font()；
+        // 本目标不加载 QSS，此处数字是默认样式口径（PM_ButtonMargin=6 ⇒ 区 22px；
+        // 生产 QSS 下实测 =0 ⇒ 16px，由 tst_deploy_toolbar_layout 钉桩）。
         const QFontMetricsF fm(pill->font());
         const int padding = pill->style()->pixelMetric(QStyle::PM_ButtonMargin, nullptr, pill);
         qInfo().noquote() << QStringLiteral(
@@ -1710,6 +1764,53 @@ private slots:
         QVERIFY(reopened.at(1)->isChecked());
     }
 
+    // ── 终审项1（2026-10-21）：「全选可见 N 台」的 N 按**去重台数**计 ──
+    // 缺陷形态：按组直加 seg.profileIndexes.size() ⇒ 多标签设备在两个组各计一次
+    //（夹具：双标签 1 台 + 单标签 1 台 = 2 台 3 个成员项，标出 3 台、实选 2 台）。
+    // 既有夹具全是单标签设备，所以任务级评审七轮都没看见这条——本用例是首个
+    // 多标签标出数钉桩。判据两头：N 逐字解析自标签文本且 ==2；点全选后
+    // selectedDevices().size() 与 N 相符（承诺兑现）。
+    void selectAllVisibleLabelCountsDistinctDevices()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile dual = makeProfile(QStringLiteral("dev-dual3"), QStringLiteral("三星机"),
+                                         QStringLiteral("10.8.32.1"), 21);
+        dual.tags = {"组A", "组B"};      // 一台两标签：菜单里两个组各出现一次
+        QVERIFY(registry.save(dual));
+        DeviceProfile alone = makeProfile(QStringLiteral("dev-alone3"), QStringLiteral("单机"),
+                                          QStringLiteral("10.8.32.2"), 21);
+        alone.tags = {"组B"};
+        QVERIFY(registry.save(alone));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* selectAll = nullptr;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->text().startsWith(QStringLiteral("全选可见")))
+                selectAll = a;
+        }
+        QVERIFY2(selectAll, "菜单底部未见「全选可见 N 台」动作");
+        QString digits;
+        for (const QChar& c : selectAll->text()) {
+            if (c.isDigit())
+                digits += c;
+        }
+        const int advertised = digits.toInt();
+        QCOMPARE(selectAll->text(), QStringLiteral("全选可见 2 台"));   // 缺陷形态：「全选可见 3 台」
+        QCOMPARE(advertised, 2);
+        selectAll->trigger();            // 重建前触发：指针仍有效（trigger 不重建菜单）
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), advertised);   // 标出=实选
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);                 // 硬线：全集不动
+    }
+
     // 底部动作只作用当前过滤可见集；全不命中时两条一并撤下（规格 §3.4）；
     // 过滤与开合菜单全程不清空既有选择、不改 allDevices()。
     void menuBottomActionsVisibleOnlyAndWithdrawn()
@@ -1876,6 +1977,56 @@ private slots:
         QMetaObject::invokeMethod(menu, "aboutToHide");
     }
 
+    // ── 终审项8（2026-10-21）：过滤态+零已选回退朴素「清空选择」──
+    // 缺陷形态：过滤生效且未选任何设备时渲染字面「清空选择（全部 0 台）」——
+    // 范围后缀的语义是"M 台含看不见的"，M=0 没有可自述的对象。两分支都钉：
+    // 空已选+过滤 → 朴素文案；对照组 非空已选+过滤 → 范围文案仍须在场（防
+    // "一律朴素"退化，clearUnderFilterDropsWholeSetAndLabelStatesScope 已钉
+    // 非空分支，此处以单设备夹具再锚一次判据）。
+    void clearLabelPlainWhenNoSelectionUnderFilter()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile jia = makeProfile(QStringLiteral("dev-jia8"), QStringLiteral("甲八"),
+                                        QStringLiteral("10.8.34.1"), 21);
+        jia.tags = {"组A"};
+        QVERIFY(registry.save(jia));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+
+        auto clearAction = [menu]() -> QAction* {
+            const auto acts = menu->actions();
+            for (QAction* a : acts) {
+                if (a->text().startsWith(QStringLiteral("清空选择")))
+                    return a;
+            }
+            return nullptr;
+        };
+
+        // 分支1：过滤生效 + 未选任何设备 ⇒ 朴素「清空选择」（缺陷形态：「（全部 0 台）」）
+        edit->setText(QStringLiteral("甲八"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* plainAct = clearAction();
+        QVERIFY2(plainAct, "过滤命中态菜单底部未见清空项");
+        QCOMPARE(plainAct->text(), QStringLiteral("清空选择"));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+
+        // 分支2（对照组）：过滤态+已选 1 台 ⇒ 范围文案恢复
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-jia8"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* scopedAct = clearAction();
+        QVERIFY2(scopedAct, "过滤命中态菜单底部未见清空项");
+        QCOMPARE(scopedAct->text(), QStringLiteral("清空选择（全部 1 台）"));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+    }
+
     // ── v2.16-B 任务4 Step5：chips 只显已选（视觉态只切可见性）+ 左键移出选择 ──
     void chipsShowOnlySelectedDevices()
     {
@@ -1995,6 +2146,45 @@ private slots:
         bus.selectAllVisible();
         QCOMPARE(static_cast<int>(visibleChips(bus).size())
                      + moreBtn->text().mid(1, moreBtn->text().size() - 3).toInt(), 80);
+    }
+
+    // ── 终审项3（2026-10-21）：applyPillOverflow 的 qInfo 只在状态变化时打 ──
+    // 缺陷形态：每次重算（含 resizeEvent 每帧）都打一条 ⇒ 拖窗口逐帧刷屏用户可见
+    // 日志面板。经 qInstallMessageHandler 捕获生产日志行（"DeviceBus chips
+    // overflow: ..."）计数：同态重算零新增（幂等 selectAllVisible ×2 + **只改高度**
+    // 的 resize ×2——预算只读 width()、胶囊 setFixedHeight(26) 不随栏高变 ⇒
+    // (shown/folded/selected) 三元组确定性不变；门控在 applyPillOverflow 尾部，
+    // resizeEvent 与动作路径共用同一段）；三元组变化恰好各补 1 条
+    //（清空 5→0、恢复全选 0→5）。静音放行同样不合格——afterClear 钉"变化必留痕"。
+    void chipOverflowLogOnlyOnStateChange()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 5; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-log%1").arg(i),
+                                              QStringLiteral("志%1").arg(i),
+                                              QStringLiteral("10.8.31.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(300, 100);                 // 窄行全折叠态（同任务4守恒槽的折叠分支定档）
+        bus.selectAllVisible();               // (shown,folded,selected)=(0,5,5)
+
+        s_overflowLogLines.clear();
+        QtMessageHandler previous = qInstallMessageHandler(captureOverflowLog);
+        bus.selectAllVisible();               // 同态幂等重算 ×2
+        bus.selectAllVisible();
+        bus.resize(300, 120);                 // resizeEvent 重算 ×2：宽度未变⇒预算不变⇒同态
+        bus.resize(300, 140);
+        const int afterNoop = s_overflowLogLines.size();
+        bus.clearSelection();                 // selected 5→0：状态变化 ⇒ 恰好补 1 条
+        const int afterClear = s_overflowLogLines.size();
+        bus.selectAllVisible();               // 0→5：再补 1 条
+        const int afterSelect = s_overflowLogLines.size();
+        qInstallMessageHandler(previous);
+
+        QCOMPARE(afterNoop, 0);      // 缺陷形态：四次同态重算全打 ⇒ 4≠0 红
+        QCOMPARE(afterClear, 1);     // 状态变化必须留痕且只 1 条（静音/逐帧都不合格）
+        QCOMPARE(afterSelect, 2);
     }
 
     // ── v2.16-B 任务4 Step6：胶囊文案只显名称（去 ip:port）；空名回落地址；仅重名加 ·ip ──

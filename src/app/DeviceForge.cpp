@@ -319,8 +319,19 @@ void DeviceForge::openDeviceAt(const DeviceProfile& profile)
     // 只有部署页有"选中这台"语义（§2.2 实测表）：Telnet/MODBUS/OPC UA 一律只切页，
     // 绝不为了"看起来选中了"去动它们的目标集（§2.4 allDevices() 硬线）。
     if (route.page == deviceopen::Page::FtpDeploy) {
-        if (auto* deploy = qobject_cast<FtpDeployWidget*>(page))
-            deploy->selectDeviceByIp(route.ip);
+        if (auto* deploy = qobject_cast<FtpDeployWidget*>(page)) {
+            // 终审项5（2026-10-21）：selectDeviceByIp 返回 false 曾被吞掉=半成功静默。
+            // 组合键实读为 allDevices() 前台端点纯 ip（FtpDeployWidget.cpp:1571-1573
+            // addItem(d.ip)，d 来自 toDeviceInfo(profile, endpoints.front())），而
+            // route.ip 是 routeTo **扫到的首个可用端点** ip——两者不同源时（首个端点
+            // 协议不可识别/空 ip 被跳过）findText 落空：页已切过去、目标选择器却没
+            // 落到这台。按 §2.2/§3 的提示口径给一条状态栏消息，不再无声半成功。
+            if (!deploy->selectDeviceByIp(route.ip)) {
+                statusBar()->showMessage(
+                    QStringLiteral("已切到文件部署页，但设备下拉中没有该设备的条目（命中端点 %1），请手动选择目标")
+                        .arg(route.ip), 4000);
+            }
+        }
     }
 
     // 日志脱敏（仓库硬线）：只记设备名 + 协议 + 页名，无凭据、无端点口令、无内容。
