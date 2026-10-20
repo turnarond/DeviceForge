@@ -692,6 +692,19 @@ if(_qt_bin_dir)
             "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
 
+# --- v2.16-B 设备栏分组与打开路由纯头测试（无 Store/无 QWidget）---
+add_executable(tst_device_bus_groups
+    device/tst_device_bus_groups.cpp
+)
+target_include_directories(tst_device_bus_groups PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(tst_device_bus_groups PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME tst_device_bus_groups COMMAND tst_device_bus_groups)
+if(_qt_bin_dir)
+    set_tests_properties(tst_device_bus_groups PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
 # --- TaskTemplateStore 模板数据模型与持久化测试（v2.11 Task 3）---
 add_executable(tst_task_template_store
     task/tst_task_template_store.cpp
