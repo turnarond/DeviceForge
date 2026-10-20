@@ -134,8 +134,8 @@ DeviceForge::DeviceForge(QWidget* parent)
             m_toolStack->setCurrentIndex(index);
         }
         // 部署页（index 0）激活时显示方向指示，其他 Tool 页隐藏（Task 5）
-        if (m_directionLabel)
-            m_directionLabel->setVisible(index == 0 && m_ftpDeployTab != nullptr);
+        // v2.16-B 修复轮1：规则抽入 updateDirectionLabelVisibility 单源（判据不变）
+        updateDirectionLabelVisibility(index);
         // 特殊处理：最后一个导航项是设置
         if (index == m_navBar->count() - 1) {
             SettingsDialog dlg(this);
@@ -144,9 +144,7 @@ DeviceForge::DeviceForge(QWidget* parent)
             m_navBar->setActiveItem(m_toolStack->currentIndex());
             // 对话框经导航关闭后按恢复页重算方向标签可见性（Task 5 Minor 1：
             // 设置页 index 非 0，打开对话框时方向标签被隐藏，关闭后需恢复）
-            if (m_directionLabel)
-                m_directionLabel->setVisible(
-                    m_toolStack->currentIndex() == 0 && m_ftpDeployTab != nullptr);
+            updateDirectionLabelVisibility(m_toolStack->currentIndex());
         }
     });
 
@@ -273,6 +271,17 @@ static const char* deviceOpenPageName(deviceopen::Page page)
     return "Unknown";
 }
 
+// v2.16-B 修复轮1 Important 2：方向指示可见性单源。判据逐字沿用两处散点原式
+// （itemClicked lambda 的 index==0、设置对话框恢复处的 currentIndex()==0，均且仅且
+// 再与 m_ftpDeployTab 非空相与）——部署页恒为栈索引 0，故 activeIndex==0 即"在部署页"。
+// 无参读栈索引的写法会在"点击设置导航项"处改变现状（栈索引不变仍为 0 → 标签不隐藏），
+// 因此保持调用方传判据索引的形态。
+void DeviceForge::updateDirectionLabelVisibility(int activeIndex)
+{
+    if (m_directionLabel)
+        m_directionLabel->setVisible(activeIndex == 0 && m_ftpDeployTab != nullptr);
+}
+
 // v2.16-B 任务6：「打开这台设备」编排终点（规格 §2.2/§2.4/§3.9）。
 // 页定位一律 indexOf(页指针)——工具页索引随任务中心懒建而漂，不写魔数。
 void DeviceForge::openDeviceAt(const DeviceProfile& profile)
@@ -300,7 +309,12 @@ void DeviceForge::openDeviceAt(const DeviceProfile& profile)
 
     const int idx = m_toolStack->indexOf(page);
     m_toolStack->setCurrentIndex(idx);
+    // 前提钉桩：栈序=导航序（deploy0…opcua5、任务中心 6 懒建在末尾、设置为纯导航项），
+    // setActiveItem(栈索引) 才等于导航高亮；任务中心之后的页若改变这条恒等式需重查
     m_navBar->setActiveItem(idx);
+    // v2.16-B 修复轮1 Important 2：setActiveItem 不发 itemClicked（NavBar.cpp:34-48），
+    // 方向指示可见性不会随点击路径自动重算——双击落到/离开部署页时须在此补判
+    updateDirectionLabelVisibility(idx);
 
     // 只有部署页有"选中这台"语义（§2.2 实测表）：Telnet/MODBUS/OPC UA 一律只切页，
     // 绝不为了"看起来选中了"去动它们的目标集（§2.4 allDevices() 硬线）。

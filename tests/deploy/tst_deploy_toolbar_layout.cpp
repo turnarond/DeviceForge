@@ -455,13 +455,43 @@ private slots:
         QCOMPARE(deviceCombo->count(), 2);
         QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.1"));   // 首台
 
+        // ---- 修复轮 1 Important 1：把「走用户路径发射 currentTextChanged」钉成载荷断言 ----
+        // 判别力：blockSignals 变异（setCurrentIndex 前后屏蔽信号）下本 spy 恒 0 计数 → 必红；
+        // 既有 currentText/返回值断言对该变异不可分辨（等价变异 M3 的补位）。填充期
+        // blockSignals 发生在 spy 创建之前，故初始 0。
+        QSignalSpy signalSpy(deviceCombo, &QComboBox::currentTextChanged);
+        QVERIFY(signalSpy.isValid());
+        QCOMPARE(signalSpy.count(), 0);
+
+        // 右面板设备选择器 = 全页唯一可见的 panelDeviceCombo：左面板默认 local 源，
+        // 其设备选择器随 setSourceProto("local") 隐藏（FileBrowserPanel.cpp:268），
+        // 可见性判据是语义配对（右面板=部署目标浏览视图），不依赖 findChildren 顺序。
+        // 它是 currentTextChanged lambda（FtpDeployWidget.cpp:619-622）第一跳的观测点：
+        // 只换个字（blockSignals 形态）不会动它。
+        QComboBox* rightPanelDeviceCombo = nullptr;
+        const auto panelCombos = w.findChildren<QComboBox*>();
+        for (QComboBox* c : panelCombos) {
+            if (c->objectName() == QStringLiteral("panelDeviceCombo") && !c->isHidden())
+                rightPanelDeviceCombo = c;
+        }
+        QVERIFY2(rightPanelDeviceCombo,
+                 "未找到唯一可见的 panelDeviceCombo（右面板设备选择器；夹具失效信号）");
+        QCOMPARE(rightPanelDeviceCombo->currentText(), QStringLiteral("10.77.0.1"));
+
         // 命中第二台 → 返回 true 且 currentText 切到该 ip
         QVERIFY(w.selectDeviceByIp(QStringLiteral("10.77.0.2")));
         QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.2"));
+        // 切到**不同**设备 → 用户路径必须恰发射一次 currentTextChanged（==0 即 blockSignals 降级）
+        QCOMPARE(signalSpy.count(), 1);
+        // 信号路径的下游副作用：右面板源设备真正跟随（「打开即就绪」的可观测半边）
+        QCOMPARE(rightPanelDeviceCombo->currentText(), QStringLiteral("10.77.0.2"));
 
         // 未命中 → 返回 false 且 currentText 不变（不得回落到首台或清空）
         QVERIFY(!w.selectDeviceByIp(QStringLiteral("10.77.9.9")));
         QCOMPARE(deviceCombo->currentText(), QStringLiteral("10.77.0.2"));
+        // 未命中不得发射（也不得动右面板）
+        QCOMPARE(signalSpy.count(), 1);
+        QCOMPARE(rightPanelDeviceCombo->currentText(), QStringLiteral("10.77.0.2"));
     }
 };
 

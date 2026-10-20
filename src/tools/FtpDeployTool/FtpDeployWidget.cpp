@@ -1510,6 +1510,9 @@ bool FtpDeployWidget::selectDeviceByIp(const QString& ip)
 {
     if (!m_deviceCombo) return false;
     const int idx = m_deviceCombo->findText(ip);
+    // 已是当前项：返回 true 且不再触发同步——前提是所有 blockSignals 填充点
+    // （onRightSourceChanged:1494-1496、setDeviceBusWidget 重填 lambda）在填充后
+    // 都紧接自刷新（setSourceDevice/onRefreshRemote），故下拉与右面板源今日不可能失同步
     if (idx < 0 || m_deviceCombo->currentIndex() == idx) return idx >= 0;
     m_deviceCombo->setCurrentIndex(idx);   // 用户路径：右面板源同步 + onRefreshRemote
     return true;

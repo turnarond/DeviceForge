@@ -76,6 +76,11 @@ private:
     void setupNetRelayTab(); // 网络调试中继 Tool
     void setupTaskCenterTab(); // v2.11 设备任务中心（首次导航时懒创建）
 
+    // v2.16-B 修复轮1 Important 2：部署页方向指示可见性重算单源。规则与前两处散点逐字
+    // 一致——activeIndex（部署页=栈索引 0）为 0 且部署页存在才显示；程序化切页
+    // （openDeviceAt / 设置对话框恢复）不经 NavBar::itemClicked，调用方须在切页后补调。
+    void updateDirectionLabelVisibility(int activeIndex);
+
     // 在线更新集成（Task 5）
     void setupUpdateChecker();
     void onCheckUpdateTriggered(bool isAuto = false);
