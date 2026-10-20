@@ -14,6 +14,7 @@
 #include "DeviceBusWidget.h"
 #include "config/ConfigStore.h"
 #include "config/DpapiCrypto.h"
+#include "device/DeviceBusGroups.h"
 #include "device/DeviceRegistry.h"
 
 #include <QDialog>
@@ -196,12 +197,13 @@ public:
         profile.name = m_nameEdit->text().trimmed().toStdString();
         profile.note = m_noteEdit->text().trimmed().toStdString();
         profile.tags.clear();
-        // Qt6 split 默认跳过空段（CI Qt 6.9.2 兼容，不用 Qt::SplitBehavior 弃用重载）
-        const QStringList tags = m_tagsEdit->text().split(QLatin1Char(','));
-        for (const QString& tag : tags) {
-            const QString trimmed = tag.trimmed();
-            if (!trimmed.isEmpty())
-                profile.tags.push_back(trimmed.toStdString());
+        // v2.16-B §4：对话框切分改用规范化真源（现状本就 trimmed()+跳空，等值替换；
+        // 纯分隔符标签如 "/" 按 §2.1 判空不入库）
+        const QStringList rawTags = m_tagsEdit->text().split(QLatin1Char(','));
+        for (const QString& raw : rawTags) {
+            const QString normalized = devicebus::normalizeTag(raw);
+            if (!normalized.isEmpty())
+                profile.tags.push_back(normalized.toStdString());
         }
 
         std::vector<DeviceEndpoint> endpoints;

@@ -1,6 +1,7 @@
 #include "device/DeviceRegistry.h"
 
 #include "config/ConfigStore.h"
+#include "device/DeviceBusGroups.h"
 #include "device/DeviceProfileCodec.h"
 
 #include <QDebug>
@@ -108,8 +109,15 @@ DeviceProfile DeviceRegistry::normalize(const DeviceProfile& profile)
     normalized.name = trim(normalized.name);
     normalized.note = trim(normalized.note);
 
+    // v2.16-B §4：标签规范化单源化——行为等值的真源替换（现状本就 trim+去重+丢空）。
+    // normalizeTag 额外把纯分隔符标签（如 "/"）判为空不入库，与 §2.1 口径一致。
     std::vector<std::string> tags;
-    for (const auto& tag : normalized.tags) appendUnique(tags, trim(tag));
+    for (const auto& tag : normalized.tags) {
+        const QString one = devicebus::normalizeTag(QString::fromStdString(tag));
+        if (one.isEmpty()) continue;
+        const std::string value = one.toStdString();
+        if (std::find(tags.begin(), tags.end(), value) == tags.end()) tags.push_back(value);
+    }
     normalized.tags = std::move(tags);
 
     std::vector<DeviceEndpoint> endpoints;

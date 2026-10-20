@@ -641,6 +641,133 @@ private slots:
         QVERIFY(devices->item(0)->text().contains(QStringLiteral("10.1.0.1")));
     }
 
+    // ── ④b v2.16-B §4：模板 tagSelectors 带首尾空格时，圈选结果不得比规范化前小 ──
+    // 本规格唯一的行为变更站点（TaskCenterWidget::resolveTargets）：selector 与档案
+    // 标签两侧都先 devicebus::normalizeTag 再比较。改动前 selector " 车间A " 走
+    // std::find 精确相等匹配不上 ⇒ 目标 0 台（此用例当场红出）。
+    void resolveTargetsSelectorWithSurroundingSpacesStillMatches()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-tag-1"), QStringLiteral("车间A机器"),
+            QStringLiteral("10.7.0.1"), 21);
+        tagged.tags = {"车间A"};                     // registry 存库前已 trim，此处本就干净
+        QVERIFY(registry.save(tagged));
+        DeviceProfile untagged = makeProfile(
+            QStringLiteral("dev-tag-2"), QStringLiteral("无标机器"),
+            QStringLiteral("10.7.0.2"), 21);
+        QVERIFY(registry.save(untagged));            // 对照组：圈选不得误伤无标签设备
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("带空格圈选").toUtf8().toStdString();
+        tmpl.tagSelectors = {" 车间A "};             // 模板 JSON 侧从未 trim——真变更臂
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* summary = center.findChild<QLabel*>(QStringLiteral("templateSummaryLabel"));
+        QVERIFY(summary);
+        QVERIFY2(summary->text().contains(QStringLiteral("目标 1 台")),
+                 qPrintable(summary->text()));
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 1);               // 只命中 tagged，非恒真也非恒假
+        QVERIFY(devices->item(0)->text().contains(QStringLiteral("车间A机器")));
+    }
+
+    // ── ④c v2.16-B §4 等值守卫一：内部空格仍是区分手段（规范化只去首尾空白）──
+    // 防"顺手改成折叠空格/模糊匹配"：selector "车间 A" 对标签 "车间A" 必须仍不匹配。
+    // 该用例在改动前后都应绿——改动前精确相等不匹配，改动后 normalizeTag 保留内部空格。
+    void resolveTargetsSelectorInnerSpaceStillMisses()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-g1"), QStringLiteral("机器一"),
+            QStringLiteral("10.7.1.1"), 21);
+        tagged.tags = {"车间A"};
+        QVERIFY(registry.save(tagged));
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("内部空格守卫").toUtf8().toStdString();
+        tmpl.tagSelectors = {"车间 A"};
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 0);               // 内部空格不同 ⇒ 不匹配
+        auto* runBtn = center.findChild<QPushButton*>(QStringLiteral("btnTaskRun"));
+        QVERIFY(runBtn);
+        QCOMPARE(runBtn->isEnabled(), false);        // 空目标 ⇒ 执行按钮保持禁用
+    }
+
+    // ── ④d v2.16-B §4 等值守卫二：大小写仍是区分手段（规范化不碰大小写）──
+    // 防"顺手改成大小写不敏感"：selector "车间a" 对标签 "车间A" 必须仍不匹配。
+    void resolveTargetsSelectorCaseDifferenceStillMisses()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-g2"), QStringLiteral("机器二"),
+            QStringLiteral("10.7.2.1"), 21);
+        tagged.tags = {"车间A"};
+        QVERIFY(registry.save(tagged));
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("大小写守卫").toUtf8().toStdString();
+        tmpl.tagSelectors = {"车间a"};
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 0);               // 大小写不同 ⇒ 不匹配
+    }
+
     // ── ⑤ 执行确认：摘要+风险提示；拒绝则不启动、不落记录 ─────────
     void taskCenter_riskConfirmation()
     {

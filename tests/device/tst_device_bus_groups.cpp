@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "device/DeviceProfile.h"
-#include "ui/DeviceBusGroups.h"
+#include "device/DeviceBusGroups.h"
 #include "ui/DeviceOpenRouter.h"
 
 namespace {

@@ -15,6 +15,7 @@
 
 #include "config/ConfigStore.h"
 #include "config/DpapiCrypto.h"
+#include "device/DeviceBusGroups.h"
 #include "device/DeviceRegistry.h"
 #include "task/TaskExecutionEngine.h"
 #include "task/TaskRunAggregate.h"
@@ -387,12 +388,14 @@ std::vector<DeviceProfile> TaskCenterWidget::resolveTargets(const TaskTemplate& 
         }
     }
     // 标签圈选：任一标签命中即纳入（同设备多标签不重复）
+    // v2.16-B §4 唯一行为变更：selector（模板 JSON，从未 trim）与档案标签两侧
+    // 都先经 devicebus::normalizeTag 再比较——带首尾空格的 selector 从"静默匹配
+    // 不上"变为匹配得上；大小写与内部空格口径不变（等值守卫用例钉住）。
     if (!task.tagSelectors.empty()) {
         for (const auto& profile : m_registry->list()) {
             bool matched = false;
             for (const auto& selector : task.tagSelectors) {
-                if (std::find(profile.tags.begin(), profile.tags.end(), selector)
-                        != profile.tags.end()) {
+                if (devicebus::hasNormalizedTag(profile, QString::fromStdString(selector))) {
                     matched = true;
                     break;
                 }
