@@ -84,7 +84,7 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_task_center_widget`：设备档案胶囊/编辑对话框与三栏任务中心 UI（v2.11）
 - `tst_task_center_e2e`：端到端集成——档案圈选→部署→命令→重启→恢复→持久化记录→阶段恢复（v2.11）
 
-当前共 34 个 QtTest/CTest 目标，以 `tests/CMakeLists.txt` 中的 `add_test()` 为准。
+当前共 53 个 QtTest/CTest 目标（v2.16-B 计数定版 2026-10-21，`ctest -C Release -N` 的 `Total Tests: 53` 与 `tests/CMakeLists.txt` 的 53 条 `add_test` 吻合）。**上面的列表只到 v2.11 期**，逐目标与被测物映射的权威清单在 `tests/AGENTS.md`（含 v2.12—v2.16-B 各波的 +N 算式），本文件不重复维护。
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -437,6 +437,8 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - **OPC UA 客户端（open62541 v1.5.5，单文件分发版）**：`OpcUaClientWidget` + `OpcUaClientBackend`（`src/tools/OpcUaClientTool/`）+ `OpcUaAdapter`（`src/adapter/`）。首期 None 安全策略 + 匿名认证，支持批量读/写节点、DataChange 订阅、地址空间浏览。open62541 单文件版功能开关由 `open62541.h` 顶部 `#define` 块控制（**不能**用 `-DUA_ENABLE_X=0` 覆盖，open62541 用 `#ifdef`/`defined()` 判断，传 `=0` 反而定义宏激活代码路径）；已在头文件关闭 `UA_ENABLE_ENCRYPTION_MBEDTLS`（移除未 vendored 的 mbedTLS 依赖）。open62541 以 `UA_MULTITHREADING=100` 编译（内部已加锁，`UA_THREADSAFE` 函数可跨线程并发调用）；`OpcUaAdapter` 的 `recursive_mutex` 主要保护适配器自身状态（`m_subscriptionId`/`m_monContexts`/`m_connected` 等）。旧 `OpcUaClientTab` 演示桩已随 2026-08-02 清理删除
 
 - **同名 remove 语义分叉（2026-10-16 #54 实录）**：`TaskTemplateStore::remove` 对不存在/空 id 返回 **false**（exists() 前置守卫）；`ConfigStore::remove` 对零行 DELETE 返回 **true**（exec 成功即真），`DeviceRegistry::remove` 因 `existed || storeRemoved` 组合对不存在 id 实际返回 **true**。新增 store 腿时先定口径、勿默认转发可证伪——UI 腿依赖 false 分支做"已被并行移除"复位。
+
+- **`QMessageBox::done(StandardButton)` 不映射 `question()` 的返回值（2026-10-21 v2.16-B 任务5 修复轮实录）**：自动化测试里应答模态 `QMessageBox::question()` 时，用 `box->done(QMessageBox::Yes)` **不会**让 `question()` 返回 `Yes`——返回值不是你传进去的那个按钮，于是"用户确认了"的分支断言全是**假绿**（本波先按 `done()` 写，靠单变量 A/B 复跑同一夹具只换应答方式即翻红当场撞出；Qt 6.11.1 本地实测，无 Qt 源码可查故以复跑为据）。**唯一可靠的自动化缝是点按钮本体**：`box->button(QMessageBox::Yes)` 拿到按钮后 `->click()`（`clicked` 才会走 QMessageBox 内部把标准按钮映射回 `done(buttonCode)` 的那条真路径）。波及面判定：`info()`/`warning()` 的返回值产品不观察，`done(Ok)` 无害；自己 `new QMessageBox` 再 `box.exec()` 的场景走 QDialog 契约、`done()` 成立——三类要分开，别把"done 一律不可用"当结论。参照用例：`tests/ui/tst_task_center_widget.cpp` 的 `removeMenuActionConfirmsAndDeletesProfile`（移出确认框应答 Yes）与 `legacyIpPortPillStillEditableViaMenu`（同型缺陷当场撞出处的注释）。
 
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
