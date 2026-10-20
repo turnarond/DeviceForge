@@ -8,11 +8,15 @@
  *
  * Author: turnarond
  *
- * Description: v2.16-B 设备栏分组纯头回归：devicebus::{normalizeTag, normalizedTags,
- *              hasNormalizedTag, ungroupedTag, matchesFilter, segments} 覆盖规格 §2.1
- *              五条规则（N 标签 N 组/未分组兜底、组序与未分组永远最后、命中过滤 + total、
- *              全不命中出空表、零成员组不出结果）、§2.4 同组去重，以及 Segment 成员载体
- *              profileIndexes 的空 deviceId 钉桩。纯逻辑、无 QWidget、无 ConfigStore。
+ * Description: v2.16-B 设备栏分组与打开路由纯头回归：devicebus::{normalizeTag,
+ *              normalizedTags, hasNormalizedTag, ungroupedTag, matchesFilter, segments}
+ *              覆盖规格 §2.1 五条规则（N 标签 N 组/未分组兜底、组序与未分组永远最后、
+ *              命中过滤 + total、全不命中出空表、零成员组不出结果）、§2.4 同组去重，
+ *              以及 Segment 成员载体 profileIndexes 的空 deviceId 钉桩；
+ *              deviceopen::{routeTo, Page, Route} 覆盖规格 §2.2（五类协议映射、
+ *              扫描跳过不可用端点取首个可解析者且 ip/port 与路由同源、旧行空协议
+ *              ftp 兜底、无可用端点 Page::None + 文案；opcua 仅纯头级，UI 不可达）。
+ *              纯逻辑、无 QWidget、无 ConfigStore。
  */
 #include <QtTest>
 
@@ -22,6 +26,7 @@
 
 #include "device/DeviceProfile.h"
 #include "ui/DeviceBusGroups.h"
+#include "ui/DeviceOpenRouter.h"
 
 namespace {
 
@@ -257,6 +262,146 @@ private slots:
         QCOMPARE(hit[0].total, 2);
         const QList<int> onlyP2{1};
         QCOMPARE(hit[0].profileIndexes, onlyP2);
+    }
+
+    // §2.2 路由：ftp/ftps/sftp → FtpDeploy，且 Route 必须同携带命中端点的 ip/port
+    //（部署页下拉的条目键就是纯 ip——路由与选中必须同源，FtpDeployWidget.cpp:1544/1563）
+    void routeFtpFamilyGoesToDeployPage()
+    {
+        const auto ftpProfile = makeProfile(QStringLiteral("dev-f"), QStringLiteral("甲"),
+                                            QStringList{}, QStringLiteral("ftp"),
+                                            QStringLiteral("10.0.0.5"), 21);
+        const auto ftpRoute = deviceopen::routeTo(ftpProfile);
+        QCOMPARE(ftpRoute.page, deviceopen::Page::FtpDeploy);
+        QCOMPARE(ftpRoute.ip, QStringLiteral("10.0.0.5"));
+        QCOMPARE(ftpRoute.port, 21);
+
+        const auto sftpProfile = makeProfile(QStringLiteral("dev-s"), QStringLiteral("乙"),
+                                             QStringList{}, QStringLiteral("sftp"),
+                                             QStringLiteral("10.0.0.7"), 22);
+        const auto sftpRoute = deviceopen::routeTo(sftpProfile);
+        QCOMPARE(sftpRoute.page, deviceopen::Page::FtpDeploy);
+        QCOMPARE(sftpRoute.ip, QStringLiteral("10.0.0.7"));   // 部署页下拉的键就是纯 ip
+        QCOMPARE(sftpRoute.port, 22);
+
+        // 协议比对口径：trim + 小写（" FtpS " 也必须命中）
+        const auto ftpsProfile = makeProfile(QStringLiteral("dev-x"), QStringLiteral("丙"),
+                                             QStringList{}, QStringLiteral(" FtpS "),
+                                             QStringLiteral("10.0.0.9"), 990);
+        const auto ftpsRoute = deviceopen::routeTo(ftpsProfile);
+        QCOMPARE(ftpsRoute.page, deviceopen::Page::FtpDeploy);
+        QCOMPARE(ftpsRoute.ip, QStringLiteral("10.0.0.9"));
+        QCOMPARE(ftpsRoute.port, 990);
+    }
+
+    // §2.2 路由：telnet/ssh → BatchCommand（该页 §2.2 实测"只切页"，但 Route 的
+    // ip/port 仍须随命中端点带出——日志与后续能力都取用同源值）
+    void routeTelnetSshGoesToBatchCommand()
+    {
+        const auto telnetProfile = makeProfile(QStringLiteral("dev-t"), QStringLiteral("丁"),
+                                               QStringList{}, QStringLiteral("telnet"),
+                                               QStringLiteral("172.16.0.8"), 23);
+        const auto telnetRoute = deviceopen::routeTo(telnetProfile);
+        QCOMPARE(telnetRoute.page, deviceopen::Page::BatchCommand);
+        QCOMPARE(telnetRoute.ip, QStringLiteral("172.16.0.8"));
+        QCOMPARE(telnetRoute.port, 23);
+
+        const auto sshProfile = makeProfile(QStringLiteral("dev-h"), QStringLiteral("戊"),
+                                            QStringList{}, QStringLiteral("ssh"),
+                                            QStringLiteral("172.16.0.9"), 22);
+        const auto sshRoute = deviceopen::routeTo(sshProfile);
+        QCOMPARE(sshRoute.page, deviceopen::Page::BatchCommand);
+        QCOMPARE(sshRoute.ip, QStringLiteral("172.16.0.9"));
+        QCOMPARE(sshRoute.port, 22);
+    }
+
+    // §2.2 路由：modbus → Modbus（MODBUS 页未接总线，§2.2 实测表"只切页"；
+    // Route 仍同源携带命中端点 ip/port）
+    void routeModbusGoesToModbusPage()
+    {
+        const auto profile = makeProfile(QStringLiteral("dev-m"), QStringLiteral("己"),
+                                         QStringList{}, QStringLiteral("modbus"),
+                                         QStringLiteral("10.2.3.4"), 502);
+        const auto route = deviceopen::routeTo(profile);
+        QCOMPARE(route.page, deviceopen::Page::Modbus);
+        QCOMPARE(route.ip, QStringLiteral("10.2.3.4"));
+        QCOMPARE(route.port, 502);
+    }
+
+    // §2.2 路由：opcua → OpcUa —— 纯头可判；UI 不可达（端点协议白名单
+    // DeviceBusWidget.cpp:40-44 不含 opcua，规格 §2.2 边界自检出），不得谎称 UI 级验证
+    void routeOpcUaGoesToOpcUaPage()
+    {
+        const auto profile = makeProfile(QStringLiteral("dev-o"), QStringLiteral("庚"),
+                                         QStringList{}, QStringLiteral("opcua"),
+                                         QStringLiteral("10.9.9.9"), 4840);
+        const auto route = deviceopen::routeTo(profile);
+        QCOMPARE(route.page, deviceopen::Page::OpcUa);
+        QCOMPARE(route.ip, QStringLiteral("10.9.9.9"));
+        QCOMPARE(route.port, 4840);
+    }
+
+    // §2.2 判定口径（2026-10-20 裁定）：逐端点扫描，空 ip/协议不认识的端点跳过继续找，
+    // 首个可解析端点胜出——且路由页与选中键 ip 必须来自同一个端点（路由选 A、选中选 B 即自相矛盾）
+    void routePicksFirstResolvableEndpoint()
+    {
+        DeviceProfile profile = makeProfile(QStringLiteral("dev-multi"), QStringLiteral("辛"),
+                                            QStringList{}, QStringLiteral("telnet"),
+                                            QString() /*空 ip 端点*/, 23);
+        profile.endpoints.push_back({QStringLiteral("modbus").toStdString(),
+                                     QStringLiteral("10.2.3.4").toStdString(), 1502, {}});
+        const auto route = deviceopen::routeTo(profile);
+        QCOMPARE(route.page, deviceopen::Page::Modbus);          // 跳过了 [{ip:"", telnet}]
+        QCOMPARE(route.ip, QStringLiteral("10.2.3.4"));          // 命中端点自己的 ip，非首端点
+        QCOMPARE(route.port, 1502);                              // port 同源
+        QVERIFY(route.statusHint.isEmpty());                     // 有可用端点 ⇒ 不给提示文案
+    }
+
+    // §2.2 旧行兜底：device.list 合成档案协议列为空 ⇒ 按 ftp 处理
+    //（与编辑器 DeviceBusWidget.cpp:254「未知/空 → ftp」同口径——注意仅指"协议为空串"，
+    // 协议写了但不认识的是不可用端点，走扫描跳过口径，不是兜底）
+    void routeLegacyEmptyProtocolDefaultsToFtp()
+    {
+        DeviceProfile profile;
+        profile.deviceId = QStringLiteral("legacy-1").toStdString();
+        profile.name = QStringLiteral("旧行设备").toStdString();
+        profile.endpoints.push_back({QString().toStdString() /*协议列为空*/,
+                                     QStringLiteral("192.168.5.9").toStdString(), 21, {}});
+        const auto route = deviceopen::routeTo(profile);
+        QCOMPARE(route.page, deviceopen::Page::FtpDeploy);
+        QCOMPARE(route.protocol, QStringLiteral("ftp"));         // 兜底后的归一协议
+        QCOMPARE(route.ip, QStringLiteral("192.168.5.9"));       // 部署页下拉选中键
+        QCOMPARE(route.port, 21);
+    }
+
+    // §2.2 末行：有档案但整条扫不出一个可用端点（无端点/协议不认识/只剩空 ip）
+    // ⇒ Page::None + 状态栏文案「该设备没有可用的协议端点」（不切页，UI 编排归任务 6）
+    void routeWithoutUsableEndpointIsNoneWithHint()
+    {
+        // 臂 1：无端点
+        const auto empty = makeProfile(QStringLiteral("dev-e1"), QStringLiteral("空"),
+                                        QStringList{}, QString() /*makeProfile 协议空 ⇒ 不建端点*/);
+        const auto emptyRoute = deviceopen::routeTo(empty);
+        QCOMPARE(emptyRoute.page, deviceopen::Page::None);
+        QCOMPARE(emptyRoute.statusHint, QStringLiteral("该设备没有可用的协议端点"));
+
+        // 臂 2：协议写了但不认识（全扫无命中才 None——扫描跳过口径的收口臂）
+        const auto junk = makeProfile(QStringLiteral("dev-e2"), QStringLiteral("噪"),
+                                      QStringList{}, QStringLiteral("quantum"),
+                                      QStringLiteral("1.2.3.4"), 7);
+        const auto junkRoute = deviceopen::routeTo(junk);
+        QCOMPARE(junkRoute.page, deviceopen::Page::None);
+        QCOMPARE(junkRoute.statusHint, QStringLiteral("该设备没有可用的协议端点"));
+        QVERIFY(junkRoute.ip.isEmpty());                         // 不可路由就不给半截选中键
+
+        // 臂 3：有端点但 ip 全空/纯空白——trim 后判空，同样跳过收口
+        DeviceProfile blank;
+        blank.deviceId = QStringLiteral("dev-e3").toStdString();
+        blank.endpoints.push_back({QStringLiteral("ftp").toStdString(),
+                                   QStringLiteral("   ").toStdString(), 21, {}});
+        const auto blankRoute = deviceopen::routeTo(blank);
+        QCOMPARE(blankRoute.page, deviceopen::Page::None);
+        QCOMPARE(blankRoute.statusHint, QStringLiteral("该设备没有可用的协议端点"));
     }
 };
 
