@@ -56,6 +56,7 @@ set_tests_properties(tst_xxx PROPERTIES
 3. 测试类继承 QObject + private slots；数据驱动用 `QTest::addColumn/addRow`
 4. 异步行为用 QSignalSpy/QEventLoop + 超时兜底，禁止 sleep 式等待（参照 tst_panel_async）
 5. 禁止为绿灯删测试/skip 关键断言
+6. **几何类断言必须与屏宽/缩放无关**：顶层窗口 `resize(W,H)` 只是**请求**，会被窗口管理器钳到可用屏宽（实踩：`QT_SCALE_FACTOR=2` 下 1400 请求变 962 逻辑宽，GitHub windows runner 的虚拟屏同理），此时 `setChildrenCollapsible(false)` 的双栏按最小宽等比压缩，**比值断言会假红而策略没变**。写法：无条件判"序"（谁是扩展主体），把"倍数"这种依赖兑现宽度的判据放进 `if (widget.width() >= 阈值)`，并 `qInfo` 打出走了哪条分支与实际尺寸——否则"这条断言在 CI 到底跑没跑"不可考。非虚设性用变异核：把产品 `setStretchFactor` 主次对调，判序那格必须红（本仓实测 738/640 红）。
 
 ## 命令
 

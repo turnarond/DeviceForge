@@ -232,10 +232,24 @@ void TstWsPageLayout::eventTableIsTheOnlyVerticalExpander()
 
     const QList<int> sizes = splitter->sizes();
     QCOMPARE(sizes.size(), 2);
-    // 右栏（事件流）承担绝大部分宽度
-    QVERIFY2(sizes.at(1) > sizes.at(0) * 2,
-             qPrintable(QStringLiteral("期望右栏显著宽于左栏，实际 %1/%2")
+    // 几何无关的那半：右栏必须确实宽于左栏（初始 320/640 加 stretch 0/1 的结果）
+    QVERIFY2(sizes.at(1) > sizes.at(0),
+             qPrintable(QStringLiteral("期望右栏宽于左栏，实际 %1/%2")
                             .arg(sizes.at(0)).arg(sizes.at(1))));
+    // 「显著宽」（≥2 倍）只在顶层窗口真正拿到足够宽度时才可判：runner 的虚拟屏或小逻辑宽屏
+    // （QT_SCALE_FACTOR=2 实测 960 逻辑宽）会把 1400 的请求钳到 ~940，此时
+    // setChildrenCollapsible(false) 让两栏按最小宽等比压缩成 360/580，比值退化不代表策略变了。
+    // 走哪条分支打一行 qInfo，避免"这条断言在 CI 上到底跑没跑"变成不可考。
+    if (widget.width() >= 1100) {
+        QVERIFY2(sizes.at(1) >= sizes.at(0) * 2,
+                 qPrintable(QStringLiteral("窗口宽 %1 时应右栏≥2×左栏，实际 %2/%3")
+                                .arg(widget.width()).arg(sizes.at(0)).arg(sizes.at(1))));
+        qInfo() << "eventTableIsTheOnlyVerticalExpander: 全量比值分支已判（widget.width="
+                << widget.width() << "sizes=" << sizes.at(0) << "/" << sizes.at(1) << ")";
+    } else {
+        qInfo() << "eventTableIsTheOnlyVerticalExpander: 屏宽受限，仅判序不判 2× 比值（widget.width="
+                << widget.width() << "sizes=" << sizes.at(0) << "/" << sizes.at(1) << ")";
+    }
     // 垂直方向：事件表占据面板主体（拉伸归一），旧版散架的根因即无扩展主体
     QVERIFY2(table->height() >= widget.height() * 0.6,
              qPrintable(QStringLiteral("事件表未成为垂直扩展主体，高度 %1").arg(table->height())));
