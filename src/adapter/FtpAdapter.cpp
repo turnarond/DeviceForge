@@ -158,17 +158,36 @@ struct FtpAdapter::Impl {
         return {};
     }
 
-    // --- 配置 CURL 通用选项（URL + 凭据 + 超时 + 安全加固） ---
-    void setupCommonOpts(CURL* curl, const std::string& url, long timeoutSec = 30) {
+    // --- 配置 CURL 通用选项（URL + 凭据 + 超时 + SylixOS 三禁 + 安全加固） ---
+    //
+    // 【单源约定 · GitHub #59】每个会做 FTP I/O 的 libcurl 腿都**必须先过本装配函数**：
+    // SylixOS 三禁里的禁令①（EPSV=0，强制 PASV）与禁令②（MULTICWD，逐级 CWD）由这里
+    // 一处保证。**禁止在任何腿里再写行内 `curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, …)`
+    // 或 `CURLOPT_FTP_FILEMETHOD, …`**——行内重复正是 #59 的缺陷形态（散在四处、
+    // 另四处漏设，两处口径分叉）。回归由 `tools/devtools/ftpguard.py` 静态守卫钉桩：
+    // 绕过本装配处又没自行设键的腿命中即红（CI 经 tools/tests 闸门）。
+    //
+    // 超时口径（非三禁项，勿顺手"改进"）：
+    //   · `timeoutSec`/`connectTimeoutSec` 默认 30/10 = 控制命令类腿的短超时；
+    //   · 批量传输腿（上传/下载/内存读写）按 kBulkTransfer* 两个常量传值，等价于
+    //     "不设总时长上限 + libcurl 默认连接超时"，与并入本装配前后逐字一致（issue #20）。
+    static constexpr long kBulkTransferTimeoutSec = 0L;
+    static constexpr long kBulkTransferConnectTimeoutSec = 300L; // = libcurl 默认值，非策略改动
+
+    void setupCommonOpts(CURL* curl, const std::string& url,
+                         long timeoutSec = 30, long connectTimeoutSec = 10) {
         SecureString credentials = userPwd();
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_USERPWD, credentials.c_str());
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeoutSec);
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connectTimeoutSec);
         curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-        // 逐级 CWD（MULTICWD）：SylixOS 的 cd() 只支持单级路径，
+        // SylixOS 禁令①：强制 PASV——嵌入式 FTP 服务实现对未知扩展命令 EPSV 常"挂等而非拒绝"，
+        // libcurl 的"被拒后自动回落 PASV"救不了挂等形态
+        curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
+        // SylixOS 禁令②：逐级 CWD（MULTICWD）——SylixOS 的 cd() 只支持单级路径，
         // SINGLECWD 发送 "CWD a/b" 多级相对路径会失败
         curl_easy_setopt(curl, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_MULTICWD);
         if (m_useFtps) {
@@ -367,7 +386,6 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     fseek(file, 0, SEEK_SET);
 
     std::string url = m_impl->buildUrl(remotePath);
-    SecureString userPwd = m_impl->userPwd();
 
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -378,8 +396,12 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
 
     m_impl->m_cancelled = false; // 重置取消标志
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    // SylixOS 禁令①②（EPSV=0 / MULTICWD）由单源装配处保证，勿在此行内重复 setopt（#59）。
+    // 超时按批量腿口径传值：TIMEOUT=0（不设总时长上限）+ CONNECTTIMEOUT=300（libcurl 默认），
+    // 与本腿并入装配处前的有效选项集逐字等价，不是超时策略改动。
+    m_impl->setupCommonOpts(curl, url,
+                            Impl::kBulkTransferTimeoutSec,
+                            Impl::kBulkTransferConnectTimeoutSec);
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, Impl::readCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, file);
@@ -393,15 +415,6 @@ bool FtpAdapter::uploadFile(const std::string& localPath, const std::string& rem
     // 正常慢速传输不受人为上限约束。控制命令类操作仍走 setupCommonOpts 的短 TIMEOUT。
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L); // SylixOS 等嵌入式 FTP 不支持 EPSV
-    if (m_impl->m_useFtps) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
 
     // 进度回调（同时用于取消检测）
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -488,23 +501,20 @@ bool FtpAdapter::downloadFile(const std::string& remotePath, const std::string& 
     }
 
     std::string url = m_impl->buildUrl(remotePath);
-    SecureString userPwd = m_impl->userPwd();
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    // SylixOS 禁令①②（EPSV=0 / MULTICWD）由单源装配处保证，勿在此行内重复 setopt（#59）：
+    // 本腿是 #59 里唯一两条禁令同时失守的下载腿，改走装配处后与上传腿同口径。
+    // 超时按批量腿口径传值（TIMEOUT=0 无上限 + CONNECTTIMEOUT=300 libcurl 默认），
+    // 与本腿并入装配处前的有效选项集逐字等价——长下载不受人为上限约束的原语义不变。
+    m_impl->setupCommonOpts(curl, url,
+                            Impl::kBulkTransferTimeoutSec,
+                            Impl::kBulkTransferConnectTimeoutSec);
+
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeToFileCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
     // 同 uploadFile：闲置判定替代总时长限制（issue #20）
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-    if (m_impl->m_useFtps) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
 
     m_impl->m_cancelled = false;
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -562,28 +572,23 @@ bool FtpAdapter::readFileToMemory(const std::string& remotePath, std::string& ou
     }
 
     std::string url = m_impl->buildUrl(remotePath);
-    SecureString userPwd = m_impl->userPwd();
 
     std::string buffer;
     MemSink sink{ &buffer, maxBytes, false };
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    // SylixOS 禁令①② 由单源装配处保证（#59）：本腿原带行内 EPSV=0 但缺 MULTICWD，
+    // 行内重复已并入装配处。超时按批量腿口径传值（TIMEOUT=0 无上限 + CONNECTTIMEOUT=300
+    // libcurl 默认），与本腿并入装配处前的有效选项集逐字等价。
+    m_impl->setupCommonOpts(curl, url,
+                            Impl::kBulkTransferTimeoutSec,
+                            Impl::kBulkTransferConnectTimeoutSec);
+
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeBoundedCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
-    // 与 downloadFile 同一序列：闲置判定替代总时长（issue #20）、协议白名单、FTPS 分支；
-    // EPSV=0 显式补齐（SylixOS 三条纪律；旧 downloadFile 未设属历史遗漏，此处不回退纪律）
+    // 与 downloadFile 同一序列：闲置判定替代总时长（issue #20）；
+    // 协议白名单与 FTPS 校验分支现由装配处单源提供，本腿不再复写
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
-    if (m_impl->m_useFtps) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
 
     m_impl->m_cancelled = false;
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -615,32 +620,28 @@ bool FtpAdapter::writeFileFromMemory(const std::string& remotePath, const std::s
     }
 
     std::string url = m_impl->buildUrl(remotePath);
-    SecureString userPwd = m_impl->userPwd();
 
     MemSource src{ &data, 0 };
     std::string response;
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_USERPWD, userPwd.c_str());
+    // SylixOS 禁令①② 由单源装配处保证（#59）：本腿原带行内 EPSV=0 但缺 MULTICWD，
+    // 行内重复已并入装配处。超时按批量腿口径传值（TIMEOUT=0 无上限 + CONNECTTIMEOUT=300
+    // libcurl 默认），与本腿并入装配处前的有效选项集逐字等价。
+    m_impl->setupCommonOpts(curl, url,
+                            Impl::kBulkTransferTimeoutSec,
+                            Impl::kBulkTransferConnectTimeoutSec);
+
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, readFromMemoryCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, &src);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(data.size()));
-    // 与 uploadFile 同一序列（闲置限时 / EPSV=0 / 协议白名单 / FTPS / 进度取消）
+    // 与 uploadFile 同一序列（闲置限时 / 协议白名单 / FTPS / 进度取消）：
+    // 后三者现由装配处单源提供，本腿只留自己专有的建目录与限时项
     curl_easy_setopt(curl, CURLOPT_FTP_CREATE_MISSING_DIRS, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "ftp,ftps");
-    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
-    if (m_impl->m_useFtps) {
-        curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
 
     m_impl->m_cancelled = false;
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -873,13 +874,15 @@ bool FtpAdapter::renameFile(const std::string& remotePath, const std::string& ne
 
 bool FtpAdapter::makeDirectory(const std::string& remotePath)
 {
-    // SylixOS 三禁核对（v2.15 波2 任务 8 接线时校验）：
-    // ① QUOTE 用根 URL + 绝对路径 MKD —— buildUrl("/") + "/"前缀路径，符合；
-    // ② MULTICWD 逐级 CWD —— setupCommonOpts 已设 CURLFTPMETHOD_MULTICWD，符合；
+    // SylixOS 三禁核对（GitHub #59 单源化后口径）：
+    // ① EPSV=0 与 ② MULTICWD —— 均由 `Impl::setupCommonOpts` 单源保证（禁令键在本腿内
+    //    一律不得行内复写；v2.15 波2 曾在此行内补 EPSV=0 属打补丁，#59 落地时已上移删除）。
     //    本函数只发单层 MKD（父层由 TransferExecutor 确保步自最浅缺失层起逐级创建），
     //    不依赖服务端多级 MKD 能力，符合"不支持多级路径"约束；
-    // ③ EPSV 禁用 —— setupCommonOpts 的控制命令短超时序列未设 CURLOPT_FTP_USE_EPSV
-    //    （与旧 downloadFile 历史遗漏同族），此处显式补齐、不回退纪律。
+    // ③ QUOTE 用根 URL + 绝对路径 —— buildUrl("/") 作请求 URL，路径按首斜杠绝对化后
+    //    拼进 MKD，保持原样。
+    // 静态守卫 tools/devtools/ftpguard.py 对 ①②③ 三条都钉了判据（③ 见其"窄口径"段），
+    // 绕过装配处的新腿命中即红。
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_impl->m_lastError = "curl_easy_init() 失败";
@@ -888,7 +891,6 @@ bool FtpAdapter::makeDirectory(const std::string& remotePath)
 
     std::string url = m_impl->buildUrl("/"); // QUOTE 操作用根 URL
     m_impl->setupCommonOpts(curl, url);
-    curl_easy_setopt(curl, CURLOPT_FTP_USE_EPSV, 0L);
     std::string response;
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, Impl::writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
