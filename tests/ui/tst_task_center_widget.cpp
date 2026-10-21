@@ -1,6 +1,7 @@
 // v2.11 Task 6：DeviceBus 设备档案展示/编辑 + TaskCenterWidget 三栏任务中心 UI 测试。
-// 覆盖：① 设备胶囊名称优先展示 + 端点详情悬浮；② 双击打开档案编辑对话框并经
-// DeviceRegistry 持久化（deviceProfileEdited 信号）；③ 无档案注册表时旧 ip:port
+// 覆盖：① 设备胶囊名称优先展示 + 端点详情悬浮；② 右键「编辑档案」打开档案编辑
+// 对话框并经 DeviceRegistry 持久化（deviceProfileEdited 信号；v2.16-B 任务5 起双击
+// 语义改判「打开这台设备」，编辑入口迁至右键菜单）；③ 无档案注册表时旧 ip:port
 // 行保持可用（回退兼容）；④ 任务中心模板列表/步骤摘要/目标设备名称+地址；
 // ⑤ 执行前确认（含风险提示），拒绝则不启动引擎、不落执行记录；
 // ⑥ 校验失败运行收口后历史表出现「失败」行，选中后「从失败阶段重试」可用，
@@ -28,6 +29,7 @@
 // 模态对话框经已布防的 QTimer 处理（exec 的嵌套事件循环会触发定时器）。
 #include <QtTest>
 
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QDialog>
@@ -37,17 +39,22 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QFontMetricsF>
 #include <QMessageBox>
+#include <QMenu>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSet>
 #include <QSpinBox>
+#include <QStyle>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
+#include <memory>   // v2.16-B 任务5：每用例可取消定时器上下文 m_timerGuard（unique_ptr）
 
 #include "config/ConfigStore.h"
 #include "device/DeviceRegistry.h"
@@ -60,6 +67,9 @@
 #include "task/TaskTemplateStore.h"
 #include "tools/FtpDeployTool/MultiProgressWidget.h"
 #include "ui/DeviceBusWidget.h"
+// v2.16-B 任务5：openDeviceRequested 载荷的目标页判定消费任务2纯头（勿在测试里
+// 另写一份协议→页映射；规格 §2.2）
+#include "ui/DeviceOpenRouter.h"
 
 namespace {
 
@@ -99,6 +109,19 @@ TaskStep makeStep(TaskStepType type, const QVariantMap& parameters = {})
 
 } // namespace
 
+// v2.16-B 终审项3 取证缝：捕获 applyPillOverflow 的生产 qInfo 行（"DeviceBus chips
+// overflow: ..."）。qInstallMessageHandler 收函数指针、带捕获 lambda 不可转换 ⇒
+// 文件作用域静态表；本进程 QtTest 串行执行槽函数，无并发写入窗口。
+static QStringList s_overflowLogLines;
+
+static void captureOverflowLog(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
+{
+    Q_UNUSED(type);
+    Q_UNUSED(ctx);
+    if (msg.contains(QLatin1String("DeviceBus chips overflow")))
+        s_overflowLogLines.append(msg);
+}
+
 class TstTaskCenterWidget : public QObject {
     Q_OBJECT
 
@@ -129,6 +152,143 @@ private:
     {
         const auto pills = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
         return pills.isEmpty() ? nullptr : pills.first();
+    }
+
+    // ── v2.16-B 任务4 夹具：设备栏第 1 行只显「已选 chips」，选择必须经菜单路径 ──
+    // 可见 chips = 已选且未被溢出折算收起的胶囊（未选/折叠的胶囊 isHidden()==true）。
+    QList<QPushButton*> visibleChips(DeviceBusWidget& bus)
+    {
+        QList<QPushButton*> out;
+        const auto pills = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
+        for (QPushButton* p : pills) {
+            if (!p->isHidden())
+                out.append(p);
+        }
+        return out;
+    }
+
+    // 递归找菜单成员项（QAction 携带 deviceKey 属性，分组子菜单同样命中）
+    QAction* pickerActionForKey(QMenu* menu, const QString& deviceKey)
+    {
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->property("deviceKey").toString() == deviceKey)
+                return a;
+            if (a->menu()) {
+                if (QAction* sub = pickerActionForKey(a->menu(), deviceKey))
+                    return sub;
+            }
+        }
+        return nullptr;
+    }
+
+    // 收集弹层里全部成员项（携带 deviceKey 属性的 QAction，跨分组子菜单递归）
+    QList<QAction*> menuMemberActions(QMenu* menu)
+    {
+        QList<QAction*> out;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->menu())
+                out += menuMemberActions(a->menu());
+            else if (a->property("deviceKey").isValid())
+                out.append(a);
+        }
+        return out;
+    }
+
+    // 经真实菜单路径勾中一台设备：invokeMethod 直发 aboutToShow/aboutToHide，
+    // 等价于弹出并关闭菜单（重建与勾选走同一批接线，不弹真实弹层，CI 无窗口依赖）。
+    void selectDeviceViaMenu(DeviceBusWidget& bus, const QString& deviceKey)
+    {
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* act = pickerActionForKey(menu, deviceKey);
+        QVERIFY2(act, qPrintable(QStringLiteral("菜单缺少键 %1 的成员项").arg(deviceKey)));
+        act->toggle();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+    }
+
+    // 勾中全部可见设备（菜单底部「全选可见 N 台」的公开动作路径）
+    void selectAllViaMenu(DeviceBusWidget& bus)
+    {
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* selectAll = nullptr;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->text().startsWith(QStringLiteral("全选可见")))
+                selectAll = a;
+        }
+        QVERIFY2(selectAll, qPrintable(QStringLiteral("菜单底部未见「全选可见 N 台」动作，实际首项: %1")
+                                            .arg(acts.isEmpty() ? QStringLiteral("(空)") : acts.first()->text())));
+        selectAll->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+    }
+
+    // ── v2.16-B 任务5：胶囊右键菜单自动化缝（brief 核准的备选缝）──
+    // brief 主缝是 QTest::mouseClick 右键 + 布防定时器在 topLevelWidgets 里猎取
+    // QMenu 触发「编辑档案」。本环境主缝不可达（见任务5报告的探针实测）：
+    // QTest::mouseClick(pill, Qt::RightButton) 不产生 customContextMenuRequested
+    //（不经 QWidgetWindow 的 release→contextMenu 分发），主缝连生产 lambda 都进
+    // 不去。故采用 brief 核准的备选缝：菜单构建与分派都收口在产品的 Q_INVOKABLE
+    // 单源方法 buildPillMenu/dispatchPillMenuAction 上（生产 contextMenuRequested
+    // 走的正是这对方法，非测试专用脚手架），测试经元对象驱动"同一构建→按文本找项
+    // →同一分派"。覆盖如实登记：本缝覆盖菜单构建/次序/分派路由，未覆盖 lambda 内
+    // menu->exec 的弹层取返回值 wiring——那段归任务 9 人工/实机验收。
+    // 失败响亮：构建返回空→m_menuNotFound；目标项不在菜单→m_menuActionMissing；
+    // 两者都让用例判红，"模拟缝没生效"不许伪装成绿。
+    bool m_menuNotFound = false;
+    bool m_menuActionMissing = false;
+    bool m_menuTriggered = false;
+    QStringList m_menuCapturedTexts;   // 触发时刻菜单项全文（次序/形态断言用）
+
+    void triggerPillMenuAction(DeviceBusWidget& bus, QPushButton* pill, const QString& actionText)
+    {
+        m_menuNotFound = false;
+        m_menuActionMissing = false;
+        m_menuTriggered = false;
+        m_menuCapturedTexts.clear();
+        QMenu* menu = nullptr;
+        const bool built = QMetaObject::invokeMethod(&bus, "buildPillMenu",
+                                                     Qt::DirectConnection,
+                                                     Q_RETURN_ARG(QMenu*, menu));
+        if (!built || !menu) {
+            m_menuNotFound = true;
+            return;
+        }
+        const auto actions = menu->actions();
+        for (QAction* action : actions)
+            m_menuCapturedTexts << action->text();
+        QString role;
+        for (QAction* action : actions) {
+            if (action->text() == actionText) {
+                role = action->property("pillMenuRole").toString();
+                break;
+            }
+        }
+        // 分派只依赖 role 字符串与 pill，菜单此刻即可销毁（防悬垂/防泄漏两吃）
+        delete menu;
+        if (role.isEmpty()) {
+            m_menuActionMissing = true;
+            return;
+        }
+        m_menuTriggered = true;
+        QMetaObject::invokeMethod(&bus, "dispatchPillMenuAction",
+                                  Qt::DirectConnection,
+                                  Q_ARG(QPushButton*, pill), Q_ARG(QString, role));
+    }
+
+    // 三个现存槽的迁移入口：原 mouseDClick（任务5 起双击语义已让位给
+    // 「打开这台设备」）改走右键菜单「编辑档案」
+    void openEditMenu(DeviceBusWidget& bus, QPushButton* pill)
+    {
+        triggerPillMenuAction(bus, pill, QStringLiteral("编辑档案"));
     }
 
     // ── v2.13 Task 4：模板导入用例 helper ──
@@ -176,6 +336,22 @@ private:
     QString m_dialogText;
     bool m_dialogClosed = false;
 
+    // v2.16-B 任务5 Step1 取证：双击是否弹出了档案编辑对话框（布防定时器命中置真）
+    bool m_forensicEditorDialogOpened = false;
+    QString m_legacyNote;   // legacyIpPort 槽诊断（仅失败信息导出用）
+    // v2.16-B 修复轮1 finding2：「移除设备」role 分派时确认框的文案与应答实况
+    //（未弹框/未命中则 m_removeBoxAnswered 保持 false，用例响亮判红）
+    QString m_removeBoxText;
+    bool m_removeBoxAnswered = false;
+
+    // v2.16-B 任务5：每个用例独享的可取消定时器上下文。设备类用例常在对话框
+    // exec 的嵌套事件循环里用 QTimer::singleShot 布防"命中即改名保存 / 兜底强关
+    // 编辑器 / 反向兜底探测误弹编辑框"。裸 lambda 或以 this 为上下文的 singleShot
+    // 会在本用例返回后仍悬挂到默认事件循环，被**下一个**用例的 dialog.exec 兑现，
+    // 提前 close/answer 掉后一用例刚弹出的编辑器（实测把 legacy 槽的 exec 秒退回
+    // Rejected）。绑到本对象上：cleanup() 里 reset 即撤销所有未兑现的挂起定时器。
+    std::unique_ptr<QObject> m_timerGuard;
+
 private slots:
     void initTestCase()
     {
@@ -195,12 +371,20 @@ private slots:
     void init()
     {
         freshDb();
+        m_timerGuard = std::make_unique<QObject>();   // 本用例定时器上下文（cleanup 撤销挂起定时器）
         m_tempDir = QTemporaryDir();            // 每用例独立临时目录（模板导出落盘用）
         QVERIFY2(m_tempDir.isValid(), qPrintable(m_tempDir.errorString()));
     }
-    void cleanup() { ConfigStore::instance().close(); }
+    void cleanup()
+    {
+        m_timerGuard.reset();   // 撤销所有绑到本用例、尚未兑现的 singleShot（防跨用例误关编辑器）
+        ConfigStore::instance().close();
+    }
 
     // ── ① 名称优先 + 端点详情悬浮 ────────────────────────────────
+    // v2.16-B 任务4 Step7 迁移：第 1 行只显已选 chips——夹具先经菜单勾中目标，
+    // 再取 chips；原断言（名称优先/端点悬浮/选中集合）逐条保留，仅
+    // "文本含 ip"判据按新形态反转为"文本不含 ip + tooltip 仍含 ip"（规格 §6 交代）。
     void deviceBus_nameFirstDisplay()
     {
         DeviceRegistry registry;
@@ -214,15 +398,25 @@ private slots:
 
         DeviceBusWidget bus;
         bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        // 新形态守卫：未选=无 chips，但全集/胶囊数据不删（视觉态只切可见性）
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 1);
+        QCOMPARE(visibleChips(bus).size(), 0);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-boiler"));
 
-        QPushButton* pill = firstPill(bus);
+        const auto chips = visibleChips(bus);
+        QCOMPARE(chips.size(), 1);
+        QPushButton* pill = chips.first();
         QVERIFY(pill);
-        // 名称优先展示，地址作为次级信息仍可见
+        // 名称优先展示（新形态：地址不再进文案，重名才带 ·ip 尾标）
         QVERIFY2(pill->text().startsWith(QStringLiteral("锅炉控制器")),
                  qPrintable(QStringLiteral("胶囊应名称优先，实际: %1").arg(pill->text())));
-        QVERIFY(pill->text().contains(QStringLiteral("10.0.0.5")));
+        QVERIFY2(!pill->text().contains(QStringLiteral("10.0.0.5")),
+                 qPrintable(QStringLiteral("chips 不应再带 ip:port，实际: %1").arg(pill->text())));
 
-        // ② 端点详情：悬浮可见协议端点与备注
+        // ② 端点详情：悬浮可见协议端点与备注（地址经 tooltip 承载，§6）
+        QVERIFY2(pill->toolTip().contains(QStringLiteral("10.0.0.5")),
+                 qPrintable(pill->toolTip()));
         QVERIFY2(pill->toolTip().contains(QStringLiteral("ftp 10.0.0.5:21")),
                  qPrintable(pill->toolTip()));
         QVERIFY2(pill->toolTip().contains(QStringLiteral("telnet 10.0.0.5:23")),
@@ -230,14 +424,21 @@ private slots:
         QVERIFY(pill->toolTip().contains(QStringLiteral("车间 A")));
 
         // 选中集合以档案（DeviceProfile）暴露，deviceId 稳定
-        pill->click();
         const auto selected = bus.selectedDeviceProfiles();
         QCOMPARE(selected.size(), std::size_t{1});
         QCOMPARE(QString::fromStdString(selected.front().deviceId),
                  QStringLiteral("dev-boiler"));
+        // click()＝无鼠标事件的 clicked 激活（修复轮1 起属键盘等价路径，仍移出选择；
+        // 真鼠标左键已拆分：主体不改选择、移出只走尾部「×」区）；移出后集合与视图归零
+        pill->click();
+        QCOMPARE(static_cast<int>(bus.selectedDeviceProfiles().size()), 0);
+        QCOMPARE(visibleChips(bus).size(), 0);
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 1);   // 硬线
     }
 
-    // ── ② 双击打开编辑对话框 → 经 DeviceRegistry 持久化 + 信号 ───
+    // ── ② 右键「编辑档案」打开编辑对话框 → 经 DeviceRegistry 持久化 + 信号 ──
+    //（v2.16-B 任务5：原双击入口改判「打开这台设备」，本槽迁移到右键菜单，
+    //  编辑链/信号/持久化断言逐条原样保留）
     void deviceBus_editorDialog_persistsViaRegistryAndEmits()
     {
         DeviceRegistry registry;
@@ -248,15 +449,24 @@ private slots:
 
         DeviceBusWidget bus;
         bus.setRegistry(&registry);
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        bus.resize(1400, 100);
+        // Step7 迁移：先经菜单勾中（chips 只显已选），右键对象是真实可见的 chip
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-plc"));
+        // 修复轮1 finding4：判据对象取「可见 chips」首枚——firstPill 不过滤可见性，
+        // 夹具只有一枚可见胶囊时两者同物，但"第 N 枚胶囊==第 N 台"不得在测试层回潜
+        const auto chips = visibleChips(bus);
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
         m_editorRejectButtonCount = -1;
 
-        // 布防：对话框 exec 的嵌套事件循环中改名并保存
-        QTimer::singleShot(50, this, [this] {
+        // 布防：对话框 exec 的嵌套事件循环中改名并保存。
+        // v2.16-B 任务5 迁移：对话框由菜单缝分派后在嵌套 exec 循环中出现，
+        // 捕获布防 150ms（须晚于分派点，早于对话框出现会静默 miss）
+        // （早于对话框出现会静默 miss，靠 3s 兜底也拿不到断言对象）
+        QTimer::singleShot(150, m_timerGuard.get(), [this] {
             QDialog* dialog = nullptr;
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
@@ -285,7 +495,7 @@ private slots:
             save->click();
         });
         // 兜底：若布防未命中（对话框实现漂移），3s 后强制关闭，避免测试挂死
-        QTimer::singleShot(3000, [] {
+        QTimer::singleShot(3000, m_timerGuard.get(), [] {
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
                 if (w->objectName() == QStringLiteral("deviceProfileEditor"))
@@ -293,8 +503,15 @@ private slots:
             }
         });
 
-        QTest::mouseDClick(pill, Qt::LeftButton);
+        // v2.16-B 任务5 迁移：双击已让位「打开这台设备」，编辑链改走右键菜单
+        // 「编辑档案」（菜单缝 + 非虚断言见 triggerPillMenuAction 注释）
+        openEditMenu(bus, pill);
 
+        // 修复轮1 minor4：缝守卫前移到任何 QTRY 等待之前——缝失效要当场指名，
+        // 不能先退化成一记泛用 spy 超时（QTRY 红的是等待物，不是根因）
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(!m_menuActionMissing, "右键菜单缺少「编辑档案」项");
+        QVERIFY2(m_menuTriggered, "「编辑档案」项未被触发");
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
         const DeviceProfile edited =
             spy.at(0).at(0).value<DeviceProfile>();
@@ -307,9 +524,13 @@ private slots:
         QVERIFY(ConfigStore::instance().exists(
             QStringLiteral("device.profile"), QStringLiteral("dev-plc")));
 
-        // 胶囊文案即时刷新为新名称
+        // 胶囊文案即时刷新为新名称（修复轮1 finding4：判据对象=可见 chips——且必须
+        // 每次轮询重新 findChildren：保存触发 refreshFromRegistry 删建全部胶囊，
+        // 缓存旧 pill 指针是悬垂读（QTRY 内解引用 == UAF，绝不允许）
         QTRY_VERIFY_WITH_TIMEOUT(
-            firstPill(bus)->text().startsWith(QStringLiteral("新名称")), 5000);
+            !visibleChips(bus).isEmpty() &&
+                visibleChips(bus).first()->text().startsWith(QStringLiteral("新名称")),
+            5000);
 
         // 对话框取消按钮唯一（修复回归：曾因 addButton 重复渲染两个「取消」）
         QVERIFY2(m_editorRejectButtonCount >= 0,
@@ -342,14 +563,21 @@ private slots:
 
         DeviceBusWidget bus;
         bus.setRegistry(&registry);
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        bus.resize(1400, 100);
+        // Step7 迁移：先经菜单勾中；v2.16-B 任务5：编辑入口改右键「编辑档案」
+        //（编辑链与旧行清扫断言逐条原样保留）
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-ip"));
+        const auto chips = visibleChips(bus);   // 修复轮1 finding4：判据对象=可见 chip（防胶囊位置配对回潜）
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
 
-        // 布防：把端点表首行主机地址 ip1→ip2 后保存（对话框嵌套事件循环）
-        QTimer::singleShot(50, this, [this] {
+        // 布防：把端点表首行主机地址 ip1→ip2 后保存。
+        // v2.16-B 任务5 迁移：对话框由菜单缝分派后在嵌套 exec 循环中出现，
+        // 捕获布防 150ms（须晚于分派点，早于对话框出现会静默 miss）
+        QTimer::singleShot(150, m_timerGuard.get(), [this] {
             QDialog* dialog = nullptr;
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
@@ -368,7 +596,7 @@ private slots:
             table->item(0, 1)->setText(QStringLiteral("10.3.0.2"));
             save->click();
         });
-        QTimer::singleShot(3000, [] {
+        QTimer::singleShot(3000, m_timerGuard.get(), [] {
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
                 if (w->objectName() == QStringLiteral("deviceProfileEditor"))
@@ -376,7 +604,11 @@ private slots:
             }
         });
 
-        QTest::mouseDClick(pill, Qt::LeftButton);
+        openEditMenu(bus, pill);
+        // 修复轮1 minor4：缝守卫前移到 QTRY 之前（缝失效当场指名，不退化成泛用超时）
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(!m_menuActionMissing, "右键菜单缺少「编辑档案」项");
+        QVERIFY2(m_menuTriggered, "「编辑档案」项未被触发");
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
 
         // 信号携带的已保存档案只剩新地址（旧端点未被并集写回）
@@ -439,15 +671,22 @@ private slots:
 
         DeviceBusWidget bus;
         bus.setRegistry(&registry);
-        QPushButton* pill = firstPill(bus);
-        QVERIFY(pill);
+        bus.resize(1400, 100);
+        // Step7 迁移：先经菜单勾中；v2.16-B 任务5：编辑入口改右键「编辑档案」
+        //（下拉取证与落库断言逐条原样保留）
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dd"));
+        const auto chips = visibleChips(bus);   // 修复轮1 finding4：判据对象=可见 chip（防胶囊位置配对回潜）
+        QVERIFY(!chips.isEmpty());
+        QPushButton* pill = chips.first();
 
         QSignalSpy spy(&bus, &DeviceBusWidget::deviceProfileEdited);
         QVERIFY(spy.isValid());
         m_captureProtocolItems.clear();
         m_captureCredentialItems.clear();
 
-        QTimer::singleShot(50, this, [this] {
+        // v2.16-B 任务5 迁移：对话框由菜单缝分派后在嵌套 exec 循环中出现，
+        // 捕获布防 150ms（须晚于分派点，早于对话框出现会静默 miss）
+        QTimer::singleShot(150, m_timerGuard.get(), [this] {
             QDialog* dialog = nullptr;
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
@@ -475,7 +714,7 @@ private slots:
             cred->setCurrentIndex(cred->findText(QStringLiteral("root@10.6.0.1:21")));
             save->click();
         });
-        QTimer::singleShot(3000, [] {
+        QTimer::singleShot(3000, m_timerGuard.get(), [] {
             const auto widgets = QApplication::topLevelWidgets();
             for (QWidget* w : widgets) {
                 if (w->objectName() == QStringLiteral("deviceProfileEditor"))
@@ -483,7 +722,11 @@ private slots:
             }
         });
 
-        QTest::mouseDClick(pill, Qt::LeftButton);
+        openEditMenu(bus, pill);
+        // 修复轮1 minor4：缝守卫前移到 QTRY 之前（缝失效当场指名，不退化成泛用超时）
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(!m_menuActionMissing, "右键菜单缺少「编辑档案」项");
+        QVERIFY2(m_menuTriggered, "「编辑档案」项未被触发");
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
 
         // 下拉内容取证
@@ -517,16 +760,21 @@ private slots:
 
         DeviceBusWidget bus;
         bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        // Step7 迁移：胶囊仍一台一枚（视觉态只切可见性），findChildren 计数保持
+        // 原语义；"选中"改经菜单路径（chip 左键已变为移出语义）。
         const auto pillsBefore = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
         QCOMPARE(pillsBefore.size(), 2);
+        QCOMPARE(visibleChips(bus).size(), 0);          // 新形态：未选=无可见 chips
         QPushButton* keep = nullptr;
         for (QPushButton* p : pillsBefore) {
             if (p->property("deviceId").toString() == QStringLiteral("dev-keep"))
                 keep = p;
         }
         QVERIFY(keep);
-        keep->click();
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-keep"));
         QCOMPARE(keep->property("selected").toBool(), true);
+        QCOMPARE(visibleChips(bus).size(), 1);          // 勾中后只显这一枚
 
         // 新增一台设备 → 胶囊栏整体重建（refreshFromRegistry）
         DeviceInfo third;
@@ -548,12 +796,17 @@ private slots:
                 ++selectedCount;
         }
         QCOMPARE(selectedCount, 1);
+        QCOMPARE(visibleChips(bus).size(), 1);          // 重建后 chips 视图仍只显已选
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 3);   // 硬线
     }
 
     // ── ③ 无注册表：旧 ip:port 胶囊与 device.list 回退保持可用 ───
+    // v2.16-B 任务4 Step7 迁移：无注册表时菜单同样工作（entries 由 fromDeviceInfo
+    // 合成，全进「未分组」）；选中改经菜单，胶囊文案与旧行回退断言逐条原样保留。
     void deviceBus_legacyRowsKeepWorking()
     {
         DeviceBusWidget bus;   // 不设 registry → 纯旧行为
+        bus.resize(1400, 100);
         DeviceInfo device;
         device.ip = "192.168.9.9";
         device.port = 2122;
@@ -562,6 +815,7 @@ private slots:
         QPushButton* pill = firstPill(bus);
         QVERIFY(pill);
         QCOMPARE(pill->text(), QStringLiteral("192.168.9.9:2122  ×"));
+        QCOMPARE(visibleChips(bus).size(), 0);   // 新形态：未选=无可见 chips（空名回落地址仍由文案钉）
 
         // 旧 device.list 行仍写入（key=ip:port），供回退读取
         const QVariantMap record = ConfigStore::instance().load(
@@ -570,12 +824,1453 @@ private slots:
         QCOMPARE(record.value(QStringLiteral("ip")).toString(),
                  QStringLiteral("192.168.9.9"));
 
-        // 无档案时 selectedDeviceProfiles 由 DeviceInfo 合成稳定端点身份
-        pill->click();
+        // 无档案时 selectedDeviceProfiles 由 DeviceInfo 合成稳定端点身份——
+        // 旧行无持久 id ⇒ 选择键退化为 "ip:<地址>"（selectionKey 同款单源式）
+        selectDeviceViaMenu(bus, QStringLiteral("ip:192.168.9.9"));
         const auto selected = bus.selectedDeviceProfiles();
         QCOMPARE(selected.size(), std::size_t{1});
         QCOMPARE(QString::fromStdString(selected.front().endpoints.front().ip),
                  QStringLiteral("192.168.9.9"));
+        QCOMPARE(visibleChips(bus).size(), 1);
+        // click()＝键盘等价激活仍移出（修复轮1：真鼠标左键移出改走尾部「×」区）；
+        // 集合与视图归零，设备全集不动
+        visibleChips(bus).first()->click();
+        QCOMPARE(static_cast<int>(bus.selectedDeviceProfiles().size()), 0);
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 1);
+    }
+
+    // ── v2.16-B 任务5 Step1：双击副作用取证（规格 §5 前提复核，不是验收）──
+    // 规格 §5 声称现状是「双击弹编辑框而选中态不变，依赖两次 clicked 的净零抵消」。
+    // **改动前在 HEAD eaf7bfc 实测的基线数字**（见规格 §5 执行注记）：
+    //   visible-chip: clicked=0 selectionBroadcasts=0 selectedAfter=1 dialogOpened=1
+    //   —— 可观察结论与 §5 一致（弹编辑框而选中态不变），但机制与 §5 说法不符：
+    //   不是"两次 clicked 净零抵消"，而是 QTest::mouseDClick 投递**单个**
+    //   MouseButtonDblClick 事件，eventFilter 在 QAbstractButton 消费前就吞掉它，
+    //   clicked 根本一次都不发。任务5 改判后该消费关系不变 ⇒ 跳转后"净零"依旧。
+    // 本槽保留为净零守卫：双击不得产生 clicked/selection 广播、不得改选中，
+    // 且（新语义）不得再弹编辑对话框、必须恰好发一次 openDeviceRequested。
+    // 隐藏胶囊上的合成双击同批登记：该路径现在只有测试可达（QTest 直投目标
+    // widget，绕过真实用户的可见性别拦），eventFilter 不查可见性仍会触发——
+    // 实况写进规格 §5 执行注记，是否加闸由控制器裁定。
+    void doubleClickEmitsTwoClickedAndKeepsSelection()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-dblmeasure"),
+                                          QStringLiteral("双击取证机"),
+                                          QStringLiteral("10.5.0.1"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        // 任务4 后真实用户可双击的对象只有「可见 chips」＝已选设备（brief 里
+        // "未选中设备 + firstPill" 的夹具形态已过期——未选胶囊是隐藏的）
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dblmeasure"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy clickedSpy(pill, &QPushButton::clicked);
+        QVERIFY(clickedSpy.isValid());
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+        m_forensicEditorDialogOpened = false;
+
+        // 反向兜底：若双击仍回归成弹模态编辑框，布防定时器记录并关闭（响亮判红）
+        QTimer::singleShot(80, m_timerGuard.get(), [this] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    m_forensicEditorDialogOpened = true;
+                    w->close();
+                    return;
+                }
+            }
+        });
+
+        QTest::mouseDClick(pill, Qt::LeftButton);
+
+        const bool stillSelected =
+            bus.selectedIds().contains(QStringLiteral("id:dev-dblmeasure"));
+        qInfo().noquote() << QStringLiteral(
+            "dblclick-forensic[visible-chip]: clicked=%1 selectionBroadcasts=%2 "
+            "openRequests=%3 selectedAfter=%4 visibleAfter=%5 dialogOpened=%6")
+            .arg(clickedSpy.count())
+            .arg(selectionSpy.count())
+            .arg(openSpy.count())
+            .arg(stillSelected)
+            .arg(!pill->isHidden())
+            .arg(m_forensicEditorDialogOpened);
+
+        // 净零守卫（规格 §5 前提的可观察部分，改判前后都必须成立）：
+        QCOMPARE(clickedSpy.count(), 0);
+        QCOMPARE(selectionSpy.count(), 0);
+        QVERIFY2(stillSelected,
+                 qPrintable(QStringLiteral("双击后选中态被改变（移出集合）：clicked=%1 广播=%2")
+                                .arg(clickedSpy.count()).arg(selectionSpy.count())));
+        // 新语义正向钉桩：
+        QCOMPARE(openSpy.count(), 1);
+        QVERIFY2(!m_forensicEditorDialogOpened, "双击回归成了编辑对话框");
+
+        // 隐藏胶囊（未选中）上的合成双击同样登记——该路径现在只有测试可达，
+        // eventFilter 不查可见性仍会触发（QTest 直接投递到目标 widget，绕过
+        // 真实用户路径的可见性别拦）。实况仅登记，不断言（是否加闸待控制器裁定）。
+        bus.clearSelection();                     // 公开 API 使其隐藏（禁用鼠标点击隐藏件作选择手段）
+        QVERIFY(pill->isHidden());
+        m_forensicEditorDialogOpened = false;
+        QSignalSpy clickedHiddenSpy(pill, &QPushButton::clicked);
+        QVERIFY(clickedHiddenSpy.isValid());
+        QSignalSpy selectionHiddenSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionHiddenSpy.isValid());
+        QSignalSpy openHiddenSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openHiddenSpy.isValid());
+        QTimer::singleShot(80, m_timerGuard.get(), [this] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    m_forensicEditorDialogOpened = true;
+                    w->close();
+                    return;
+                }
+            }
+        });
+        QTest::mouseDClick(pill, Qt::LeftButton);
+        qInfo().noquote() << QStringLiteral(
+            "dblclick-forensic[hidden-pill]: clicked=%1 selectionBroadcasts=%2 "
+            "openRequests=%3 dialogOpened=%4")
+            .arg(clickedHiddenSpy.count())
+            .arg(selectionHiddenSpy.count())
+            .arg(openHiddenSpy.count())
+            .arg(m_forensicEditorDialogOpened);
+    }
+
+    // ── v2.16-B 任务5：双击＝「打开这台设备」正向钉桩（载荷 ip/协议 + 路由同源）──
+    void doubleClickOpensRequestedEmitsProfile()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile profile = makeProfile(QStringLiteral("dev-dbl-route"),
+                                            QStringLiteral("双击开页机"),
+                                            QStringLiteral("10.8.0.1"), 23,
+                                            QStringLiteral("telnet"));
+        addEndpoint(profile, QStringLiteral("ftp"), QStringLiteral("10.8.0.1"), 21);
+        QVERIFY(registry.save(profile));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dbl-route"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+        // 反向兜底：若双击误仍走编辑对话框，记录并关闭后由断言响亮红（防挂死）
+        m_forensicEditorDialogOpened = false;
+        QTimer::singleShot(50, m_timerGuard.get(), [this] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    m_forensicEditorDialogOpened = true;
+                    w->close();
+                    return;
+                }
+            }
+        });
+
+        QTest::mouseDClick(pill, Qt::LeftButton);
+
+        QVERIFY2(!m_forensicEditorDialogOpened, "双击仍会打开档案编辑对话框（改判未生效）");
+        QCOMPARE(openSpy.count(), 1);
+        const DeviceProfile emitted = openSpy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(QString::fromStdString(emitted.deviceId),
+                 QStringLiteral("dev-dbl-route"));
+        // 载荷经任务2 deviceopen::routeTo 判定：首个可解析端点（telnet 在前）
+        // 决定目标页与选中键 ip——本任务只发射信号，切页编排归任务6（规格 §2.2）
+        const deviceopen::Route route = deviceopen::routeTo(emitted);
+        QVERIFY(route.page == deviceopen::Page::BatchCommand);
+        QCOMPARE(route.protocol, QStringLiteral("telnet"));
+        QCOMPARE(route.ip, QStringLiteral("10.8.0.1"));
+        QCOMPARE(route.port, 23);
+        // 双击不得改变选中（规格 §5 验收 4；Step1 实测量得 clicked=0）
+        QVERIFY(bus.selectedIds().contains(QStringLiteral("id:dev-dbl-route")));
+        QCOMPARE(static_cast<int>(visibleChips(bus).size()), 1);
+    }
+
+    // ══ v2.16-B 修复轮1（规格 §2.3/§5/§10 第 8 条）：移出选择改走尾部「×」命中区 ══
+    // 缺陷根因（评审定档，勿再翻案）：b17d775 下第一次 release 的 clicked ⇒
+    // m_selectedIds.remove ⇒ rebuildChips 同步 setVisible(false)（cpp:720-724+cpp:1212），
+    // 真鼠标第二下 MouseButtonDblClick 永远落不到隐藏件上——双击功能对真实用户
+    // 不可达；套件绿只是因为 QTest::mouseDClick 单事件直投绕开了可见性别拦。
+    // 以下 ①② 按规格 §5 要求"实现前先行 RED"，取证口径＝完整事件序列 +
+    // "可达性是被测件widget状态的性质"（单击后胶囊仍 isVisible()）。
+
+    // ── ① 主体一次单击 ⇒ 选中集不变且胶囊仍可见（b17d775 上先行 RED）──
+    void bodySingleClickKeepsSelectionAndChipVisible()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-body1"),
+                                          QStringLiteral("主体单击守卫机"),
+                                          QStringLiteral("10.8.20.1"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-body1"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+        // 夹具前置：胶囊够宽，x=4（主体）与 x=宽-3（尾部「×」区）落进互不重叠的区域
+        QVERIFY2(pill->width() >= 60,
+                 qPrintable(QStringLiteral("夹具胶囊过窄（width=%1），无法分离主体/尾标注入点")
+                                .arg(pill->width())));
+
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+
+        // 定位注入：x=4 在主体（尾部「×」区按生产算式只贴右缘，最宽也远不到 4px）
+        QTest::mouseClick(pill, Qt::LeftButton, Qt::NoModifier, QPoint(4, pill->height() / 2));
+
+        QVERIFY2(!pill->isHidden(),
+                 "主体单击后胶囊被隐藏——真指针再也打不中它，双击路径即断（规格 §10 第 8 条）");
+        QVERIFY2(bus.selectedIds().contains(QStringLiteral("id:dev-body1")),
+                 "主体单击不得改变选择（移出只走尾部「×」命中区，规格 §2.3）");
+        QCOMPARE(selectionSpy.count(), 0);
+        QCOMPARE(openSpy.count(), 0);   // 单击不得误触发「打开这台设备」
+    }
+
+    // ── ② 完整事件序列双击 ⇒ openDeviceRequested 恰好一次、选中仍不变 ──
+    // Qt 只在平台事件分派器里合成 DblClick，QTest::mouseClick 连打两下产生不了它——
+    // 第二下"按压"显式构造 QMouseEvent(MouseButtonDblClick) 经 QApplication::sendEvent
+    // 投递（与真实通道等价：sendEvent 走 notify()，先过装在胶囊上的 eventFilter）。
+    void fullDoubleClickSequenceEmitsOpenOnce()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile profile = makeProfile(QStringLiteral("dev-dblseq"),
+                                            QStringLiteral("全序列双击机"),
+                                            QStringLiteral("10.8.20.2"), 23,
+                                            QStringLiteral("telnet"));
+        QVERIFY(registry.save(profile));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dblseq"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+        QVERIFY2(pill->width() >= 60,
+                 qPrintable(QStringLiteral("夹具胶囊过窄（width=%1）").arg(pill->width())));
+
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+
+        const QPoint body(4, pill->height() / 2);
+        // press → release：第一下落在主体
+        QTest::mousePress(pill, Qt::LeftButton, Qt::NoModifier, body);
+        QTest::mouseRelease(pill, Qt::LeftButton, Qt::NoModifier, body);
+        // 可达性＝widget 状态的性质：与双击断言同槽，序列读作
+        // press/release → 仍可见 → DblClick → 发射一次
+        QVERIFY2(!pill->isHidden(),
+                 "第一下 release 后胶囊已隐藏——真鼠标第二下 DblClick 不可达（规格 §10 第 8 条根因）");
+        QVERIFY2(bus.selectedIds().contains(QStringLiteral("id:dev-dblseq")),
+                 "双击序列的第一次主体 release 不得改变选择");
+
+        // press(MouseButtonDblClick)：显式构造并投递
+        QMouseEvent dbl(QEvent::MouseButtonDblClick,
+                        QPointF(body),
+                        QPointF(pill->mapToGlobal(body)),
+                        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(pill, &dbl);
+        // release（真双击收尾）
+        QTest::mouseRelease(pill, Qt::LeftButton, Qt::NoModifier, body);
+
+        QCOMPARE(openSpy.count(), 1);
+        const DeviceProfile emitted = openSpy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(QString::fromStdString(emitted.deviceId), QStringLiteral("dev-dblseq"));
+        QVERIFY2(bus.selectedIds().contains(QStringLiteral("id:dev-dblseq")),
+                 "完整双击序列后选中集必须不变（规格 §5 验收 4）");
+        QCOMPARE(selectionSpy.count(), 0);
+        QVERIFY(!pill->isHidden());
+    }
+
+    // ── 终审项2（2026-10-21，fix-before-merge）：双击只认左键 ──
+    // 缺陷形态：eventFilter 的 DblClick 分支不判 button() ⇒ 右键双击既发
+    // openDeviceRequested（误触本版主打动作）、又照常弹右键菜单（两臂口径不一致：
+    // release 臂判了左键、DblClick 臂没判）。注入单个构造的 DblClick(RightButton)
+    // （与 fullDoubleClickSequenceEmitsOpenOnce 同一投递通道 sendEvent）：必须
+    // 不发射 open；选中也不动——右双击事件未被吞、按钮置 down 但无 release，
+    // clicked 不会发生。左键双击仍发射由 fullDoubleClickSequenceEmitsOpenOnce 钉住。
+    void rightButtonDoubleClickDoesNotEmitOpen()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-rdbl"), QStringLiteral("右键双击机"),
+                                          QStringLiteral("10.8.33.1"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-rdbl"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+
+        const QPoint body(4, pill->height() / 2);
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(body),
+                        QPointF(pill->mapToGlobal(body)),
+                        Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+        QApplication::sendEvent(pill, &dbl);
+
+        QCOMPARE(openSpy.count(), 0);        // 缺陷形态：右键双击误发「打开这台设备」⇒ 1≠0 红
+        QCOMPARE(selectionSpy.count(), 0);   // 右键双击也不得改选择/广播
+        QVERIFY(bus.selectedIds().contains(QStringLiteral("id:dev-rdbl")));
+    }
+
+    // ── ③ 尾部「×」区一次单击 ⇒ 移出选择并广播恰好一次（+命中区实测数字留证）──
+    void closeZoneClickRemovesSelection()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-xzone"),
+                                          QStringLiteral("Times区移出机"),
+                                          QStringLiteral("10.8.20.3"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-xzone"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+        QVERIFY2(pill->width() >= 60,
+                 qPrintable(QStringLiteral("夹具胶囊过窄（width=%1）").arg(pill->width())));
+
+        // 取证（报告引用）：区宽实算＝「  ×」按胶囊自身 font 的字宽 + 样式内部 padding。
+        // 口径（终审项7 订正，任务 7 修复轮实测推翻旧句"QSS font-size 覆盖不进
+        // QWidget::font()"）：QSS 的 font-size **会**灌进 QWidget::font()——应用默认
+        // Microsoft YaHei UI 9pt，生产 QSS 下 #devicePill 的 12px 解析进 pill->font()；
+        // 本目标不加载 QSS，此处数字是默认样式口径（PM_ButtonMargin=6 ⇒ 区 22px；
+        // 生产 QSS 下实测 =0 ⇒ 16px，由 tst_deploy_toolbar_layout 钉桩）。
+        const QFontMetricsF fm(pill->font());
+        const int padding = pill->style()->pixelMetric(QStyle::PM_ButtonMargin, nullptr, pill);
+        qInfo().noquote() << QStringLiteral(
+            "close-zone measure: mark-advance=%1px PM_ButtonMargin=%2px pill-width=%3px")
+            .arg(fm.horizontalAdvance(QStringLiteral("  \xC3\x97")), 0, 'f', 2)
+            .arg(padding)
+            .arg(pill->width());
+
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+
+        // 注入点贴右缘 3px——独立于算式（不读 zone 宽度），几何上必须落进「×」区
+        QTest::mouseClick(pill, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(pill->width() - 3, pill->height() / 2));
+
+        QVERIFY2(!bus.selectedIds().contains(QStringLiteral("id:dev-xzone")),
+                 "尾部「×」区单击必须移出选择（规格 §2.3 订正本）");
+        QCOMPARE(selectionSpy.count(), 1);
+        QVERIFY2(pill->isHidden(), "移出后胶囊应收起（chips 只显已选）");
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 1);   // 硬线：全集不动
+    }
+
+    // ── ④ 键盘激活（Space/Enter 走 clicked，无鼠标事件）⇒ 仍移出：可达性不丢 ──
+    // click() 是"无前置鼠标事件、直接 emit clicked"的程序化等价注入（与既有
+    // :412/:811 槽的移出手法同通道）；真键盘 Space/Enter 同样以 clicked 收口。
+    void keyboardActivationRemovesSelection()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-kbd"),
+                                          QStringLiteral("键盘移出机"),
+                                          QStringLiteral("10.8.20.4"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-kbd"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy selectionSpy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(selectionSpy.isValid());
+
+        pill->click();   // ≙ 键盘激活：clicked 在无鼠标事件下发出
+
+        QVERIFY2(!bus.selectedIds().contains(QStringLiteral("id:dev-kbd")),
+                 "键盘激活必须移出选择（空格/回车可达性，规格 §2.3/§5 ④）");
+        QCOMPARE(selectionSpy.count(), 1);
+        QVERIFY(pill->isHidden());
+    }
+
+    // ── ⑤ 重名 ·ip 尾标与长名称下「×」区仍贴右缘：区数学与文案长度无关 ──
+    // 区按"按钮右缘起、覆盖『  ×』实宽+padding"几何计算，与文案无关：重名 chip
+    // （文案加宽）与长名 chip（绘制可能截断）都必须——主体单击不动、贴右缘单击移出。
+    void closeZoneAtRightEdgeForSuffixAndLongName()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-dup1"),
+                                          QStringLiteral("同名机"),
+                                          QStringLiteral("10.8.20.11"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-dup2"),
+                                          QStringLiteral("同名机"),
+                                          QStringLiteral("10.8.20.12"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-long"),
+                                          QStringLiteral("很长很长很长很长很长很长很长很长很长很长很长很长很长机器"),
+                                          QStringLiteral("10.8.20.13"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dup1"));
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-dup2"));
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-long"));
+        QCOMPARE(visibleChips(bus).size(), 3);
+
+        auto chipFor = [this, &bus](const QString& deviceId) {
+            for (QPushButton* c : visibleChips(bus))
+                if (c->property("deviceId").toString() == deviceId)
+                    return c;
+            return static_cast<QPushButton*>(nullptr);
+        };
+
+        // 夹具有效性：重名机文案确实带 ·ip 短尾标（规格 §2.3），长名机文案超 20 字符
+        QPushButton* dup1 = chipFor(QStringLiteral("dev-dup1"));
+        QVERIFY(dup1);
+        QVERIFY2(dup1->text().contains(QStringLiteral(" ·10.8.20.11")),
+                 qPrintable(QStringLiteral("重名 chip 应带 ·ip 尾标，实际: %1").arg(dup1->text())));
+        QPushButton* longChip = chipFor(QStringLiteral("dev-long"));
+        QVERIFY(longChip);
+        QVERIFY2(longChip->text().length() > 20,
+                 qPrintable(QStringLiteral("长名夹具不成立: %1").arg(longChip->text())));
+
+        const QStringList ids{QStringLiteral("dev-dup1"), QStringLiteral("dev-dup2"),
+                              QStringLiteral("dev-long")};
+        for (const QString& id : ids) {
+            QPushButton* chip = chipFor(id);
+            QVERIFY(chip);
+            QVERIFY2(chip->width() >= 60,
+                     qPrintable(QStringLiteral("夹具胶囊过窄（%1 width=%2）")
+                                    .arg(id).arg(chip->width())));
+            // 主体（左缘 4px）：不改选择
+            QTest::mouseClick(chip, Qt::LeftButton, Qt::NoModifier,
+                              QPoint(4, chip->height() / 2));
+            QVERIFY2(bus.selectedIds().contains(QStringLiteral("id:") + id),
+                     qPrintable(QStringLiteral("%1 主体单击不得移出选择").arg(id)));
+            // 尾部右缘 3px：必须移出（「×」贴右缘的数学与文案长度无关）
+            QTest::mouseClick(chip, Qt::LeftButton, Qt::NoModifier,
+                              QPoint(chip->width() - 3, chip->height() / 2));
+            QVERIFY2(!bus.selectedIds().contains(QStringLiteral("id:") + id),
+                     qPrintable(QStringLiteral("%1 尾部「×」区单击必须移出选择").arg(id)));
+        }
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 3);   // 硬线
+    }
+
+    // ── 修复轮1 finding2：「移除设备」role 真实分派并删除档案（补声称覆盖的缺口）──
+    // 任务5报告 §1 曾把该角色列为已覆盖，实为无用例派发 role "remove"——它会挡在
+    // 模态 QMessageBox::question（cpp:776）上。本轮按同文件模板删除槽的先例
+    // （timer 布防应答 QMessageBox）钉桩：布防 → 分派（question 进嵌套事件循环 →
+    // 定时器点「是」）→ 档案真删（总线视图/registry/ConfigStore 三处齐判）。
+    void removeMenuActionConfirmsAndDeletesProfile()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-rmx"),
+                                          QStringLiteral("删除试验台"),
+                                          QStringLiteral("10.8.20.9"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-rmx"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        m_removeBoxText.clear();
+        m_removeBoxAnswered = false;
+        QTimer::singleShot(60, m_timerGuard.get(), [this] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (auto* box = qobject_cast<QMessageBox*>(w)) {
+                    m_removeBoxText = box->text();
+                    // 真用户等价：点 Yes 按钮本体（QMessageBox::done(StandardButton)
+                    // 在本轮实测中不映射为 question() 的返回值——只有按钮 clicked
+                    // 路径才走 QMessageBox 内部的 standardButton 回报，见修复报告）
+                    if (auto* yes = box->button(QMessageBox::Yes))
+                        yes->click();
+                    m_removeBoxAnswered = true;
+                    return;
+                }
+            }
+        });
+
+        // 同步分派：dispatchPillMenuAction("remove") 内 question() 阻塞在嵌套循环，
+        // 布防定时器在循环里兑现「是」→ removeDevice 删档（pill 随之析构，
+        // 本槽此后不再解引用它）
+        triggerPillMenuAction(bus, pill, QStringLiteral("移除设备"));
+        // 缝守卫先行（minor4 同法）：任何等待/断言之前，缝失效当场指名
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(!m_menuActionMissing, "右键菜单缺少「移除设备」项");
+        QVERIFY2(m_menuTriggered, "「移除设备」项未被触发");
+        QVERIFY2(m_removeBoxAnswered,
+                 "分派「移除设备」未弹确认框——对话框漂移或分派被旁路");
+        QVERIFY2(m_removeBoxText.contains(QStringLiteral("10.8.20.9")),
+                 qPrintable(QStringLiteral("确认框文案应含设备地址，实际: %1").arg(m_removeBoxText)));
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 0);
+        QVERIFY(!registry.find("dev-rmx").has_value());
+        QVERIFY(!ConfigStore::instance().exists(QStringLiteral("device.profile"),
+                                                QStringLiteral("dev-rmx")));
+    }
+
+    // ── v2.16-B 任务5：右键菜单次序 + 无注册表形态（规格 §6② 登记的行为变更）──
+    void rightClickMenuOpensTopItemAndNoRegistryShape()
+    {
+        // 形态A：接入注册表——三项按「打开这台设备／编辑档案／移除设备」次序，
+        // 首项触发即发射 openDeviceRequested
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-menu"),
+                                          QStringLiteral("菜单形态机"),
+                                          QStringLiteral("10.8.0.2"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-menu"));
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+        triggerPillMenuAction(bus, chips.first(), QStringLiteral("打开这台设备"));
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(m_menuTriggered,
+                 qPrintable(QStringLiteral("右键菜单缺少「打开这台设备」首项，实际项: %1")
+                                .arg(m_menuCapturedTexts.join(QStringLiteral(" | ")))));
+        QCOMPARE(m_menuCapturedTexts,
+                 (QStringList{QStringLiteral("打开这台设备"),
+                              QStringLiteral("编辑档案"),
+                              QStringLiteral("移除设备")}));
+        QCOMPARE(openSpy.count(), 1);
+        QCOMPARE(QString::fromStdString(openSpy.at(0).at(0).value<DeviceProfile>().deviceId),
+                 QStringLiteral("dev-menu"));
+
+        // 形态B：无注册表（旧 ip:port 胶囊）——「打开这台设备」仍在首且仍发射
+        //（旧版此处只有「移除设备」；生产恒注入注册表，本形态是单测/降级形态，
+        //  规格 §6② 登记的行为变更；「编辑档案」依旧缺席=门槛 m_registry 不变）；
+        // 载荷经 fromDeviceInfo 合成：协议列为空 → routeTo 按 ftp 兜底（§2.2）
+        DeviceBusWidget bare;
+        bare.resize(1400, 100);
+        DeviceInfo device;
+        device.ip = "192.168.5.5";
+        device.port = 21;
+        bare.addDevice(device);
+        selectDeviceViaMenu(bare, QStringLiteral("ip:192.168.5.5"));
+        const auto bareChips = visibleChips(bare);
+        QVERIFY(bareChips.size() == 1);
+        QSignalSpy bareOpenSpy(&bare, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(bareOpenSpy.isValid());
+        triggerPillMenuAction(bare, bareChips.first(), QStringLiteral("打开这台设备"));
+        QVERIFY2(!m_menuNotFound, "无注册表形态 buildPillMenu 直调缝未返回菜单（结果不可信）");
+        QVERIFY2(m_menuTriggered,
+                 qPrintable(QStringLiteral("无注册表菜单缺少「打开这台设备」首项，实际项: %1")
+                                .arg(m_menuCapturedTexts.join(QStringLiteral(" | ")))));
+        QCOMPARE(m_menuCapturedTexts,
+                 (QStringList{QStringLiteral("打开这台设备"),
+                              QStringLiteral("移除设备")}));
+        QCOMPARE(bareOpenSpy.count(), 1);
+        const DeviceProfile synthesized = bareOpenSpy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(synthesized.endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(synthesized.endpoints.front().ip),
+                 QStringLiteral("192.168.5.5"));
+        const deviceopen::Route route = deviceopen::routeTo(synthesized);
+        QVERIFY(route.page == deviceopen::Page::FtpDeploy);
+    }
+
+    // ── v2.16-B 任务5：旧 ip:port 行右键「编辑档案」仍可达（规格 §3.1 降级用例）──
+    // device.list 旧行（无 device.profile 记录）经注册表兼容迁移成档案后，
+    // 「编辑档案」项照常显示、保存成功并发射 deviceProfileEdited——让位双击
+    // 不丢任何编辑能力（§10 第 5 条实测结论的回归钉桩）。
+    void legacyIpPortPillStillEditableViaMenu()
+    {
+        QVariantMap legacyRow;
+        legacyRow.insert(QStringLiteral("ip"), QStringLiteral("10.7.0.1"));
+        legacyRow.insert(QStringLiteral("port"), 21);
+        legacyRow.insert(QStringLiteral("displayName"), QStringLiteral("旧行设备"));
+        QVERIFY(ConfigStore::instance().save(QStringLiteral("device.list"),
+                                             QStringLiteral("10.7.0.1:21"), legacyRow));
+        DeviceRegistry registry;
+        QVERIFY(registry.load());   // 旧行迁移为档案（端点身份确定性 id）
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        QPushButton* legacyPill = nullptr;
+        const auto pills = bus.findChildren<QPushButton*>(QStringLiteral("devicePill"));
+        for (QPushButton* p : pills) {
+            if (p->property("deviceIp").toString() == QStringLiteral("10.7.0.1"))
+                legacyPill = p;
+        }
+        QVERIFY(legacyPill);
+        // 选中键按迁移档案的实际 id 组（不硬编码 stableId 散列值）
+        const QString key = QStringLiteral("id:") + legacyPill->property("deviceId").toString();
+        selectDeviceViaMenu(bus, key);
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        QPushButton* pill = chips.first();
+
+        QSignalSpy editSpy(&bus, &DeviceBusWidget::deviceProfileEdited);
+        QVERIFY(editSpy.isValid());
+        m_legacyNote.clear();
+        // 布防：对话框改名后保存（150ms——晚于菜单缝分派后对话框的出现点）
+        QTimer::singleShot(150, m_timerGuard.get(), [this] {
+            QDialog* dialog = nullptr;
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor")) {
+                    dialog = qobject_cast<QDialog*>(w);
+                    break;
+                }
+            }
+            if (!dialog) {
+                QString tops;
+                const auto ws = QApplication::topLevelWidgets();
+                for (QWidget* x : ws)
+                    tops += QStringLiteral("<%1:%2>").arg(QString::fromLatin1(x->metaObject()->className()), x->objectName());
+                m_legacyNote += QStringLiteral("[150:no-dialog tops=%1]").arg(tops);
+                return;
+            }
+            auto* nameEdit = dialog->findChild<QLineEdit*>(QStringLiteral("deviceProfileName"));
+            auto* save = dialog->findChild<QPushButton*>(QStringLiteral("deviceProfileSave"));
+            if (!nameEdit || !save) {
+                m_legacyNote += QStringLiteral("[150:no-widgets]");
+                return;
+            }
+            m_legacyNote += QStringLiteral("[150:dialog]");
+            nameEdit->setText(QStringLiteral("旧行已编辑"));
+            save->click();
+        });
+        // 400ms 探针+应答：#46 端点同键确认框旁路。本槽实测定档不弹（迁移档案
+        // id 非空自排除）；保留应答是为了万一弹框时按"可保存但需确认"既有语义
+        // 答"是"继续保存而非挂死（默认钮"否"会循环重开对话框），并把实况记进
+        // m_legacyNote 随成功路径 qInfo 留证
+        QTimer::singleShot(400, m_timerGuard.get(), [this] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (auto* box = qobject_cast<QMessageBox*>(w)) {
+                    m_legacyNote += QStringLiteral("[400:msgbox %1]")
+                                            .arg(box->text().left(40));
+                    // 修复轮1：QMessageBox::done(StandardButton) 实测不映射为
+                    // question() 的返回值（移除确认框同型缺陷当场撞出，见本轮报告），
+                    // 真用户等价=点 Yes 按钮本体；无 Yes 按钮时与原 done 一样静默
+                    if (auto* yes = box->button(QMessageBox::Yes))
+                        yes->click();
+                    return;
+                }
+            }
+        });
+        QTimer::singleShot(3000, m_timerGuard.get(), [] {
+            const auto widgets = QApplication::topLevelWidgets();
+            for (QWidget* w : widgets) {
+                if (w->objectName() == QStringLiteral("deviceProfileEditor"))
+                    w->close();
+            }
+        });
+
+        openEditMenu(bus, pill);
+        // 修复轮1 minor4：缝守卫前移到任何等待之前（缝失效当场指名，不退化成泛用超时）
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QVERIFY2(!m_menuActionMissing, "旧行胶囊右键菜单缺少「编辑档案」项");
+        QVERIFY2(m_menuTriggered, "「编辑档案」项未被触发");
+        qInfo().noquote() << QStringLiteral("legacy-menu post-seam notFound=%1 missing=%2 triggered=%3 spy=%4")
+                                 .arg(m_menuNotFound ? 1 : 0).arg(m_menuActionMissing ? 1 : 0)
+                                 .arg(m_menuTriggered ? 1 : 0).arg(editSpy.count());
+        QTRY_VERIFY2_WITH_TIMEOUT(editSpy.count() == 1,
+                                  qPrintable(QStringLiteral("等待 deviceProfileEdited 超时（editSpy=%1 note=%2）")
+                                                 .arg(editSpy.count()).arg(m_legacyNote)),
+                                  5000);
+        qInfo().noquote() << QStringLiteral("legacy-menu-chain note: %1").arg(m_legacyNote);
+
+        const DeviceProfile saved = editSpy.at(0).at(0).value<DeviceProfile>();
+        QCOMPARE(QString::fromStdString(saved.name), QStringLiteral("旧行已编辑"));
+        QCOMPARE(saved.endpoints.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdString(saved.endpoints.front().ip),
+                 QStringLiteral("10.7.0.1"));
+        // 落库可回读（编辑真实经 registry 持久化，不是只发信号）
+        QVERIFY(ConfigStore::instance().exists(QStringLiteral("device.profile"),
+                                               QString::fromStdString(saved.deviceId)));
+    }
+
+    // ── v2.16-B 任务5：profileForPill 契约——档案查不到一律不发射（缺陷2钉桩）──
+    // 「打开这台设备」分派对不可解析胶囊必须早退，绝不发默认构造的空档案
+    //（ip 空、无端点）——否则任务 6 会把空载荷路由到 Page::None，用户双击却收到
+    //「该设备没有可用的协议端点」提示。两条路径都要一致：旧行 ip 不在设备全集 /
+    // deviceId 在注册表里查不到。
+    void unresolvableProfileEmitsNothing()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-real"),
+                                          QStringLiteral("真实机"),
+                                          QStringLiteral("10.4.0.1"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-real"));
+
+        QSignalSpy openSpy(&bus, &DeviceBusWidget::openDeviceRequested);
+        QVERIFY(openSpy.isValid());
+
+        // 路径A：无 deviceId、deviceIp 又不在总线设备全集 → profileForPill 合成回查
+        // 未命中 → 空 optional → 分派早退。修复前该路径 fall through 返回默认构造空
+        // 档案并发射 openDeviceRequested（openSpy==1），本用例即判红。
+        // 幽灵胶囊不设 objectName="devicePill"：dispatch 只读属性、不查对象名
+        //（查对象名的是 eventFilter 双击路径），且避免 visibleChips 误计入可见 chips。
+        QPushButton legacyGhost(&bus);
+        legacyGhost.setProperty("deviceIp", QStringLiteral("10.99.99.99"));   // 不在 m_devices
+        QMetaObject::invokeMethod(&bus, "dispatchPillMenuAction", Qt::DirectConnection,
+                                  Q_ARG(QPushButton*, &legacyGhost),
+                                  Q_ARG(QString, QStringLiteral("open")));
+
+        // 路径B：带 deviceId 但注册表里没有该档案 → registry->find 未命中 → 早退
+        //（这条修复前后皆 nullopt，作为契约一致性的并列钉桩，非缺陷针）
+        QPushButton idGhost(&bus);
+        idGhost.setProperty("deviceId", QStringLiteral("no-such-device-id"));
+        QMetaObject::invokeMethod(&bus, "dispatchPillMenuAction", Qt::DirectConnection,
+                                  Q_ARG(QPushButton*, &idGhost),
+                                  Q_ARG(QString, QStringLiteral("open")));
+
+        QCOMPARE(openSpy.count(), 0);
+        // 对照：真实胶囊仍可发射（证明上面两次早退是"查不到"而非缝本身坏了）
+        const auto chips = visibleChips(bus);
+        QVERIFY(chips.size() == 1);
+        triggerPillMenuAction(bus, chips.first(), QStringLiteral("打开这台设备"));
+        QVERIFY2(!m_menuNotFound, "buildPillMenu 直调缝未返回菜单（本用例结果不可信）");
+        QCOMPARE(openSpy.count(), 1);
+    }
+
+    // ── v2.16-B 任务4 Step1 硬线：allDevices() 恒为全集（chips 只是"已选"的视图）──
+    // Telnet 批量命令页（TelnetWidget.cpp:252）读的就是 allDevices()；搜索过滤、
+    // 打开菜单、全选、清空任何组合都不得缩小它（规格 §2.4 / §3）。
+    void allDevicesStaysFullRegardlessOfSelectionAndFilter()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 6; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-%1").arg(i),
+                                              QStringLiteral("设备%1").arg(i),
+                                              QStringLiteral("10.0.0.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 6);   // 未选任何一台，全集仍是 6
+
+        // 搜索框过滤 + 全选 + 清空，三种操作之后都不得改变 allDevices()。
+        // 过滤词取 6 台名称的共同前缀「设备」：过滤后 6 台全部可见（规格 §2.3
+        // 过滤只改菜单可见项；「全选可见」作用可见集——此处可见=全集）。
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        if (edit)
+            edit->setText(QStringLiteral("设备"));
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 6);
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+        bus.selectAllVisible();                                   // 菜单底部「全选可见 N 台」同一条路径
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 6);   // 硬线
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 6);
+        if (edit)
+            edit->setText(QString());
+        bus.clearSelection();                                     // 菜单底部「清空选择」
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 6);   // 硬线
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);
+    }
+
+    // ── v2.16-B 任务6 Step3：搜索过滤单独绝不动 allDevices()（规格 §2.4 硬线机械守卫）──
+    // 与任务4 allDevicesStaysFullRegardlessOfSelectionAndFilter 的分工：那条把过滤、
+    // 全选、清空混在一起验；本条只碰搜索框（设词→换词→0 命中→清空），不勾不选，
+    // 专证「搜索=视图」这条独立成立——批量命令页(TelnetWidget.cpp:252)读的就是
+    // allDevices()，搜索框绝不能把它变小。
+    void searchFilterNeverChangesAllDevices()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 5; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("sf-%1").arg(i),
+                                              QStringLiteral("搜索设备%1").arg(i),
+                                              QStringLiteral("10.9.0.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+
+        const int total = static_cast<int>(bus.allDevices().size());
+        QCOMPARE(total, 5);
+        edit->setText(QStringLiteral("搜索设备1"));   // 子串只命中一台
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+        edit->setText(QStringLiteral("zzz无此设备")); // 全不命中（菜单撤下两动作，视图为空）
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+        edit->setText(QString());                    // 清空过滤
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), total);
+    }
+
+    // ── v2.16-B 任务4 Step4：「设备 ▾」弹层结构（分组即子菜单，勾选即选中）──
+    // 规格 §2.3：每次 aboutToShow 重建；主菜单一行一个分组「组名 命中/总数」；
+    // 「未分组」最后；底部两动作在分隔线之后。夹具经 invokeMethod 直发
+    // aboutToShow/aboutToHide（与真实开合菜单走同一批接线，无窗口弹层依赖）。
+    void pickerMenuGroupsCountedAndUngroupedLast()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile a1 = makeProfile(QStringLiteral("dev-a1"), QStringLiteral("甲一"),
+                                       QStringLiteral("10.8.0.1"), 21);
+        a1.tags = {"车间A"};
+        DeviceProfile a2 = makeProfile(QStringLiteral("dev-a2"), QStringLiteral("甲二"),
+                                       QStringLiteral("10.8.0.2"), 21);
+        a2.tags = {QStringLiteral("车间A").toUtf8().toStdString()};
+        DeviceProfile b1 = makeProfile(QStringLiteral("dev-b1"), QStringLiteral("乙一"),
+                                       QStringLiteral("10.8.0.3"), 21);
+        b1.tags = {"A线"};
+        DeviceProfile c1 = makeProfile(QStringLiteral("dev-c1"), QStringLiteral("丙一"),
+                                       QStringLiteral("10.8.0.4"), 21);   // 无标签 → 未分组
+        QVERIFY(registry.save(a1));
+        QVERIFY(registry.save(a2));
+        QVERIFY(registry.save(b1));
+        QVERIFY(registry.save(c1));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+
+        const auto tops = menu->actions();
+        // 3 分组项 + 分隔线 + 全选可见 + 清空选择
+        QCOMPARE(tops.size(), 6);
+        // 组序：标签升序区分大小写（'A'(U+0041) < 车(U+8F66)），「未分组」永远最后
+        QCOMPARE(tops.at(0)->text(), QStringLiteral("A线 1/1"));
+        QCOMPARE(tops.at(1)->text(), QStringLiteral("车间A 2/2"));
+        QCOMPARE(tops.at(2)->text(), QStringLiteral("未分组 1/1"));
+        QVERIFY(tops.at(2)->menu());
+        QVERIFY(tops.at(3)->isSeparator());
+        QCOMPARE(tops.at(4)->text(), QStringLiteral("全选可见 4 台"));
+        QCOMPARE(tops.at(5)->text(), QStringLiteral("清空选择"));
+
+        // 子菜单成员 = registry 顺序，checkable、初始未勾、deviceKey 属性、端点 tooltip
+        const auto members = tops.at(1)->menu()->actions();
+        QCOMPARE(members.size(), 2);
+        QVERIFY(members.at(0)->isCheckable());
+        QVERIFY(!members.at(0)->isChecked());
+        QCOMPARE(members.at(0)->property("deviceKey").toString(), QStringLiteral("id:dev-a1"));
+        QCOMPARE(members.at(1)->property("deviceKey").toString(), QStringLiteral("id:dev-a2"));
+        QVERIFY2(members.at(0)->toolTip().contains(QStringLiteral("ftp 10.8.0.1:21")),
+                 qPrintable(members.at(0)->toolTip()));
+    }
+
+    // 勾选风暴：连勾 5 台只在菜单关闭时广播一次（规格 §3.8）；
+    // 重开时初始 checked 态由集合回灌，既不误广播也不把已选勾掉。
+    void menuCheckboxStormBroadcastsOnce()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 5; ++i) {
+            DeviceProfile p = makeProfile(QStringLiteral("dev-s%1").arg(i),
+                                          QStringLiteral("闪%1").arg(i),
+                                          QStringLiteral("10.8.1.%1").arg(i + 1), 21);
+            p.tags = {i % 2 == 0 ? "组X" : "组Y"};   // 两台一组，跨组连勾
+            QVERIFY(registry.save(p));
+        }
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const QList<QAction*> members = menuMemberActions(menu);
+        QCOMPARE(members.size(), 5);
+        for (QAction* act : members)
+            act->toggle();
+        QCOMPARE(spy.count(), 0);                        // 勾满也不得逐台广播
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 1);                        // 整场只广播 1 次
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 5);
+
+        // 重开：checked==集合成员回灌；构建初始 setChecked 不得触发 toggled 广播，
+        // 关闭也不得产生伪广播（spy 仍为 1）
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const QList<QAction*> reopened = menuMemberActions(menu);
+        QCOMPARE(reopened.size(), 5);
+        for (QAction* act : reopened)
+            QVERIFY2(act->isChecked(), qPrintable(act->text()));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 1);
+    }
+
+    // 多标签设备在两个分组各出现一次，只勾一处 ⇒ 选中集合 1 台（去重由显式 id
+    // 集合结构保证，规格 §2.4）；重开菜单两处 checked 态一致（都==成员判定）。
+    void multiTagDeviceSelectedOnceAcrossGroups()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile dual = makeProfile(QStringLiteral("dev-dual"), QStringLiteral("双子星"),
+                                         QStringLiteral("10.8.2.1"), 21);
+        dual.tags = {"组A", "组B"};
+        QVERIFY(registry.save(dual));
+        DeviceProfile onlyB = makeProfile(QStringLiteral("dev-b"), QStringLiteral("独B"),
+                                          QStringLiteral("10.8.2.2"), 21);
+        onlyB.tags = {"组B"};
+        QVERIFY(registry.save(onlyB));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+
+        QList<QAction*> dualActs;
+        const QList<QAction*> members = menuMemberActions(menu);
+        for (QAction* act : members) {
+            if (act->property("deviceKey").toString() == QStringLiteral("id:dev-dual"))
+                dualActs.append(act);
+        }
+        QCOMPARE(dualActs.size(), 2);                    // 组A、组B 各出现一次
+        dualActs.first()->toggle();                      // 只在一处勾
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 1);   // 集合里仍是 1 台
+        QCOMPARE(QString::fromStdString(bus.selectedDeviceProfiles().front().deviceId),
+                 QStringLiteral("dev-dual"));
+
+        QMetaObject::invokeMethod(menu, "aboutToShow");  // 重建后两处都反映成员判定
+        QList<QAction*> reopened;
+        for (QAction* act : menuMemberActions(menu)) {
+            if (act->property("deviceKey").toString() == QStringLiteral("id:dev-dual"))
+                reopened.append(act);
+        }
+        QCOMPARE(reopened.size(), 2);
+        QVERIFY(reopened.at(0)->isChecked());
+        QVERIFY(reopened.at(1)->isChecked());
+    }
+
+    // ── 终审项1（2026-10-21）：「全选可见 N 台」的 N 按**去重台数**计 ──
+    // 缺陷形态：按组直加 seg.profileIndexes.size() ⇒ 多标签设备在两个组各计一次
+    //（夹具：双标签 1 台 + 单标签 1 台 = 2 台 3 个成员项，标出 3 台、实选 2 台）。
+    // 既有夹具全是单标签设备，所以任务级评审七轮都没看见这条——本用例是首个
+    // 多标签标出数钉桩。判据两头：N 逐字解析自标签文本且 ==2；点全选后
+    // selectedDevices().size() 与 N 相符（承诺兑现）。
+    void selectAllVisibleLabelCountsDistinctDevices()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile dual = makeProfile(QStringLiteral("dev-dual3"), QStringLiteral("三星机"),
+                                         QStringLiteral("10.8.32.1"), 21);
+        dual.tags = {"组A", "组B"};      // 一台两标签：菜单里两个组各出现一次
+        QVERIFY(registry.save(dual));
+        DeviceProfile alone = makeProfile(QStringLiteral("dev-alone3"), QStringLiteral("单机"),
+                                          QStringLiteral("10.8.32.2"), 21);
+        alone.tags = {"组B"};
+        QVERIFY(registry.save(alone));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* selectAll = nullptr;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->text().startsWith(QStringLiteral("全选可见")))
+                selectAll = a;
+        }
+        QVERIFY2(selectAll, "菜单底部未见「全选可见 N 台」动作");
+        QString digits;
+        for (const QChar& c : selectAll->text()) {
+            if (c.isDigit())
+                digits += c;
+        }
+        const int advertised = digits.toInt();
+        QCOMPARE(selectAll->text(), QStringLiteral("全选可见 2 台"));   // 缺陷形态：「全选可见 3 台」
+        QCOMPARE(advertised, 2);
+        selectAll->trigger();            // 重建前触发：指针仍有效（trigger 不重建菜单）
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), advertised);   // 标出=实选
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);                 // 硬线：全集不动
+    }
+
+    // 底部动作只作用当前过滤可见集；全不命中时两条一并撤下（规格 §3.4）；
+    // 过滤与开合菜单全程不清空既有选择、不改 allDevices()。
+    void menuBottomActionsVisibleOnlyAndWithdrawn()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile jia = makeProfile(QStringLiteral("dev-jia"), QStringLiteral("甲"),
+                                        QStringLiteral("10.8.3.1"), 21);
+        jia.tags = {"组A"};
+        QVERIFY(registry.save(jia));
+        DeviceProfile yi = makeProfile(QStringLiteral("dev-yi"), QStringLiteral("乙"),
+                                       QStringLiteral("10.8.3.2"), 21);
+        yi.tags = {"组B"};
+        QVERIFY(registry.save(yi));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-jia"));   // 先选中甲
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 1);
+
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+
+        // 全不命中：只留一行不可点说明，底部两动作撤下；既有选择纹丝不动
+        edit->setText(QStringLiteral("zzz不存在"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const auto tops = menu->actions();
+        QCOMPARE(tops.size(), 1);
+        QVERIFY(!tops.at(0)->isEnabled());
+        QVERIFY2(tops.at(0)->text().contains(QStringLiteral("无匹配设备（2 台）")),
+                 qPrintable(tops.at(0)->text()));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 1);   // 绝不清空
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);
+
+        // 只命中乙：菜单只剩组B，「全选可见 1 台」只补乙这一台（甲不被动出集合）
+        edit->setText(QStringLiteral("乙"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const auto filtered = menu->actions();
+        QCOMPARE(filtered.size(), 4);                    // 组B + 分隔 + 全选可见 1 台 + 清空
+        QCOMPARE(filtered.at(0)->text(), QStringLiteral("组B 1/1"));
+        QCOMPARE(filtered.at(2)->text(), QStringLiteral("全选可见 1 台"));
+        filtered.at(2)->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 2);   // 甲仍在 + 乙补入
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);
+        QCOMPARE(spy.count(), 1);                        // 全选动作整场只广播一次
+    }
+
+    // ── 修复轮1 finding1：混合菜单会话的单广播规矩 ──
+    // 同一场会话里先勾成员（置 pending），再点底部动作（自身即时广播）——
+    // aboutToHide 不得因残留 pending 补发第二次广播（规格 §2.3/§3.8：一场一次）。
+    void menuBottomActionAfterTickBroadcastsOnce()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 3; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-x%1").arg(i),
+                                              QStringLiteral("混%1").arg(i),
+                                              QStringLiteral("10.8.8.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+
+        auto bottomAction = [menu](const QString& prefix) -> QAction* {
+            const auto acts = menu->actions();
+            for (QAction* a : acts) {
+                if (a->text().startsWith(prefix))
+                    return a;
+            }
+            return nullptr;
+        };
+
+        // 场次1：勾一台成员 → 同场点「全选可见」→ 关菜单。整场只许 1 次广播。
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        menuMemberActions(menu).first()->toggle();       // toggled → pending=true
+        QAction* selectAll = bottomAction(QStringLiteral("全选可见"));
+        QVERIFY(selectAll);
+        selectAll->trigger();                             // 动作自身即时广播
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 1);                         // 缺陷形态：pending 未清 → 2
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 3);
+
+        // 场次2：勾掉一台（全勾态下 toggle=取消）→ 同场点「清空选择」→ 关菜单。
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        menuMemberActions(menu).first()->toggle();
+        QAction* clearAll = bottomAction(QStringLiteral("清空选择"));
+        QVERIFY(clearAll);
+        clearAll->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(spy.count(), 2);                         // 第二场同样只补 1 次
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);
+    }
+
+    // ── 修复轮1 finding2+3：过滤态「清空选择」清的是全量集合，且文案必须自述范围 ──
+    // 规格 §2.3（2026-10-21 订正本）：两条底部动作作用域刻意不对称——全选受可见边界，
+    // 清空是逃生门清全部；过滤生效时清空项文案 `清空选择（全部 M 台）`（M=已选总数），
+    // 无过滤时保持朴素 `清空选择`。行为与两条文案（两分支）在此同批钉桩。
+    void clearUnderFilterDropsWholeSetAndLabelStatesScope()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile jia = makeProfile(QStringLiteral("dev-jia"), QStringLiteral("甲"),
+                                        QStringLiteral("10.8.9.1"), 21);
+        jia.tags = {"组A"};
+        QVERIFY(registry.save(jia));
+        DeviceProfile yi = makeProfile(QStringLiteral("dev-yi"), QStringLiteral("乙"),
+                                       QStringLiteral("10.8.9.2"), 21);
+        yi.tags = {"组B"};
+        QVERIFY(registry.save(yi));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+
+        // 先（无过滤）经菜单勾中甲+乙
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-jia"));
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-yi"));
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 2);
+
+        // 过滤「乙」：甲被排除在菜单可见集之外，但仍是已选
+        edit->setText(QStringLiteral("乙"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        const auto tops = menu->actions();
+        QCOMPARE(tops.size(), 4);                         // 组B + 分隔 + 全选可见 1 台 + 清空
+        QCOMPARE(tops.at(2)->text(), QStringLiteral("全选可见 1 台"));
+        // finding3：过滤态清空项文案必须带范围说明（M=已选总数=2，含被过滤掉的甲）
+        QCOMPARE(tops.at(3)->text(), QStringLiteral("清空选择（全部 2 台）"));
+        // finding2：经真实菜单项触发清空
+        tops.at(3)->trigger();
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 0);   // 全量清空：不可见的甲也被清掉
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 2);        // 硬线：全集纹丝不动
+
+        // finding3 另一分支：无过滤时清空项保持朴素「清空选择」
+        edit->setText(QString());
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* plain = nullptr;
+        const auto acts = menu->actions();
+        for (QAction* a : acts) {
+            if (a->text() == QStringLiteral("清空选择"))
+                plain = a;
+        }
+        QVERIFY2(plain, qPrintable(QStringLiteral("无过滤时清空项应保持朴素文案，实际末项: %1")
+                                       .arg(acts.isEmpty() ? QStringLiteral("(空)")
+                                                           : acts.last()->text())));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+    }
+
+    // ── 终审项8（2026-10-21）：过滤态+零已选回退朴素「清空选择」──
+    // 缺陷形态：过滤生效且未选任何设备时渲染字面「清空选择（全部 0 台）」——
+    // 范围后缀的语义是"M 台含看不见的"，M=0 没有可自述的对象。两分支都钉：
+    // 空已选+过滤 → 朴素文案；对照组 非空已选+过滤 → 范围文案仍须在场（防
+    // "一律朴素"退化，clearUnderFilterDropsWholeSetAndLabelStatesScope 已钉
+    // 非空分支，此处以单设备夹具再锚一次判据）。
+    void clearLabelPlainWhenNoSelectionUnderFilter()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile jia = makeProfile(QStringLiteral("dev-jia8"), QStringLiteral("甲八"),
+                                        QStringLiteral("10.8.34.1"), 21);
+        jia.tags = {"组A"};
+        QVERIFY(registry.save(jia));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        auto* edit = bus.findChild<QLineEdit*>(QStringLiteral("deviceSearchEdit"));
+        QVERIFY(edit);
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+
+        auto clearAction = [menu]() -> QAction* {
+            const auto acts = menu->actions();
+            for (QAction* a : acts) {
+                if (a->text().startsWith(QStringLiteral("清空选择")))
+                    return a;
+            }
+            return nullptr;
+        };
+
+        // 分支1：过滤生效 + 未选任何设备 ⇒ 朴素「清空选择」（缺陷形态：「（全部 0 台）」）
+        edit->setText(QStringLiteral("甲八"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* plainAct = clearAction();
+        QVERIFY2(plainAct, "过滤命中态菜单底部未见清空项");
+        QCOMPARE(plainAct->text(), QStringLiteral("清空选择"));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+
+        // 分支2（对照组）：过滤态+已选 1 台 ⇒ 范围文案恢复
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-jia8"));
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QAction* scopedAct = clearAction();
+        QVERIFY2(scopedAct, "过滤命中态菜单底部未见清空项");
+        QCOMPARE(scopedAct->text(), QStringLiteral("清空选择（全部 1 台）"));
+        QMetaObject::invokeMethod(menu, "aboutToHide");
+    }
+
+    // ── v2.16-B 任务4 Step5：chips 只显已选（视觉态只切可见性）+ 左键移出选择 ──
+    void chipsShowOnlySelectedDevices()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-c0"), QStringLiteral("零号"),
+                                           QStringLiteral("10.8.4.1"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-c1"), QStringLiteral("壹号"),
+                                           QStringLiteral("10.8.4.2"), 21)));
+
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);           // 预算=自身宽度−固定控件（隐藏窗口同样成立，与屏宽无关）
+        auto* hint = bus.findChild<QLabel*>(QStringLiteral("deviceBusHint"));
+        QVERIFY(hint);
+        QVERIFY2(hint->text().contains(QStringLiteral("未选择设备")), qPrintable(hint->text()));
+        auto* picker = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(picker);
+        QCOMPARE(picker->text(), QStringLiteral("设备 ▾ 未选择"));
+
+        // 未勾任何台：第 1 行没有任何可见 chips（胶囊仍在，只是收起——视觉态不删数据）
+        QCOMPARE(visibleChips(bus).size(), 0);
+
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-c1"));
+        const auto chips = visibleChips(bus);
+        QCOMPARE(chips.size(), 1);
+        QCOMPARE(chips.first()->property("deviceId").toString(), QStringLiteral("dev-c1"));
+        QVERIFY(chips.first()->property("selected").toBool());
+        QVERIFY(hint->isHidden());                       // 已选 → 空态提示让位
+        QCOMPARE(picker->text(), QStringLiteral("设备 ▾ 已选 1 台"));
+
+        bus.clearSelection();
+        QCOMPARE(visibleChips(bus).size(), 0);
+        QVERIFY(!hint->isHidden());
+        QCOMPARE(picker->text(), QStringLiteral("设备 ▾ 未选择"));
+    }
+
+    // 左键单击 chip＝移出选择（chips 的存在本身即选中，切换语义不再成立，§2.3）；
+    // 只移那一条，广播一次，allDevices() 不动。
+    void chipClickRemovesOnlyThatDevice()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 3; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-m%1").arg(i),
+                                              QStringLiteral("中%1").arg(i),
+                                              QStringLiteral("10.8.5.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);           // 3 枚 chips 的行宽预算充分（与屏宽无关，见上条同款）
+        selectAllViaMenu(bus);                           // 勾 3 台
+        QCOMPARE(visibleChips(bus).size(), 3);
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 3);
+
+        QSignalSpy spy(&bus, &DeviceBusWidget::deviceSelectionChanged);
+        QVERIFY(spy.isValid());
+        QPushButton* middle = nullptr;
+        for (QPushButton* chip : visibleChips(bus)) {
+            if (chip->property("deviceId").toString() == QStringLiteral("dev-m1"))
+                middle = chip;
+        }
+        QVERIFY(middle);
+        middle->click();   // 键盘等价路径移出（修复轮1：真鼠标左键移出走尾部「×」区）
+        QCOMPARE(spy.count(), 1);                        // 广播恰好一次
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 2);
+        QCOMPARE(visibleChips(bus).size(), 2);
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 3);   // 硬线
+        for (const auto& d : bus.selectedDevices())
+            QVERIFY(QString::fromStdString(d.ip) != QStringLiteral("10.8.5.2"));
+    }
+
+    // 溢出折算：80 台全选 → 可见 chips + M == 80（守恒，不判具体枚数，
+    // tests/AGENTS.md 约定 6）；「+M 台」与「设备 ▾」是同一个菜单实例。
+    // 折叠分支可达性由窗口显式后布局兑现（QTRY 等待 fold 出现，非 sleep 轮询）。
+    void chipOverflowPreservesCountAndOpensSameMenu()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 80; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-o%1").arg(i),
+                                              QStringLiteral("溢%1").arg(i),
+                                              QStringLiteral("10.9.%1").arg(i / 250)
+                                                  + QStringLiteral(".%2").arg(i % 250 + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.selectAllVisible();
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 80);
+
+        auto* moreBtn = bus.findChild<QPushButton*>(QStringLiteral("devicePillMore"));
+        QVERIFY(moreBtn);
+        auto* picker = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(picker);
+        QVERIFY(moreBtn->menu() == picker->menu());      // 同一个菜单（不是复制品）
+
+        // 行宽预算不足（420 − 固定控件 ⇒ 预算 < 单枚 chips 宽）：折叠分支确定性走到，
+        // 不依赖 show()/屏宽/布局瞬态（budget 由自身宽度算，见产品注释）。
+        // 若未实现折叠，moreBtn 保持隐藏 → 本用例红（非虚设性由产品侧 qInfo 打点佐证）。
+        bus.resize(420, 100);
+        bus.selectAllVisible();
+        QVERIFY2(!moreBtn->isHidden(),
+                 qPrintable(QStringLiteral("+M 台按钮未出现，moreBtn text=%1").arg(moreBtn->text())));
+        const int visibleCount = static_cast<int>(visibleChips(bus).size());
+        const QString moreText = moreBtn->text();
+        QVERIFY2(moreText.startsWith(QStringLiteral("+")) && moreText.endsWith(QStringLiteral(" 台")),
+                 qPrintable(moreText));
+        const int folded = moreText.mid(1, moreText.size() - 1 - QStringLiteral(" 台").size()).toInt();
+        QVERIFY2(folded > 0, qPrintable(QStringLiteral("+M 台 M 必须为正，实际文本: %1").arg(moreText)));
+        QCOMPARE(visibleCount + folded, 80);             // 守恒（不断具体枚数）
+        qInfo("overflow branch: shown=%d folded=%d", visibleCount, folded);
+
+        // 收起 chips 只是视觉收纳：集合与全集都不动（视觉态只切可见性）
+        QCOMPARE(static_cast<int>(bus.selectedDevices().size()), 80);
+        QCOMPARE(static_cast<int>(bus.allDevices().size()), 80);
+
+        // 放宽行宽 → 同一算法重算，收敛回可见（resizeEvent 重算路径的确定性形态）
+        bus.resize(2400, 100);
+        bus.selectAllVisible();
+        QCOMPARE(static_cast<int>(visibleChips(bus).size())
+                     + moreBtn->text().mid(1, moreBtn->text().size() - 3).toInt(), 80);
+    }
+
+    // ── 终审项3（2026-10-21）：applyPillOverflow 的 qInfo 只在状态变化时打 ──
+    // 缺陷形态：每次重算（含 resizeEvent 每帧）都打一条 ⇒ 拖窗口逐帧刷屏用户可见
+    // 日志面板。经 qInstallMessageHandler 捕获生产日志行（"DeviceBus chips
+    // overflow: ..."）计数：同态重算零新增（幂等 selectAllVisible ×2 + **只改高度**
+    // 的 resize ×2——预算只读 width()、胶囊 setFixedHeight(26) 不随栏高变 ⇒
+    // (shown/folded/selected) 三元组确定性不变；门控在 applyPillOverflow 尾部，
+    // resizeEvent 与动作路径共用同一段）；三元组变化恰好各补 1 条
+    //（清空 5→0、恢复全选 0→5）。静音放行同样不合格——afterClear 钉"变化必留痕"。
+    void chipOverflowLogOnlyOnStateChange()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        for (int i = 0; i < 5; ++i)
+            QVERIFY(registry.save(makeProfile(QStringLiteral("dev-log%1").arg(i),
+                                              QStringLiteral("志%1").arg(i),
+                                              QStringLiteral("10.8.31.%1").arg(i + 1), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(300, 100);                 // 窄行全折叠态（同任务4守恒槽的折叠分支定档）
+        bus.selectAllVisible();               // (shown,folded,selected)=(0,5,5)
+
+        s_overflowLogLines.clear();
+        QtMessageHandler previous = qInstallMessageHandler(captureOverflowLog);
+        bus.selectAllVisible();               // 同态幂等重算 ×2
+        bus.selectAllVisible();
+        bus.resize(300, 120);                 // resizeEvent 重算 ×2：宽度未变⇒预算不变⇒同态
+        bus.resize(300, 140);
+        const int afterNoop = s_overflowLogLines.size();
+        bus.clearSelection();                 // selected 5→0：状态变化 ⇒ 恰好补 1 条
+        const int afterClear = s_overflowLogLines.size();
+        bus.selectAllVisible();               // 0→5：再补 1 条
+        const int afterSelect = s_overflowLogLines.size();
+        qInstallMessageHandler(previous);
+
+        QCOMPARE(afterNoop, 0);      // 缺陷形态：四次同态重算全打 ⇒ 4≠0 红
+        QCOMPARE(afterClear, 1);     // 状态变化必须留痕且只 1 条（静音/逐帧都不合格）
+        QCOMPARE(afterSelect, 2);
+    }
+
+    // ── v2.16-B 任务4 Step6：胶囊文案只显名称（去 ip:port）；空名回落地址；仅重名加 ·ip ──
+    void chipCaptionNameOnlyWithoutIpPort()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-n1"), QStringLiteral("独名一号"),
+                                           QStringLiteral("10.8.6.1"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-n2"), QStringLiteral("独名二号"),
+                                           QStringLiteral("10.8.6.2"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-n1"));
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-n2"));
+
+        const auto chips = visibleChips(bus);
+        QCOMPARE(chips.size(), 2);
+        for (QPushButton* chip : chips) {
+            QVERIFY2(chip->text().endsWith(QStringLiteral("  ×")), qPrintable(chip->text()));  // ×保留（裁定①）
+            QVERIFY2(!chip->text().contains(QStringLiteral("10.8.6")),   // 不再带 ip:port（§2.3）
+                     qPrintable(chip->text()));
+            QVERIFY2(!chip->text().contains(QStringLiteral("·")),        // 不重名不加尾标
+                     qPrintable(chip->text()));
+            // 地址改由悬浮 tooltip 承载（§6 交代：依赖读 IP 的用户看 tooltip）
+            QVERIFY2(chip->toolTip().contains(QStringLiteral("10.8.6")), qPrintable(chip->toolTip()));
+        }
+        const QStringList names{QStringLiteral("独名一号  ×"), QStringLiteral("独名二号  ×")};
+        QVERIFY2(names.contains(chips.at(0)->text()), qPrintable(chips.at(0)->text()));
+        QVERIFY2(names.contains(chips.at(1)->text()), qPrintable(chips.at(1)->text()));
+    }
+
+    // 空名回落 ip:port——现状行为即如此（§2.3"否则栏里出空白胶囊，比长更糟"），
+    // 本用例是改造后不得退化的基线守卫（改装配前应同样绿）。
+    void chipCaptionEmptyNameFallsBackToAddress()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-anon"), QString(),
+                                           QStringLiteral("10.8.7.3"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectDeviceViaMenu(bus, QStringLiteral("id:dev-anon"));
+        const auto chips = visibleChips(bus);
+        QCOMPARE(chips.size(), 1);
+        QCOMPARE(chips.first()->text(), QStringLiteral("10.8.7.3:21  ×"));
+    }
+
+    // 重名才加 ·ip 短尾标：判据与 DeviceRegistry::rebuildWarnings 同源（非空名字
+    // 出现 >1 次）；chips 与菜单项文本同一真源（规格 §3.6）。
+    void duplicateNamesGetShortIpSuffixEverywhere()
+    {
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-dup1"), QStringLiteral("甲"),
+                                           QStringLiteral("10.0.0.7"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-dup2"), QStringLiteral("甲"),
+                                           QStringLiteral("10.0.0.9"), 21)));
+        QVERIFY(registry.save(makeProfile(QStringLiteral("dev-solo"), QStringLiteral("乙"),
+                                           QStringLiteral("10.0.0.8"), 21)));
+        DeviceBusWidget bus;
+        bus.setRegistry(&registry);
+        bus.resize(1400, 100);
+        selectAllViaMenu(bus);
+
+        QStringList chipTexts;
+        for (QPushButton* chip : visibleChips(bus))
+            chipTexts << chip->text();
+        QVERIFY2(chipTexts.contains(QStringLiteral("甲 ·10.0.0.7  ×")), qPrintable(chipTexts.join(QStringLiteral(" | "))));
+        QVERIFY2(chipTexts.contains(QStringLiteral("甲 ·10.0.0.9  ×")), qPrintable(chipTexts.join(QStringLiteral(" | "))));
+        QVERIFY2(chipTexts.contains(QStringLiteral("乙  ×")), qPrintable(chipTexts.join(QStringLiteral(" | "))));
+
+        // 菜单项文本同规则（重名带尾标，非重名干净名称）
+        auto* btn = bus.findChild<QPushButton*>(QStringLiteral("devicePickerBtn"));
+        QVERIFY(btn);
+        QMenu* menu = btn->menu();
+        QVERIFY(menu);
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QStringList menuTexts;
+        for (QAction* act : menuMemberActions(menu))
+            menuTexts << act->text();
+        QVERIFY2(menuTexts.contains(QStringLiteral("甲 ·10.0.0.7")), qPrintable(menuTexts.join(QStringLiteral(" | "))));
+        QVERIFY2(menuTexts.contains(QStringLiteral("甲 ·10.0.0.9")), qPrintable(menuTexts.join(QStringLiteral(" | "))));
+        QVERIFY2(menuTexts.contains(QStringLiteral("乙")), qPrintable(menuTexts.join(QStringLiteral(" | "))));
     }
 
     // ── ④ 任务中心：模板列表 + 步骤/参数摘要 + 目标设备名称+地址 ──
@@ -639,6 +2334,133 @@ private slots:
         QCOMPARE(devices->count(), 1);
         QVERIFY(devices->item(0)->text().contains(QStringLiteral("焊接机")));
         QVERIFY(devices->item(0)->text().contains(QStringLiteral("10.1.0.1")));
+    }
+
+    // ── ④b v2.16-B §4：模板 tagSelectors 带首尾空格时，圈选结果不得比规范化前小 ──
+    // 本规格唯一的行为变更站点（TaskCenterWidget::resolveTargets）：selector 与档案
+    // 标签两侧都先 devicebus::normalizeTag 再比较。改动前 selector " 车间A " 走
+    // std::find 精确相等匹配不上 ⇒ 目标 0 台（此用例当场红出）。
+    void resolveTargetsSelectorWithSurroundingSpacesStillMatches()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-tag-1"), QStringLiteral("车间A机器"),
+            QStringLiteral("10.7.0.1"), 21);
+        tagged.tags = {"车间A"};                     // registry 存库前已 trim，此处本就干净
+        QVERIFY(registry.save(tagged));
+        DeviceProfile untagged = makeProfile(
+            QStringLiteral("dev-tag-2"), QStringLiteral("无标机器"),
+            QStringLiteral("10.7.0.2"), 21);
+        QVERIFY(registry.save(untagged));            // 对照组：圈选不得误伤无标签设备
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("带空格圈选").toUtf8().toStdString();
+        tmpl.tagSelectors = {" 车间A "};             // 模板 JSON 侧从未 trim——真变更臂
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* summary = center.findChild<QLabel*>(QStringLiteral("templateSummaryLabel"));
+        QVERIFY(summary);
+        QVERIFY2(summary->text().contains(QStringLiteral("目标 1 台")),
+                 qPrintable(summary->text()));
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 1);               // 只命中 tagged，非恒真也非恒假
+        QVERIFY(devices->item(0)->text().contains(QStringLiteral("车间A机器")));
+    }
+
+    // ── ④c v2.16-B §4 等值守卫一：内部空格仍是区分手段（规范化只去首尾空白）──
+    // 防"顺手改成折叠空格/模糊匹配"：selector "车间 A" 对标签 "车间A" 必须仍不匹配。
+    // 该用例在改动前后都应绿——改动前精确相等不匹配，改动后 normalizeTag 保留内部空格。
+    void resolveTargetsSelectorInnerSpaceStillMisses()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-g1"), QStringLiteral("机器一"),
+            QStringLiteral("10.7.1.1"), 21);
+        tagged.tags = {"车间A"};
+        QVERIFY(registry.save(tagged));
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("内部空格守卫").toUtf8().toStdString();
+        tmpl.tagSelectors = {"车间 A"};
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 0);               // 内部空格不同 ⇒ 不匹配
+        auto* runBtn = center.findChild<QPushButton*>(QStringLiteral("btnTaskRun"));
+        QVERIFY(runBtn);
+        QCOMPARE(runBtn->isEnabled(), false);        // 空目标 ⇒ 执行按钮保持禁用
+    }
+
+    // ── ④d v2.16-B §4 等值守卫二：大小写仍是区分手段（规范化不碰大小写）──
+    // 防"顺手改成大小写不敏感"：selector "车间a" 对标签 "车间A" 必须仍不匹配。
+    void resolveTargetsSelectorCaseDifferenceStillMisses()
+    {
+        freshDb();
+        DeviceRegistry registry;
+        QVERIFY(registry.load());
+        DeviceProfile tagged = makeProfile(
+            QStringLiteral("dev-g2"), QStringLiteral("机器二"),
+            QStringLiteral("10.7.2.1"), 21);
+        tagged.tags = {"车间A"};
+        QVERIFY(registry.save(tagged));
+
+        TaskTemplateStore templates;
+        TaskTemplate tmpl;
+        tmpl.name = QStringLiteral("大小写守卫").toUtf8().toStdString();
+        tmpl.tagSelectors = {"车间a"};
+        QVariantMap commandParams;
+        commandParams.insert(QStringLiteral("commands"),
+                             QStringList{QStringLiteral("uptime")});
+        tmpl.steps = {makeStep(TaskStepType::RunCommands, commandParams)};
+        QVERIFY(templates.save(tmpl));
+
+        TaskRunStore runs;
+        TaskCenterWidget center;
+        center.setRegistry(&registry);
+        center.setStores(&templates, &runs);
+        auto* list = center.findChild<QListWidget*>(QStringLiteral("templateList"));
+        QVERIFY(list);
+        QTRY_COMPARE_WITH_TIMEOUT(list->count(), 1, 5000);
+        list->setCurrentRow(0);
+
+        auto* devices = center.findChild<QListWidget*>(QStringLiteral("taskTargetDevices"));
+        QVERIFY(devices);
+        QCOMPARE(devices->count(), 0);               // 大小写不同 ⇒ 不匹配
     }
 
     // ── ⑤ 执行确认：摘要+风险提示；拒绝则不启动、不落记录 ─────────

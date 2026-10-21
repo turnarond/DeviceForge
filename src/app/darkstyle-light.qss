@@ -653,6 +653,10 @@ QMessageBox QLabel {
     color: #2A2F38;
 }
 
+/* v2.16-B 设备栏空态提示：文案不含"提示"/"拖拽"，:22-25 文本属性选择器命中不了，
+   不钉则按通用 QLabel 主文字色渲染（比主内容还亮）。次级色值同源 :23/:28。 */
+QLabel#deviceBusHint { color: #6B7480; }
+
 QPushButton#devicePill {
     background: #E4E8EE;
     border: 1px solid #C4CAD4;

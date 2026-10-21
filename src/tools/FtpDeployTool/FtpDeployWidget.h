@@ -84,6 +84,12 @@ public:
     void startDeployFromMenu();
     void cancelDeployFromMenu();
 
+    // v2.16-B 任务6：「打开这台设备」编排落在部署页的一步——把设备下拉切到该 ip
+    // 并走用户同一条 currentTextChanged 路径（右面板源同步 + onRefreshRemote，
+    // 不 blockSignals：那是"打开即就绪"的语义，非"打开只换个字"）。
+    // 命中→setCurrentIndex 返回 true；未命中/无 combo→返回 false 且不动当前选择。
+    bool selectDeviceByIp(const QString& ip);
+
 signals:
     // 状态栏方向指示（Task 5）：左右面板路径/选中变化时组合发射「左路径 → 右路径」
     void directionChanged(const QString& text);

@@ -23,6 +23,7 @@ class DeviceRegistry;      // v2.11 设备档案注册表（device.profile + dev
 class TaskTemplateStore;   // v2.11 任务模板存储
 class TaskRunStore;        // v2.11 执行记录存储
 class TaskCenterWidget;    // v2.11 设备任务中心三栏 UI
+struct DeviceProfile;      // v2.16-B 任务6：openDeviceAt 形参（仅 const 引用，前置声明即可）
 
 class DeviceForge : public QMainWindow
 {
@@ -61,6 +62,11 @@ public slots:
 private slots:
     void onClearLogClicked();
 
+    // v2.16-B 任务6：「打开这台设备」编排终点——消费 DeviceBusWidget::openDeviceRequested，
+    // 经 deviceopen::routeTo 按端点协议切到目标工具页；只有部署页另有"把设备下拉
+    // 切到该 ip"一步（其余页只切页，不假装选中）。Page::None 只给状态栏提示、不切页。
+    void openDeviceAt(const DeviceProfile& profile);
+
 private:
     void setupFtpDeployTab();
     void setupTelnetDeployTab();
@@ -69,6 +75,11 @@ private:
     void setupWebSocketClientTab(); // new
     void setupNetRelayTab(); // 网络调试中继 Tool
     void setupTaskCenterTab(); // v2.11 设备任务中心（首次导航时懒创建）
+
+    // v2.16-B 修复轮1 Important 2：部署页方向指示可见性重算单源。规则与前两处散点逐字
+    // 一致——activeIndex（部署页=栈索引 0）为 0 且部署页存在才显示；程序化切页
+    // （openDeviceAt / 设置对话框恢复）不经 NavBar::itemClicked，调用方须在切页后补调。
+    void updateDirectionLabelVisibility(int activeIndex);
 
     // 在线更新集成（Task 5）
     void setupUpdateChecker();

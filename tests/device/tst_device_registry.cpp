@@ -150,6 +150,26 @@ private slots:
         const auto conflicts = registry.endpointConflicts(incoming);
         QCOMPARE(conflicts.size(), size_t(2));
     }
+
+    // v2.16-B §4：DeviceRegistry::normalize 的标签分支改用 devicebus::normalizeTag
+    // （经 upsert 路径）。钉住等值口径——去首尾空白、丢空串、去重、保序，与旧
+    // trim+appendUnique 一致；「大小写与内部空格不动」由 selector 侧守卫用例（
+    // tst_task_center_widget）与 normalizeTag 纯头用例共同守住，此处不重复。
+    // " / "（纯分隔符）按 §2.1 判空不入库——这正是单源化收口的口径。
+    void normalizeTagSurroundingSpacesTrimmedAndEmptiesDropped()
+    {
+        DeviceRegistry registry;
+        DeviceProfile profile;
+        profile.endpoints.push_back({"ftp", "192.168.20.150", 21, {}});
+        profile.tags = {" 车间A ", "", "   ", "车间A", " / ", "夜班 "};
+        const auto saved = registry.upsert(profile);
+
+        const std::vector<std::string> expected{"车间A", "夜班"};
+        QCOMPARE(saved.tags.size(), expected.size());
+        for (std::size_t i = 0; i < expected.size(); ++i)
+            QCOMPARE(QString::fromStdString(saved.tags[i]),
+                     QString::fromStdString(expected[i]));
+    }
 };
 
 QTEST_MAIN(TstDeviceRegistry)

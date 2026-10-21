@@ -8,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QStatusBar>   // Task 5: 状态栏版本标签
+#include <QDebug>       // v2.16-B 任务6：openDeviceAt 脱敏日志
 #include <QMenuBar>     // Task 5: 帮助菜单(检查更新)
 #include <QTimer>
 #include <QAction>      // Task 5: 菜单项
@@ -29,6 +30,7 @@
 
 #include "src/framework/ToolHost.h"
 #include "src/ui/DeviceBusWidget.h"
+#include "src/ui/DeviceOpenRouter.h"   // v2.16-B 任务6：profile→目标页唯一判定纯头
 #include "src/tools/TelnetTool/TelnetWidget.h"
 #include "src/tools/TelnetTool/TelnetBackend.h"
 #include "src/tools/NetRelayTool/NetRelayWidget.h"
@@ -132,8 +134,8 @@ DeviceForge::DeviceForge(QWidget* parent)
             m_toolStack->setCurrentIndex(index);
         }
         // 部署页（index 0）激活时显示方向指示，其他 Tool 页隐藏（Task 5）
-        if (m_directionLabel)
-            m_directionLabel->setVisible(index == 0 && m_ftpDeployTab != nullptr);
+        // v2.16-B 修复轮1：规则抽入 updateDirectionLabelVisibility 单源（判据不变）
+        updateDirectionLabelVisibility(index);
         // 特殊处理：最后一个导航项是设置
         if (index == m_navBar->count() - 1) {
             SettingsDialog dlg(this);
@@ -142,9 +144,7 @@ DeviceForge::DeviceForge(QWidget* parent)
             m_navBar->setActiveItem(m_toolStack->currentIndex());
             // 对话框经导航关闭后按恢复页重算方向标签可见性（Task 5 Minor 1：
             // 设置页 index 非 0，打开对话框时方向标签被隐藏，关闭后需恢复）
-            if (m_directionLabel)
-                m_directionLabel->setVisible(
-                    m_toolStack->currentIndex() == 0 && m_ftpDeployTab != nullptr);
+            updateDirectionLabelVisibility(m_toolStack->currentIndex());
         }
     });
 
@@ -162,6 +162,12 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 6. 设置初始活跃项
     m_navBar->setActiveItem(0);
     m_toolStack->setCurrentIndex(0);
+
+    // v2.16-B 任务6：「打开这台设备」编排接线——各 Tab 已建成（页指针可用），
+    // 设备栏双击/右键「打开这台设备」发射 openDeviceRequested → openDeviceAt 按
+    // 端点协议跳页（规格 §2.2：只有部署页另有选中该 ip，其余页只切页）。
+    connect(m_deviceBusWidget, &DeviceBusWidget::openDeviceRequested,
+            this, &DeviceForge::openDeviceAt);
 
     // v2.14 双屏「看不全」修复：工具栏单行最小宽度可超单屏可用宽，OS 默认放置
     // 可能落在装不下它的屏上致右侧裁切；启动时按「能否完整容纳」选屏并居中
@@ -249,6 +255,89 @@ DeviceForge::DeviceForge(QWidget* parent)
 void DeviceForge::initToolTabs()
 {
     // 所有 Tool 已在构造函数中创建（按导航栏顺序），此处无需操作
+}
+
+// v2.16-B 任务6：路由页名的日志用字符串（脱敏：只作 [device-open] 日志的 page= 字段，
+// 与 route.page 分支同源，杜绝 brief 草稿里 page=FtpDeploy 写死的错日志）。
+static const char* deviceOpenPageName(deviceopen::Page page)
+{
+    switch (page) {
+    case deviceopen::Page::FtpDeploy:    return "FtpDeploy";
+    case deviceopen::Page::BatchCommand: return "BatchCommand";
+    case deviceopen::Page::Modbus:       return "Modbus";
+    case deviceopen::Page::OpcUa:        return "OpcUa";
+    case deviceopen::Page::None:         return "None";
+    }
+    return "Unknown";
+}
+
+// v2.16-B 修复轮1 Important 2：方向指示可见性单源。判据逐字沿用两处散点原式
+// （itemClicked lambda 的 index==0、设置对话框恢复处的 currentIndex()==0，均且仅且
+// 再与 m_ftpDeployTab 非空相与）——部署页恒为栈索引 0，故 activeIndex==0 即"在部署页"。
+// 无参读栈索引的写法会在"点击设置导航项"处改变现状（栈索引不变仍为 0 → 标签不隐藏），
+// 因此保持调用方传判据索引的形态。
+void DeviceForge::updateDirectionLabelVisibility(int activeIndex)
+{
+    if (m_directionLabel)
+        m_directionLabel->setVisible(activeIndex == 0 && m_ftpDeployTab != nullptr);
+}
+
+// v2.16-B 任务6：「打开这台设备」编排终点（规格 §2.2/§2.4/§3.9）。
+// 页定位一律 indexOf(页指针)——工具页索引随任务中心懒建而漂，不写魔数。
+void DeviceForge::openDeviceAt(const DeviceProfile& profile)
+{
+    const auto route = deviceopen::routeTo(profile);
+    if (route.page == deviceopen::Page::None) {
+        // 无可用端点：只提示，不切页（§2.2 表 + §3 第 9 条）
+        statusBar()->showMessage(route.statusHint, 4000);
+        return;
+    }
+
+    QWidget* page = nullptr;
+    switch (route.page) {
+    case deviceopen::Page::FtpDeploy:    page = m_ftpDeployTab;      break;
+    case deviceopen::Page::BatchCommand: page = m_telnetDeployTab;   break;
+    case deviceopen::Page::Modbus:       page = m_modbusWidget;      break;
+    case deviceopen::Page::OpcUa:        page = m_opcUaClientWidget; break;
+    default: break;
+    }
+    if (!page || m_toolStack->indexOf(page) < 0) {
+        // 页指针空（该 Tool 启动失败未建）或尚未入栈：给中文提示，不切页
+        statusBar()->showMessage(QStringLiteral("该设备对应的工具页尚未就绪"), 4000);
+        return;
+    }
+
+    const int idx = m_toolStack->indexOf(page);
+    m_toolStack->setCurrentIndex(idx);
+    // 前提钉桩：栈序=导航序（deploy0…opcua5、任务中心 6 懒建在末尾、设置为纯导航项），
+    // setActiveItem(栈索引) 才等于导航高亮；任务中心之后的页若改变这条恒等式需重查
+    m_navBar->setActiveItem(idx);
+    // v2.16-B 修复轮1 Important 2：setActiveItem 不发 itemClicked（NavBar.cpp:34-48），
+    // 方向指示可见性不会随点击路径自动重算——双击落到/离开部署页时须在此补判
+    updateDirectionLabelVisibility(idx);
+
+    // 只有部署页有"选中这台"语义（§2.2 实测表）：Telnet/MODBUS/OPC UA 一律只切页，
+    // 绝不为了"看起来选中了"去动它们的目标集（§2.4 allDevices() 硬线）。
+    if (route.page == deviceopen::Page::FtpDeploy) {
+        if (auto* deploy = qobject_cast<FtpDeployWidget*>(page)) {
+            // 终审项5（2026-10-21）：selectDeviceByIp 返回 false 曾被吞掉=半成功静默。
+            // 组合键实读为 allDevices() 前台端点纯 ip（FtpDeployWidget.cpp:1571-1573
+            // addItem(d.ip)，d 来自 toDeviceInfo(profile, endpoints.front())），而
+            // route.ip 是 routeTo **扫到的首个可用端点** ip——两者不同源时（首个端点
+            // 协议不可识别/空 ip 被跳过）findText 落空：页已切过去、目标选择器却没
+            // 落到这台。按 §2.2/§3 的提示口径给一条状态栏消息，不再无声半成功。
+            if (!deploy->selectDeviceByIp(route.ip)) {
+                statusBar()->showMessage(
+                    QStringLiteral("已切到文件部署页，但设备下拉中没有该设备的条目（命中端点 %1），请手动选择目标")
+                        .arg(route.ip), 4000);
+            }
+        }
+    }
+
+    // 日志脱敏（仓库硬线）：只记设备名 + 协议 + 页名，无凭据、无端点口令、无内容。
+    qDebug().noquote() << QStringLiteral("[device-open] name=%1 protocol=%2 page=%3")
+                              .arg(QString::fromStdString(profile.name), route.protocol,
+                                   QString::fromLatin1(deviceOpenPageName(route.page)));
 }
 
 // 在初始化函数中（如 setupUi 后）

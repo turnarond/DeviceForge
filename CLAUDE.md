@@ -84,7 +84,7 @@ ctest -C Release -R tst_nrec --output-on-failure   # 单个测试（按名过滤
 - `tst_task_center_widget`：设备档案胶囊/编辑对话框与三栏任务中心 UI（v2.11）
 - `tst_task_center_e2e`：端到端集成——档案圈选→部署→命令→重启→恢复→持久化记录→阶段恢复（v2.11）
 
-当前共 34 个 QtTest/CTest 目标，以 `tests/CMakeLists.txt` 中的 `add_test()` 为准。
+当前共 53 个 QtTest/CTest 目标（v2.16-B 计数定版 2026-10-21，`ctest -C Release -N` 的 `Total Tests: 53` 与 `tests/CMakeLists.txt` 的 53 条 `add_test` 吻合）。**上面的列表只到 v2.11 期**，逐目标与被测物映射的权威清单在 `tests/AGENTS.md`（含 v2.12—v2.16-B 各波的 +N 算式），本文件不重复维护。
 
 > CTest 属性已通过 `ENVIRONMENT_MODIFICATION` 把 Qt `bin` 目录前插到 `PATH`，否则 Windows 直接跑测试会报 `0xc0000135`（DLL 缺失）。
 
@@ -438,9 +438,11 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **同名 remove 语义分叉（2026-10-16 #54 实录）**：`TaskTemplateStore::remove` 对不存在/空 id 返回 **false**（exists() 前置守卫）；`ConfigStore::remove` 对零行 DELETE 返回 **true**（exec 成功即真），`DeviceRegistry::remove` 因 `existed || storeRemoved` 组合对不存在 id 实际返回 **true**。新增 store 腿时先定口径、勿默认转发可证伪——UI 腿依赖 false 分支做"已被并行移除"复位。
 
+- **`QMessageBox::done(StandardButton)` 不映射 `question()` 的返回值（2026-10-21 v2.16-B 任务5 修复轮实录）**：自动化测试里应答模态 `QMessageBox::question()` 时，用 `box->done(QMessageBox::Yes)` **不会**让 `question()` 返回 `Yes`——返回值不是你传进去的那个按钮，于是"用户确认了"的分支断言全是**假绿**（本波先按 `done()` 写，靠单变量 A/B 复跑同一夹具只换应答方式即翻红当场撞出；Qt 6.11.1 本地实测，无 Qt 源码可查故以复跑为据）。**唯一可靠的自动化缝是点按钮本体**：`box->button(QMessageBox::Yes)` 拿到按钮后 `->click()`（`clicked` 才会走 QMessageBox 内部把标准按钮映射回 `done(buttonCode)` 的那条真路径）。波及面判定：`info()`/`warning()` 的返回值产品不观察，`done(Ok)` 无害；自己 `new QMessageBox` 再 `box.exec()` 的场景走 QDialog 契约、`done()` 成立——三类要分开，别把"done 一律不可用"当结论。参照用例：`tests/ui/tst_task_center_widget.cpp` 的 `removeMenuActionConfirmsAndDeletesProfile`（移出确认框应答 Yes）与 `legacyIpPortPillStillEditableViaMenu`（同型缺陷当场撞出处的注释）。
+
 - **密码持久化（v2.3.0）**：FTP 凭证密码可通过 DPAPI 加密后持久化到 SQLite（ConfigStore + DpapiCrypto）；若未启用加密或非 Windows 平台，密码不持久化，每次启动需手动输入
 
-- **测试现状**：已有 20 个 QtTest/CTest 目标（以 `tests/CMakeLists.txt` 的 `add_test()` 为准），覆盖 NetRelay 录制回放与组播/转发地址校验、OTA 更新检查与文件替换回滚、DPAPI 加解密、ConfigStore 持久化、OPC UA 编解码、SFTP 上传规划、FTP LIST 解析、部署循环与并发调度、CSV/HTML 部署报告、远程列表排序、主题映射、文件源抽象、面板异步加载、双主题像素验证、Modbus 映射及 Telnet 超时。Phase 0-1 设计规划的 FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充，计划在后续迁移时同步完善
+- **测试现状**：**以 `tests/AGENTS.md` 为准**（目标计数、逐目标被测物、在册特例与已知覆盖空白都在那一处单源维护，本文件不再抄数字以免两处分叉）。历史口径提醒：本条曾长期停留"20 个目标、FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充"的写法，而 `tst_task_center_widget`（v2.11 起）与 `tst_device_bus_groups`（v2.16-B 起）早已补上 DeviceBusWidget 侧的定向覆盖——读到旧数字别据此判断"没有测试保护"
 
 - **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
   - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
