@@ -2,11 +2,11 @@
 
 > 本文件描述 DeviceForge 的发展方向。计划会随社区反馈调整——**如果你正好需要某个功能,欢迎在 [Issues](../../issues) 提出或 👍,这会直接影响优先级。**
 
-**当前版本**：v2.15.0 · **平台**：Windows（x64）· **许可**：MIT License
+**当前版本**：v2.16.0 · **平台**：Windows（x64）· **许可**：MIT License
 
 ---
 
-## 已交付（至 v2.15.0）
+## 已交付（至 v2.16.0）
 
 | 模块 | 能力 |
 |------|------|
@@ -41,10 +41,11 @@
 - **v2.14**（2026-10-18）：加固与可见性版——部署页「保存为模板」（v2.11 spec 承诺兑现）+ 任务中心加固批（#49 收编：校验单源/异常脱敏/重试文案分档/档案落盘回滚/凭据降级定档）+ WebSocket 五项（#50 收编：对端列/事件过滤/Token 常量时间/计数语义/运行守卫）+ 两处对外文档勘误
 - **v2.15.0**（2026-10-20）：全量收编版——文件夹条目入口递归展开镜像部署（三入口同口径、5000 上限整体拒绝、远端子目录自动创建；SFTP 目录落点加深一层）+ 清单去 1000 条隐性截断 + 导入/保存为模板同落库通道 + 运行终态聚合单源 + 运行级已确保远端目录复用 + 部署页工具栏两行化（窄屏不再右侧裁切）+ telnet 工装有界红；测试基线 **52** 目标。已知问题 #59（SylixOS 三禁未单源化）留 v2.16
 - **v2.14.1**（2026-10-18）：评审后续波补丁——主窗口初始几何主屏优先兑现 + 传输层目录条目口径钉桩（注释/手册就实）+ v2.13 规格文案勘误
+- **v2.16.0**（2026-10-23）：设备栏标签分组版——只显已选 chips + 「设备 ▾」分组菜单（标签即分组、零迁移）+ 双击/右键「打开这台设备」按端点协议跳页 + 未选择设备＝没有目标（现场可见变更）+ 标签归一单源化 + SylixOS FTP 三禁单源化与静态守卫（#59 闭环）；测试基线 **53** 目标
 
 底层架构：可扩展 Tool 框架（Backend + Widget）+ Protocol Adapter 抽象层 + IDeployable 部署能力接口 + 工业仪表盘深色主题（「琴色是动词」体系）。
 产品化：自定义 app.ico + exe VERSIONINFO（turnarond/DeviceForge）+ 无 console（WIN32 子系统）。
-测试：49 个 QtTest/CTest 目标（v2.14 新增 tst_deploy_template_map / tst_task_step_validation / tst_window_placement；v2.13 新增 tst_task_template_codec）（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e；v2.12 新增 tst_batch_result_header / tst_log_panel_state / tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback / tst_modbus_target_store / tst_modbus_scheduler / tst_modbus_page / tst_modbus_loopback / tst_dir_compare / tst_file_encoding）。
+测试：53 个 QtTest/CTest 目标（v2.16 新增 tst_device_bus_groups；v2.15 新增 tst_folder_expand / tst_deploy_entry_builder / tst_deploy_toolbar_layout；v2.14 新增 tst_deploy_template_map / tst_task_step_validation / tst_window_placement；v2.13 新增 tst_task_template_codec）（以 `tests/CMakeLists.txt` 为准；v2.11 新增 tst_device_registry(_store) / tst_task_template_store / tst_task_execution_engine / tst_task_run_store / tst_task_center_widget / tst_task_center_e2e；v2.12 新增 tst_batch_result_header / tst_log_panel_state / tst_ws_event_types / tst_ws_page_layout / tst_ws_loopback / tst_modbus_target_store / tst_modbus_scheduler / tst_modbus_page / tst_modbus_loopback / tst_dir_compare / tst_file_encoding）。
 
 ---
 
