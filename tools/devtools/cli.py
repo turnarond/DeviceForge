@@ -4,6 +4,7 @@
 用法（仓库根目录执行）：
     python tools/devtools/cli.py versioncheck [--root <dir>]
     python tools/devtools/cli.py smoke <exe> [--timeout 秒] [--title 标题]
+    python tools/devtools/cli.py ftpguard [--source <cpp>] [--assembler <名>]
 """
 import os
 import sys
@@ -13,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse  # noqa: E402
 
-from devtools import smoke, versioncheck  # noqa: E402
+from devtools import ftpguard, smoke, versioncheck  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,6 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--timeout", type=float, default=30.0, help="等待主窗口超时秒数（默认 30）")
     sm.add_argument("--title", default="DeviceForge", help="主窗口标题包含关键字（默认 DeviceForge）")
 
+    fg = sub.add_parser("ftpguard",
+                        help="SylixOS FTP 三禁单源静态守卫（AGENTS.md 反模式 / GitHub #59）")
+    fg.add_argument("--source", default=str(ftpguard.DEFAULT_SOURCE),
+                    help="待检源码（默认 src/adapter/FtpAdapter.cpp）")
+    fg.add_argument("--assembler", default=ftpguard.DEFAULT_ASSEMBLER,
+                    help="单源装配函数名（默认 setupCommonOpts）")
+
     return ap
 
 
@@ -39,6 +47,8 @@ def main(argv: list = None) -> int:
         result = smoke.SmokeRunner(args.exe, timeout=args.timeout, title=args.title).run()
         print(result.message)
         return 0 if result.ok else 1
+    if args.command == "ftpguard":
+        return ftpguard.main(["--source", args.source, "--assembler", args.assembler])
     return 2
 
 

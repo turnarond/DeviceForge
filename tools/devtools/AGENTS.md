@@ -10,9 +10,10 @@ tools/
 │   ├── __init__.py
 │   ├── versioncheck.py # 全仓版本号一致性校验（以 CMakeLists.txt project() VERSION 为准）
 │   ├── smoke.py        # UI 冒烟：启动/主窗口/退出验证
+│   ├── ftpguard.py     # SylixOS FTP 三禁静态守卫（#59；退出码 0/1/2/3 语义化，零证据即 FAIL）
 │   ├── gen_wss_cert.py # WSS 自签名证书生成
 │   └── cli.py          # 统一 CLI 入口
-└── tests/              # unittest 测试（test_smoke.py / test_versioncheck.py）
+└── tests/              # unittest 测试（test_smoke.py / test_versioncheck.py / test_ftpguard.py）
 ```
 
 ## 命令
@@ -20,6 +21,7 @@ tools/
 ```bash
 python tools/devtools/versioncheck.py     # 版本一致性（发版/改版本号后必跑）
 python tools/devtools/smoke.py            # UI 冒烟（构建产物存在时）
+python tools/devtools/ftpguard.py         # SylixOS FTP 三禁单源守卫（改 FtpAdapter.cpp 后必跑）
 python -m unittest discover -s tools/tests   # 工具集自身测试
 ```
 
