@@ -80,9 +80,9 @@
 | 5 | CHANGELOG / RELEASE_NOTES 更新 | 文件 |
 | 6 | 版本档位符合 §1 判据（MINOR 需有「新增能力」节） | 发布计划 + 自检题 |
 | 7 | GitHub Release 正文与 `RELEASE_NOTES.md` 同源 | 逐字比对（脚本 `read==live`） |
-| 8 | 发布包已挂 Release 资产（MINOR/MAJOR 必挂） | `gh release view vX.Y.Z --json assets` |
-| 6 | tag 已打（annotated） | `git tag -n` |
-| 7 | 发布包完整 | 包内容清单 |
+| 8 | tag 已打（annotated） | `git tag -n` |
+| 9 | 发布包已挂 Release 资产（MINOR/MAJOR 必挂） | `gh release view vX.Y.Z --json assets` |
+| 10 | 发布包完整 | 包内容清单 |
 
 ## 6. 版本历史记录
 

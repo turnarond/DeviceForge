@@ -272,7 +272,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 组件（src/ui/）
 
-- **DeviceBusWidget**：顶部紧凑设备栏。胶囊形 QPushButton 水平流式布局，支持多选、添加、删除设备。石墨底 + 琴色选中态边框。工业仪表盘风格
+- **DeviceBusWidget**：顶部紧凑设备栏。v2.16 起第 1 行只显已选 chips，其余设备收进「设备 ▾」标签分组菜单（勾选即选中）；双击 chip＝打开这台设备、右键＝打开/编辑档案/移除、点尾部「×」＝移出选择；chips 石墨底 + 琴色选中态边框，工业仪表盘风格
 - **FileBrowserPanel**：通用双栏文件面板（FTP 双栏宿主组装；源可配置）。统一表格视图（RemoteFileModel/FtpFileInfo 渲染）+ 面板顶部路径栏（Enter 跳转）+ 底部面包屑（当前路径文本）+ **面板源选择器行**（源类型下拉 本地/FTP/SFTP + 面板级设备下拉，远程源时显示；setSource 显示自动同步，blockSignals 防回环）；双击进入目录/`..` 退出；TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：拖入对面=复制，本地↔远程=上传/下载，远程↔远程提示暂不支持）；**系统文件拖入**（资源管理器文件拖入远程面板逐文件上传，空 url 防护）；**异步加载**（loadDirectory QtConcurrent + 代际令牌，慢速目录不冻结 UI，失败面包屑「加载失败」+ 重连重试一次）
 - **IFileSource**：文件源统一接口（list/mkdir/rename/remove(path,isDir)/clearDirectory/upload/download/connect/isConnected/lastError/进度回调/取消标志），与协议无关地操作文件系统。实现：**LocalFileSource**（本地 std::filesystem，纯逻辑可单测）与 **RemoteFileSource**（包装 FtpAdapter FTP/FTPS / SshAdapter SFTP）
 
@@ -280,7 +280,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 六个 Tool 均遵循 Backend (继承 ToolBackend / ServiceTask) + Widget (继承 ToolWidget / QWidget) 配对模式：
 
-- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；v2.8 由 DeployJob/DeploymentRunner 提供并发度 1-8 的调度、每设备进度、CSV/HTML 报告和失败设备重试；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`；工具栏双组布局（连接组：协议/设备/端口/FTPS 加密/连接状态点，状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪；部署组：清空/重启/刷新/部署），设备总线添加/删除设备后自动连接刷新；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration + QPointer 守卫）；面板源选择器与工具栏双向联动
+- **FtpDeployTool**（`src/tools/FtpDeployTool/`）：首个完整 Tool。FtpDeployBackend（通过 ProtocolRegistry 按协议获取 FtpAdapter/SshAdapter）+ FtpDeployWidget（双面板宿主重构：QSplitter 组装两个 FileBrowserPanel——左侧本地（LocalFileSource，固定，v2.7 起可经面板源选择器独立切 FTP/SFTP 远程浏览）、右侧远程（RemoteFileSource，按工具栏协议/设备/端口/FTPS 配置重建），统一表格视图 + 路径栏（Enter 跳转）+ 底部面包屑，双击进入目录/`..` 退出，TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面（方向语义：本地↔远程=上传/下载，远程↔远程提示暂不支持）/ Tab 切栏，右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新），面板间拖拽 + 系统文件拖入上传），支持 FTPS 加密 + SFTP 批量部署（v2.6 部署循环协议化：FTP/SFTP 同一部署逻辑，协议下拉选 SFTP 直接部署）；v2.8 由 DeployJob/DeploymentRunner 提供并发度 1-8 的调度、每设备进度、CSV/HTML 报告和失败设备重试；文件浏览/操作全部下沉 `src/ui/FileBrowserPanel` + `IFileSource`；工具栏两行化（v2.15 波3：第 1 行＝协议/设备/端口/FTPS 加密/连接状态点 + ⟳ 刷新/▶ 部署/保存为模板，第 2 行＝清空/重启四参 + ⬇ 导出报告/↻ 重试失败设备；状态点灰=未连接/青绿=已连接/红=失败/Connecting 灰闪），设备总线添加/删除设备后自动连接刷新；连接与列表加载全异步化（QtConcurrent + 代际令牌 m_connGeneration + QPointer 守卫）；面板源选择器与工具栏双向联动
 - **TelnetTool**（`src/tools/TelnetTool/`）：TelnetBackend（TelnetAdapter → lwcommunicate / SshAdapter → libssh2）+ TelnetWidget，批量 Shell 命令，支持 Telnet/SSH 切换，认证失败阻断
 - **WebSocketTool**（`src/tools/WebSocketTool/`）：WebSocketBackend（QWebSocket）+ WebSocketWidget，Server/Client，默认绑定 127.0.0.1 + 可选 Token 认证
 - **ModbusTool**（`src/tools/ModbusTool/`）：ModbusBackend（QModbusTcpClient）+ ModbusWidget，批量读写寄存器（读：0x01-0x04 按类型正确映射 + 异常码中文展示；写：0x06 寄存器 / 0x05 线圈对话框），QTimer 自动刷新

@@ -1,6 +1,6 @@
 # DeviceForge 知识库（AGENTS.md）
 
-**生成**：2026-08-22 ｜ **提交**：6fe4114 ｜ **分支**：main ｜ **版本**：2.7.0（以 CMakeLists.txt `project()` 为准）
+**生成**：2026-08-22 ｜ **生成时提交**：6fe4114 ｜ **分支**：main ｜ **版本**：2.16.0（以 CMakeLists.txt `project()` 为准；2026-10-24 核对）
 
 ## 概述
 

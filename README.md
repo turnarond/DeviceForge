@@ -15,7 +15,7 @@ DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，�
 | 🔒 **FTPS 加密传输** | FTP over TLS，防止凭证和文件在网络中被窃听 |
 | 🔌 **SFTP 文件管理 + 批量部署** | SshAdapter SFTP 子系统，双栏 FTP/SFTP 协议一键切换，SFTP 批量部署/拖拽上传（与 FTP 同一部署逻辑） |
 | 🎨 **工业仪表盘主题（暗/亮可切换）** | 「琴色是动词」主题体系——琴色仅标记可操作/活跃状态，结构一律中性，暗/亮双主题设置中即时切换 |
-| 📋 **设备总线** | 胶囊式设备管理（名称优先、悬浮端点详情、双击编辑），统一设备档案多协议端点，ConfigStore 持久化 + DPAPI 加密凭证 |
+| 📋 **设备总线** | 标签即分组的设备栏：第 1 行只显已选 chips，「设备 ▾」分组菜单勾选目标；双击＝打开这台设备，右键＝打开/编辑档案/移除；统一设备档案多协议端点，ConfigStore 持久化 + DPAPI 加密凭证 |
 | 🗂 **设备任务中心** | 任务模板（文件部署→批量命令→重启→恢复检查）编排多设备执行；执行历史持久化（设备快照不可变、脱敏）、失败阶段恢复（已交付文件不重传）、风险确认默认拒绝 |
 | 📝 **统一日志** | 所有 Tool 日志统一路由到底部可折叠全局日志面板 |
 | 🔁 **网络中继 + 录制回放** | TCP/UDP 透明中继旁路抓包，流量录制为 `.nrec` 并按原始时序回放 |
@@ -114,7 +114,7 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.10.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.16.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建
