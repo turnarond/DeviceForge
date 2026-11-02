@@ -364,6 +364,7 @@ FodyWeavers.xsd
 .superpowers/
 .worktrees/
 .omc/
+.omo/
 build/
 build_release/
 dist/
