@@ -330,6 +330,19 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 双主题色值单源 ThemeTokens.h（Instrument 视觉语言，纯头）---
+add_executable(tst_theme_tokens theme/tst_theme_tokens.cpp
+)
+target_include_directories(tst_theme_tokens PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_theme_tokens PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME tst_theme_tokens COMMAND tst_theme_tokens)
+if(_qt_bin_dir)
+    set_tests_properties(tst_theme_tokens PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+endif()
+
 # --- 双主题像素验证（#18：离屏渲染采样 + 色值字符串断言保底）---
 # 渲染依赖 QPA 平台插件（QApplication），故同样前插 Qt bin 并显式指定插件路径
 add_executable(tst_qss_pixels theme/tst_qss_pixels.cpp
