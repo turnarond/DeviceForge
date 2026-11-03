@@ -36,7 +36,7 @@ QGroupBox {
     margin-top: 12px;
     padding-top: 10px;
     font-weight: bold;
-    color: #FFFFFF;
+    color: #E6EDF3;
 }
 
 QGroupBox::title {
@@ -108,7 +108,7 @@ QPushButton#feSave:disabled {
 QPushButton#btnDanger {
     background-color: #F85149;
     border-color: #F85149;
-    color: #FFFFFF;
+    color: #E6EDF3;
 }
 
 QPushButton#btnDanger:hover {
@@ -123,7 +123,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {
     border: 1px solid #35465A;
     border-radius: 4px;
     padding: 6px 8px;
-    color: #FFFFFF;
+    color: #E6EDF3;
     selection-background-color: #2DD4BF;
     selection-color: #062E2A;
     font-size: 9.5pt;
@@ -146,7 +146,7 @@ QComboBox {
     border: 1px solid #35465A;
     border-radius: 4px;
     padding: 5px 8px;
-    color: #FFFFFF;
+    color: #E6EDF3;
     min-width: 120px;
     font-size: 9.5pt;
 }
@@ -182,7 +182,7 @@ QComboBox QAbstractItemView {
     border: 1px solid #35465A;
     selection-background-color: #2DD4BF;
     selection-color: #062E2A;
-    color: #FFFFFF;
+    color: #E6EDF3;
     outline: none;
 }
 
@@ -365,7 +365,7 @@ QSpinBox, QDoubleSpinBox {
     border: 1px solid #35465A;
     border-radius: 4px;
     padding: 5px;
-    color: #FFFFFF;
+    color: #E6EDF3;
 }
 
 QSpinBox:focus, QDoubleSpinBox:focus {
@@ -412,10 +412,10 @@ QSlider::handle:horizontal:hover {
 
 /* ===== 工具提示 ===== */
 QToolTip {
-    background-color: #263140;
-    border: 1px solid #35465A;
+    background-color: #1B2430;
+    border: 1px solid #263140;
     padding: 6px 10px;
-    color: #FFFFFF;
+    color: #E6EDF3;
     border-radius: 4px;
     font-size: 9pt;
 }
@@ -424,7 +424,7 @@ QToolTip {
 QMenu {
     background-color: #141B24;
     border: 1px solid #35465A;
-    color: #FFFFFF;
+    color: #E6EDF3;
     border-radius: 6px;
 }
 
@@ -571,7 +571,7 @@ QDockWidget {
 
 QDockWidget::title {
     background-color: #141B24;
-    color: #FFFFFF;
+    color: #E6EDF3;
     padding: 6px 10px;
     font-weight: 600;
 }
@@ -583,7 +583,7 @@ QMessageBox {
 }
 
 QMessageBox QLabel {
-    color: #FFFFFF;
+    color: #E6EDF3;
 }
 
 /* ===== 日志折叠条（Task 4） ===== */
@@ -663,9 +663,9 @@ QMessageBox QLabel {
 QLabel#deviceBusHint { color: #8B98A8; }
 
 QPushButton#devicePill {
-    background: #1B2430;
+    background: #141B24;
     border: 1px solid #35465A;
-    border-radius: 4px;
+    border-radius: 999px;
     color: #E6EDF3;
     font-size: 12px;
     font-weight: normal;
@@ -678,8 +678,9 @@ QPushButton#devicePill:hover {
 }
 
 QPushButton#devicePill[selected="true"] {
-    border: 2px solid #2DD4BF;
+    border: 1px solid #2DD4BF;
     background: #12302C;
+    color: #2DD4BF;
 }
 
 QPushButton#devicePill[online="true"]  { border-left: 3px solid #3FB950; }
@@ -706,19 +707,19 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #F85149; }
 
 /* 状态栏版本标签（主窗口）— 动态状态（accent链接/检查失败）由代码逻辑覆盖 */
 #versionLabel {
-    color: #8B98A8;
+    color: #2DD4BF;
     padding: 0 8px;
 }
 
 /* 状态栏快捷键提示（Task 5，TC 风格常驻）— 基色/内边距与版本标签一致，双主题适配 */
 #shortcutHint {
-    color: #8B98A8;
+    color: #7D8A99;
     padding: 0 8px;
 }
 
 /* 状态栏中央部署方向指示（Task 5）— 左面板路径 → 右面板路径 */
 #directionLabel {
-    color: #8B98A8;
+    color: #7D8A99;
     padding: 0 8px;
 }
 
@@ -847,7 +848,7 @@ QLabel#mbCompareSummary {
 }
 
 QLabel#feTitle {
-    color: #FFFFFF;
+    color: #E6EDF3;
     font-weight: 700;
     font-size: 10pt;
 }

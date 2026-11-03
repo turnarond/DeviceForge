@@ -412,8 +412,8 @@ QSlider::handle:horizontal:hover {
 
 /* ===== 工具提示 ===== */
 QToolTip {
-    background-color: #B8C3CC;
-    border: 1px solid #B8C3CC;
+    background-color: #F7F9FA;
+    border: 1px solid #D3DAE0;
     padding: 6px 10px;
     color: #16222B;
     border-radius: 4px;
@@ -663,9 +663,9 @@ QMessageBox QLabel {
 QLabel#deviceBusHint { color: #5B6B78; }
 
 QPushButton#devicePill {
-    background: #F7F9FA;
+    background: #FFFFFF;
     border: 1px solid #B8C3CC;
-    border-radius: 4px;
+    border-radius: 999px;
     color: #16222B;
     font-size: 12px;
     font-weight: normal;
@@ -678,8 +678,9 @@ QPushButton#devicePill:hover {
 }
 
 QPushButton#devicePill[selected="true"] {
-    border: 2px solid #0E766E;
+    border: 1px solid #0E766E;
     background: #EAF0EE;
+    color: #0E766E;
 }
 
 QPushButton#devicePill[online="true"]  { border-left: 3px solid #15803D; }
@@ -706,19 +707,19 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #B91C1C; }
 
 /* 状态栏版本标签（主窗口）— 动态状态（accent链接/检查失败）由代码逻辑覆盖 */
 #versionLabel {
-    color: #5B6B78;
+    color: #0E766E;
     padding: 0 8px;
 }
 
 /* 状态栏快捷键提示（Task 5，TC 风格常驻）— 基色/内边距与版本标签一致，双主题适配 */
 #shortcutHint {
-    color: #5B6B78;
+    color: #64707C;
     padding: 0 8px;
 }
 
 /* 状态栏中央部署方向指示（Task 5）— 左面板路径 → 右面板路径 */
 #directionLabel {
-    color: #5B6B78;
+    color: #64707C;
     padding: 0 8px;
 }
 
