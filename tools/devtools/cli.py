@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse  # noqa: E402
 
-from devtools import ftpguard, smoke, versioncheck  # noqa: E402
+from devtools import ftpguard, smoke, theme_guard, versioncheck  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
     fg.add_argument("--assembler", default=ftpguard.DEFAULT_ASSEMBLER,
                     help="单源装配函数名（默认 setupCommonOpts）")
 
+    tg = sub.add_parser("theme-guard",
+                        help="旧色值静态守卫（Instrument 视觉语言；src/ 下不得残留旧色值）")
+    tg.add_argument("--root", default=".", help="仓库根目录（默认当前目录）")
+    tg.add_argument("--scan-dirs", default=theme_guard.DEFAULT_SCAN_DIRS,
+                    help="相对根目录的扫描目录，逗号分隔（默认 src）")
+
     return ap
 
 
@@ -49,6 +55,8 @@ def main(argv: list = None) -> int:
         return 0 if result.ok else 1
     if args.command == "ftpguard":
         return ftpguard.main(["--source", args.source, "--assembler", args.assembler])
+    if args.command == "theme-guard":
+        return theme_guard.main(["--root", args.root, "--scan-dirs", args.scan_dirs])
     return 2
 
 
