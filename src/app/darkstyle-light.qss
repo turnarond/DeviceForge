@@ -523,7 +523,7 @@ QTextEdit {
 }
 
 QTextEdit:focus {
-    border: 2px solid #0E766E;
+    border: 1px solid #0E766E;   /* 日志只读区：焦点 1px，不参与 2px 信号态 */
     background-color: #FFFFFF;
 }
 
