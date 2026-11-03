@@ -74,10 +74,12 @@ private slots:
     void qssStrings_light() {
         const QString qss = readQss(QStringLiteral(":/styles/darkstyle-light.qss"));
         QVERIFY(!qss.isEmpty());
-        QVERIFY(blockContains(qss, QStringLiteral("#panelBreadcrumb"), QStringLiteral("#6B7480")));
-        QVERIFY(blockContains(qss, QStringLiteral("#navBar"), QStringLiteral("#ECEFF3")));
-        QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#D48820")));
-        QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#2FA88A")));
+        QVERIFY(blockContains(qss, QStringLiteral("#panelBreadcrumb"), QStringLiteral("#5B6B78")));
+        QVERIFY(blockContains(qss, QStringLiteral("#navBar"), QStringLiteral("#F7F9FA")));
+        QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#0E766E")));
+        QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#0E766E")));
+        // Instrument：焦点 2px accent
+        QVERIFY(blockContains(qss, QStringLiteral("QLineEdit:focus"), QStringLiteral("2px")));
     }
 
     // ===== 离屏渲染像素采样 =====
@@ -124,18 +126,18 @@ private slots:
         QWidget navBar;
         navBar.setObjectName(QStringLiteral("navBar"));
         navBar.resize(120, 240);
-        QCOMPARE(samplePixel(&navBar, 60, 120), QColor(QStringLiteral("#ECEFF3")));
+        QCOMPARE(samplePixel(&navBar, 60, 120), QColor(QStringLiteral("#F7F9FA")));
 
         QPushButton btn;
         btn.setObjectName(QStringLiteral("btnPrimary"));
         btn.resize(120, 36);
-        QCOMPARE(samplePixel(&btn, 60, 18), QColor(QStringLiteral("#D48820")));
+        QCOMPARE(samplePixel(&btn, 60, 18), QColor(QStringLiteral("#0E766E")));
 
         QProgressBar bar;
         bar.resize(200, 20);
         bar.setTextVisible(false);
         bar.setValue(100);
-        QCOMPARE(samplePixel(&bar, 100, 10), QColor(QStringLiteral("#2FA88A")));
+        QCOMPARE(samplePixel(&bar, 100, 10), QColor(QStringLiteral("#0E766E")));
     }
 
     // ===== v2.16-B 任务7：设备栏空态提示样式（每主题恰一行 QLabel#deviceBusHint） =====
@@ -157,8 +159,8 @@ private slots:
         const QString qss = readQss(QStringLiteral(":/styles/darkstyle-light.qss"));
         QVERIFY(!qss.isEmpty());
         QVERIFY2(blockContains(qss, QStringLiteral("QLabel#deviceBusHint"),
-                               QStringLiteral("#6B7480")),
-                 "darkstyle-light.qss 缺 QLabel#deviceBusHint { color:#6B7480; }（次级文字色，现成用法 :23/:28）");
+                               QStringLiteral("#64707C")),
+                 "darkstyle-light.qss 缺 QLabel#deviceBusHint { color:#64707C; }（textDim）");
         assertDeviceBarQssBudget(qss);
     }
 };

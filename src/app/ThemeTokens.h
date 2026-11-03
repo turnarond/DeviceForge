@@ -39,7 +39,7 @@ inline QColor color(Token t, bool dark)
     static const QColor kLight[] = {
         QColor("#E9EDF0"), QColor("#FFFFFF"), QColor("#F7F9FA"), QColor("#F3F6F8"),
         QColor("#D3DAE0"), QColor("#B8C3CC"), QColor("#16222B"), QColor("#5B6B78"),
-        QColor("#6B7480"), QColor("#0E766E"), QColor("#0B5D56"), QColor("#094A45"),
+        QColor("#64707C"), QColor("#0E766E"), QColor("#0B5D56"), QColor("#094A45"),
         QColor(14, 118, 110, 26),  QColor("#FFFFFF"), QColor("#15803D"), QColor("#B91C1C"),
         QColor("#B45309"),
     };
