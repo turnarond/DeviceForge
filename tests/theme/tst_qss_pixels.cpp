@@ -65,10 +65,10 @@ private slots:
     void qssStrings_dark() {
         const QString qss = readQss(QStringLiteral(":/styles/darkstyle.qss"));
         QVERIFY(!qss.isEmpty());
-        QVERIFY(blockContains(qss, QStringLiteral("#panelBreadcrumb"), QStringLiteral("#7B8494")));
-        QVERIFY(blockContains(qss, QStringLiteral("#navBar"), QStringLiteral("#0E1219")));
-        QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#F0A030")));
-        QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#40C8A0")));
+        QVERIFY(blockContains(qss, QStringLiteral("#panelBreadcrumb"), QStringLiteral("#8B98A8")));
+        QVERIFY(blockContains(qss, QStringLiteral("#navBar"), QStringLiteral("#1B2430")));
+        QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#2DD4BF")));
+        QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#2DD4BF")));
     }
 
     void qssStrings_light() {
@@ -92,26 +92,26 @@ private slots:
         // 面板背景（QGroupBox = 面板/容器 #141820）
         QGroupBox panel;
         panel.resize(200, 80);
-        QCOMPARE(samplePixel(&panel, 100, 40), QColor(QStringLiteral("#141820")));
+        QCOMPARE(samplePixel(&panel, 100, 40), QColor(QStringLiteral("#141B24")));
 
         // 导航栏（#navBar 规则）
         QWidget navBar;
         navBar.setObjectName(QStringLiteral("navBar"));
         navBar.resize(120, 240);
-        QCOMPARE(samplePixel(&navBar, 60, 120), QColor(QStringLiteral("#0E1219")));
+        QCOMPARE(samplePixel(&navBar, 60, 120), QColor(QStringLiteral("#1B2430")));
 
-        // 主按钮（琴色填充；空文本避免中心像素命中字形）
+        // 主按钮（亮青填充 + 深墨字；空文本避免中心像素命中字形）
         QPushButton btn;
         btn.setObjectName(QStringLiteral("btnPrimary"));
         btn.resize(120, 36);
-        QCOMPARE(samplePixel(&btn, 60, 18), QColor(QStringLiteral("#F0A030")));
+        QCOMPARE(samplePixel(&btn, 60, 18), QColor(QStringLiteral("#2DD4BF")));
 
-        // 进度条（chunk 青绿；满值 + 关文本，中心像素稳定落在 chunk 上）
+        // 进度条（chunk accent；满值 + 关文本，中心像素稳定落在 chunk 上）
         QProgressBar bar;
         bar.resize(200, 20);
         bar.setTextVisible(false);
         bar.setValue(100);
-        QCOMPARE(samplePixel(&bar, 100, 10), QColor(QStringLiteral("#40C8A0")));
+        QCOMPARE(samplePixel(&bar, 100, 10), QColor(QStringLiteral("#2DD4BF")));
     }
 
     void pixelSample_light() {
@@ -150,8 +150,8 @@ private slots:
         const QString qss = readQss(QStringLiteral(":/styles/darkstyle.qss"));
         QVERIFY(!qss.isEmpty());
         QVERIFY2(blockContains(qss, QStringLiteral("QLabel#deviceBusHint"),
-                               QStringLiteral("#7B8494")),
-                 "darkstyle.qss 缺 QLabel#deviceBusHint { color:#7B8494; }（次级文字色，现成用法 :23/:28）");
+                               QStringLiteral("#8B98A8")),
+                 "darkstyle.qss 缺 QLabel#deviceBusHint { color:#8B98A8; }（textMuted）");
         assertDeviceBarQssBudget(qss);
     }
 
