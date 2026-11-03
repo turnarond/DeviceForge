@@ -24,6 +24,11 @@ QLabel[text*="提示"], QLabel[text*="拖拽"] {
     font-style: italic;
 }
 
+#panelTransferStatus {
+    color: #64707C;
+    font-size: 11px;
+}
+
 #panelBreadcrumb {
     color: #5B6B78;
 }

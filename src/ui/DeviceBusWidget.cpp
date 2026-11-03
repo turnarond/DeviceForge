@@ -500,10 +500,11 @@ void DeviceBusWidget::setupUi()
     // 行尾搜索框：过滤"下一次打开菜单时的可见项"（不实时重开菜单，规格 §0.3）；
     // chips 显示的是已选集合，过滤全程不动已选（§3.4）
     m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setMinimumWidth(160);   // 占位文案与输入不被裁
     m_searchEdit->setObjectName(QStringLiteral("deviceSearchEdit"));
     m_searchEdit->setFixedHeight(26);
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setPlaceholderText(QStringLiteral("搜索 名称 / IP / 标签"));
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索设备"));
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_filterText = text;
     });

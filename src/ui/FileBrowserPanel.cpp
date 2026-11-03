@@ -131,7 +131,7 @@ void FileBrowserPanel::setupUi()
     m_sourceCombo->addItem(tr("本地"), QStringLiteral("local"));
     m_sourceCombo->addItem("FTP", QStringLiteral("ftp"));
     m_sourceCombo->addItem("SFTP", QStringLiteral("sftp"));
-    m_sourceCombo->setFixedWidth(80);
+    m_sourceCombo->setFixedWidth(92);
     connect(m_sourceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
         const QString proto = m_sourceCombo->currentData().toString();
         m_deviceCombo->setVisible(proto != QStringLiteral("local"));

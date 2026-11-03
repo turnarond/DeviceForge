@@ -340,7 +340,8 @@ target_link_libraries(tst_theme_tokens PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME tst_theme_tokens COMMAND tst_theme_tokens)
 if(_qt_bin_dir)
     set_tests_properties(tst_theme_tokens PROPERTIES
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
 endif()
 
 # --- 双主题像素验证（#18：离屏渲染采样 + 色值字符串断言保底）---
