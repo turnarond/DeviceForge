@@ -7,7 +7,7 @@
  * Author: turnarond
  *
  * Description: 左侧竖排图标导航栏 — 56px 固定宽，每项图标+标签，
- *              活跃态琴色左侧竖条 + 图标着色，非活跃态石墨色。
+ *              活跃态 accent 左侧竖条 + 图标着色，非活跃态石墨色。
  */
 
 #pragma once

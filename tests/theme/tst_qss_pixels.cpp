@@ -69,6 +69,9 @@ private slots:
         QVERIFY(blockContains(qss, QStringLiteral("#navBar"), QStringLiteral("#1B2430")));
         QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#2DD4BF")));
         QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#2DD4BF")));
+        QVERIFY(blockContains(qss, QStringLiteral("QGroupBox"), QStringLiteral("#141B24")));
+        QVERIFY(blockContains(qss, QStringLiteral("QHeaderView::section"), QStringLiteral("#1B2430")));
+        QVERIFY(blockContains(qss, QStringLiteral("QWidget {"), QStringLiteral("#0D1117")));
     }
 
     void qssStrings_light() {
@@ -79,7 +82,10 @@ private slots:
         QVERIFY(blockContains(qss, QStringLiteral("QPushButton#btnPrimary"), QStringLiteral("#0E766E")));
         QVERIFY(blockContains(qss, QStringLiteral("QProgressBar::chunk"), QStringLiteral("#0E766E")));
         // Instrument：焦点 2px accent
-        QVERIFY(blockContains(qss, QStringLiteral("QLineEdit:focus"), QStringLiteral("2px")));
+        QVERIFY(blockContains(qss, QStringLiteral("QLineEdit:focus"), QStringLiteral("#0E766E")));
+        QVERIFY(blockContains(qss, QStringLiteral("QGroupBox"), QStringLiteral("#FFFFFF")));
+        QVERIFY(blockContains(qss, QStringLiteral("QHeaderView::section"), QStringLiteral("#F7F9FA")));
+        QVERIFY(blockContains(qss, QStringLiteral("QWidget {"), QStringLiteral("#E9EDF0")));
     }
 
     // ===== 离屏渲染像素采样 =====
@@ -159,8 +165,8 @@ private slots:
         const QString qss = readQss(QStringLiteral(":/styles/darkstyle-light.qss"));
         QVERIFY(!qss.isEmpty());
         QVERIFY2(blockContains(qss, QStringLiteral("QLabel#deviceBusHint"),
-                               QStringLiteral("#64707C")),
-                 "darkstyle-light.qss 缺 QLabel#deviceBusHint { color:#64707C; }（textDim）");
+                               QStringLiteral("#5B6B78")),
+                 "darkstyle-light.qss 缺 QLabel#deviceBusHint { color:#5B6B78; }（textMuted，canvas 对比度 4.75:1）");
         assertDeviceBarQssBudget(qss);
     }
 };

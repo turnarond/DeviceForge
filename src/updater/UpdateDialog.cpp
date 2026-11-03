@@ -75,7 +75,7 @@ void UpdateDialog::setupUi() {
     main->addWidget(m_progress);
     main->addWidget(m_progressLabel);
 
-    // 按钮区 — 取消 + 主操作(琴色按钮,btnPrimary)
+    // 按钮区 — 取消 + 主操作(accent 主按钮,btnPrimary)
     auto* btnLayout = new QHBoxLayout();
     m_cancelBtn = new QPushButton("稍后再说", this);
     m_actionBtn = new QPushButton("下载并更新", this);

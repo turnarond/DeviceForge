@@ -65,6 +65,7 @@ private:
     void appendLog(const QString& msg);
     void appendHexView(RelayDirection dir, const QString& peer, int sessionId, const QByteArray& data);
     void updateSession(const struct RelaySession& session);
+    bool m_darkTheme = true;   // 主题缓存（updateSession 每包调用，不查库）
     QString formatHexDump(const QByteArray& data);
     void setRelayControlsEnabled(bool enabled);   // 回放时禁用中继控件，反之亦然
 

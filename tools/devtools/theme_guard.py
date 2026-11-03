@@ -23,14 +23,21 @@ from pathlib import Path
 
 # 与设计文档 Global Constraints 逐字一致（旧「琴色是动词」体系 + Instrument 前的深/浅色板）
 LEGACY_COLORS = (
-    "#F0A030", "#D48820", "#F0B840",   # 琴色系
-    "#40C8A0", "#2FA88A",              # 青绿系（旧进度/成功）
-    "#E85848", "#D6453A",              # 错误系
-    "#7B8494", "#6B7480",              # 次要文字
-    "#C8CCD4",                          # 主文字（旧暗）
-    "#0B0E14", "#141820", "#0E1219",   # 旧暗色底
-    "#232A36", "#252A33", "#333B48", "#3A4250",  # 旧石墨结构色
-    "#1A1200",                          # 旧深色主按钮文字
+    # 旧「琴色是动词」信号系
+    "#F0A030", "#F0B840", "#D48820", "#FFB44A", "#E5952E", "#B87A1A",
+    # 旧青绿/错误系
+    "#40C8A0", "#2FA88A", "#E85848", "#D6453A", "#C13E34", "#B43A2E", "#F07060", "#C84030",
+    # 旧文字系（暗/亮）
+    "#C8CCD4", "#7B8494", "#A8ACB8", "#E4E7EC", "#2A2F38", "#2A2E35",
+    "#6B7480", "#6B7280", "#5A6270", "#9AA0AC", "#9AA1AD", "#8A93A0", "#A8B0BF",
+    # 旧暗色底/结构（含未迁移的暗琥珀选中底）
+    "#0B0E14", "#141820", "#0E1219", "#232A36", "#252A33", "#333B48", "#3A4250",
+    "#1A2030", "#2C3543", "#444E5E", "#1C222C", "#161A22", "#1A1F28", "#1E232C",
+    "#1A1F2A", "#080A10", "#10151D", "#12161E", "#3A2E12", "#2A2518", "#3A3122",
+    # 旧亮色底/凹槽/琥珀选中底
+    "#F5F6F8", "#ECEFF3", "#E4E8EE", "#D0D5DD", "#C4CAD4", "#B8C0CC", "#C0C4CC", "#F5E3C8",
+    # 旧深色主按钮文字
+    "#1A1200",
 )
 
 EXTS = (".qss", ".cpp", ".h")
@@ -57,6 +64,9 @@ def scan(root: Path, scan_dirs):
                 for legacy in LEGACY_COLORS:
                     if legacy.lower() in low:
                         hits.append((p, lineno, legacy))
+                    # SVG data URI 里 # 被编码为 %23
+                    if ("%23" + legacy[1:]).lower() in low:
+                        hits.append((p, lineno, "%23" + legacy[1:].upper()))
     return files, hits
 
 
@@ -80,6 +90,10 @@ def main(argv=None) -> int:
         return 2
 
     scan_dirs = [s.strip() for s in args.scan_dirs.split(",") if s.strip()]
+    missing = [d for d in scan_dirs if not (root / d).is_dir()]
+    if missing:
+        print(f"[FAIL] 扫描目录不存在: {', '.join(missing)}")
+        return 2
     files, hits = scan(root, scan_dirs)
     if files == 0:
         print(f"[FAIL] 零证据：{root} 下未扫描到 .qss/.cpp/.h 文件")

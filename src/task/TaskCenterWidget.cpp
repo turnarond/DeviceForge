@@ -295,7 +295,7 @@ void TaskCenterWidget::setupUi()
 
     auto* buttonRow = new QHBoxLayout();
     m_runButton = new QPushButton(QStringLiteral("执行任务"), rightBox);
-    m_runButton->setObjectName(QStringLiteral("btnTaskRun"));   // 主按钮：琴色信号态走双主题 QSS
+    m_runButton->setObjectName(QStringLiteral("btnTaskRun"));   // 主按钮：accent 信号态走双主题 QSS
     m_cancelButton = new QPushButton(QStringLiteral("取消"), rightBox);
     m_cancelButton->setObjectName(QStringLiteral("taskCancelButton"));
     m_retryButton = new QPushButton(QStringLiteral("从失败阶段重试"), rightBox);

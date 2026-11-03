@@ -129,7 +129,7 @@ private:
     QVector<TargetRow> m_rows;    // 视图当前行集
     BackoffProbe m_backoffProbe;  // 裁决 5：退避态判定注入点
     QColor m_errorColor;          // 裁决 4 缓存：异常红
-    QColor m_backoffColor;        // 裁决 4/5 缓存：退避黄（既有琴色 token，双主题同值）
+    QColor m_backoffColor;        // 缓存：退避色（warning token，双主题）
 };
 
 } // namespace modbus

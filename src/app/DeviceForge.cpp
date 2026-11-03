@@ -534,7 +534,7 @@ void DeviceForge::setupTaskCenterTab()
 void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
-    // 折叠态时琴色闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
+    // 折叠态时 accent 闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
     if (!m_logExpanded && m_logCollapseBar) {
         m_logCollapseBar->setProperty("flash", true);
         m_logCollapseBar->style()->unpolish(m_logCollapseBar);
@@ -602,7 +602,7 @@ void DeviceForge::setupUpdateChecker()
 
     // 状态栏版本标签（右侧永久挂件）
     m_versionLabel = new QLabel(this);
-    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #8B98A8 / 亮 #5B6B78），动态状态（琴色链接/检查失败）保持代码逻辑
+    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #8B98A8 / 亮 #5B6B78），动态状态（accent 链接/检查失败）保持代码逻辑
     m_versionLabel->setText(currentVersionString() + " (检查中...)");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
     // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
@@ -686,7 +686,7 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
         break;
 
     case UpdateState::Ready: {
-        // 有新版本:标签切琴色 + 可点击;同时自动弹窗
+        // 有新版本:标签切 accent + 可点击;同时自动弹窗
         ReleaseInfo info = m_updateChecker->releaseInfo();
         QString tag = QString::fromStdString(info.tagName);
         // 「青色是动词」 — 仅信号态，用 accent 提示可点击

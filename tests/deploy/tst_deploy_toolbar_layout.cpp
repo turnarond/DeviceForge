@@ -173,7 +173,7 @@ QPushButton* firstVisibleChip(DeviceBusWidget& bus)
 }
 
 // 胶囊离屏渲染后的**尾枚字形**水平包络 [left, right]（px，胶囊自身坐标）。
-// 判据：与 #devicePill 暗底 #232A36 的 RGB 距离 >150 记为"墨像素"——文字
+// 判据：与 #devicePill 暗底 #1B2430 的 RGB 距离 >150 记为"墨像素"——文字
 // #C8CCD4（距离 ~581）计入，石墨边框 #333B48（距离 ~51）与圆角外黑（~131）排除。
 // 尾标 "  ×" 的两个前导空格无墨，从最右墨列向左回走、空列 >3 即停 ⇒ 得到
 // 的是渲染后「×」字形（而非整个 caption）的左缘。这是"用户看得见的 ×"的
@@ -185,7 +185,7 @@ bool scanCloseMarkEnvelope(QPushButton& pill, int* left, int* right)
     pix.fill(Qt::transparent);
     pill.render(&pix);
     const QImage img = pix.toImage();
-    const QColor bg(QStringLiteral("#232A36"));
+    const QColor bg(QStringLiteral("#1B2430"));
     QVector<bool> inkColumn(img.width(), false);
     for (int x = 3; x < img.width() - 3; ++x) {          // 两侧留 3px 躲边框/圆角 AA
         for (int y = 4; y < img.height() - 4; ++y) {

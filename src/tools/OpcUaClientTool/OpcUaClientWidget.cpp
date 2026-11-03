@@ -89,20 +89,22 @@ static QString nodeClassToName(int nodeClass)
 }
 
 // nodeClass → QSS 背景色（工业仪表盘色板）
-static QString nodeClassToBackground(const QString& className, bool dark)
+// 节点类色块：从 ThemeTokens 派生（panel 与语义色按比例混合，浅/深主题同源）
+static QColor mixColor(const QColor& base, const QColor& tint, double t)
 {
-    if (dark) {
-        if (className == "Variable") return "#12302C";
-        if (className == "Object")   return "#1C2230";
-        if (className == "Folder")   return "#2A2520";
-        if (className == "Method")   return "#2A2010";
-    } else {
-        if (className == "Variable") return "#E3F1ED";
-        if (className == "Object")   return "#E8EAF2";
-        if (className == "Folder")   return "#F0EBE4";
-        if (className == "Method")   return "#F5EFE2";
-    }
-    return "transparent";
+    return QColor::fromRgbF(base.redF() + (tint.redF() - base.redF()) * t,
+                            base.greenF() + (tint.greenF() - base.greenF()) * t,
+                            base.blueF() + (tint.blueF() - base.blueF()) * t);
+}
+
+static QColor nodeClassToBackground(const QString& className, bool dark)
+{
+    const QColor panel = tokens::color(tokens::Token::Panel, dark);
+    if (className == "Variable") return mixColor(panel, tokens::color(tokens::Token::Accent, dark), 0.18);
+    if (className == "Object")   return mixColor(panel, tokens::color(tokens::Token::BorderStrong, dark), 0.35);
+    if (className == "Folder")   return mixColor(panel, tokens::color(tokens::Token::TextMuted, dark), 0.14);
+    if (className == "Method")   return mixColor(panel, tokens::color(tokens::Token::Warning, dark), 0.18);
+    return QColor(Qt::transparent);
 }
 
 OpcUaClientWidget::OpcUaClientWidget(QWidget* parent) : ToolWidget(parent)
@@ -496,7 +498,7 @@ void OpcUaClientWidget::populateBrowseTable(const QString& json)
         const bool darkTheme = ConfigStore::instance()
             .load(QStringLiteral("appearance"), QStringLiteral("theme"))
             .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
-        const QString classBg   = nodeClassToBackground(className, darkTheme);
+        const QColor  classBg   = nodeClassToBackground(className, darkTheme);
 
         // 列0: #
         m_browseTable->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
@@ -516,7 +518,7 @@ void OpcUaClientWidget::populateBrowseTable(const QString& json)
 
         // 列4: 节点类（色块背景）
         auto* classItem = new QTableWidgetItem(className);
-        classItem->setBackground(QBrush(QColor(classBg)));
+        classItem->setBackground(QBrush(classBg));
         classItem->setForeground(QBrush(tokens::color(tokens::Token::Text, darkTheme)));
         m_browseTable->setItem(i, 4, classItem);
 

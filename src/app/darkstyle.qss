@@ -1,4 +1,4 @@
-/* DeviceForge Industrial Dark Theme - 工业仪表盘深色主题 */
+/* DeviceForge Industrial Dark Theme - 深色 Instrument 精密仪器主题 */
 
 /* ===== 全局样式 ===== */
 QWidget {
@@ -44,7 +44,7 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 12px;
     padding: 0 6px;
-    color: #2DD4BF;
+    color: #E6EDF3;   /* 分组标题用主文字色（accent 仅信号态） */
     font-size: 10pt;
     font-weight: 600;
 }
@@ -77,7 +77,7 @@ QPushButton:disabled {
     color: #7D8A99;
 }
 
-/* 主操作按钮 = 琴色填充（全局仅少数，"最该点的那个"） */
+/* 主操作按钮 = accent填充（全局仅少数，"最该点的那个"） */
 QPushButton#btnPrimary,
 QPushButton#feSave {
     background-color: #2DD4BF;
@@ -89,7 +89,7 @@ QPushButton#feSave {
 QPushButton#btnPrimary:hover,
 QPushButton#feSave:hover {
     background-color: #5CE8D5;
-    border: 2px solid #2DD4BF;
+    border-color: #2DD4BF;
 }
 
 QPushButton#btnPrimary:pressed,
@@ -99,7 +99,7 @@ QPushButton#feSave:pressed {
 
 QPushButton#btnPrimary:disabled,
 QPushButton#feSave:disabled {
-    background-color: #3A3122;
+    background-color: #1B2430;
     border-color: #35465A;
     color: #8B98A8;
 }
@@ -117,7 +117,7 @@ QPushButton#btnDanger:hover {
 }
 
 /* ===== 输入框 ===== */
-/* 凹槽：填充比面板暗，看着像"能填的槽"；focus 时才出现琴色边 */
+/* 凹槽：填充比面板暗，看着像"能填的槽"；focus 时才出现accent边 */
 QLineEdit, QTextEdit, QPlainTextEdit {
     background-color: #0A0F15;
     border: 1px solid #35465A;
@@ -174,7 +174,7 @@ QComboBox::drop-down:hover {
 }
 
 QComboBox::down-arrow {
-    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%23F0A030'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E");
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%232DD4BF'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E");
 }
 
 QComboBox QAbstractItemView {
@@ -202,7 +202,7 @@ QListWidget::item, QTreeWidget::item, QTableWidget::item {
 }
 
 QListWidget::item:selected, QTreeWidget::item:selected, QTableWidget::item:selected {
-    background-color: #3A2E12;
+    background-color: #12302C;
     color: #2DD4BF;
     border-left: 2px solid #2DD4BF;
 }
@@ -213,9 +213,9 @@ QListWidget::item:hover, QTreeWidget::item:hover {
 
 QTableWidget, QTableView {
     background-color: #0A0F15;
-    alternate-background-color: #0A0F15;
+    alternate-background-color: #10161F;
     color: #E6EDF3;
-    selection-background-color: #2A2518;
+    selection-background-color: #12302C;
     selection-color: #2DD4BF;
     border: 1px solid #263140;
     gridline-color: #1B2430;
@@ -316,13 +316,13 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 }
 
 /* ===== 进度条 ===== */
-/* 青绿 = 进行中/健康，与琴色（可操作）语义错开 */
+/* 青绿 = 进行中/健康，与accent（可操作）语义错开 */
 QProgressBar {
     background-color: #0A0F15;
     border: 1px solid #263140;
     border-radius: 4px;
     text-align: center;
-    color: #E6EDF3;
+    color: #062E2A;
     font-weight: 600;
 }
 
@@ -341,7 +341,7 @@ QCheckBox, QRadioButton {
 QCheckBox::indicator, QRadioButton::indicator {
     width: 18px;
     height: 18px;
-    border: 2px solid #35465A;
+    border: 1px solid #35465A;
     background-color: #0A0F15;
     border-radius: 4px;
 }
@@ -356,7 +356,7 @@ QCheckBox::indicator:checked, QRadioButton::indicator:checked {
 }
 
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {
-    border: 2px solid #2DD4BF;
+    border: 1px solid #2DD4BF;
 }
 
 /* ===== 数值输入框 ===== */
@@ -434,12 +434,12 @@ QMenu::item {
 }
 
 QMenu::item:selected {
-    background-color: #3A2E12;
+    background-color: #12302C;
     color: #2DD4BF;
 }
 
 /* ===== 分割器 ===== */
-/* 无边框，仅一根石墨窄条；hover 提亮示意"可拖动"（不用琴色） */
+/* 无边框，仅一根石墨窄条；hover 提亮示意"可拖动"（不用accent） */
 QSplitter::handle {
     background-color: #263140;
 }
@@ -559,7 +559,7 @@ QMenuBar::item {
 }
 
 QMenuBar::item:selected {
-    background-color: #3A2E12;
+    background-color: #12302C;
     color: #2DD4BF;
 }
 
@@ -602,9 +602,13 @@ QMessageBox QLabel {
     background: #35465A;
 }
 
-/* 闪烁态（新日志到达）琴色提示，置于 hover 之后保证同优先级时生效 */
+/* 闪烁态（新日志到达）accent提示，置于 hover 之后保证同优先级时生效 */
 #logCollapseBar[flash="true"] {
     background: #2DD4BF;
+}
+
+#logCollapseBar[flash="true"] #logCollapseBarLabel {
+    color: #062E2A;
 }
 
 /* ===== 左侧导航栏（内联样式提取，双主题） ===== */
@@ -675,7 +679,7 @@ QPushButton#devicePill:hover {
 
 QPushButton#devicePill[selected="true"] {
     border: 2px solid #2DD4BF;
-    background: #2A2518;
+    background: #12302C;
 }
 
 QPushButton#devicePill[online="true"]  { border-left: 3px solid #3FB950; }
@@ -700,7 +704,7 @@ QPushButton#devicePill[online="false"] { border-left: 3px solid #F85149; }
     color: #2DD4BF;
 }
 
-/* 状态栏版本标签（主窗口）— 动态状态（琴色链接/检查失败）由代码逻辑覆盖 */
+/* 状态栏版本标签（主窗口）— 动态状态（accent链接/检查失败）由代码逻辑覆盖 */
 #versionLabel {
     color: #8B98A8;
     padding: 0 8px;
@@ -747,12 +751,12 @@ QTreeWidget QLabel[state="error"] {
 }
 
 /* ===== 设备任务中心（v2.11 Task 6，双主题）===== */
-/* 主按钮「执行任务」：琴色信号态（静止态石墨边框由禁用色承担） */
+/* 主按钮「执行任务」：accent信号态（静止态石墨边框由禁用色承担） */
 QPushButton#btnTaskRun {
     background-color: #2DD4BF;
     border: none;
     border-radius: 4px;
-    color: #141B24;
+    color: #062E2A;
     font-weight: 600;
     padding: 4px 12px;
 }
@@ -766,7 +770,7 @@ QPushButton#btnTaskRun:disabled {
     color: #8B98A8;
 }
 
-/* ===== v2.12 WebSocket 页面重构：状态灯/模式分段/主按钮（琴色仅信号态） ===== */
+/* ===== v2.12 WebSocket 页面重构：状态灯/模式分段/主按钮（accent仅信号态） ===== */
 QLabel#wsStatusDot {
     color: #7D8A99;
     font-size: 10pt;
@@ -789,7 +793,7 @@ QPushButton#wsStartButton {
     background-color: #2DD4BF;
     border: none;
     border-radius: 4px;
-    color: #141B24;
+    color: #062E2A;
     font-weight: 600;
     padding: 4px 12px;
 }
@@ -809,7 +813,7 @@ QPushButton#mbAddTarget {
     background-color: #2DD4BF;
     border: none;
     border-radius: 4px;
-    color: #141B24;
+    color: #062E2A;
     font-weight: 600;
     padding: 4px 12px;
 }

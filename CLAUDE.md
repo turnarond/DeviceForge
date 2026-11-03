@@ -375,7 +375,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
 - 日志区默认可折叠，新日志到达时折叠条 accent 闪烁提示
 - 状态栏 TC 化（2026-08-10）：左侧常驻快捷键提示条（`#shortcutHint`，双 QSS 基色）「F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏」+ 中央部署方向指示（`#directionLabel`，左面板路径 → 右面板路径，仅部署工具存在且部署页激活时显示，其余 Tool 页隐藏）
-- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），工业仪表盘色板，双主题可切换
+- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），Instrument 精密仪器色板，双主题可切换
 - 所有 Tool 日志统一路由到底部全局日志（ToolWidget::setGlobalLogCallback）
 
 ## 设计文档
@@ -459,7 +459,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
   - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性色（浅 #D3DAE0 / 深 #263140）
   - accent 仅出现在：主操作按钮填充（`#btnPrimary`，全局少数）、`:focus` 输入框边框（2px）、`:selected`/`:checked`/活跃 tab、选中行左侧竖条、分组标题竖条
   - 控件"能否操作"靠形态区分：输入框=凹的（填充比面板暗 #F3F6F8/#0A0F15）、次按钮=凸的（填充比面板亮 #F7F9FA/#1B2430）、容器=平的（仅细边）
-  - 进行中/成功用 success（浅 #15803D / 深 #3FB950），警告用 warning（#B45309/#D29922），与 accent 语义错开
+  - 进度条用 accent（进行中）；成功/警告/失败用 success/warning/danger（日志、状态点），与 accent 语义错开
   - 分隔条 QSplitter::handle 无边框，纯中性窄条，hover 提亮（**不要**加 accent 边框，那会变成"粗色条"）
   - **Qt QSS 限制**：不支持 CSS `linear-gradient`/`radial-gradient`/`box-shadow`，一律用纯色或 `qlineargradient(...)`
 

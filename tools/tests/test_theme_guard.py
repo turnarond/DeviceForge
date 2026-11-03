@@ -53,6 +53,14 @@ class ThemeGuardTest(unittest.TestCase):
     def test_根目录缺失(self):
         self.assertEqual(tg.main(["--root", str(Path(tempfile.mkdtemp()) / "nope")]), 2)
 
+    def test_SVG编码旧色也判违规(self):
+        root = _tree({"src/app/x.qss": "image: url(\"data:image/svg+xml;utf8,<svg fill='%23D48820'/>\");"})
+        self.assertEqual(tg.main(["--root", str(root)]), 1)
+
+    def test_扫描目录缺失返回2(self):
+        root = _tree({"src/app/x.qss": "color: #E9EDF0;"})
+        self.assertEqual(tg.main(["--root", str(root), "--scan-dirs", "src,nope"]), 2)
+
     def test_违规输出含文件与行号(self):
         root = _tree({"src/app/x.cpp": "line1\nline2 color #40C8A0\n"})
         import io
