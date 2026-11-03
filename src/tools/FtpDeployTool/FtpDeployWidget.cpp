@@ -15,6 +15,7 @@
  */
 
 #include "FtpDeployWidget.h"
+#include "app/ThemeTokens.h"
 #include "FtpDeployBackend.h"
 #include "MultiProgressWidget.h"
 #include "DeployReport.h"
@@ -643,10 +644,13 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     connect(m_connFlashTimer, &QTimer::timeout, this, [this]() {
         if (!m_connStatusDot) return;
         m_connFlashOn = !m_connFlashOn;
+        const bool darkTheme = ConfigStore::instance()
+            .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+            .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
         m_connStatusDot->setStyleSheet(
             QStringLiteral("background-color: %1;")
-                .arg(m_connFlashOn ? QStringLiteral("#A8B0BF")
-                                   : QStringLiteral("#7B8494")));
+                .arg((m_connFlashOn ? tokens::color(tokens::Token::TextDim, darkTheme)
+                                    : tokens::color(tokens::Token::TextMuted, darkTheme)).name()));
     });
     setConnState(RemoteConnState::Unknown);
     connGroup->addWidget(m_connStatusDot);
@@ -1346,26 +1350,29 @@ void FtpDeployWidget::onRefreshRemote()
     }
 }
 
-// 连接状态点底色：固定用暗色版（灰 #7B8494 / 灰闪 #A8B0BF ↔ #7B8494 / 青绿 #40C8A0 /
-// 红 #E85848）。说明：状态点为 10x10 纯色圆点而非文字，亮色主题下暗色版对比度足够，
-// 故不按主题切换色值；圆角 border-radius 由双 QSS 的 #connStatusDot 规则提供。
-// Connecting 态启动灰闪定时器（500ms 亮灰 ↔ 灰），其余状态停表并设静态底色。
+// 连接状态点底色：按主题取 token（textDim=灰闪第一相、textMuted=未连接/已断开、
+// success=已连接、danger=失败）。圆角 border-radius 由双 QSS 的 #connStatusDot 规则提供。
+// Connecting 态启动灰闪定时器（500ms 灰闪 ↔ 灰），其余状态停表并设静态底色。
 void FtpDeployWidget::setConnState(RemoteConnState state)
 {
     if (!m_connStatusDot) return;
+    const bool darkTheme = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
     if (state == RemoteConnState::Connecting) {
         m_connFlashOn = true;
         if (m_connFlashTimer) m_connFlashTimer->start();
         m_connStatusDot->setStyleSheet(
-            QStringLiteral("background-color: #A8B0BF;"));   // 亮灰（闪的第一相）
+            QStringLiteral("background-color: %1;")
+                .arg(tokens::color(tokens::Token::TextDim, darkTheme).name()));   // 灰闪第一相
         return;
     }
     if (m_connFlashTimer) m_connFlashTimer->stop();
-    const char* color = "#7B8494";
-    if (state == RemoteConnState::Connected)      color = "#40C8A0";
-    else if (state == RemoteConnState::Failed)    color = "#E85848";
+    QColor color = tokens::color(tokens::Token::TextMuted, darkTheme);
+    if (state == RemoteConnState::Connected)      color = tokens::color(tokens::Token::Success, darkTheme);
+    else if (state == RemoteConnState::Failed)    color = tokens::color(tokens::Token::Danger, darkTheme);
     m_connStatusDot->setStyleSheet(
-        QStringLiteral("background-color: %1;").arg(color));
+        QStringLiteral("background-color: %1;").arg(color.name()));
 }
 
 // 部署按钮文本：N = 已选中设备数；N=0 显示「▶ 部署（未选择设备）」——与执行路径

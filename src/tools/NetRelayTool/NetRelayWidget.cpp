@@ -13,6 +13,7 @@
  */
 
 #include "NetRelayWidget.h"
+#include "app/ThemeTokens.h"
 #include "NetRelayBackend.h"
 #include "RelayRecording.h"
 #include "config/ConfigStore.h"
@@ -107,7 +108,7 @@ void NetRelayWidget::setupUi()
 
     row1->addSpacing(12);
     auto* arrowLbl = new QLabel("→", this);
-    arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #F0A030 / 亮 #D48820）
+    arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #2DD4BF / 亮 #0E766E）
     row1->addWidget(arrowLbl);
 
     m_lblUpstream = new QLabel("上游地址:", this);
@@ -723,12 +724,15 @@ void NetRelayWidget::updateSession(const RelaySession& session)
     item->setText(4, QString::number(session.bytesUp));
     item->setText(5, QString::number(session.bytesDown));
 
+    const bool darkTheme = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
     if (session.active) {
         item->setText(6, "活跃");
-        item->setForeground(6, QColor("#40C8A0"));
+        item->setForeground(6, tokens::color(tokens::Token::Success, darkTheme));
     } else {
         item->setText(6, "已关闭");
-        item->setForeground(6, QColor("#7B8494"));
+        item->setForeground(6, tokens::color(tokens::Token::TextMuted, darkTheme));
     }
 
     // 仅在新会话项首次创建时滚动到顶部，避免高频更新时破坏用户浏览

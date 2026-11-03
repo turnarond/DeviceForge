@@ -101,8 +101,7 @@ public:
     static bool filterBySearch(const TargetRow& row, const QString& needle);
     // 寄存器类型中文名（Holding/Input/Coil/Discrete → 保持/输入/线圈/离散）
     static QString registerTypeName(QModbusDataUnit::RegisterType type);
-    // 双主题状态色：与 QSS 常量一致（暗 #40C8A0/#E85848，亮 #2FA88A/#D6453A），
-    // 沿用 v2.11 ModbusWidget 同款取色，不新增色值（QSS 纪律）
+    // 双主题状态色：从 ThemeTokens 单源取 success/danger（QSS 纪律：不新增色值）
     static QColor statusColor(bool success);
 
 signals:

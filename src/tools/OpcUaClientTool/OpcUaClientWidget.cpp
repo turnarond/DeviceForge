@@ -15,6 +15,7 @@
  */
 
 #include "OpcUaClientWidget.h"
+#include "app/ThemeTokens.h"
 #include "OpcUaClientBackend.h"
 #include "config/ConfigStore.h"
 #include <QVBoxLayout>
@@ -88,12 +89,19 @@ static QString nodeClassToName(int nodeClass)
 }
 
 // nodeClass → QSS 背景色（工业仪表盘色板）
-static QString nodeClassToBackground(const QString& className)
+static QString nodeClassToBackground(const QString& className, bool dark)
 {
-    if (className == "Variable") return "#1a3a30";
-    if (className == "Object")   return "#1e2030";
-    if (className == "Folder")   return "#2a2520";
-    if (className == "Method")   return "#2a2010";
+    if (dark) {
+        if (className == "Variable") return "#12302C";
+        if (className == "Object")   return "#1C2230";
+        if (className == "Folder")   return "#2A2520";
+        if (className == "Method")   return "#2A2010";
+    } else {
+        if (className == "Variable") return "#E3F1ED";
+        if (className == "Object")   return "#E8EAF2";
+        if (className == "Folder")   return "#F0EBE4";
+        if (className == "Method")   return "#F5EFE2";
+    }
     return "transparent";
 }
 
@@ -150,7 +158,7 @@ void OpcUaClientWidget::setupUi()
     row2->addSpacing(12);
     row2->addWidget(new QLabel("状态:", this));
     m_statusLabel = new QLabel("○ 未连接", this);
-    m_statusLabel->setObjectName("opcStatusLabel"); // 连接态走双主题 QSS 动态属性（暗 #40C8A0/#C8CCD4 / 亮 #2FA88A/#2A2F38）
+    m_statusLabel->setObjectName("opcStatusLabel"); // 连接态走双主题 QSS 动态属性（暗 success/text / 亮 success/text）
     m_statusLabel->setProperty("connState", "offline");
     row2->addWidget(m_statusLabel);
     row2->addStretch();
@@ -485,7 +493,10 @@ void OpcUaClientWidget::populateBrowseTable(const QString& json)
         const QString label = displayName.isEmpty() ? browseName : displayName;
         const QString typeName = dataTypeIdToName(rawDataType);
         const QString className = nodeClassToName(nodeClass);
-        const QString classBg   = nodeClassToBackground(className);
+        const bool darkTheme = ConfigStore::instance()
+            .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+            .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
+        const QString classBg   = nodeClassToBackground(className, darkTheme);
 
         // 列0: #
         m_browseTable->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
@@ -506,7 +517,7 @@ void OpcUaClientWidget::populateBrowseTable(const QString& json)
         // 列4: 节点类（色块背景）
         auto* classItem = new QTableWidgetItem(className);
         classItem->setBackground(QBrush(QColor(classBg)));
-        classItem->setForeground(QBrush(QColor("#C8CCD4")));
+        classItem->setForeground(QBrush(tokens::color(tokens::Token::Text, darkTheme)));
         m_browseTable->setItem(i, 4, classItem);
 
         // 分批渲染：每 BATCH 行刷新一次可见区域

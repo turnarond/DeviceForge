@@ -142,16 +142,16 @@ private slots:
         // 名称列：占位行显示对面独有提示
         QCOMPARE(model.data(model.index(2, RemoteFileModel::ColName), Qt::DisplayRole).toString(),
                  QStringLiteral("远端独有"));
-        // 对比态行色（深色主题）：Same 不着色 / OnlyLeft 金中 / 占位石墨
+        // 对比态行色（深色主题，Instrument）：Same 不着色 / OnlyLeft 暗青 / 占位石墨
         QVERIFY(!model.data(model.index(0, RemoteFileModel::ColName), Qt::BackgroundRole).isValid());
         QCOMPARE(model.data(model.index(1, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
-                 QColor(0x2A, 0x22, 0x14));
+                 QColor("#12302C"));
         QCOMPARE(model.data(model.index(2, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
                  QColor(0x08, 0x0B, 0x10));
-        // Diff 行色
+        // Diff 行色（warning 暗底）
         model.setCompareView(files, {AlignedRow{0, CompareClass::Diff}}, QStringLiteral("—"));
         QCOMPARE(model.data(model.index(0, RemoteFileModel::ColName), Qt::BackgroundRole).value<QColor>(),
-                 QColor(0x1F, 0x1A, 0x10));
+                 QColor("#2A2415"));
 
         // 退出对比态：恢复普通视图与旧绿/黄自动着色路径
         model.exitCompareView();

@@ -8,6 +8,8 @@
  * Description: UpdateDialog 实现 — 非模态更新对话框
  */
 #include "UpdateDialog.h"
+#include "app/ThemeTokens.h"
+#include "config/ConfigStore.h"
 #include "UpdateChecker.h"
 #include "utils/FormatUtils.h"
 #include <QCloseEvent>
@@ -95,7 +97,11 @@ void UpdateDialog::setReleaseInfo(const ReleaseInfo& info) {
     // 下载直链（可点击，浏览器打开）
     if (!info.downloadUrl.empty()) {
         QString url = QString::fromStdString(info.downloadUrl);
-        m_downloadUrl->setText(QString("<a href='%1' style='color:#F0A030;'>%1</a>").arg(url));
+        const bool darkTheme = ConfigStore::instance()
+            .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+            .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
+        m_downloadUrl->setText(QString("<a href='%1' style='color:%2;'>%1</a>")
+                                   .arg(url, tokens::color(tokens::Token::Accent, darkTheme).name()));
         m_downloadUrl->setToolTip("在浏览器中打开下载 (GitHub)");
         m_downloadUrl->setVisible(true);
     }
