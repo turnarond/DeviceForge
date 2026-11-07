@@ -720,6 +720,39 @@ void FileBrowserPanel::renameSelected()
 }
 
 // F7 / 右键「新建目录」：在当前路径下创建（TC 语义）
+// TC 打字即定位：累积可打印字符，按名称前缀选中首个匹配；1.2s 无输入自动清空
+void FileBrowserPanel::quickLocate(const QString& typed)
+{
+    m_quickSearch += typed;
+    if (!m_quickSearchTimer) {
+        m_quickSearchTimer = new QTimer(this);
+        m_quickSearchTimer->setSingleShot(true);
+        m_quickSearchTimer->setInterval(1200);
+        connect(m_quickSearchTimer, &QTimer::timeout, this, [this]() {
+            m_quickSearch.clear();
+            m_breadcrumb->setText(m_currentPath);   // 恢复路径显示
+        });
+    }
+    m_quickSearchTimer->start();
+
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (!model) return;
+    for (int r = 0; r < model->rowCount(); ++r) {
+        const auto& fi = model->fileAt(r);
+        if (fi.name == "..") continue;
+        const QString name = QString::fromStdString(fi.name);
+        if (name.startsWith(m_quickSearch, Qt::CaseInsensitive)) {
+            const QModelIndex index = model->index(r, 0);
+            m_table->selectionModel()->setCurrentIndex(
+                index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            m_table->scrollTo(index, QAbstractItemView::EnsureVisible);
+            m_breadcrumb->setText(tr("定位: %1").arg(m_quickSearch));
+            return;
+        }
+    }
+    m_breadcrumb->setText(tr("定位: %1（无匹配）").arg(m_quickSearch));
+}
+
 void FileBrowserPanel::newDirectoryHere()
 {
     if (!m_source) return;
@@ -1149,13 +1182,28 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
     if ((watched == m_table->viewport() || watched == m_table) && m_source) {
         switch (event->type()) {
         case QEvent::KeyPress: {
-            const auto* key = static_cast<QKeyEvent*>(event);
+            auto* key = static_cast<QKeyEvent*>(event);
+            // TC 键盘习惯：Enter 进入 / Backspace 上级 / 方向键左右同义（保留）
+            if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) {
+                enterSelectedDirectory();
+                return true;
+            }
+            if (key->key() == Qt::Key_Backspace) {
+                navigateToParent();
+                return true;
+            }
             if (key->key() == Qt::Key_Right) {
                 enterSelectedDirectory();
                 return true;
             }
             if (key->key() == Qt::Key_Left) {
                 navigateToParent();
+                return true;
+            }
+            // TC 打字即定位：可打印字符累积匹配（Ctrl/Alt 组合键放行给快捷键）
+            if (!key->text().isEmpty() && key->text().at(0).isPrint()
+                && !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) {
+                quickLocate(key->text());
                 return true;
             }
             break;

@@ -72,6 +72,7 @@ public:
     void setOverwritePolicyChooser(OverwritePolicyChooser chooser);
     void renameSelected();
     void recordPathHistory(const QString& path);   // 记录路径历史（补全用）
+    void quickLocate(const QString& typed);        // TC 打字即定位（表格内快速搜索）
     void newDirectoryHere();   // F7 / 右键「新建目录」
     void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）
@@ -159,6 +160,8 @@ private:
     QLineEdit*  m_pathEdit = nullptr;          // 面板顶部路径栏
     QCompleter* m_pathCompleter = nullptr;     // 路径历史补全（TC 常用目录）
     QStringList m_pathHistory;
+    QString     m_quickSearch;                 // TC 打字即定位缓冲（表格内快速搜索）
+    QTimer*     m_quickSearchTimer = nullptr;
     QTableView* m_table = nullptr;             // 统一表格视图
     QLabel*     m_breadcrumb = nullptr;        // 底部面包屑（路径文本，含 / 分隔可点击——首版文本展示）
     QLabel*     m_transferStatus = nullptr;    // Scheduler 快照状态（仅 GUI 线程更新）
