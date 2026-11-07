@@ -173,7 +173,7 @@ QPushButton* firstVisibleChip(DeviceBusWidget& bus)
 }
 
 // 胶囊离屏渲染后的**尾枚字形**水平包络 [left, right]（px，胶囊自身坐标）。
-// 判据：与 #devicePill 暗底 #232A36 的 RGB 距离 >150 记为"墨像素"——文字
+// 判据：与 #devicePill 暗底 #1B2430 的 RGB 距离 >150 记为"墨像素"——文字
 // #C8CCD4（距离 ~581）计入，石墨边框 #333B48（距离 ~51）与圆角外黑（~131）排除。
 // 尾标 "  ×" 的两个前导空格无墨，从最右墨列向左回走、空列 >3 即停 ⇒ 得到
 // 的是渲染后「×」字形（而非整个 caption）的左缘。这是"用户看得见的 ×"的
@@ -185,7 +185,7 @@ bool scanCloseMarkEnvelope(QPushButton& pill, int* left, int* right)
     pix.fill(Qt::transparent);
     pill.render(&pix);
     const QImage img = pix.toImage();
-    const QColor bg(QStringLiteral("#232A36"));
+    const QColor bg(QStringLiteral("#1B2430"));
     QVector<bool> inkColumn(img.width(), false);
     for (int x = 3; x < img.width() - 3; ++x) {          // 两侧留 3px 躲边框/圆角 AA
         for (int y = 4; y < img.height() - 4; ++y) {
@@ -316,9 +316,13 @@ private slots:
         QVERIFY2(bar, "未找到 objectName=deployToolbar 的工具栏容器");
         auto* v = qobject_cast<QVBoxLayout*>(bar->layout());
         QVERIFY2(v, "deployToolbar 的 layout 不是 QVBoxLayout");
+        // TC 式上层结构：第 1 项 = 单行操作栏（QHBoxLayout），第 2 项 = 可折叠部署选项面板
         QCOMPARE(v->count(), 2);
-        QVERIFY2(qobject_cast<QHBoxLayout*>(v->itemAt(0)->layout()), "第 1 行不是 QHBoxLayout");
-        QVERIFY2(qobject_cast<QHBoxLayout*>(v->itemAt(1)->layout()), "第 2 行不是 QHBoxLayout");
+        QVERIFY2(qobject_cast<QHBoxLayout*>(v->itemAt(0)->layout()), "操作行不是 QHBoxLayout");
+        auto* panel = qobject_cast<QWidget*>(v->itemAt(1)->widget());
+        QVERIFY2(panel, "第 2 项不是折叠面板");
+        QCOMPARE(panel->objectName(), QStringLiteral("deployOptionsPanel"));
+        QVERIFY2(panel->isHidden(), "部署选项面板应默认折叠");
     }
 
     void row1_hasConnectionAndPrimaryActions()
@@ -326,6 +330,11 @@ private slots:
         FtpDeployWidget w;
         QLayout* row1 = row(&w, 0);
         QVERIFY2(row1, "第 1 行不可得（容器缺失/行数不是 2/不是 QHBoxLayout）");
+
+        // 连接参数（协议/设备/端口/FTPS）不再占主界面：容器存在且隐藏
+        auto* connHolder = w.findChild<QWidget*>(QStringLiteral("deployConnHolder"));
+        QVERIFY2(connHolder, "连接参数容器缺失");
+        QVERIFY2(connHolder->isHidden(), "连接参数行应隐藏（TC 式上部精简）");
 
         auto* deploy = w.findChild<QWidget*>(QStringLiteral("btnPrimary"));
         auto* refresh = w.findChild<QWidget*>(QStringLiteral("refreshBtn"));
@@ -340,24 +349,16 @@ private slots:
         QVERIFY2(rowContains(row1, saveTemplate), "保存为模板 不在第 1 行");
         QVERIFY2(rowContains(row1, statusDot), "连接状态点不在第 1 行");
 
-        // 连接组三件套按特征定位：协议下拉含 FTP/SFTP；设备下拉取 min 160；端口 spin 上限 65535
-        auto* protoCombo = findInRow<QComboBox>(row1, [](QComboBox* c) {
-            return c->itemText(0) == QStringLiteral("FTP");
-        });
-        QVERIFY2(protoCombo, "协议下拉（首项 FTP）不在第 1 行");
-        auto* deviceCombo = findInRow<QComboBox>(row1, [](QComboBox* c) {
-            return c->minimumWidth() >= 160;
-        });
-        QVERIFY2(deviceCombo, "设备下拉（min 160）不在第 1 行");
-        auto* portSpin = findInRow<QSpinBox>(row1, [](QSpinBox* s) {
-            return s->maximum() == 65535;
-        });
-        QVERIFY2(portSpin, "端口 spin（上限 65535）不在第 1 行");
-        auto* ftps = findInRow<QCheckBox>(row1, [](QCheckBox* b) {
-            return b->text() == QStringLiteral("FTPS 加密");
-        });
-        QVERIFY2(ftps, "『FTPS 加密』不在第 1 行");
-        QVERIFY2(separatorIn(row1), "第 1 行缺少组间分隔条 toolbarSeparator");
+        // 连接参数（协议/设备/端口/FTPS）已隐藏——不得出现在操作行
+        QVERIFY2(!findInRow<QComboBox>(row1, [](QComboBox* c) {
+                     return c->itemText(0) == QStringLiteral("FTP");
+                 }), "协议下拉不应出现在操作行（TC 式上部精简已隐藏）");
+        QVERIFY2(!findInRow<QSpinBox>(row1, [](QSpinBox* s) { return s->maximum() == 65535; }),
+                 "端口 spin 不应出现在操作行（已隐藏）");
+        QVERIFY2(!findInRow<QCheckBox>(row1, [](QCheckBox* b) {
+                     return b->text() == QStringLiteral("FTPS 加密");
+                 }), "FTPS 复选框不应出现在操作行（已隐藏）");
+        QVERIFY2(separatorIn(row1), "操作行缺少组间分隔条 toolbarSeparator");
         // 反向：第 1 行不该有部署选项与结果操作（否则"两行"只是名义上的）
         QVERIFY2(!findInRow<QCheckBox>(row1, [](QCheckBox* b) {
                      return b->text() == QStringLiteral("部署后重启");
@@ -368,44 +369,41 @@ private slots:
     void row2_hasDeployOptionsAndResultActions()
     {
         FtpDeployWidget w;
-        QLayout* row2 = row(&w, 1);
-        QVERIFY2(row2, "第 2 行不可得（容器缺失/行数不是 2/不是 QHBoxLayout）");
+        // TC 式上部：部署选项收进可折叠面板（deployOptionsPanel），结果操作移到操作行
+        auto* panel = w.findChild<QWidget*>(QStringLiteral("deployOptionsPanel"));
+        QVERIFY2(panel, "部署选项面板缺失");
+        auto* panelLayout = qobject_cast<QVBoxLayout*>(panel->layout());
+        QVERIFY2(panelLayout, "部署选项面板不是 QVBoxLayout");
 
-        auto* clearCheck = findInRow<QCheckBox>(row2, [](QCheckBox* b) {
+        auto* clearCheck = findInRow<QCheckBox>(panelLayout, [](QCheckBox* b) {
             return b->text() == QStringLiteral("部署前清空远程");
         });
-        auto* rebootCheck = findInRow<QCheckBox>(row2, [](QCheckBox* b) {
+        auto* rebootCheck = findInRow<QCheckBox>(panelLayout, [](QCheckBox* b) {
             return b->text() == QStringLiteral("部署后重启");
         });
-        QVERIFY2(clearCheck, "『部署前清空远程』不在第 2 行");
-        QVERIFY2(rebootCheck, "『部署后重启』不在第 2 行");
+        QVERIFY2(clearCheck, "『部署前清空远程』不在折叠面板内");
+        QVERIFY2(rebootCheck, "『部署后重启』不在折叠面板内");
 
-        // 重启四参：协议(Telnet/SSH)、命令(唯一 QLineEdit)、超时(上限 120)、重试(上限 3)
-        auto* rebootCombo = findInRow<QComboBox>(row2, [](QComboBox* c) {
+        auto* rebootCombo = findInRow<QComboBox>(panelLayout, [](QComboBox* c) {
             return c->itemText(0) == QStringLiteral("Telnet");
         });
-        QVERIFY2(rebootCombo, "重启协议下拉（首项 Telnet）不在第 2 行");
-        auto* cmdEdit = findInRow<QLineEdit>(row2, [](QLineEdit* e) { return true; });
-        QVERIFY2(cmdEdit, "重启命令输入框不在第 2 行");
-        QVERIFY2(findInRow<QSpinBox>(row2, [](QSpinBox* s) { return s->maximum() == 120; }),
-                 "超时 spin（上限 120）不在第 2 行");
-        QVERIFY2(findInRow<QSpinBox>(row2, [](QSpinBox* s) { return s->maximum() == 3; }),
-                 "重试 spin（上限 3）不在第 2 行");
-        QVERIFY2(rowOfClass<QComboBox>(row2).size() == 1, "第 2 行的下拉应只有重启协议一个");
-        QVERIFY2(rowOfClass<QSpinBox>(row2).size() == 2, "第 2 行的 spin 应只有超时/重试两个");
+        QVERIFY2(rebootCombo, "重启协议下拉（首项 Telnet）不在折叠面板内");
+        QVERIFY2(findInRow<QLineEdit>(panelLayout, [](QLineEdit* e) { return true; }),
+                 "重启命令输入框不在折叠面板内");
+        QVERIFY2(findInRow<QSpinBox>(panelLayout, [](QSpinBox* s) { return s->maximum() == 120; }),
+                 "超时 spin（上限 120）不在折叠面板内");
+        QVERIFY2(findInRow<QSpinBox>(panelLayout, [](QSpinBox* s) { return s->maximum() == 3; }),
+                 "重试 spin（上限 3）不在折叠面板内");
 
-        auto* exportBtn = findInRow<QPushButton>(row2, [](QPushButton* b) {
-            return b->text().contains(QStringLiteral("导出报告"));
-        });
-        auto* retryBtn = findInRow<QPushButton>(row2, [](QPushButton* b) {
-            return b->text().contains(QStringLiteral("重试失败设备"));
-        });
-        QVERIFY2(exportBtn, "『导出报告』不在第 2 行");
-        QVERIFY2(retryBtn, "『重试失败设备』不在第 2 行");
-        QVERIFY2(separatorIn(row2), "第 2 行缺少组间分隔条 toolbarSeparator");
-        // 反向：主操作不该下沉
-        QVERIFY2(!rowContains(row2, w.findChild<QWidget*>(QStringLiteral("btnPrimary"))),
-                 "▶ 部署 竟出现在第 2 行");
+        // 结果操作移到操作行（按钮文案已紧凑化：⬇ 报告 / ↻ 重试）
+        QLayout* row1 = row(&w, 0);
+        QVERIFY2(row1, "操作行不可得");
+        QVERIFY2(findInRow<QPushButton>(row1, [](QPushButton* b) {
+                     return b->text().contains(QStringLiteral("报告"));
+                 }), "『报告』按钮不在操作行");
+        QVERIFY2(findInRow<QPushButton>(row1, [](QPushButton* b) {
+                     return b->text().contains(QStringLiteral("重试"));
+                 }), "『重试』按钮不在操作行");
     }
 
     // 目的钉桩（不只钉形状）：两行的意义是让工具栏最小宽落进常见窄屏的可用宽之内。
@@ -466,7 +464,9 @@ private slots:
 
         auto* btn = w.findChild<QPushButton*>(QStringLiteral("btnPrimary"));
         QVERIFY(btn);
-        QCOMPARE(btn->text(), QStringLiteral("▶ 部署（未选择设备）"));
+        QCOMPARE(btn->text(), QStringLiteral("▶ 部署"));
+        QVERIFY2(btn->toolTip().contains(QStringLiteral("未选择目标设备")),
+                 qPrintable(QStringLiteral("空选中 tooltip 未提示：%1").arg(btn->toolTip())));
 
         btn->click();
 
@@ -508,7 +508,9 @@ private slots:
 
         auto* btn = w.findChild<QPushButton*>(QStringLiteral("btnPrimary"));
         QVERIFY(btn);
-        QCOMPARE(btn->text(), QStringLiteral("▶ 部署到 1 台设备"));
+        QCOMPARE(btn->text(), QStringLiteral("▶ 部署"));
+        QVERIFY2(btn->toolTip().contains(QStringLiteral("1 台")),
+                 qPrintable(QStringLiteral("非空选中 tooltip 未含台数：%1").arg(btn->toolTip())));
 
         btn->click();
 

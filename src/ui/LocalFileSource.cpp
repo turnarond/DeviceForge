@@ -1,6 +1,8 @@
 ﻿#include "ui/LocalFileSource.h"
 #include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
+#include <QStorageInfo>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -20,6 +22,16 @@ inline fs::path toFsPath(const QString& p)
 }
 
 // 文件时间戳 → ISO 8601 "yyyy-MM-dd HH:mm:ss"（C++17 兼容转换：file_clock → system_clock）
+QString formatCapacity(qint64 bytes)
+{
+    if (bytes <= 0) return QStringLiteral("—");
+    static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+    double v = static_cast<double>(bytes);
+    int u = 0;
+    while (v >= 1024.0 && u < 4) { v /= 1024.0; ++u; }
+    return QString::number(v, 'f', 1) + QLatin1Char(' ') + QLatin1String(units[u]);
+}
+
 QString formatFileTime(const fs::file_time_type& ft)
 {
     const auto sct = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
@@ -50,6 +62,33 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
 {
     std::vector<FtpFileInfo> result;
 
+    // 根（空路径）= 本机驱动器列表（Total Commander 风格）：面板切到本地源时
+    // 先显示磁盘，双击驱动器进入其根目录。QDir::drives() 与资源管理器同源。
+    if (path.isEmpty()) {
+        for (const QFileInfo& drive : QDir::drives()) {
+            FtpFileInfo info;
+            info.name = drive.absoluteFilePath().toStdString();   // "C:/"
+            info.isDir = true;
+            QString label = drive.absoluteFilePath();
+            if (!label.isEmpty()) {
+                const QStorageInfo storage(drive.absoluteFilePath());
+                if (storage.isValid() && storage.isReady()) {
+                    const qint64 total = storage.bytesTotal();
+                    const qint64 free = storage.bytesAvailable();
+                    if (total > 0) {
+                        info.size = static_cast<uint64_t>(free);
+                        label += QStringLiteral("  (%1 可用 / %2)")
+                                     .arg(formatCapacity(free), formatCapacity(total));
+                    }
+                }
+            }
+            info.owner = label.toStdString();   // 所有者列复用为容量提示（驱动器行）
+            result.push_back(std::move(info));
+        }
+        m_lastError.clear();
+        return result;
+    }
+
     std::error_code ec;
     fs::directory_iterator it(toFsPath(path), ec);
     if (ec) {
@@ -61,7 +100,9 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
     for (; it != end; it.increment(ec)) {
         if (ec) break;
         const auto& entry = *it;
-        const std::string name = entry.path().filename().string();
+        // 中文文件名：fs::path::string() 在 Windows 返回本地编码（GBK），Qt 按 UTF-8
+        // 解释会乱码；统一用 u8string()（UTF-8 字节）承载，显示侧 fromUtf8。
+        const std::string name = entry.path().filename().u8string();
         if (name == "." || name == "..") continue;   // 不返回（面板统一补充 ".."）
 
         FtpFileInfo info;

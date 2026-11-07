@@ -107,6 +107,10 @@ private slots:
     void onLeftSourceChanged(const QString& proto, const QString& device);
     void onRightSourceChanged(const QString& proto, const QString& device);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;   // 首轮布局后设双栏 50:50
+
 private:
     // 连接状态点状态（connStatusDot：灰=未连接/未配置，灰闪=连接中，青绿=连接成功，红=连接失败）
     enum class RemoteConnState { Unknown, Connecting, Connected, Failed };
@@ -177,6 +181,8 @@ private:
     QLabel*      m_connStatusDot = nullptr;   // 连接状态点（灰/灰闪/青绿/红，底色代码动态设置）
     QTimer*      m_connFlashTimer = nullptr;  // Connecting 态灰闪定时器（亮灰 ↔ 灰，500ms）
     bool         m_connFlashOn = false;       // 灰闪当前相位（定时器 tick 取反）
+    QWidget*     m_optionsPanel = nullptr;
+    bool         m_splitterSized = false;   // 双栏初始 50:50 已应用  // 折叠的部署选项面板（默认隐藏）
     QPushButton* m_refreshBtn = nullptr;      // 「⟳ 刷新」按钮（重新连接 + 刷新远程列表）
 
     // 双栏面板（FileBrowserPanel 宿主）

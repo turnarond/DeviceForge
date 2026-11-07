@@ -1,4 +1,5 @@
 #include "DeviceForge.h"
+#include "ThemeTokens.h"
 #include "app/WindowPlacement.h"   // v2.14 双屏初始放置决策纯函数
 #include <QMessageBox>
 #include <QGuiApplication>   // v2.14 双屏放置：枚举 screens()
@@ -184,8 +185,12 @@ DeviceForge::DeviceForge(QWidget* parent)
             if (screen == primary) continue;
             screenGeoms << screen->availableGeometry();
         }
-        const QRect frame = winplace::initialFrameGeometry(
-            sizeHint().expandedTo(minimumSizeHint()), screenGeoms);
+        // 桌面应用常态：宽 > 高的宽屏比例。不能直接用内容 sizeHint（上部多行
+        // 堆叠会算出竖长窗口，高 > 宽），改以宽屏偏好尺寸为准，最小尺寸同样宽屏化
+        setMinimumSize(1100, 680);
+        const QSize preferred(1440, 900);
+        const QSize needed = preferred.expandedTo(minimumSizeHint());
+        const QRect frame = winplace::initialFrameGeometry(needed, screenGeoms);
         resize(frame.size());
         move(frame.topLeft());
     }
@@ -232,7 +237,7 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 状态栏 TC 化（Task 5）：左侧常驻快捷键提示 + 中央部署方向指示
     // 左侧：快捷键提示条（TC 风格常驻；基色/内边距走双主题 QSS #shortcutHint，不用内联暗色）
     auto* shortcutHint = new QLabel(
-        QStringLiteral("F2 重命名 · F4 预览/编辑 · F5 复制 → · F6 移动 → · Tab 切栏 · Ctrl+M 目录对比"), this);
+        QStringLiteral("F2 重命名 · F3 查看 · F4 编辑 · F5 复制 → · F6 移动 → · F7 新建 · F8 删除 · Tab 切栏 · Ctrl+M 对比"), this);
     shortcutHint->setObjectName("shortcutHint");
     statusBar()->addWidget(shortcutHint);
 
@@ -533,7 +538,7 @@ void DeviceForge::setupTaskCenterTab()
 void DeviceForge::appendGlobalLog(const QString& log)
 {
     ui.txt_globalLog->append(log);
-    // 折叠态时琴色闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
+    // 折叠态时 accent 闪烁提示（Task 4）— flash 动态属性驱动 QSS 状态色，双主题一致
     if (!m_logExpanded && m_logCollapseBar) {
         m_logCollapseBar->setProperty("flash", true);
         m_logCollapseBar->style()->unpolish(m_logCollapseBar);
@@ -601,7 +606,7 @@ void DeviceForge::setupUpdateChecker()
 
     // 状态栏版本标签（右侧永久挂件）
     m_versionLabel = new QLabel(this);
-    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #7B8494 / 亮 #6B7480），动态状态（琴色链接/检查失败）保持代码逻辑
+    m_versionLabel->setObjectName("versionLabel"); // 基色/内边距走双主题 QSS（暗 #8B98A8 / 亮 #5B6B78），动态状态（accent 链接/检查失败）保持代码逻辑
     m_versionLabel->setText(currentVersionString() + " (检查中...)");
     m_versionLabel->setCursor(Qt::PointingHandCursor); // 鼠标手型,提示可点击
     // 版本标签可点击: 富文本(有新版本)时通过 linkActivated,纯文本时通过 eventFilter
@@ -685,12 +690,16 @@ void DeviceForge::onUpdateStateChanged(UpdateState state)
         break;
 
     case UpdateState::Ready: {
-        // 有新版本:标签切琴色 + 可点击;同时自动弹窗
+        // 有新版本:标签切 accent + 可点击;同时自动弹窗
         ReleaseInfo info = m_updateChecker->releaseInfo();
         QString tag = QString::fromStdString(info.tagName);
-        // 「琴色是动词」 — 仅信号态,使用琴色 #F0A030 提示可点击
+        // 「青色是动词」 — 仅信号态，用 accent 提示可点击
+        const bool darkTheme = ConfigStore::instance()
+            .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+            .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
         m_versionLabel->setText(
-            QString("<a href='#' style='color:#F0A030;text-decoration:none;'>%1 可用 &#9662;</a>").arg(tag));
+            QString("<a href='#' style='color:%1;text-decoration:none;'>%2 可用 &#9662;</a>")
+                .arg(tokens::color(tokens::Token::Accent, darkTheme).name(), tag));
         m_versionLabel->setTextFormat(Qt::RichText);
         m_checkUpdateAction->setText("下载 " + tag + "...");
 

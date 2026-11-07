@@ -28,12 +28,13 @@ private slots:
     void splitSizesExpandedClampsWithinWindow();
     void splitSizesCollapsedKeepsTitleStrip();
     void recordRoundTrip();
+    void legacyRecordFoldsByDefault();   // v1 旧记录（无 version）不采信 collapsed
 };
 
 void TstLogPanelState::emptyRecordYieldsDefaults()
 {
     const State s = logpanel::fromRecord(QVariantMap{});
-    QCOMPARE(s.collapsed, false);
+    QCOMPARE(s.collapsed, true);   // 默认折叠（日志区不占主界面）
     QCOMPARE(s.expandedHeight, 180);
 }
 
@@ -53,7 +54,7 @@ void TstLogPanelState::invalidValuesFallBackToDefaults()
     rec.insert(QStringLiteral("collapsed"), QStringLiteral("nope"));
     rec.insert(QStringLiteral("height"), 0);
     const State s = logpanel::fromRecord(rec);
-    QCOMPARE(s.collapsed, false);
+    QCOMPARE(s.collapsed, true);   // 非法值回落默认折叠
     QCOMPARE(s.expandedHeight, 180);
 
     rec.insert(QStringLiteral("height"), -50);
@@ -82,6 +83,18 @@ void TstLogPanelState::splitSizesCollapsedKeepsTitleStrip()
     const auto sizes = logpanel::splitSizes(State{true, 180}, 800);
     QCOMPARE(sizes.second, 0);
     QCOMPARE(sizes.first, 800);
+}
+
+// v1 时代记录：无 version 字段，collapsed=false 是"当时默认展开"而非用户选择
+// ——按新默认折叠处理，高度偏好仍沿用
+void TstLogPanelState::legacyRecordFoldsByDefault()
+{
+    QVariantMap rec;
+    rec.insert(QStringLiteral("collapsed"), false);
+    rec.insert(QStringLiteral("height"), 200);
+    const State s = logpanel::fromRecord(rec);
+    QCOMPARE(s.collapsed, true);
+    QCOMPARE(s.expandedHeight, 200);
 }
 
 void TstLogPanelState::recordRoundTrip()

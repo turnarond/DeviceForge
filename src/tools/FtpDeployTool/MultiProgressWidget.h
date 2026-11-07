@@ -46,7 +46,7 @@ public:
     void setDeviceProgress(const QString& key, int pct);
     // 单台终态着色：ok=true「成功」青绿 / false「失败」红
     void setDeviceStatusByKey(const QString& key, bool ok);
-    // 单台取消终态：「已取消」+ 中性灰（取消非信号态，不用琴色/青绿/错误红；
+    // 单台取消终态：「已取消」+ 中性灰（取消非信号态，不用 accent/成功绿/错误红；
     // 未知 key 同样静默忽略）
     void setDeviceCancelled(const QString& key);
     // 聚合总进度（后端自 kOverallKey 哨兵键分流而来）

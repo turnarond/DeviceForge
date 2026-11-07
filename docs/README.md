@@ -47,5 +47,6 @@
 | 版本一致性校验 | 全仓版本号一致 | `tools/devtools/versioncheck.py` |
 | UI 冒烟 | 启动/主窗口/退出验证 | `tools/devtools/smoke.py` |
 | SylixOS FTP 三禁静态守卫 | `FtpAdapter.cpp` 每条 libcurl 腿的 EPSV/MULTICWD/QUOTE 绝对路径单源保证（#59） | `tools/devtools/ftpguard.py` |
+| 旧色值静态守卫 | `src/` 下 .qss/.cpp/.h 不得残留 Instrument 之前的旧色值（视觉语言重构） | `tools/devtools/theme_guard.py` |
 | 单元测试 | C++ QtTest/CTest | `tests/`（`ctest -C Release`） |
 | 工具集测试 | Python unittest | `tools/tests/` |

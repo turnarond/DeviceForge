@@ -272,7 +272,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 组件（src/ui/）
 
-- **DeviceBusWidget**：顶部紧凑设备栏。v2.16 起第 1 行只显已选 chips，其余设备收进「设备 ▾」标签分组菜单（勾选即选中）；双击 chip＝打开这台设备、右键＝打开/编辑档案/移除、点尾部「×」＝移出选择；chips 石墨底 + 琴色选中态边框，工业仪表盘风格
+- **DeviceBusWidget**：顶部紧凑设备栏。v2.16 起第 1 行只显已选 chips，其余设备收进「设备 ▾」标签分组菜单（勾选即选中）；双击 chip＝打开这台设备、右键＝打开/编辑档案/移除、点尾部「×」＝移出选择；chips 石墨底 + accent 选中态边框（青色是动词）
 - **FileBrowserPanel**：通用双栏文件面板（FTP 双栏宿主组装；源可配置）。统一表格视图（RemoteFileModel/FtpFileInfo 渲染）+ 面板顶部路径栏（Enter 跳转）+ 底部面包屑（当前路径文本）+ **面板源选择器行**（源类型下拉 本地/FTP/SFTP + 面板级设备下拉，远程源时显示；setSource 显示自动同步，blockSignals 防回环）；双击进入目录/`..` 退出；TC 快捷键 F2 重命名 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板；右键菜单（进入/新建目录/重命名/删除/复制到对面/移动到对面/复制路径/刷新）；面板间拖拽（方向语义：拖入对面=复制，本地↔远程=上传/下载，远程↔远程提示暂不支持）；**系统文件拖入**（资源管理器文件拖入远程面板逐文件上传，空 url 防护）；**异步加载**（loadDirectory QtConcurrent + 代际令牌，慢速目录不冻结 UI，失败面包屑「加载失败」+ 重连重试一次）
 - **IFileSource**：文件源统一接口（list/mkdir/rename/remove(path,isDir)/clearDirectory/upload/download/connect/isConnected/lastError/进度回调/取消标志），与协议无关地操作文件系统。实现：**LocalFileSource**（本地 std::filesystem，纯逻辑可单测）与 **RemoteFileSource**（包装 FtpAdapter FTP/FTPS / SshAdapter SFTP）
 
@@ -302,7 +302,7 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 ### UI 资源
 
 - **QRC**：`src/app/DeviceForge.qrc` — 打包 `darkstyle.qss`（`:/styles/darkstyle.qss`）+ `darkstyle-light.qss`（`:/styles/darkstyle-light.qss`）+ `app.ico`（`:/icons/app.ico`）
-- **QSS**：`src/app/darkstyle.qss` — 工业仪表盘深色主题「琴色是动词」体系：深黑底 (#0B0E14) + 中性石墨结构边框 (#252A33/#333B48)，琴色 (#F0A030) 仅用于信号态（主按钮/focus/选中/活跃），进度条青绿 (#40C8A0)
+- **QSS**：`src/app/darkstyle.qss` — 深色 Instrument 精密仪器主题「青色是动词」体系：深炭黑底 (#0D1117) + 面板明度阶梯 (#141B24/#1B2430) + 边框 (#263140/#35465A)，亮青 (#2DD4BF) 仅用于信号态（主按钮/focus/选中/活跃），进度条用 accent；色值单源见 `src/app/ThemeTokens.h`
 - **UI 文件**：`src/app/DeviceForge.ui`（主窗口）
 
 ### 源码文件清单
@@ -371,11 +371,11 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 ### UI 布局
 
-- 左侧 56px 固定宽 NavBar（竖排图标导航栏，琴色活跃态 + 石墨色非活跃态）
+- 左侧 56px 固定宽 NavBar（竖排图标导航栏，accent 活跃态 + 中性非活跃态）
 - NavBar 右侧：顶部胶囊式 DeviceBusWidget + 中间 QStackedWidget（工具工作区）+ 底部可折叠日志区
-- 日志区默认可折叠，新日志到达时折叠条琴色闪烁提示
+- 日志区默认可折叠，新日志到达时折叠条 accent 闪烁提示
 - 状态栏 TC 化（2026-08-10）：左侧常驻快捷键提示条（`#shortcutHint`，双 QSS 基色）「F2 重命名 · F5 复制 → · F6 移动 → · Tab 切栏」+ 中央部署方向指示（`#directionLabel`，左面板路径 → 右面板路径，仅部署工具存在且部署页激活时显示，其余 Tool 页隐藏）
-- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），工业仪表盘色板，双主题可切换
+- 深色主题样式表：`darkstyle.qss`（通过 `main.cpp` 按 ConfigStore `appearance.theme` 配置加载，默认暗色；亮色为 `darkstyle-light.qss`），Instrument 精密仪器色板，双主题可切换
 - 所有 Tool 日志统一路由到底部全局日志（ToolWidget::setGlobalLogCallback）
 
 ## 设计文档
@@ -444,22 +444,23 @@ DeviceForge.cpp              ToolHost (桥接层)          IProtocolAdapter
 
 - **测试现状**：**以 `tests/AGENTS.md` 为准**（目标计数、逐目标被测物、在册特例与已知覆盖空白都在那一处单源维护，本文件不再抄数字以免两处分叉）。历史口径提醒：本条曾长期停留"20 个目标、FtpAdapter/ToolRegistry/DeviceBusWidget 定向测试尚未补充"的写法，而 `tst_task_center_widget`（v2.11 起）与 `tst_device_bus_groups`（v2.16-B 起）早已补上 DeviceBusWidget 侧的定向覆盖——读到旧数字别据此判断"没有测试保护"
 
-- **深色主题色板**（darkstyle.qss，2026-07-09 重构为「琴色是动词」体系）：
-  - 背景底层: #0B0E14 | 面板/容器: #141820 | 输入凹槽: #0E1219 | 次按钮凸面: #232A36
-  - 结构边框: #252A33 | 控件边框: #333B48 | 边框 hover 提亮: #3A4250
-  - 主要文字: #C8CCD4 | 次要文字: #7B8494
-  - 强调色（琴色）: #F0A030 | 强调色 hover: #F0B840 | 强调色 pressed: #D48820
-  - 进行中/成功（青绿）: #40C8A0 | 错误色: #E85848
+- **深色主题色板**（darkstyle.qss，v2.17 重构为「深色 Instrument」体系）：
+  - 背景底层: #0D1117 | 面板/容器: #141B24 | 提升面/表头: #1B2430 | 输入凹槽: #0A0F15
+  - 结构边框: #263140 | 控件边框: #35465A | 边框 hover 提亮: #4A5B74
+  - 主要文字: #E6EDF3 | 次要文字: #8B98A8 | 弱文字: #7D8A99
+  - 信号色（亮青）: #2DD4BF | hover: #5CE8D5 | pressed: #14B8A6 | 按钮字（深墨）: #062E2A
+  - 成功: #3FB950 | 错误: #F85149 | 警告: #D29922
 
-- **双主题（v2.6）**：`appearance.theme`（ConfigStore，默认 dark）。亮色板 darkstyle-light.qss 色值对应：背景 #F5F6F8 / 面板 #FFFFFF / 凹槽 #ECEFF3 / 边框 #D0D5DD/#C4CAD4 / 主文字 #2A2F38 / 次文字 #6B7480 / 琴色 #D48820（亮底加深，语义不变）/ 青绿 #2FA88A / 错误 #D6453A。「琴色是动词」语义跨主题一致：琴色仅信号态
+- **双主题（v2.6，v2.17 重构为 Instrument）**：`appearance.theme`（ConfigStore，默认 dark）。亮色板 darkstyle-light.qss 色值对应：画布 #E9EDF0 / 面板 #FFFFFF / 提升面 #F7F9FA / 凹槽 #F3F6F8 / 边框 #D3DAE0/#B8C3CC / 主文字 #16222B / 次文字 #5B6B78 / 弱文字 #64707C / 信号色（深青） #0E766E（hover #0B5D56 / pressed #094A45）/ 按钮字（白） #FFFFFF / 成功 #15803D / 错误 #B91C1C / 警告 #B45309。「青色是动词」语义跨主题一致：accent 仅信号态
+- **色值单源**：QSS 之外的代码取色一律走 `src/app/ThemeTokens.h`（`tokens::Token` 枚举 + `tokens::color(token, dark)`）；`tools/devtools/theme_guard.py` 静态守卫确保 src/ 不残留旧色值（CI 可挂）
 - **紧凑密度（v2.6）**：NavBar 56px、列表行高 ~22px、双主题同密度
 
-- **主题设计原则「琴色是动词」（关键，勿回退）**：琴色 #F0A030 **仅**用于标记"此刻可动作/此刻活跃"的信号态，绝不用作静止结构边框或大面积填充：
-  - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性石墨色（#252A33 / #333B48）
-  - 琴色仅出现在：主操作按钮填充（`#btnPrimary`，全局少数）、`:focus` 输入框边框、`:selected`/`:checked`/活跃 tab、分组标题文字、滑块 handle
-  - 控件"能否操作"靠形态区分：输入框=凹的（填充比面板暗 #0E1219）、次按钮=凸的（填充比面板亮 #232A36）、容器=平的（仅石墨细边）
-  - 进度条用青绿 #40C8A0（进行中），与琴色语义错开
-  - 分隔条 QSplitter::handle 无边框，纯石墨窄条，hover 提亮（**不要**加琴色边框，那会变成"粗黄条"）
+- **主题设计原则「青色是动词」（关键，勿回退）**：accent（浅 #0E766E / 深 #2DD4BF）**仅**用于标记"此刻可动作/此刻活跃"的信号态，绝不用作静止结构边框或大面积填充：
+  - 静止边框（容器/输入/下拉/分隔条/表头/tab pane）一律用中性色（浅 #D3DAE0 / 深 #263140）
+  - accent 仅出现在：主操作按钮填充（`#btnPrimary`，全局少数）、`:focus` 输入框边框（2px）、`:selected`/`:checked`/活跃 tab、选中行左侧竖条、分组标题竖条
+  - 控件"能否操作"靠形态区分：输入框=凹的（填充比面板暗 #F3F6F8/#0A0F15）、次按钮=凸的（填充比面板亮 #F7F9FA/#1B2430）、容器=平的（仅细边）
+  - 进度条用 accent（进行中）；成功/警告/失败用 success/warning/danger（日志、状态点），与 accent 语义错开
+  - 分隔条 QSplitter::handle 无边框，纯中性窄条，hover 提亮（**不要**加 accent 边框，那会变成"粗色条"）
   - **Qt QSS 限制**：不支持 CSS `linear-gradient`/`radial-gradient`/`box-shadow`，一律用纯色或 `qlineargradient(...)`
 
 - **main.cpp 初始化顺序**（关键）：

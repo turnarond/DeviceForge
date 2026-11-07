@@ -29,6 +29,7 @@
 #include <QDir>
 #include <QUuid>
 
+#include "app/ThemeTokens.h"
 #include "config/ConfigStore.h"
 #include "device/DeviceProfile.h"
 #include "device/DeviceRegistry.h"
@@ -662,16 +663,16 @@ private slots:
         QCOMPARE(m.refresh(), 1);
         QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus).toString(),
                  QStringLiteral("退避"));
-        // 复用既有琴色 token #F0A030（"琴色是动词"信号态专用，双主题同值，不新增色值）
+        // 退避态 = warning 语义色 token（默认 dark 主题 #D29922）
         QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus, Qt::ForegroundRole)
-                     .value<QColor>(), QColor(QStringLiteral("#F0A030")));
+                     .value<QColor>(), tokens::color(tokens::Token::Warning, /*dark=*/true));
 
         inBackoff = false;   // 非退避的同一异常回落红（任务 3 语义保持）
         m.syncSamples();
         QCOMPARE(cellData(&m, 0, ModbusTargetListModel::ColStatus).toString(),
                  QStringLiteral("异常"));
         QVERIFY(cellData(&m, 0, ModbusTargetListModel::ColStatus, Qt::ForegroundRole)
-                    .value<QColor>() != QColor(QStringLiteral("#F0A030")));
+                    .value<QColor>() != tokens::color(tokens::Token::Warning, /*dark=*/true));
     }
 
     // ── 裁决 6（任务 4）：删除设备全部目标 = 存空 targets 记录；清单不合成默认行复活 ──

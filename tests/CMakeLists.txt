@@ -330,6 +330,20 @@ if(_qt_bin_dir)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir}")
 endif()
 
+# --- 双主题色值单源 ThemeTokens.h（Instrument 视觉语言，纯头）---
+add_executable(tst_theme_tokens theme/tst_theme_tokens.cpp
+)
+target_include_directories(tst_theme_tokens PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(tst_theme_tokens PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME tst_theme_tokens COMMAND tst_theme_tokens)
+if(_qt_bin_dir)
+    set_tests_properties(tst_theme_tokens PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_bin_dir};QT_PLUGIN_PATH=set:${_qt_plugin_dir}")
+endif()
+
 # --- 双主题像素验证（#18：离屏渲染采样 + 色值字符串断言保底）---
 # 渲染依赖 QPA 平台插件（QApplication），故同样前插 Qt bin 并显式指定插件路径
 add_executable(tst_qss_pixels theme/tst_qss_pixels.cpp
@@ -373,13 +387,19 @@ add_executable(tst_panel_async
     ${CMAKE_SOURCE_DIR}/src/ui/FileEncoding.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/FileEditorDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
 )
 target_include_directories(tst_panel_async PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 target_link_libraries(tst_panel_async PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Test
+    # FileBrowserPanel 的路径历史走 ConfigStore（SQLite）→ 需 Qt6::Sql
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Sql Qt6::Test
 )
+if(WIN32)
+    target_link_libraries(tst_panel_async PRIVATE crypt32)
+endif()
 add_test(NAME tst_panel_async COMMAND tst_panel_async)
 if(_qt_bin_dir)
     set_tests_properties(tst_panel_async PROPERTIES

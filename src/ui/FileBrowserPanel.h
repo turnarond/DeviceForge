@@ -28,9 +28,14 @@ class QDropEvent;
 class IFileSource;
 class FileEditorDialog;
 
+class QHBoxLayout;
+class QCompleter;
+class QTabBar;
+
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
 public:
+
     enum class DropRoute { PanelTransfer, SystemUpload, Rejected };
     using TransferSubmitter = std::function<QUuid(TransferTask)>;
     using TransferCanceller = std::function<void(const QUuid&)>;
@@ -57,7 +62,8 @@ public:
     FileEditorDialog* editorForTest() const { return m_editor.data(); }
 
     // --- Task 3：面板源选择器 ---
-    void setSourceChooserVisible(bool visible);          // 源选择器整行显示/隐藏
+    void setSourceChooserVisible(bool visible);
+    void buildDriveBar();   // 本地源：重建驱动器按钮（TC 风格与源下拉同级）          // 源选择器整行显示/隐藏
     void setSourceProto(const QString& proto);           // "local"/"ftp"/"sftp"，程序化设置（blockSignals 防循环）
     void setSourceDevice(const QString& device);         // 面板级设备下拉（blockSignals）
     void setSourceDevices(const QStringList& devices);   // 设备列表重填（保留当前选择，blockSignals）
@@ -65,7 +71,20 @@ public:
     void setTransferSubmitter(TransferSubmitter submitter);
     void setTransferCanceller(TransferCanceller canceller);
     void setOverwritePolicyChooser(OverwritePolicyChooser chooser);
-    void renameSelected();                        // F2：重命名
+    void renameSelected();
+    void recordPathHistory(const QString& path);   // 记录路径历史（补全用）
+    void addTab();                                  // Ctrl+T：新建标签（当前路径）
+    void closeTab(int index);                       // Ctrl+W / 标签关闭按钮
+    void updateCurrentTabPath(const QString& path); // 导航后同步标签文本
+    void quickLocate(const QString& typed);        // TC 打字即定位（表格内快速搜索）
+    // 目录递归复制（TC 拖拽文件夹）：本地→远程上传 / 远程→本地下载 / 本地→本地直接复制
+    static void collectLocalDirItems(const QString& srcDir, const QString& dstDir,
+                                     QVector<class TransferItemRequest>& out);
+    void collectRemoteDirItems(const QString& srcDir, const QString& dstDir,
+                               QVector<class TransferItemRequest>& out);
+    static bool copyLocalDirectory(const QString& srcDir, const QString& dstDir);
+    void newDirectoryHere();   // F7 / 右键「新建目录」
+    void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）
     void moveSelectedTo(FileBrowserPanel* target); // F6：移动到目标面板（方向语义）
     void showContextMenu(const QPoint& pos);      // 统一右键菜单（新建/重命名/删除/传输/复制路径/刷新）
@@ -144,7 +163,18 @@ private:
     FileBrowserPanel* m_peerPanel = nullptr;   // 对面面板（宿主注入）
     QComboBox*  m_sourceCombo = nullptr;       // 源类型（本地/FTP/SFTP，data role 存 local/ftp/sftp）
     QComboBox*  m_deviceCombo = nullptr;       // 面板级设备（远程源时显示，宿主填充设备列表）
+    QWidget*    m_driveBar = nullptr;          // 驱动器按钮条（本地源可见，TC 风格与源下拉同级）
+    QHBoxLayout* m_driveLayout = nullptr;
+    QHash<QString, QPushButton*> m_driveButtons;   // 盘符 → 按钮（当前盘高亮）
+    void updateDriveHighlight();
     QLineEdit*  m_pathEdit = nullptr;          // 面板顶部路径栏
+    QCompleter* m_pathCompleter = nullptr;     // 路径历史补全（TC 常用目录）
+    QStringList m_pathHistory;
+    QTabBar*    m_tabBar = nullptr;            // TC 多标签（每栏多个路径标签）
+    QStringList m_tabPaths;                   // 标签对应路径
+    int         m_currentTab = 0;
+    QString     m_quickSearch;                 // TC 打字即定位缓冲（表格内快速搜索）
+    QTimer*     m_quickSearchTimer = nullptr;
     QTableView* m_table = nullptr;             // 统一表格视图
     QLabel*     m_breadcrumb = nullptr;        // 底部面包屑（路径文本，含 / 分隔可点击——首版文本展示）
     QLabel*     m_transferStatus = nullptr;    // Scheduler 快照状态（仅 GUI 线程更新）

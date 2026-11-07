@@ -1,10 +1,14 @@
 #include "ui/FileBrowserPanel.h"
 #include "ui/FileEditorDialog.h"
 #include "ui/IFileSource.h"
+#include "config/ConfigStore.h"
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QCompleter>
+#include <QTabBar>
+#include <QStringListModel>
 #include <QComboBox>
 #include <QTableView>
 #include <QHeaderView>
@@ -131,7 +135,7 @@ void FileBrowserPanel::setupUi()
     m_sourceCombo->addItem(tr("本地"), QStringLiteral("local"));
     m_sourceCombo->addItem("FTP", QStringLiteral("ftp"));
     m_sourceCombo->addItem("SFTP", QStringLiteral("sftp"));
-    m_sourceCombo->setFixedWidth(80);
+    m_sourceCombo->setFixedWidth(92);
     connect(m_sourceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
         const QString proto = m_sourceCombo->currentData().toString();
         m_deviceCombo->setVisible(proto != QStringLiteral("local"));
@@ -139,7 +143,7 @@ void FileBrowserPanel::setupUi()
     });
     m_deviceCombo = new QComboBox(this);
     m_deviceCombo->setObjectName("panelDeviceCombo");
-    m_deviceCombo->setMinimumWidth(140);
+    m_deviceCombo->setMinimumWidth(110);
     m_deviceCombo->setVisible(false);   // 本地源默认隐藏设备下拉
     // 设备下拉变化同样上报（面板级设备=浏览配置的一部分，宿主据此重建对应面板源）
     connect(m_deviceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
@@ -148,13 +152,52 @@ void FileBrowserPanel::setupUi()
     });
     chooserRow->addWidget(m_sourceCombo);
     chooserRow->addWidget(m_deviceCombo);
+    // 驱动器按钮条（TC 风格：与源下拉同级；本地源时显示 C:/ D:/ …，点击直达）
+    m_driveBar = new QWidget(this);
+    m_driveLayout = new QHBoxLayout(m_driveBar);
+    m_driveLayout->setContentsMargins(0, 0, 0, 0);
+    m_driveLayout->setSpacing(4);
+    m_driveBar->setVisible(false);
+    chooserRow->addWidget(m_driveBar);
     chooserRow->addStretch();
     layout->addLayout(chooserRow);
+
+    // TC 多标签栏（位置：驱动器/源选择行下方、路径栏上方）
+    //   单击切换 / 双击标签关闭 / 双击空白新增 / Ctrl+T 新建 / Ctrl+W 关闭
+    m_tabBar = new QTabBar(this);
+    m_tabBar->setObjectName(QStringLiteral("panelTabBar"));
+    m_tabBar->setExpanding(false);
+    m_tabBar->setTabsClosable(false);   // TC 风格：双击关闭（不显示 × 按钮）
+    m_tabBar->setMovable(true);
+    {
+        const QString initial = m_source && m_source->sourceId() == QStringLiteral("local")
+                                    ? QStringLiteral("此电脑") : QStringLiteral("/");
+        m_tabPaths << initial;
+        m_tabBar->addTab(initial);
+        m_tabBar->setTabToolTip(0, initial);
+    }
+    connect(m_tabBar, &QTabBar::currentChanged, this, [this](int idx) {
+        if (idx < 0 || idx >= m_tabPaths.size() || idx == m_currentTab) return;
+        m_currentTab = idx;
+        navigateTo(m_tabPaths[idx]);
+    });
+    // 双击：标签上 = 关闭；空白处 = 新增
+    m_tabBar->installEventFilter(this);
+    layout->addWidget(m_tabBar);
 
     // 路径栏（TC 风格：可编辑 + Enter 跳转）
     m_pathEdit = new QLineEdit(this);
     m_pathEdit->setPlaceholderText(tr("输入路径后回车跳转..."));
     connect(m_pathEdit, &QLineEdit::returnPressed, this, &FileBrowserPanel::onPathEnterPressed);
+    // 路径历史补全（TC 常用目录习惯）：历史来自 ConfigStore，输入时下拉候选
+    m_pathHistory = ConfigStore::instance()
+        .load(QStringLiteral("filebrowser"), QStringLiteral("pathHistory"))
+        .value(QStringLiteral("paths")).toStringList();
+    m_pathCompleter = new QCompleter(m_pathHistory, this);
+    m_pathCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    m_pathCompleter->setFilterMode(Qt::MatchContains);
+    m_pathCompleter->setMaxVisibleItems(12);
+    m_pathEdit->setCompleter(m_pathCompleter);
     layout->addWidget(m_pathEdit);
 
     // 统一表格视图
@@ -181,10 +224,31 @@ void FileBrowserPanel::setupUi()
     setAcceptDrops(true);   // 面板级兜底：非表格区域（路径栏/面包屑）也能接收拖入
 
     // 面板快捷键（TC 风格，面板焦点内生效）：
-    //   F2 重命名 / F4 预览编辑 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板
+    //   F2 重命名 / F3 查看 / F4 预览编辑 / F5 复制到对面 / F6 移动到对面 / F7 新建文件夹 / F8 删除
+    //   / Tab 焦点切到对面面板（快捷键对齐 Total Commander 习惯）
     auto* f2Shortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
     f2Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
     connect(f2Shortcut, &QShortcut::activated, this, &FileBrowserPanel::renameSelected);
+
+    // TC 标签快捷键
+    auto* newTabShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+T")), this);
+    connect(newTabShortcut, &QShortcut::activated, this, &FileBrowserPanel::addTab);
+    auto* closeTabShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+W")), this);
+    connect(closeTabShortcut, &QShortcut::activated, this,
+            [this]() { closeTab(m_currentTab); });
+
+    auto* f3Shortcut = new QShortcut(QKeySequence(Qt::Key_F3), this);
+    f3Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    // TC 的 F3=查看（只读）；本工具编辑器为预览/编辑二合一，F3 与 F4 同入口
+    connect(f3Shortcut, &QShortcut::activated, this, &FileBrowserPanel::openEditorForSelectedFile);
+
+    auto* f7Shortcut = new QShortcut(QKeySequence(Qt::Key_F7), this);
+    f7Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(f7Shortcut, &QShortcut::activated, this, &FileBrowserPanel::newDirectoryHere);
+
+    auto* f8Shortcut = new QShortcut(QKeySequence(Qt::Key_F8), this);
+    f8Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(f8Shortcut, &QShortcut::activated, this, &FileBrowserPanel::deleteSelected);
 
     auto* f4Shortcut = new QShortcut(QKeySequence(Qt::Key_F4), this);
     f4Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -247,6 +311,58 @@ void FileBrowserPanel::setupUi()
 // 仅用户操作源/设备下拉时发射 sourceChooserChanged）
 // ============================================================
 
+namespace {
+QString capacityText(qint64 bytes)
+{
+    if (bytes <= 0) return QStringLiteral("—");
+    static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+    double v = static_cast<double>(bytes);
+    int u = 0;
+    while (v >= 1024.0 && u < 4) { v /= 1024.0; ++u; }
+    return QString::number(v, 'f', 1) + QLatin1Char(' ') + QLatin1String(units[u]);
+}
+}  // namespace
+
+void FileBrowserPanel::buildDriveBar()
+{
+    if (!m_driveLayout) return;
+    m_driveButtons.clear();
+    while (QLayoutItem* item = m_driveLayout->takeAt(0)) {
+        if (QWidget* w = item->widget()) w->deleteLater();
+        delete item;
+    }
+    for (const QFileInfo& drive : QDir::drives()) {
+        const QString path = drive.absoluteFilePath();          // "C:/"
+        QString label = path.left(2);                            // "C:"
+        auto* btn = new QPushButton(label, m_driveBar);
+        btn->setObjectName(QStringLiteral("driveButton"));
+        // tooltip：可用/总容量（TC 驱动器栏信息）
+        const QStorageInfo st(path);
+        btn->setToolTip(st.isValid() && st.isReady()
+            ? QStringLiteral("%1  可用 %2 / 总计 %3")
+                  .arg(path).arg(capacityText(st.bytesAvailable()), capacityText(st.bytesTotal()))
+            : path);
+        btn->setFixedHeight(24);
+        btn->setFixedWidth(46);
+        btn->setCursor(Qt::PointingHandCursor);
+        connect(btn, &QPushButton::clicked, this, [this, path]() { navigateTo(path); });
+        m_driveButtons.insert(path, btn);
+        m_driveLayout->addWidget(btn);
+    }
+    m_driveLayout->addStretch();
+}
+
+// 当前盘高亮（TC 驱动器栏语义）
+void FileBrowserPanel::updateDriveHighlight()
+{
+    for (auto it = m_driveButtons.constBegin(); it != m_driveButtons.constEnd(); ++it) {
+        const bool active = !m_currentPath.isEmpty() && m_currentPath.startsWith(it.key());
+        it.value()->setProperty("active", active);
+        it.value()->style()->unpolish(it.value());
+        it.value()->style()->polish(it.value());
+    }
+}
+
 void FileBrowserPanel::setSourceChooserVisible(bool visible)
 {
     m_sourceCombo->setVisible(visible);
@@ -301,8 +417,12 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
     if (m_source) {
         setSourceProto(m_source->sourceId());   // 选择器显示与实际源一致（blockSignals，不发射）
         // 本地默认当前目录；远程默认根
-        m_currentPath = m_source->sourceId() == "local"
-            ? QDir::currentPath() : QStringLiteral("/");
+        // 本地源从用户目录起步（TC 风格：驱动器按钮条负责切盘，表格显示当前目录内容）；
+        // 远程默认根
+        const bool isLocal = m_source->sourceId() == "local";
+        m_currentPath = isLocal ? QDir::homePath() : QStringLiteral("/");
+        if (isLocal) buildDriveBar();
+        if (m_driveBar) m_driveBar->setVisible(isLocal);
         navigateTo(m_currentPath);
     } else {
         // 置空源（连接失败 detach 等）：清空表格 + 路径栏 + 面包屑 + 当前路径，
@@ -321,7 +441,75 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
 void FileBrowserPanel::navigateTo(const QString& path)
 {
     m_pathEdit->setText(path);
+    recordPathHistory(path);
+    updateCurrentTabPath(path);
+    updateDriveHighlight();
     loadDirectory(path);
+}
+
+// 标签文本：本地取末段目录名（空=此电脑），远程取路径末段
+void FileBrowserPanel::updateCurrentTabPath(const QString& path)
+{
+    if (!m_tabBar || m_currentTab < 0 || m_currentTab >= m_tabPaths.size()) return;
+    m_tabPaths[m_currentTab] = path;
+    // TC 风格：标签显示完整路径（空白=此电脑）
+    const QString label = path.isEmpty()
+        ? ((m_source && m_source->sourceId() == QStringLiteral("local"))
+               ? QStringLiteral("此电脑") : QStringLiteral("/"))
+        : path;
+    m_tabBar->setTabText(m_currentTab, label);
+    m_tabBar->setTabToolTip(m_currentTab, path.isEmpty() ? label : path);
+}
+
+// Ctrl+T / 双击空白：新建标签（复制当前路径）；新标签成为当前
+void FileBrowserPanel::addTab()
+{
+    if (!m_tabBar) return;
+    const QString path = m_currentPath;
+    m_tabPaths << path;
+    const QString label = path.isEmpty()
+        ? ((m_source && m_source->sourceId() == QStringLiteral("local"))
+               ? QStringLiteral("此电脑") : QStringLiteral("/"))
+        : path;
+    const int idx = m_tabBar->addTab(label);
+    m_tabBar->setTabToolTip(idx, path);
+    m_currentTab = idx;
+    m_tabBar->blockSignals(true);
+    m_tabBar->setCurrentIndex(idx);
+    m_tabBar->blockSignals(false);
+    updateCurrentTabPath(path);
+    navigateTo(path);
+}
+
+// Ctrl+W / 关闭按钮：至少保留一个标签
+void FileBrowserPanel::closeTab(int index)
+{
+    if (!m_tabBar || m_tabBar->count() <= 1) return;
+    if (index < 0 || index >= m_tabBar->count()) return;
+    m_tabBar->blockSignals(true);
+    m_tabBar->removeTab(index);
+    m_tabPaths.removeAt(index);
+    if (m_currentTab >= m_tabBar->count()) m_currentTab = m_tabBar->count() - 1;
+    else if (index < m_currentTab) --m_currentTab;
+    m_tabBar->setCurrentIndex(m_currentTab);
+    m_tabBar->blockSignals(false);
+    navigateTo(m_tabPaths.value(m_currentTab));
+}
+
+// 路径历史（TC 常用目录）：去重置顶、上限 20、持久化到 ConfigStore
+void FileBrowserPanel::recordPathHistory(const QString& path)
+{
+    const QString p = path.trimmed();
+    if (p.isEmpty()) return;
+    m_pathHistory.removeAll(p);
+    m_pathHistory.prepend(p);
+    while (m_pathHistory.size() > 20) m_pathHistory.removeLast();
+    if (m_pathCompleter) {
+        m_pathCompleter->setModel(new QStringListModel(m_pathHistory, m_pathCompleter));
+    }
+    QVariantMap m;
+    m.insert(QStringLiteral("paths"), m_pathHistory);
+    ConfigStore::instance().save(QStringLiteral("filebrowser"), QStringLiteral("pathHistory"), m);
 }
 
 void FileBrowserPanel::refresh() { loadDirectory(m_currentPath); }
@@ -421,16 +609,29 @@ void FileBrowserPanel::applyFileList(const QString& path,
             hh->setSectionResizeMode(RemoteFileModel::ColDateTime, QHeaderView::Fixed);
             hh->setSectionResizeMode(RemoteFileModel::ColPermissions, QHeaderView::Fixed);
             hh->setSectionResizeMode(RemoteFileModel::ColOwner, QHeaderView::Fixed);
-            m_table->setColumnWidth(RemoteFileModel::ColIcon, 28);
-            m_table->setColumnWidth(RemoteFileModel::ColSize, 76);
-            m_table->setColumnWidth(RemoteFileModel::ColDateTime, 130);
-            m_table->setColumnWidth(RemoteFileModel::ColPermissions, 84);
-            m_table->setColumnWidth(RemoteFileModel::ColOwner, 72);
+            m_table->setColumnWidth(RemoteFileModel::ColIcon, 24);
+            m_table->setColumnWidth(RemoteFileModel::ColSize, 64);
+            m_table->setColumnWidth(RemoteFileModel::ColDateTime, 112);
+            m_table->setColumnWidth(RemoteFileModel::ColPermissions, 76);
+            m_table->setColumnWidth(RemoteFileModel::ColOwner, 60);
+            // 列头排序（TC 习惯：点击列头切换升降序；模型 sort() 已实现目录优先 + 按列比较）
+            m_table->setSortingEnabled(true);
+            m_table->horizontalHeader()->setSortIndicatorShown(true);
+            m_table->horizontalHeader()->setSectionsClickable(true);
+            m_table->sortByColumn(RemoteFileModel::ColName, Qt::AscendingOrder);
         }
         // setModel 会重建 selection model（setupUi 时连接会失效），必须在设模型之后连接
         if (auto* selModel = m_table->selectionModel()) {
-            connect(selModel, &QItemSelectionModel::selectionChanged, this,
-                    [this] { emit selectionChanged(); });
+            connect(selModel, &QItemSelectionModel::selectionChanged, this, [this] {
+                // 同步选中行集合到模型（选中行前景色反色，覆盖目录 accent）
+                if (auto* m = qobject_cast<RemoteFileModel*>(m_table->model())) {
+                    QSet<int> rows;
+                    const auto idxs = m_table->selectionModel()->selectedRows();
+                    for (const QModelIndex& i : idxs) rows.insert(i.row());
+                    m->setSelectedRows(rows);
+                }
+                emit selectionChanged();
+            });
         }
     }
     // 过滤 . 补 ..（与现有远程面板一致）
@@ -461,6 +662,14 @@ void FileBrowserPanel::applyFileList(const QString& path,
         m_restoreSelectionGeneration = 0;
     }
 
+    // TC 习惯：进入目录即选中首行（".."），键盘导航/选中态立即可见
+    if (model->rowCount({}) > 0 && !m_table->currentIndex().isValid()) {
+        const QModelIndex first = model->index(0, 0);
+        if (auto* sel = m_table->selectionModel())
+            sel->setCurrentIndex(first,
+                                 QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+
     m_breadcrumb->setText(path);
     m_pathEdit->setText(path);
     emit currentPathChanged(path);
@@ -482,9 +691,17 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
         openEditorForRow(index.row());   // v2.12：双击文件 = 预览/编辑（TC F3/F4 合并入口）
         return;
     }
+    // 驱动器行（本地根）：name 是绝对路径（"C:/"），直接导航；
+    // 按「当前路径 + 子名」拼接会得到无效的 "/C:/"（驱动器双击进不去的根因）
+    const QString entryName = QString::fromStdString(fi.name);
+    if (entryName.size() >= 2 && entryName.at(1) == u':') {
+        navigateTo(entryName);
+        emit directoryActivated(fi);
+        return;
+    }
     QString newPath = m_currentPath;
     if (!newPath.endsWith('/')) newPath += '/';
-    newPath += QString::fromStdString(fi.name);
+    newPath += entryName;
     navigateTo(newPath);
     emit directoryActivated(fi);
 }
@@ -599,6 +816,77 @@ void FileBrowserPanel::renameSelected()
         refresh();
 }
 
+// F7 / 右键「新建目录」：在当前路径下创建（TC 语义）
+// TC 打字即定位：累积可打印字符，按名称前缀选中首个匹配；1.2s 无输入自动清空
+void FileBrowserPanel::quickLocate(const QString& typed)
+{
+    m_quickSearch += typed;
+    if (!m_quickSearchTimer) {
+        m_quickSearchTimer = new QTimer(this);
+        m_quickSearchTimer->setSingleShot(true);
+        m_quickSearchTimer->setInterval(1200);
+        connect(m_quickSearchTimer, &QTimer::timeout, this, [this]() {
+            m_quickSearch.clear();
+            m_breadcrumb->setText(m_currentPath);   // 恢复路径显示
+        });
+    }
+    m_quickSearchTimer->start();
+
+    auto* model = qobject_cast<RemoteFileModel*>(m_table->model());
+    if (!model) return;
+    for (int r = 0; r < model->rowCount(); ++r) {
+        const auto& fi = model->fileAt(r);
+        if (fi.name == "..") continue;
+        const QString name = QString::fromStdString(fi.name);
+        if (name.startsWith(m_quickSearch, Qt::CaseInsensitive)) {
+            const QModelIndex index = model->index(r, 0);
+            m_table->selectionModel()->setCurrentIndex(
+                index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            m_table->scrollTo(index, QAbstractItemView::EnsureVisible);
+            m_breadcrumb->setText(tr("定位: %1").arg(m_quickSearch));
+            return;
+        }
+    }
+    m_breadcrumb->setText(tr("定位: %1（无匹配）").arg(m_quickSearch));
+}
+
+void FileBrowserPanel::newDirectoryHere()
+{
+    if (!m_source) return;
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("新建目录"),
+        tr("目录名称："), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+    QString newPath = m_currentPath;
+    if (!newPath.endsWith('/')) newPath += '/';
+    newPath += name.trimmed();
+    if (!m_source->mkdir(newPath))
+        m_breadcrumb->setText(tr("新建目录失败: %1").arg(m_source->lastError()));
+    else
+        refresh();
+}
+
+// F8 / 右键「删除」：删除选中项（二次确认，.. 行跳过）
+void FileBrowserPanel::deleteSelected()
+{
+    if (!m_source) return;
+    const auto files = selectedFiles();
+    if (files.empty() || (files.size() == 1 && files.front().name == "..")) return;
+    const auto res = QMessageBox::question(this, tr("删除"),
+        tr("确定删除选中的 %1 项？").arg(files.size()));
+    if (res != QMessageBox::Yes) return;
+    bool anyFailed = false;
+    for (const auto& f : files) {
+        if (f.name == "..") continue;
+        const QString full = m_currentPath + "/" + QString::fromStdString(f.name);
+        if (!m_source->remove(full, f.isDir)) anyFailed = true;
+    }
+    if (anyFailed)
+        m_breadcrumb->setText(tr("部分删除失败: %1").arg(m_source->lastError()));
+    else
+        refresh();
+}
+
 void FileBrowserPanel::copySelectedTo(FileBrowserPanel* target)
 {
     if (!m_source || !target || !target->source()) return;
@@ -635,6 +923,63 @@ void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
         m_breadcrumb->setText(tr("目录移动暂不支持（浅拷贝限制），已跳过 %1 个目录").arg(dirSkipped));
 }
 
+// 本地目录递归收集为上传项（目标父目录由 TransferExecutor 逐级确保）
+void FileBrowserPanel::collectLocalDirItems(const QString& srcDir, const QString& dstDir,
+                                            QVector<TransferItemRequest>& out)
+{
+    QDirIterator it(srcDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString abs = QDir::fromNativeSeparators(it.next());
+        const QString rel = QDir::fromNativeSeparators(QDir(srcDir).relativeFilePath(abs));
+        TransferItemRequest item;
+        item.direction = TransferDirection::Upload;
+        item.localPath = abs;
+        item.remotePath = joinedPath(dstDir, rel);
+        out.push_back(std::move(item));
+    }
+}
+
+// 远程目录递归收集为下载项（同步 list；目标子目录本地直接创建）
+void FileBrowserPanel::collectRemoteDirItems(const QString& srcDir, const QString& dstDir,
+                                             QVector<TransferItemRequest>& out)
+{
+    if (!m_source) return;
+    const auto files = m_source->list(srcDir);
+    for (const auto& f : files) {
+        if (f.name == "." || f.name == "..") continue;
+        const QString name = QString::fromStdString(f.name);
+        const QString srcPath = joinedPath(srcDir, name);
+        const QString dstPath = joinedPath(dstDir, name);
+        if (f.isDir) {
+            QDir().mkpath(dstPath);   // 下载：本地目标目录
+            collectRemoteDirItems(srcPath, dstPath, out);
+        } else {
+            TransferItemRequest item;
+            item.direction = TransferDirection::Download;
+            item.localPath = dstPath;
+            item.remotePath = srcPath;
+            out.push_back(std::move(item));
+        }
+    }
+}
+
+// 本地目录 → 本地目录直接递归复制（不进传输内核；用于两栏皆为本地源）
+bool FileBrowserPanel::copyLocalDirectory(const QString& srcDir, const QString& dstDir)
+{
+    if (!QDir().mkpath(dstDir)) return false;
+    bool ok = true;
+    QDirIterator it(srcDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString abs = it.next();
+        const QString rel = QDir(srcDir).relativeFilePath(abs);
+        const QString dst = joinedPath(dstDir, rel);
+        QDir().mkpath(QFileInfo(dst).absolutePath());
+        if (QFile::exists(dst) && !QFile::remove(dst)) { ok = false; continue; }
+        if (!QFile::copy(abs, dst)) ok = false;
+    }
+    return ok;
+}
+
 QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool move)
 {
     if (!m_source || !target || !target->source() || !m_transferSubmitter)
@@ -647,17 +992,28 @@ QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool mo
 
     QVector<TransferItemRequest> items;
     int directoriesSkipped = 0;
+    const bool localToLocal = sourceLocal && targetLocal;
     for (const auto& file : selectedFiles()) {
         if (file.name == "..")
             continue;
+        const QString entryName = QString::fromStdString(file.name);
         if (file.isDir) {
-            ++directoriesSkipped;
+            // TC 拖拽文件夹：本地→远程递归上传 / 远程→本地递归下载 / 本地→本地直接复制
+            const QString srcDir = joinedPath(m_currentPath, entryName);
+            const QString dstDir = joinedPath(target->m_currentPath, entryName);
+            if (sourceLocal && !localToLocal)
+                collectLocalDirItems(srcDir, dstDir, items);
+            else if (!sourceLocal && targetLocal)
+                collectRemoteDirItems(srcDir, dstDir, items);
+            else if (localToLocal) {
+                if (!copyLocalDirectory(srcDir, dstDir)) ++directoriesSkipped;
+            } else
+                ++directoriesSkipped;
             continue;
         }
 
-        const QString name = QString::fromStdString(file.name);
+        const QString name = entryName;
         TransferItemRequest item;
-        const bool localToLocal = sourceLocal && targetLocal;
         item.direction = sourceLocal && !localToLocal ? TransferDirection::Upload
                                                       : TransferDirection::Download;
         item.localPath = joinedPath(localToLocal || !sourceLocal
@@ -935,33 +1291,11 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
     } else if (chosen == editAct) {
         openEditorForSelectedFile();
     } else if (chosen == mkdirAct) {
-        bool ok = false;
-        const QString name = QInputDialog::getText(this, tr("新建目录"),
-            tr("目录名称："), QLineEdit::Normal, QString(), &ok);
-        if (!ok || name.trimmed().isEmpty()) return;
-        QString newPath = m_currentPath;
-        if (!newPath.endsWith('/')) newPath += '/';
-        newPath += name.trimmed();
-        if (!m_source->mkdir(newPath))
-            m_breadcrumb->setText(tr("新建目录失败: %1").arg(m_source->lastError()));
-        else
-            refresh();
+        newDirectoryHere();
     } else if (chosen == renameAct) {
         renameSelected();
     } else if (chosen == deleteAct) {
-        const auto res = QMessageBox::question(this, tr("删除"),
-            tr("确定删除选中的 %1 项？").arg(files.size()));
-        if (res != QMessageBox::Yes) return;
-        bool anyFailed = false;
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString full = m_currentPath + "/" + QString::fromStdString(f.name);
-            if (!m_source->remove(full, f.isDir)) anyFailed = true;
-        }
-        if (anyFailed)
-            m_breadcrumb->setText(tr("部分删除失败: %1").arg(m_source->lastError()));
-        else
-            refresh();
+        deleteSelected();
     } else if (chosen == copyAct) {
         copySelectedTo(m_peerPanel);
     } else if (chosen == moveAct) {
@@ -1009,17 +1343,46 @@ bool FileBrowserPanel::canAcceptDrag(const FileBrowserPanel* sourcePanel,
 
 bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 {
+    // TC 标签栏双击：标签上=关闭该标签；空白处=新增标签
+    if (watched == m_tabBar && event->type() == QEvent::MouseButtonDblClick) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        const int idx = m_tabBar->tabAt(me->position().toPoint());
+        if (idx >= 0)
+            closeTab(idx);
+        else
+            addTab();
+        return true;
+    }
     // 拦截表格视口上的面板间拖拽事件（与 FtpDeployWidget 的系统文件拖入同套路）
     if ((watched == m_table->viewport() || watched == m_table) && m_source) {
         switch (event->type()) {
         case QEvent::KeyPress: {
-            const auto* key = static_cast<QKeyEvent*>(event);
+            auto* key = static_cast<QKeyEvent*>(event);
+            // TC 键盘习惯：Enter 进入 / Backspace 上级 / 方向键左右同义（保留）
+            if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) {
+                enterSelectedDirectory();
+                return true;
+            }
+            if (key->key() == Qt::Key_Backspace) {
+                navigateToParent();
+                return true;
+            }
+            if (key->key() == Qt::Key_Delete) {
+                deleteSelected();   // TC：Delete 删除选中项（二次确认）
+                return true;
+            }
             if (key->key() == Qt::Key_Right) {
                 enterSelectedDirectory();
                 return true;
             }
             if (key->key() == Qt::Key_Left) {
                 navigateToParent();
+                return true;
+            }
+            // TC 打字即定位：可打印字符累积匹配（Ctrl/Alt 组合键放行给快捷键）
+            if (!key->text().isEmpty() && key->text().at(0).isPrint()
+                && !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) {
+                quickLocate(key->text());
                 return true;
             }
             break;

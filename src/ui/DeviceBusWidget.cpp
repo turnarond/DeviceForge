@@ -472,7 +472,8 @@ void DeviceBusWidget::setupUi()
     deviceRow->addWidget(m_moreBtn);
 
     // 空态提示（规格 §3.5：未选择任何设备＝没有目标）
-    m_hintLabel = new QLabel(QStringLiteral("未选择设备——点「设备 ▾」选目标"), this);
+    m_hintLabel = new QLabel(QStringLiteral("未选择设备"), this);
+    m_hintLabel->setToolTip(QStringLiteral("点「设备 ▾」选择目标设备；双击设备胶囊可打开该设备"));
     m_hintLabel->setObjectName(QStringLiteral("deviceBusHint"));
     deviceRow->addWidget(m_hintLabel);
 
@@ -500,10 +501,11 @@ void DeviceBusWidget::setupUi()
     // 行尾搜索框：过滤"下一次打开菜单时的可见项"（不实时重开菜单，规格 §0.3）；
     // chips 显示的是已选集合，过滤全程不动已选（§3.4）
     m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setMinimumWidth(130);   // 占位文案与输入不被裁
     m_searchEdit->setObjectName(QStringLiteral("deviceSearchEdit"));
     m_searchEdit->setFixedHeight(26);
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setPlaceholderText(QStringLiteral("搜索 名称 / IP / 标签"));
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索设备"));
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_filterText = text;
     });

@@ -13,6 +13,7 @@
  */
 
 #include "NetRelayWidget.h"
+#include "app/ThemeTokens.h"
 #include "NetRelayBackend.h"
 #include "RelayRecording.h"
 #include "config/ConfigStore.h"
@@ -34,6 +35,11 @@ NetRelayWidget::NetRelayWidget(QWidget* parent)
     : ToolWidget(parent)
 {
     setupUi();
+
+    // 主题缓存（会话状态色按主题取 token；每包更新不查库，切主题后重建/重启生效）
+    m_darkTheme = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
 
     // 恢复最近一条 netrelay.server 配置
     const auto hist = ConfigStore::instance().list(QStringLiteral("netrelay.server"), 1);
@@ -107,7 +113,7 @@ void NetRelayWidget::setupUi()
 
     row1->addSpacing(12);
     auto* arrowLbl = new QLabel("→", this);
-    arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #F0A030 / 亮 #D48820）
+    arrowLbl->setObjectName("directionArrow"); // 双主题 QSS（暗 #2DD4BF / 亮 #0E766E）
     row1->addWidget(arrowLbl);
 
     m_lblUpstream = new QLabel("上游地址:", this);
@@ -723,12 +729,13 @@ void NetRelayWidget::updateSession(const RelaySession& session)
     item->setText(4, QString::number(session.bytesUp));
     item->setText(5, QString::number(session.bytesDown));
 
+    // 主题色取缓存（updateSession 每个 UDP 包都会被调用；查库在此处是禁改缺陷）
     if (session.active) {
         item->setText(6, "活跃");
-        item->setForeground(6, QColor("#40C8A0"));
+        item->setForeground(6, tokens::color(tokens::Token::Success, m_darkTheme));
     } else {
         item->setText(6, "已关闭");
-        item->setForeground(6, QColor("#7B8494"));
+        item->setForeground(6, tokens::color(tokens::Token::TextMuted, m_darkTheme));
     }
 
     // 仅在新会话项首次创建时滚动到顶部，避免高频更新时破坏用户浏览

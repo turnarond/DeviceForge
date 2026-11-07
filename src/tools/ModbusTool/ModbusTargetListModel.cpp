@@ -1,4 +1,5 @@
 #include "ModbusTargetListModel.h"
+#include "app/ThemeTokens.h"
 
 #include "config/ConfigStore.h"
 #include "device/DeviceProfile.h"
@@ -94,22 +95,23 @@ bool ModbusTargetListModel::filterBySearch(const TargetRow& row, const QString& 
 
 QColor ModbusTargetListModel::statusColor(bool success)
 {
-    // 双主题状态色：QSS 无法按行设置前景（非 QWidget），按主题取色；
-    // 色值与两套 QSS 常量一致（暗 #40C8A0/#E85848，亮 #2FA88A/#D6453A），不新增色值
+    // 双主题状态色：QSS 无法按行设置前景（非 QWidget），按主题从 ThemeTokens 单源取色
     const QString theme = ConfigStore::instance()
         .load(QStringLiteral("appearance"), QStringLiteral("theme"))
         .value(QStringLiteral("theme")).toString();
     const bool dark = (theme != QLatin1String("light"));
-    return success ? QColor(dark ? QStringLiteral("#40C8A0") : QStringLiteral("#2FA88A"))
-                   : QColor(dark ? QStringLiteral("#E85848") : QStringLiteral("#D6453A"));
+    return tokens::color(success ? tokens::Token::Success : tokens::Token::Danger, dark);
 }
 
 void ModbusTargetListModel::cacheThemeColors()
 {
     // 裁决 4：主题色只在 refresh 查库一次——data() 是视图每格回调，查库属禁改缺陷
     m_errorColor = statusColor(false);
-    // 裁决 5：退避黄复用既有琴色 token #F0A030（信号态专用、双主题同值，不新增色值）
-    m_backoffColor = QColor(QStringLiteral("#F0A030"));
+    // 退避态用 warning 语义色（双主题 token）
+    const bool dark = ConfigStore::instance()
+        .load(QStringLiteral("appearance"), QStringLiteral("theme"))
+        .value(QStringLiteral("theme")).toString() != QStringLiteral("light");
+    m_backoffColor = tokens::color(tokens::Token::Warning, dark);
 }
 
 QVector<ModbusTargetListModel::SourceDevice> ModbusTargetListModel::collectDevices() const

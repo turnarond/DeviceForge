@@ -10,19 +10,20 @@
  */
 
 #include "RemoteFileModel.h"
+#include "app/ThemeTokens.h"
 #include <QColor>
 #include <algorithm>
 
 namespace {
 
-// 对比态行色板（琴色信号族：diff 淡一档、only 深一档；占位行石墨比表格底更深）
-// 值与 UI 稿 mockups/2026-10-14-file-mgmt-ui.html 一致
+// 对比态行色板（Instrument 语义：diff=warning 淡底、only=accent 淡底；占位行比表格底更深）
+// 与两套 QSS 的 warning/accent 语义同源（浅色淡底 / 深色暗底）。
 struct RowPalette { QColor diff; QColor only; QColor gap; };
 RowPalette paletteFor(bool light)
 {
     if (light)
-        return { QColor(0xEA, 0xE5, 0xDE), QColor(0xE8, 0xDE, 0xD1), QColor(0xE2, 0xE6, 0xEC) };
-    return { QColor(0x1F, 0x1A, 0x10), QColor(0x2A, 0x22, 0x14), QColor(0x08, 0x0B, 0x10) };
+        return { QColor("#F5EEDA"), QColor("#E3F1ED"), QColor("#E2E6EC") };
+    return { QColor("#2A2415"), QColor("#12302C"), QColor("#080B10") };
 }
 
 } // namespace
@@ -80,6 +81,15 @@ void RemoteFileModel::exitCompareView()
     m_compareMode = false;
     m_viewRows.clear();
     endResetModel();
+}
+
+void RemoteFileModel::setSelectedRows(const QSet<int>& rows)
+{
+    if (m_selectedRows == rows) return;
+    m_selectedRows = rows;
+    // 选中态变化后整表重绘：选中行前景色依赖此集合
+    if (rowCount(QModelIndex()) > 0)
+        emit dataChanged(index(0, 0), index(rowCount(QModelIndex()) - 1, columnCount(QModelIndex()) - 1));
 }
 
 void RemoteFileModel::setThemeLight(bool light)
@@ -216,8 +226,11 @@ QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole) {
+        // 选中行：前景色反色（亮主题白 / 暗主题深墨），否则目录名 accent 会盖过 QSS
+        if (m_selectedRows.contains(index.row()))
+            return m_lightTheme ? QColor(0xFF, 0xFF, 0xFF) : QColor(0x06, 0x2E, 0x2A);
         if (fi.isDir && index.column() == ColName)
-            return QColor("#F0A030"); // 琴色目录名
+            return tokens::color(tokens::Token::Accent, !m_lightTheme); // 目录名 accent
     }
 
     if (role == Qt::TextAlignmentRole) {

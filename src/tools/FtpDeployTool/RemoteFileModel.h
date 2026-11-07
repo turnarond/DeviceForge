@@ -46,6 +46,8 @@ public:
     bool isCompareMode() const { return m_compareMode; }
     bool isPlaceholderAt(int row) const;
     void setThemeLight(bool light);   // 对比行色板按主题切换（默认深色）
+    // 选中行集合：选中行前景色反色（亮主题白字/暗主题深墨字），避免目录 accent 盖过 QSS
+    void setSelectedRows(const QSet<int>& rows);
 
     // QAbstractTableModel
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -75,5 +77,6 @@ private:
     std::vector<ViewRow> m_viewRows;
     QString m_gapCaption;
     bool m_lightTheme = false;
+    QSet<int> m_selectedRows;
     static const FtpFileInfo& gapSentinel();
 };

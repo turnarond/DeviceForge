@@ -101,8 +101,7 @@ public:
     static bool filterBySearch(const TargetRow& row, const QString& needle);
     // 寄存器类型中文名（Holding/Input/Coil/Discrete → 保持/输入/线圈/离散）
     static QString registerTypeName(QModbusDataUnit::RegisterType type);
-    // 双主题状态色：与 QSS 常量一致（暗 #40C8A0/#E85848，亮 #2FA88A/#D6453A），
-    // 沿用 v2.11 ModbusWidget 同款取色，不新增色值（QSS 纪律）
+    // 双主题状态色：从 ThemeTokens 单源取 success/danger（QSS 纪律：不新增色值）
     static QColor statusColor(bool success);
 
 signals:
@@ -130,7 +129,7 @@ private:
     QVector<TargetRow> m_rows;    // 视图当前行集
     BackoffProbe m_backoffProbe;  // 裁决 5：退避态判定注入点
     QColor m_errorColor;          // 裁决 4 缓存：异常红
-    QColor m_backoffColor;        // 裁决 4/5 缓存：退避黄（既有琴色 token，双主题同值）
+    QColor m_backoffColor;        // 缓存：退避色（warning token，双主题）
 };
 
 } // namespace modbus
