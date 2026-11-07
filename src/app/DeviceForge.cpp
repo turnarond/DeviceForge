@@ -185,8 +185,12 @@ DeviceForge::DeviceForge(QWidget* parent)
             if (screen == primary) continue;
             screenGeoms << screen->availableGeometry();
         }
-        const QRect frame = winplace::initialFrameGeometry(
-            sizeHint().expandedTo(minimumSizeHint()), screenGeoms);
+        // 桌面应用常态：宽 > 高的宽屏比例。不能直接用内容 sizeHint（上部多行
+        // 堆叠会算出竖长窗口，高 > 宽），改以宽屏偏好尺寸为准，最小尺寸同样宽屏化
+        setMinimumSize(1100, 680);
+        const QSize preferred(1440, 900);
+        const QSize needed = preferred.expandedTo(minimumSizeHint());
+        const QRect frame = winplace::initialFrameGeometry(needed, screenGeoms);
         resize(frame.size());
         move(frame.topLeft());
     }

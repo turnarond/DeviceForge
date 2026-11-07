@@ -31,6 +31,9 @@ class FileEditorDialog;
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
 public:
+    // QSplitter 初始按各面板 sizeHint 分配；固定同权 sizeHint 保证双栏对等
+    QSize sizeHint() const override { return QSize(420, 320); }
+
     enum class DropRoute { PanelTransfer, SystemUpload, Rejected };
     using TransferSubmitter = std::function<QUuid(TransferTask)>;
     using TransferCanceller = std::function<void(const QUuid&)>;

@@ -139,7 +139,7 @@ void FileBrowserPanel::setupUi()
     });
     m_deviceCombo = new QComboBox(this);
     m_deviceCombo->setObjectName("panelDeviceCombo");
-    m_deviceCombo->setMinimumWidth(140);
+    m_deviceCombo->setMinimumWidth(110);
     m_deviceCombo->setVisible(false);   // 本地源默认隐藏设备下拉
     // 设备下拉变化同样上报（面板级设备=浏览配置的一部分，宿主据此重建对应面板源）
     connect(m_deviceCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
@@ -301,8 +301,8 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
     if (m_source) {
         setSourceProto(m_source->sourceId());   // 选择器显示与实际源一致（blockSignals，不发射）
         // 本地默认当前目录；远程默认根
-        m_currentPath = m_source->sourceId() == "local"
-            ? QDir::currentPath() : QStringLiteral("/");
+        // 本地源从「此电脑」（驱动器列表）起步（TC 风格）；远程默认根
+        m_currentPath = m_source->sourceId() == "local" ? QString() : QStringLiteral("/");
         navigateTo(m_currentPath);
     } else {
         // 置空源（连接失败 detach 等）：清空表格 + 路径栏 + 面包屑 + 当前路径，
@@ -421,11 +421,11 @@ void FileBrowserPanel::applyFileList(const QString& path,
             hh->setSectionResizeMode(RemoteFileModel::ColDateTime, QHeaderView::Fixed);
             hh->setSectionResizeMode(RemoteFileModel::ColPermissions, QHeaderView::Fixed);
             hh->setSectionResizeMode(RemoteFileModel::ColOwner, QHeaderView::Fixed);
-            m_table->setColumnWidth(RemoteFileModel::ColIcon, 28);
-            m_table->setColumnWidth(RemoteFileModel::ColSize, 76);
-            m_table->setColumnWidth(RemoteFileModel::ColDateTime, 130);
-            m_table->setColumnWidth(RemoteFileModel::ColPermissions, 84);
-            m_table->setColumnWidth(RemoteFileModel::ColOwner, 72);
+            m_table->setColumnWidth(RemoteFileModel::ColIcon, 24);
+            m_table->setColumnWidth(RemoteFileModel::ColSize, 64);
+            m_table->setColumnWidth(RemoteFileModel::ColDateTime, 112);
+            m_table->setColumnWidth(RemoteFileModel::ColPermissions, 76);
+            m_table->setColumnWidth(RemoteFileModel::ColOwner, 60);
         }
         // setModel 会重建 selection model（setupUi 时连接会失效），必须在设模型之后连接
         if (auto* selModel = m_table->selectionModel()) {

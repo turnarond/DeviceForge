@@ -195,6 +195,14 @@ void FtpDeployWidget::setupUi()
     m_splitter->addWidget(m_rightPanel);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 1);
+    m_splitter->setChildrenCollapsible(false);   // 双栏各保最小宽度，不被压成 0
+    // 双栏对等（TC 风格）：两栏设相同最小宽度 + 相同拉伸因子，QSplitter 均分。
+    // （实测直接 setSizes 会被面板 sizeHint 覆盖：左栏内容多 → 初始占 3/4）
+    m_leftPanel->setMinimumWidth(430);
+    m_rightPanel->setMinimumWidth(430);
+    // 已知项（后续处理）：QSplitter 初始按面板 sizeHint 分配，实测左栏约 3/4；
+    // setSizes（构造期/showEvent/resizeEvent/延迟）均被内容加载后的重新分配覆盖。
+    // 双栏最小宽度已设 430 保证两栏可见。
     mainLayout->addWidget(m_splitter, 1);
 
     setupCompareSummary(mainLayout);
@@ -231,7 +239,11 @@ void FtpDeployWidget::setupCompareBar(QVBoxLayout* mainLayout)
     row->addWidget(m_dirCompareBtn);
     row->addWidget(m_diffOnlyCheck);
     row->addStretch();
-    mainLayout->addLayout(row);
+    // 收进「⚙ 部署选项」折叠面板（默认折叠，Ctrl+M 快捷键不受影响）——TC 式上部只留操作行
+    if (m_optionsPanel && m_optionsPanel->layout())
+        static_cast<QVBoxLayout*>(m_optionsPanel->layout())->addLayout(row);
+    else
+        mainLayout->addLayout(row);
 
     auto* sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+M")), this);
     connect(sc, &QShortcut::activated, this, [this]() { m_dirCompareBtn->toggle(); });
@@ -570,6 +582,17 @@ void FtpDeployWidget::clearTransferCredential(const QUuid& taskId)
     m_transferCredentialVault.erase(credential);
 }
 
+void FtpDeployWidget::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+}
+
+void FtpDeployWidget::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    // 双栏 50:50 在构造期用 QTimer 延迟设置（见 setupUi 末尾）
+}
+
 void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
 {
     // 工具栏容器：两行布局（v2.15 波3 任务13 方案 C，窄屏不再右侧裁切）
@@ -653,7 +676,14 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
                                     : tokens::color(tokens::Token::TextMuted, darkTheme)).name()));
     });
     setConnState(RemoteConnState::Unknown);
-    connGroup->addWidget(m_connStatusDot);
+    // 精简（TC 风格）：协议/设备/端口/FTPS 不再占主界面——协议与端口由右面板源
+    // 选择器 / 设备档案驱动（部署链路仍读这些控件，故保留对象但整体隐藏）。
+    auto* connHolder = new QWidget(this);
+    connHolder->setLayout(connGroup);
+    connHolder->setVisible(false);
+    // 连接状态点保留可见（操作者需要看连接结果），移入操作行
+    connGroup->removeWidget(m_connStatusDot);
+    row1->addWidget(m_connStatusDot);
 
     // === 组间分隔条（QFrame VLine，石墨窄条） ===
     auto* separator = new QFrame(this);
@@ -662,8 +692,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     separator->setFrameShadow(QFrame::Plain);
     separator->setFixedWidth(1);
 
-    // 连接组 + 分隔条入第 1 行（主操作按钮随后 append）
-    row1->addLayout(connGroup);
+    // 连接组已隐藏（connHolder），分隔条仅作组间视觉分组保留
     row1->addWidget(separator);
 
     // === 部署选项组（第 2 行）：清空 | 重启（+ 协议/命令/超时/重试四参） ===
@@ -727,8 +756,14 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     connect(m_rebootCheck, &QCheckBox::toggled, this, updateRebootControls);
     updateRebootControls(m_rebootCheck->isChecked());
 
-    // 部署选项组入第 2 行
-    row2->addLayout(deployGroup);
+    // 部署选项收进可折叠面板（默认折叠；⚙ 部署选项 切换）
+    m_optionsPanel = new QWidget(this);
+    m_optionsPanel->setObjectName("deployOptionsPanel");
+    auto* optLayout = new QVBoxLayout(m_optionsPanel);
+    optLayout->setContentsMargins(0, 0, 0, 0);
+    optLayout->setSpacing(4);
+    optLayout->addLayout(deployGroup);
+    m_optionsPanel->setVisible(false);
 
     // 「⟳ 刷新」按钮（2026-08-12 修复波回归：onRefreshRemote 的 UI 入口）
     m_refreshBtn = new QPushButton("⟳ 刷新", this);
@@ -748,7 +783,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     row1->addWidget(m_deployBtn);
 
     // v2.14 #49-2 第三腿：「保存为模板」——把当前单次部署配置固化为任务模板
-    m_saveTemplateBtn = new QPushButton(QStringLiteral("保存为模板"), this);
+    m_saveTemplateBtn = new QPushButton(QStringLiteral("模板"), this);
     m_saveTemplateBtn->setObjectName(QStringLiteral("deploySaveTemplateBtn"));
     m_saveTemplateBtn->setToolTip(QStringLiteral(
         "把当前文件清单、目标目录与勾选设备固化为可复用的任务模板（部署前清空/FTPS/端口等连接配置不进模板）"));
@@ -766,7 +801,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     auto* resultGroup = new QHBoxLayout();
     resultGroup->setSpacing(4);
 
-    m_exportReportBtn = new QPushButton(QStringLiteral("⬇ 导出报告"), this);
+    m_exportReportBtn = new QPushButton(QStringLiteral("⬇ 报告"), this);
     m_exportReportBtn->setToolTip(
         QStringLiteral("导出最近一轮部署报告（CSV 归档 / HTML 打印）"));
     m_exportReportBtn->setEnabled(false);   // 首轮部署结束（finished 回调）后点亮
@@ -774,7 +809,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
             this, &FtpDeployWidget::onExportReportClicked);
     resultGroup->addWidget(m_exportReportBtn);
 
-    m_retryBtn = new QPushButton(QStringLiteral("↻ 重试失败设备"), this);
+    m_retryBtn = new QPushButton(QStringLiteral("↻ 重试"), this);
     m_retryBtn->setToolTip(
         QStringLiteral("把上一轮失败的设备单独重新部署（沿用上次文件/目录/选项；取消的设备不在重试范围）"));
     m_retryBtn->setEnabled(false);          // 存在失败台次时才点亮
@@ -782,15 +817,25 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
             this, &FtpDeployWidget::onRetryFailedClicked);
     resultGroup->addWidget(m_retryBtn);
 
-    // 结果分隔条 + 结果操作组入第 2 行
-    row2->addWidget(resultSeparator);
-    row2->addLayout(resultGroup);
-    row2->addStretch();
+    // 结果分隔条 + 结果操作组移入操作行（stretch 之后右对齐）
+    row1->addWidget(resultSeparator);
+    row1->addLayout(resultGroup);
+
+    // ⚙ 部署选项（清空远程/重启四参；默认折叠保持上部干净）
+    auto* optionsBtn = new QPushButton(QStringLiteral("⚙"), this);
+    optionsBtn->setObjectName("deployOptionsBtn");
+    optionsBtn->setToolTip(QStringLiteral("部署选项：部署前清空远程 / 部署后重启（协议/命令/超时/重试）"));
+    optionsBtn->setFixedWidth(34);
+    optionsBtn->setCheckable(true);
+    connect(optionsBtn, &QPushButton::toggled, this, [this](bool on) {
+        if (m_optionsPanel) m_optionsPanel->setVisible(on);
+    });
+    row1->addWidget(optionsBtn);
 
     toolbar->addLayout(row1);
-    toolbar->addLayout(row2);
-    // 焦点序说明：本仓无 setTabOrder，Tab 序随子控件重新挂载父级的次序（行 1 组→行 1 主操作→行 2），
-    // 即「先连上并执行、再调选项与结果」；改两行归属时同步复核这条隐式契约。
+    toolbar->addWidget(m_optionsPanel);
+    // 焦点序：操作行（状态点/刷新/部署/保存模板/导出/重试/⚙选项）→ 折叠的部署选项面板。
+    // 连接参数行已隐藏，Tab 序不再经过它。
 
     mainLayout->addWidget(toolbarWidget);
 }
@@ -1384,8 +1429,12 @@ void FtpDeployWidget::updateDeployBtnText()
     int n = 0;
     if (m_deviceBus)
         n = static_cast<int>(m_deviceBus->selectedDevices().size());
-    m_deployBtn->setText(n == 0 ? QStringLiteral("▶ 部署（未选择设备）")
-                                : QStringLiteral("▶ 部署到 %1 台设备").arg(n));
+    // 紧凑（TC 式）：按钮只留「▶ 部署」，台数/空选中提示走 tooltip；
+    // 空选中仍拒绝部署（v2.16-B 任务4b 行为不变），文案在 tooltip 里说明。
+    m_deployBtn->setText(QStringLiteral("▶ 部署"));
+    m_deployBtn->setToolTip(n == 0
+        ? QStringLiteral("未选择目标设备——点设备栏「设备 ▾」勾选后再部署")
+        : QStringLiteral("部署到已选中的 %1 台设备").arg(n));
 }
 
 // 连接失败/重连失败/无设备统一 detach（I-1 / M-2 / M-3）：
@@ -1490,8 +1539,23 @@ void FtpDeployWidget::onLeftSourceChanged(const QString& proto, const QString& d
 
 void FtpDeployWidget::onRightSourceChanged(const QString& proto, const QString& device)
 {
+    // 右栏允许本地源（TC 风格双栏：左右都可浏览本地/远程）。切本地时挂本地源、
+    // 作废在途远程连接；部署目标语义由 onDeployClicked 的右栏守卫处理。
+    if (proto == QStringLiteral("local")) {
+        ++m_connGeneration;          // 作废在途远程连接回调
+        m_remoteSource.reset();
+        m_remoteBusy = false;
+        m_remoteSrcDevice.clear();
+        m_remoteSrcProto.clear();
+        m_remoteSrcPort = 0;
+        detachRemotePanel();
+        if (m_rightPanel)
+            m_rightPanel->setSource(std::make_shared<LocalFileSource>());
+        setConnState(RemoteConnState::Unknown);
+        return;
+    }
     // 右面板=工具栏的浏览视图：源变化回写工具栏（blockSignals 防循环）+ 按新配置
-    // 重建远程源。本地选项映射回 FTP（右面板语义上恒为远程部署目标浏览）
+    // 重建远程源。
     m_protocolCombo->blockSignals(true);
     m_protocolCombo->setCurrentIndex(proto == QStringLiteral("sftp") ? 1 : 0);
     m_protocolCombo->blockSignals(false);
