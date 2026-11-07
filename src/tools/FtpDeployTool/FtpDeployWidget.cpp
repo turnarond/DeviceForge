@@ -195,11 +195,6 @@ void FtpDeployWidget::setupUi()
     m_splitter->addWidget(m_rightPanel);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 1);
-    m_splitter->setChildrenCollapsible(false);   // 双栏各保最小宽度，不被压成 0
-    // 双栏对等（TC 风格）：两栏设相同最小宽度 + 相同拉伸因子，QSplitter 均分。
-    // （实测直接 setSizes 会被面板 sizeHint 覆盖：左栏内容多 → 初始占 3/4）
-    m_leftPanel->setMinimumWidth(430);
-    m_rightPanel->setMinimumWidth(430);
     // 已知项（后续处理）：QSplitter 初始按面板 sizeHint 分配，实测左栏约 3/4；
     // setSizes（构造期/showEvent/resizeEvent/延迟）均被内容加载后的重新分配覆盖。
     // 双栏最小宽度已设 430 保证两栏可见。
