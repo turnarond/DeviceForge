@@ -127,28 +127,6 @@ void FileBrowserPanel::setupUi()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    // TC 多标签栏（每栏多个路径标签；Ctrl+T 新建 / Ctrl+W 关闭 / 点击切换）
-    m_tabBar = new QTabBar(this);
-    m_tabBar->setObjectName(QStringLiteral("panelTabBar"));
-    m_tabBar->setExpanding(false);
-    m_tabBar->setTabsClosable(true);
-    m_tabBar->setMovable(true);
-    {
-        // 首个标签：本地=「此电脑」，远程=根
-        const QString initial = m_source && m_source->sourceId() == QStringLiteral("local")
-                                    ? QStringLiteral("此电脑") : QStringLiteral("/");
-        m_tabPaths << initial;
-        m_tabBar->addTab(initial);
-        m_tabBar->setTabToolTip(0, initial);
-    }
-    connect(m_tabBar, &QTabBar::currentChanged, this, [this](int idx) {
-        if (idx < 0 || idx >= m_tabPaths.size() || idx == m_currentTab) return;
-        m_currentTab = idx;
-        navigateTo(m_tabPaths[idx]);
-    });
-    connect(m_tabBar, &QTabBar::tabCloseRequested, this, &FileBrowserPanel::closeTab);
-    layout->addWidget(m_tabBar);
-
     // 源选择器行（面板顶部，路径栏上方）：源类型（本地/FTP/SFTP）+ 设备（远程源时显示）。
     // TC 彻底化：每面板可独立配置浏览源；面板源=浏览配置，批量部署目标由工具栏（宿主）决定。
     auto* chooserRow = new QHBoxLayout();
@@ -183,6 +161,29 @@ void FileBrowserPanel::setupUi()
     chooserRow->addWidget(m_driveBar);
     chooserRow->addStretch();
     layout->addLayout(chooserRow);
+
+    // TC 多标签栏（位置：驱动器/源选择行下方、路径栏上方）
+    //   单击切换 / 双击标签关闭 / 双击空白新增 / Ctrl+T 新建 / Ctrl+W 关闭
+    m_tabBar = new QTabBar(this);
+    m_tabBar->setObjectName(QStringLiteral("panelTabBar"));
+    m_tabBar->setExpanding(false);
+    m_tabBar->setTabsClosable(false);   // TC 风格：双击关闭（不显示 × 按钮）
+    m_tabBar->setMovable(true);
+    {
+        const QString initial = m_source && m_source->sourceId() == QStringLiteral("local")
+                                    ? QStringLiteral("此电脑") : QStringLiteral("/");
+        m_tabPaths << initial;
+        m_tabBar->addTab(initial);
+        m_tabBar->setTabToolTip(0, initial);
+    }
+    connect(m_tabBar, &QTabBar::currentChanged, this, [this](int idx) {
+        if (idx < 0 || idx >= m_tabPaths.size() || idx == m_currentTab) return;
+        m_currentTab = idx;
+        navigateTo(m_tabPaths[idx]);
+    });
+    // 双击：标签上 = 关闭；空白处 = 新增
+    m_tabBar->installEventFilter(this);
+    layout->addWidget(m_tabBar);
 
     // 路径栏（TC 风格：可编辑 + Enter 跳转）
     m_pathEdit = new QLineEdit(this);
@@ -451,27 +452,26 @@ void FileBrowserPanel::updateCurrentTabPath(const QString& path)
 {
     if (!m_tabBar || m_currentTab < 0 || m_currentTab >= m_tabPaths.size()) return;
     m_tabPaths[m_currentTab] = path;
-    QString label;
-    if (path.isEmpty()) {
-        label = (m_source && m_source->sourceId() == QStringLiteral("local"))
-                    ? QStringLiteral("此电脑") : QStringLiteral("/");
-    } else {
-        const QString trimmed = path.endsWith('/') ? path.left(path.size() - 1) : path;
-        const int slash = trimmed.lastIndexOf('/');
-        label = slash >= 0 ? trimmed.mid(slash + 1) : trimmed;
-        if (label.isEmpty()) label = path;
-    }
+    // TC 风格：标签显示完整路径（空白=此电脑）
+    const QString label = path.isEmpty()
+        ? ((m_source && m_source->sourceId() == QStringLiteral("local"))
+               ? QStringLiteral("此电脑") : QStringLiteral("/"))
+        : path;
     m_tabBar->setTabText(m_currentTab, label);
-    m_tabBar->setTabToolTip(m_currentTab, path);
+    m_tabBar->setTabToolTip(m_currentTab, path.isEmpty() ? label : path);
 }
 
-// Ctrl+T：新建标签（复制当前路径）；新标签成为当前
+// Ctrl+T / 双击空白：新建标签（复制当前路径）；新标签成为当前
 void FileBrowserPanel::addTab()
 {
     if (!m_tabBar) return;
     const QString path = m_currentPath;
     m_tabPaths << path;
-    const int idx = m_tabBar->addTab(path.isEmpty() ? tr("此电脑") : path);
+    const QString label = path.isEmpty()
+        ? ((m_source && m_source->sourceId() == QStringLiteral("local"))
+               ? QStringLiteral("此电脑") : QStringLiteral("/"))
+        : path;
+    const int idx = m_tabBar->addTab(label);
     m_tabBar->setTabToolTip(idx, path);
     m_currentTab = idx;
     m_tabBar->blockSignals(true);
@@ -1327,6 +1327,16 @@ bool FileBrowserPanel::canAcceptDrag(const FileBrowserPanel* sourcePanel,
 
 bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
 {
+    // TC 标签栏双击：标签上=关闭该标签；空白处=新增标签
+    if (watched == m_tabBar && event->type() == QEvent::MouseButtonDblClick) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        const int idx = m_tabBar->tabAt(me->position().toPoint());
+        if (idx >= 0)
+            closeTab(idx);
+        else
+            addTab();
+        return true;
+    }
     // 拦截表格视口上的面板间拖拽事件（与 FtpDeployWidget 的系统文件拖入同套路）
     if ((watched == m_table->viewport() || watched == m_table) && m_source) {
         switch (event->type()) {

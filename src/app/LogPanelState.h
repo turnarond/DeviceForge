@@ -28,12 +28,17 @@ struct State {
 constexpr const char* kRecordType = "app.panel";
 constexpr const char* kRecordKey = "logPanel";
 constexpr int kMinLogHeight = 80;
+// 状态版本：v1 时代默认展开、旧记录里 collapsed=false 是"当时的默认"而非用户选择。
+// v2 起默认折叠——旧记录（无 version 或 <2）忽略其 collapsed，统一按折叠处理。
+constexpr int kStateVersion = 2;
 
 inline State fromRecord(const QVariantMap& record)
 {
     State s;
+    const int version = record.value(QStringLiteral("version")).toInt();   // 缺失=0
     const QVariant collapsed = record.value(QStringLiteral("collapsed"));
-    if (collapsed.typeId() == QMetaType::Bool)
+    // 仅当记录带新版本号时才信任其折叠态；旧记录按默认折叠
+    if (version >= kStateVersion && collapsed.typeId() == QMetaType::Bool)
         s.collapsed = collapsed.toBool();
     const QVariant height = record.value(QStringLiteral("height"));
     if (height.typeId() == QMetaType::Int && height.toInt() >= kMinLogHeight)
@@ -44,6 +49,7 @@ inline State fromRecord(const QVariantMap& record)
 inline QVariantMap toRecord(const State& state)
 {
     QVariantMap rec;
+    rec.insert(QStringLiteral("version"), kStateVersion);
     rec.insert(QStringLiteral("collapsed"), state.collapsed);
     rec.insert(QStringLiteral("height"), state.expandedHeight);
     return rec;
