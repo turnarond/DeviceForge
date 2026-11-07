@@ -148,6 +148,13 @@ void FileBrowserPanel::setupUi()
     });
     chooserRow->addWidget(m_sourceCombo);
     chooserRow->addWidget(m_deviceCombo);
+    // 驱动器按钮条（TC 风格：与源下拉同级；本地源时显示 C:/ D:/ …，点击直达）
+    m_driveBar = new QWidget(this);
+    m_driveLayout = new QHBoxLayout(m_driveBar);
+    m_driveLayout->setContentsMargins(0, 0, 0, 0);
+    m_driveLayout->setSpacing(4);
+    m_driveBar->setVisible(false);
+    chooserRow->addWidget(m_driveBar);
     chooserRow->addStretch();
     layout->addLayout(chooserRow);
 
@@ -247,6 +254,28 @@ void FileBrowserPanel::setupUi()
 // 仅用户操作源/设备下拉时发射 sourceChooserChanged）
 // ============================================================
 
+void FileBrowserPanel::buildDriveBar()
+{
+    if (!m_driveLayout) return;
+    while (QLayoutItem* item = m_driveLayout->takeAt(0)) {
+        if (QWidget* w = item->widget()) w->deleteLater();
+        delete item;
+    }
+    for (const QFileInfo& drive : QDir::drives()) {
+        const QString path = drive.absoluteFilePath();          // "C:/"
+        QString label = path.left(2);                            // "C:"
+        auto* btn = new QPushButton(label, m_driveBar);
+        btn->setObjectName(QStringLiteral("driveButton"));
+        btn->setToolTip(path);
+        btn->setFixedHeight(24);
+        btn->setFixedWidth(46);
+        btn->setCursor(Qt::PointingHandCursor);
+        connect(btn, &QPushButton::clicked, this, [this, path]() { navigateTo(path); });
+        m_driveLayout->addWidget(btn);
+    }
+    m_driveLayout->addStretch();
+}
+
 void FileBrowserPanel::setSourceChooserVisible(bool visible)
 {
     m_sourceCombo->setVisible(visible);
@@ -301,8 +330,12 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
     if (m_source) {
         setSourceProto(m_source->sourceId());   // 选择器显示与实际源一致（blockSignals，不发射）
         // 本地默认当前目录；远程默认根
-        // 本地源从「此电脑」（驱动器列表）起步（TC 风格）；远程默认根
-        m_currentPath = m_source->sourceId() == "local" ? QString() : QStringLiteral("/");
+        // 本地源从用户目录起步（TC 风格：驱动器按钮条负责切盘，表格显示当前目录内容）；
+        // 远程默认根
+        const bool isLocal = m_source->sourceId() == "local";
+        m_currentPath = isLocal ? QDir::homePath() : QStringLiteral("/");
+        if (isLocal) buildDriveBar();
+        if (m_driveBar) m_driveBar->setVisible(isLocal);
         navigateTo(m_currentPath);
     } else {
         // 置空源（连接失败 detach 等）：清空表格 + 路径栏 + 面包屑 + 当前路径，
@@ -482,9 +515,17 @@ void FileBrowserPanel::onTableDoubleClicked(const QModelIndex& index)
         openEditorForRow(index.row());   // v2.12：双击文件 = 预览/编辑（TC F3/F4 合并入口）
         return;
     }
+    // 驱动器行（本地根）：name 是绝对路径（"C:/"），直接导航；
+    // 按「当前路径 + 子名」拼接会得到无效的 "/C:/"（驱动器双击进不去的根因）
+    const QString entryName = QString::fromStdString(fi.name);
+    if (entryName.size() >= 2 && entryName.at(1) == u':') {
+        navigateTo(entryName);
+        emit directoryActivated(fi);
+        return;
+    }
     QString newPath = m_currentPath;
     if (!newPath.endsWith('/')) newPath += '/';
-    newPath += QString::fromStdString(fi.name);
+    newPath += entryName;
     navigateTo(newPath);
     emit directoryActivated(fi);
 }

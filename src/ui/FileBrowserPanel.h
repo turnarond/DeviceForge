@@ -28,6 +28,8 @@ class QDropEvent;
 class IFileSource;
 class FileEditorDialog;
 
+class QHBoxLayout;
+
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
 public:
@@ -58,7 +60,8 @@ public:
     FileEditorDialog* editorForTest() const { return m_editor.data(); }
 
     // --- Task 3：面板源选择器 ---
-    void setSourceChooserVisible(bool visible);          // 源选择器整行显示/隐藏
+    void setSourceChooserVisible(bool visible);
+    void buildDriveBar();   // 本地源：重建驱动器按钮（TC 风格与源下拉同级）          // 源选择器整行显示/隐藏
     void setSourceProto(const QString& proto);           // "local"/"ftp"/"sftp"，程序化设置（blockSignals 防循环）
     void setSourceDevice(const QString& device);         // 面板级设备下拉（blockSignals）
     void setSourceDevices(const QStringList& devices);   // 设备列表重填（保留当前选择，blockSignals）
@@ -145,6 +148,8 @@ private:
     FileBrowserPanel* m_peerPanel = nullptr;   // 对面面板（宿主注入）
     QComboBox*  m_sourceCombo = nullptr;       // 源类型（本地/FTP/SFTP，data role 存 local/ftp/sftp）
     QComboBox*  m_deviceCombo = nullptr;       // 面板级设备（远程源时显示，宿主填充设备列表）
+    QWidget*    m_driveBar = nullptr;          // 驱动器按钮条（本地源可见，TC 风格与源下拉同级）
+    QHBoxLayout* m_driveLayout = nullptr;
     QLineEdit*  m_pathEdit = nullptr;          // 面板顶部路径栏
     QTableView* m_table = nullptr;             // 统一表格视图
     QLabel*     m_breadcrumb = nullptr;        // 底部面包屑（路径文本，含 / 分隔可点击——首版文本展示）
