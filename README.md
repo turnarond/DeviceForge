@@ -2,7 +2,7 @@
 
 DeviceForge 是基于 Qt 6 + C++17 的**工业级系统部署调试工具**，面向 PLC、嵌入式终端、网络设备等工业硬件的批量部署与运维。原名 DeployMaster，2026-07-05 更名为 DeviceForge。
 
-**版本**：2.16.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
+**版本**：2.17.0 | **许可**：MIT License | **平台**：Windows（Linux 待适配）
 
 ---
 
@@ -114,7 +114,7 @@ darkstyle.qss / darkstyle-light.qss（双主题）  ToolWidget (基类)         
 
 ### 预编译版（推荐）
 
-从 [Releases](../../releases) 下载 `DeviceForge-v2.16.0-win64.zip`，解压后运行 `DeviceForge.exe`。
+从 [Releases](../../releases) 下载 `DeviceForge-v2.17.0-win64.zip`，解压后运行 `DeviceForge.exe`。
 
 > 需要安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如已安装 VS2022 可跳过）。
 ### 从源码构建
@@ -186,6 +186,7 @@ DeviceForge/
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| **2.17.0** | 2026-11-07 | UI 视觉语言重构（Instrument 双主题：亮色冷灰画布 + 深青信号 / 深色炭黑 + 亮青信号，色值单源 `ThemeTokens.h` + `theme_guard.py` 守卫）；文件管理全面 TC 化（单行操作栏 + ⚙ 折叠选项、宽屏几何、驱动器按钮条、多标签、F2/F3/F4/F5/F6/F7/F8/Delete/Enter/Backspace、列头排序、路径历史补全、表格内打字即定位、目录递归复制、中文文件名、选中态实底反色、日志默认折叠）；测试基线 **54** 目标。详见 `RELEASE_NOTES.md` |
 | **2.16.0** | 2026-10-23 | 设备栏标签分组版：第 1 行只显已选 chips + 「设备 ▾」分组菜单（标签即分组、零迁移）+ 双击/右键「打开这台设备」按端点协议跳页（含部署页设备下拉与远程目录重建）+ 未选择设备＝没有目标的语义统一（**现场可见变更**）+ 标签归一单源化（含两处放宽例外）+ SylixOS FTP 三禁单源化与静态守卫（#59 闭环）；测试基线 **53** 目标。详见 `RELEASE_NOTES.md` |
 | **2.15.0** | 2026-10-20 | 全量收编版：文件夹条目三入口递归展开镜像部署（单次 5000 条目上限整体拒绝、远端子目录自动创建；**含 SFTP 目录落点加深一层的行为变更**）+ 清单去 1000 条隐性截断（显式 limit 逐字不变）+ 保存为模板与导入共用落库通道 + 运行终态聚合单源 + 运行级已确保远端目录复用 + 部署页工具栏两行化（1366/1280 不再右侧裁切）+ 模板编辑器批量刷表与空目录提示。已知问题：SylixOS FTP 三禁未单源化（#59，留 v2.16）。详见 `RELEASE_NOTES.md` |
 | **2.14.1** | 2026-10-18 | 评审后续波补丁版：主窗口初始几何主屏优先兑现（兑现 WindowPlacement 调用方契约）+ 传输层目录条目口径钉桩（回归用例+注释/手册就实：单发与模板同走 TransferExecutor，仅普通文件可部署）（此句对单发路径失实，2026-10-20 v2.15 波2 勘误：DeployJob 一直展开目录，见 RELEASE_NOTES/CHANGELOG [2.14.1] 注记）+ v2.13 规格校验文案勘误注记 |
