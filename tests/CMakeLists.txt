@@ -387,13 +387,19 @@ add_executable(tst_panel_async
     ${CMAKE_SOURCE_DIR}/src/ui/FileEncoding.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/FileEditorDialog.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/FtpDeployTool/RemoteFileModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/ConfigStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/DpapiCrypto.cpp
 )
 target_include_directories(tst_panel_async PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 target_link_libraries(tst_panel_async PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Test
+    # FileBrowserPanel 的路径历史走 ConfigStore（SQLite）→ 需 Qt6::Sql
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Sql Qt6::Test
 )
+if(WIN32)
+    target_link_libraries(tst_panel_async PRIVATE crypt32)
+endif()
 add_test(NAME tst_panel_async COMMAND tst_panel_async)
 if(_qt_bin_dir)
     set_tests_properties(tst_panel_async PROPERTIES
