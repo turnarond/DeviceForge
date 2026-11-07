@@ -1,10 +1,13 @@
 #include "ui/FileBrowserPanel.h"
 #include "ui/FileEditorDialog.h"
 #include "ui/IFileSource.h"
+#include "config/ConfigStore.h"
 #include "tools/FtpDeployTool/RemoteFileModel.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QCompleter>
+#include <QStringListModel>
 #include <QComboBox>
 #include <QTableView>
 #include <QHeaderView>
@@ -162,6 +165,15 @@ void FileBrowserPanel::setupUi()
     m_pathEdit = new QLineEdit(this);
     m_pathEdit->setPlaceholderText(tr("输入路径后回车跳转..."));
     connect(m_pathEdit, &QLineEdit::returnPressed, this, &FileBrowserPanel::onPathEnterPressed);
+    // 路径历史补全（TC 常用目录习惯）：历史来自 ConfigStore，输入时下拉候选
+    m_pathHistory = ConfigStore::instance()
+        .load(QStringLiteral("filebrowser"), QStringLiteral("pathHistory"))
+        .value(QStringLiteral("paths")).toStringList();
+    m_pathCompleter = new QCompleter(m_pathHistory, this);
+    m_pathCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    m_pathCompleter->setFilterMode(Qt::MatchContains);
+    m_pathCompleter->setMaxVisibleItems(12);
+    m_pathEdit->setCompleter(m_pathCompleter);
     layout->addWidget(m_pathEdit);
 
     // 统一表格视图
@@ -268,9 +280,22 @@ void FileBrowserPanel::setupUi()
 // 仅用户操作源/设备下拉时发射 sourceChooserChanged）
 // ============================================================
 
+namespace {
+QString capacityText(qint64 bytes)
+{
+    if (bytes <= 0) return QStringLiteral("—");
+    static const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+    double v = static_cast<double>(bytes);
+    int u = 0;
+    while (v >= 1024.0 && u < 4) { v /= 1024.0; ++u; }
+    return QString::number(v, 'f', 1) + QLatin1Char(' ') + QLatin1String(units[u]);
+}
+}  // namespace
+
 void FileBrowserPanel::buildDriveBar()
 {
     if (!m_driveLayout) return;
+    m_driveButtons.clear();
     while (QLayoutItem* item = m_driveLayout->takeAt(0)) {
         if (QWidget* w = item->widget()) w->deleteLater();
         delete item;
@@ -280,14 +305,31 @@ void FileBrowserPanel::buildDriveBar()
         QString label = path.left(2);                            // "C:"
         auto* btn = new QPushButton(label, m_driveBar);
         btn->setObjectName(QStringLiteral("driveButton"));
-        btn->setToolTip(path);
+        // tooltip：可用/总容量（TC 驱动器栏信息）
+        const QStorageInfo st(path);
+        btn->setToolTip(st.isValid() && st.isReady()
+            ? QStringLiteral("%1  可用 %2 / 总计 %3")
+                  .arg(path).arg(capacityText(st.bytesAvailable()), capacityText(st.bytesTotal()))
+            : path);
         btn->setFixedHeight(24);
         btn->setFixedWidth(46);
         btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked, this, [this, path]() { navigateTo(path); });
+        m_driveButtons.insert(path, btn);
         m_driveLayout->addWidget(btn);
     }
     m_driveLayout->addStretch();
+}
+
+// 当前盘高亮（TC 驱动器栏语义）
+void FileBrowserPanel::updateDriveHighlight()
+{
+    for (auto it = m_driveButtons.constBegin(); it != m_driveButtons.constEnd(); ++it) {
+        const bool active = !m_currentPath.isEmpty() && m_currentPath.startsWith(it.key());
+        it.value()->setProperty("active", active);
+        it.value()->style()->unpolish(it.value());
+        it.value()->style()->polish(it.value());
+    }
 }
 
 void FileBrowserPanel::setSourceChooserVisible(bool visible)
@@ -368,7 +410,25 @@ void FileBrowserPanel::setSource(std::shared_ptr<IFileSource> source)
 void FileBrowserPanel::navigateTo(const QString& path)
 {
     m_pathEdit->setText(path);
+    recordPathHistory(path);
+    updateDriveHighlight();
     loadDirectory(path);
+}
+
+// 路径历史（TC 常用目录）：去重置顶、上限 20、持久化到 ConfigStore
+void FileBrowserPanel::recordPathHistory(const QString& path)
+{
+    const QString p = path.trimmed();
+    if (p.isEmpty()) return;
+    m_pathHistory.removeAll(p);
+    m_pathHistory.prepend(p);
+    while (m_pathHistory.size() > 20) m_pathHistory.removeLast();
+    if (m_pathCompleter) {
+        m_pathCompleter->setModel(new QStringListModel(m_pathHistory, m_pathCompleter));
+    }
+    QVariantMap m;
+    m.insert(QStringLiteral("paths"), m_pathHistory);
+    ConfigStore::instance().save(QStringLiteral("filebrowser"), QStringLiteral("pathHistory"), m);
 }
 
 void FileBrowserPanel::refresh() { loadDirectory(m_currentPath); }

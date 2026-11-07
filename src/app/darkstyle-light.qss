@@ -877,3 +877,21 @@ QPlainTextEdit#fileEditorText {
     color: #16222B;
     border: 1px solid #D3DAE0;
 }
+
+/* ===== 驱动器按钮条（TC 风格：本地源，与源下拉同级） ===== */
+QPushButton#driveButton {
+    background: #F7F9FA;
+    border: 1px solid #B8C3CC;
+    border-radius: 4px;
+    color: #16222B;
+    padding: 2px 8px;
+}
+QPushButton#driveButton:hover {
+    border-color: #9FAFBD;
+}
+QPushButton#driveButton[active="true"] {
+    border-color: #0E766E;
+    color: #0E766E;
+    background: #EAF0EE;
+    font-weight: 600;
+}

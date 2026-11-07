@@ -876,3 +876,21 @@ QPlainTextEdit#fileEditorText {
     color: #E6EDF3;
     border: 1px solid #263140;
 }
+
+/* ===== 驱动器按钮条（TC 风格：本地源，与源下拉同级） ===== */
+QPushButton#driveButton {
+    background: #1B2430;
+    border: 1px solid #35465A;
+    border-radius: 4px;
+    color: #E6EDF3;
+    padding: 2px 8px;
+}
+QPushButton#driveButton:hover {
+    border-color: #4A5B74;
+}
+QPushButton#driveButton[active="true"] {
+    border-color: #2DD4BF;
+    color: #2DD4BF;
+    background: #12302C;
+    font-weight: 600;
+}

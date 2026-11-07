@@ -29,6 +29,7 @@ class IFileSource;
 class FileEditorDialog;
 
 class QHBoxLayout;
+class QCompleter;
 
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
@@ -70,6 +71,7 @@ public:
     void setTransferCanceller(TransferCanceller canceller);
     void setOverwritePolicyChooser(OverwritePolicyChooser chooser);
     void renameSelected();
+    void recordPathHistory(const QString& path);   // 记录路径历史（补全用）
     void newDirectoryHere();   // F7 / 右键「新建目录」
     void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）
@@ -152,7 +154,11 @@ private:
     QComboBox*  m_deviceCombo = nullptr;       // 面板级设备（远程源时显示，宿主填充设备列表）
     QWidget*    m_driveBar = nullptr;          // 驱动器按钮条（本地源可见，TC 风格与源下拉同级）
     QHBoxLayout* m_driveLayout = nullptr;
+    QHash<QString, QPushButton*> m_driveButtons;   // 盘符 → 按钮（当前盘高亮）
+    void updateDriveHighlight();
     QLineEdit*  m_pathEdit = nullptr;          // 面板顶部路径栏
+    QCompleter* m_pathCompleter = nullptr;     // 路径历史补全（TC 常用目录）
+    QStringList m_pathHistory;
     QTableView* m_table = nullptr;             // 统一表格视图
     QLabel*     m_breadcrumb = nullptr;        // 底部面包屑（路径文本，含 / 分隔可点击——首版文本展示）
     QLabel*     m_transferStatus = nullptr;    // Scheduler 快照状态（仅 GUI 线程更新）
