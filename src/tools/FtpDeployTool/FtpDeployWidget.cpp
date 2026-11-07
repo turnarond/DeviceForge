@@ -679,6 +679,7 @@ void FtpDeployWidget::setupToolbar(QVBoxLayout* mainLayout)
     // 精简（TC 风格）：协议/设备/端口/FTPS 不再占主界面——协议与端口由右面板源
     // 选择器 / 设备档案驱动（部署链路仍读这些控件，故保留对象但整体隐藏）。
     auto* connHolder = new QWidget(this);
+    connHolder->setObjectName(QStringLiteral("deployConnHolder"));
     connHolder->setLayout(connGroup);
     connHolder->setVisible(false);
     // 连接状态点保留可见（操作者需要看连接结果），移入操作行
