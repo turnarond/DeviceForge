@@ -83,6 +83,15 @@ void RemoteFileModel::exitCompareView()
     endResetModel();
 }
 
+void RemoteFileModel::setSelectedRows(const QSet<int>& rows)
+{
+    if (m_selectedRows == rows) return;
+    m_selectedRows = rows;
+    // 选中态变化后整表重绘：选中行前景色依赖此集合
+    if (rowCount(QModelIndex()) > 0)
+        emit dataChanged(index(0, 0), index(rowCount(QModelIndex()) - 1, columnCount(QModelIndex()) - 1));
+}
+
 void RemoteFileModel::setThemeLight(bool light)
 {
     if (m_lightTheme == light)
@@ -217,6 +226,9 @@ QVariant RemoteFileModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole) {
+        // 选中行：前景色反色（亮主题白 / 暗主题深墨），否则目录名 accent 会盖过 QSS
+        if (m_selectedRows.contains(index.row()))
+            return m_lightTheme ? QColor(0xFF, 0xFF, 0xFF) : QColor(0x06, 0x2E, 0x2A);
         if (fi.isDir && index.column() == ColName)
             return tokens::color(tokens::Token::Accent, !m_lightTheme); // 目录名 accent
     }

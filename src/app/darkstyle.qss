@@ -220,10 +220,26 @@ QTableWidget, QTableView {
     background-color: #0A0F15;
     alternate-background-color: #10161F;
     color: #E6EDF3;
-    selection-background-color: #12302C;
-    selection-color: #2DD4BF;
+    /* 选中=信号实底反色（TC 同款醒目度）：亮青底 + 深墨字，失焦也不变淡 */
+    selection-background-color: #2DD4BF;
+    selection-color: #062E2A;
     border: 1px solid #263140;
     gridline-color: #1B2430;
+}
+
+QTableWidget::item:hover:!selected, QTableView::item:hover:!selected {
+    background-color: #1B2430;
+}
+
+QTableWidget::item:selected, QTableView::item:selected {
+    background-color: #2DD4BF;
+    color: #062E2A;
+    border-left: 2px solid #14B8A6;
+}
+
+QTableWidget::item:selected:!active, QTableView::item:selected:!active {
+    background-color: #14B8A6;
+    color: #062E2A;
 }
 
 QTableWidget::item:hover, QTableView::item:hover {

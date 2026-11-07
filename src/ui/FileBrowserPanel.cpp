@@ -622,8 +622,16 @@ void FileBrowserPanel::applyFileList(const QString& path,
         }
         // setModel 会重建 selection model（setupUi 时连接会失效），必须在设模型之后连接
         if (auto* selModel = m_table->selectionModel()) {
-            connect(selModel, &QItemSelectionModel::selectionChanged, this,
-                    [this] { emit selectionChanged(); });
+            connect(selModel, &QItemSelectionModel::selectionChanged, this, [this] {
+                // 同步选中行集合到模型（选中行前景色反色，覆盖目录 accent）
+                if (auto* m = qobject_cast<RemoteFileModel*>(m_table->model())) {
+                    QSet<int> rows;
+                    const auto idxs = m_table->selectionModel()->selectedRows();
+                    for (const QModelIndex& i : idxs) rows.insert(i.row());
+                    m->setSelectedRows(rows);
+                }
+                emit selectionChanged();
+            });
         }
     }
     // 过滤 . 补 ..（与现有远程面板一致）
@@ -652,6 +660,14 @@ void FileBrowserPanel::applyFileList(const QString& path,
         }
         m_restoreSelectionName.clear();
         m_restoreSelectionGeneration = 0;
+    }
+
+    // TC 习惯：进入目录即选中首行（".."），键盘导航/选中态立即可见
+    if (model->rowCount({}) > 0 && !m_table->currentIndex().isValid()) {
+        const QModelIndex first = model->index(0, 0);
+        if (auto* sel = m_table->selectionModel())
+            sel->setCurrentIndex(first,
+                                 QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     }
 
     m_breadcrumb->setText(path);

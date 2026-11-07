@@ -220,14 +220,28 @@ QTableWidget, QTableView {
     background-color: #FFFFFF;
     alternate-background-color: #F7F9FA;
     color: #16222B;
-    selection-background-color: #EAF0EE;
-    selection-color: #0E766E;
+    /* 选中=信号实底反色（TC 同款醒目度）：深青底 + 白字，无焦点/有焦点一致清晰 */
+    selection-background-color: #0E766E;
+    selection-color: #FFFFFF;
     border: 1px solid #D3DAE0;
     gridline-color: #D3DAE0;
 }
 
-QTableWidget::item:hover, QTableView::item:hover {
+/* 悬停只作用于未选中行——否则浅底会把选中行冲淡 */
+QTableWidget::item:hover:!selected, QTableView::item:hover:!selected {
     background-color: #F7F9FA;
+}
+
+QTableWidget::item:selected, QTableView::item:selected {
+    background-color: #0E766E;
+    color: #FFFFFF;
+    border-left: 2px solid #094A45;
+}
+
+/* 表格失焦时保持同样对比（TC 也是清晰可见，不随焦点变淡） */
+QTableWidget::item:selected:!active, QTableView::item:selected:!active {
+    background-color: #0B5D56;
+    color: #FFFFFF;
 }
 
 /* ===== 表头 ===== */
