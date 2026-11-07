@@ -69,7 +69,9 @@ public:
     void setTransferSubmitter(TransferSubmitter submitter);
     void setTransferCanceller(TransferCanceller canceller);
     void setOverwritePolicyChooser(OverwritePolicyChooser chooser);
-    void renameSelected();                        // F2：重命名
+    void renameSelected();
+    void newDirectoryHere();   // F7 / 右键「新建目录」
+    void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）
     void moveSelectedTo(FileBrowserPanel* target); // F6：移动到目标面板（方向语义）
     void showContextMenu(const QPoint& pos);      // 统一右键菜单（新建/重命名/删除/传输/复制路径/刷新）

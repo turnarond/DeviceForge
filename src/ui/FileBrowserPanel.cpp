@@ -188,10 +188,24 @@ void FileBrowserPanel::setupUi()
     setAcceptDrops(true);   // 面板级兜底：非表格区域（路径栏/面包屑）也能接收拖入
 
     // 面板快捷键（TC 风格，面板焦点内生效）：
-    //   F2 重命名 / F4 预览编辑 / F5 复制到对面 / F6 移动到对面 / Tab 焦点切到对面面板
+    //   F2 重命名 / F3 查看 / F4 预览编辑 / F5 复制到对面 / F6 移动到对面 / F7 新建文件夹 / F8 删除
+    //   / Tab 焦点切到对面面板（快捷键对齐 Total Commander 习惯）
     auto* f2Shortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
     f2Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
     connect(f2Shortcut, &QShortcut::activated, this, &FileBrowserPanel::renameSelected);
+
+    auto* f3Shortcut = new QShortcut(QKeySequence(Qt::Key_F3), this);
+    f3Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    // TC 的 F3=查看（只读）；本工具编辑器为预览/编辑二合一，F3 与 F4 同入口
+    connect(f3Shortcut, &QShortcut::activated, this, &FileBrowserPanel::openEditorForSelectedFile);
+
+    auto* f7Shortcut = new QShortcut(QKeySequence(Qt::Key_F7), this);
+    f7Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(f7Shortcut, &QShortcut::activated, this, &FileBrowserPanel::newDirectoryHere);
+
+    auto* f8Shortcut = new QShortcut(QKeySequence(Qt::Key_F8), this);
+    f8Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(f8Shortcut, &QShortcut::activated, this, &FileBrowserPanel::deleteSelected);
 
     auto* f4Shortcut = new QShortcut(QKeySequence(Qt::Key_F4), this);
     f4Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -459,6 +473,11 @@ void FileBrowserPanel::applyFileList(const QString& path,
             m_table->setColumnWidth(RemoteFileModel::ColDateTime, 112);
             m_table->setColumnWidth(RemoteFileModel::ColPermissions, 76);
             m_table->setColumnWidth(RemoteFileModel::ColOwner, 60);
+            // 列头排序（TC 习惯：点击列头切换升降序；模型 sort() 已实现目录优先 + 按列比较）
+            m_table->setSortingEnabled(true);
+            m_table->horizontalHeader()->setSortIndicatorShown(true);
+            m_table->horizontalHeader()->setSectionsClickable(true);
+            m_table->sortByColumn(RemoteFileModel::ColName, Qt::AscendingOrder);
         }
         // setModel 会重建 selection model（setupUi 时连接会失效），必须在设模型之后连接
         if (auto* selModel = m_table->selectionModel()) {
@@ -636,6 +655,44 @@ void FileBrowserPanel::renameSelected()
     const QString dstFull = m_currentPath + "/" + newName.trimmed();
     if (!m_source->rename(srcFull, dstFull))
         m_breadcrumb->setText(tr("重命名失败: %1").arg(m_source->lastError()));
+    else
+        refresh();
+}
+
+// F7 / 右键「新建目录」：在当前路径下创建（TC 语义）
+void FileBrowserPanel::newDirectoryHere()
+{
+    if (!m_source) return;
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("新建目录"),
+        tr("目录名称："), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+    QString newPath = m_currentPath;
+    if (!newPath.endsWith('/')) newPath += '/';
+    newPath += name.trimmed();
+    if (!m_source->mkdir(newPath))
+        m_breadcrumb->setText(tr("新建目录失败: %1").arg(m_source->lastError()));
+    else
+        refresh();
+}
+
+// F8 / 右键「删除」：删除选中项（二次确认，.. 行跳过）
+void FileBrowserPanel::deleteSelected()
+{
+    if (!m_source) return;
+    const auto files = selectedFiles();
+    if (files.empty() || (files.size() == 1 && files.front().name == "..")) return;
+    const auto res = QMessageBox::question(this, tr("删除"),
+        tr("确定删除选中的 %1 项？").arg(files.size()));
+    if (res != QMessageBox::Yes) return;
+    bool anyFailed = false;
+    for (const auto& f : files) {
+        if (f.name == "..") continue;
+        const QString full = m_currentPath + "/" + QString::fromStdString(f.name);
+        if (!m_source->remove(full, f.isDir)) anyFailed = true;
+    }
+    if (anyFailed)
+        m_breadcrumb->setText(tr("部分删除失败: %1").arg(m_source->lastError()));
     else
         refresh();
 }
@@ -976,33 +1033,11 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
     } else if (chosen == editAct) {
         openEditorForSelectedFile();
     } else if (chosen == mkdirAct) {
-        bool ok = false;
-        const QString name = QInputDialog::getText(this, tr("新建目录"),
-            tr("目录名称："), QLineEdit::Normal, QString(), &ok);
-        if (!ok || name.trimmed().isEmpty()) return;
-        QString newPath = m_currentPath;
-        if (!newPath.endsWith('/')) newPath += '/';
-        newPath += name.trimmed();
-        if (!m_source->mkdir(newPath))
-            m_breadcrumb->setText(tr("新建目录失败: %1").arg(m_source->lastError()));
-        else
-            refresh();
+        newDirectoryHere();
     } else if (chosen == renameAct) {
         renameSelected();
     } else if (chosen == deleteAct) {
-        const auto res = QMessageBox::question(this, tr("删除"),
-            tr("确定删除选中的 %1 项？").arg(files.size()));
-        if (res != QMessageBox::Yes) return;
-        bool anyFailed = false;
-        for (const auto& f : files) {
-            if (f.name == "..") continue;
-            const QString full = m_currentPath + "/" + QString::fromStdString(f.name);
-            if (!m_source->remove(full, f.isDir)) anyFailed = true;
-        }
-        if (anyFailed)
-            m_breadcrumb->setText(tr("部分删除失败: %1").arg(m_source->lastError()));
-        else
-            refresh();
+        deleteSelected();
     } else if (chosen == copyAct) {
         copySelectedTo(m_peerPanel);
     } else if (chosen == moveAct) {
