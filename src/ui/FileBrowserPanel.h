@@ -30,6 +30,7 @@ class FileEditorDialog;
 
 class QHBoxLayout;
 class QCompleter;
+class QTabBar;
 
 class FileBrowserPanel : public QWidget {
     Q_OBJECT
@@ -72,6 +73,9 @@ public:
     void setOverwritePolicyChooser(OverwritePolicyChooser chooser);
     void renameSelected();
     void recordPathHistory(const QString& path);   // 记录路径历史（补全用）
+    void addTab();                                  // Ctrl+T：新建标签（当前路径）
+    void closeTab(int index);                       // Ctrl+W / 标签关闭按钮
+    void updateCurrentTabPath(const QString& path); // 导航后同步标签文本
     void quickLocate(const QString& typed);        // TC 打字即定位（表格内快速搜索）
     // 目录递归复制（TC 拖拽文件夹）：本地→远程上传 / 远程→本地下载 / 本地→本地直接复制
     static void collectLocalDirItems(const QString& srcDir, const QString& dstDir,
@@ -166,6 +170,9 @@ private:
     QLineEdit*  m_pathEdit = nullptr;          // 面板顶部路径栏
     QCompleter* m_pathCompleter = nullptr;     // 路径历史补全（TC 常用目录）
     QStringList m_pathHistory;
+    QTabBar*    m_tabBar = nullptr;            // TC 多标签（每栏多个路径标签）
+    QStringList m_tabPaths;                   // 标签对应路径
+    int         m_currentTab = 0;
     QString     m_quickSearch;                 // TC 打字即定位缓冲（表格内快速搜索）
     QTimer*     m_quickSearchTimer = nullptr;
     QTableView* m_table = nullptr;             // 统一表格视图

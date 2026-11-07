@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QCompleter>
+#include <QTabBar>
 #include <QStringListModel>
 #include <QComboBox>
 #include <QTableView>
@@ -126,6 +127,28 @@ void FileBrowserPanel::setupUi()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
+    // TC 多标签栏（每栏多个路径标签；Ctrl+T 新建 / Ctrl+W 关闭 / 点击切换）
+    m_tabBar = new QTabBar(this);
+    m_tabBar->setObjectName(QStringLiteral("panelTabBar"));
+    m_tabBar->setExpanding(false);
+    m_tabBar->setTabsClosable(true);
+    m_tabBar->setMovable(true);
+    {
+        // 首个标签：本地=「此电脑」，远程=根
+        const QString initial = m_source && m_source->sourceId() == QStringLiteral("local")
+                                    ? QStringLiteral("此电脑") : QStringLiteral("/");
+        m_tabPaths << initial;
+        m_tabBar->addTab(initial);
+        m_tabBar->setTabToolTip(0, initial);
+    }
+    connect(m_tabBar, &QTabBar::currentChanged, this, [this](int idx) {
+        if (idx < 0 || idx >= m_tabPaths.size() || idx == m_currentTab) return;
+        m_currentTab = idx;
+        navigateTo(m_tabPaths[idx]);
+    });
+    connect(m_tabBar, &QTabBar::tabCloseRequested, this, &FileBrowserPanel::closeTab);
+    layout->addWidget(m_tabBar);
+
     // 源选择器行（面板顶部，路径栏上方）：源类型（本地/FTP/SFTP）+ 设备（远程源时显示）。
     // TC 彻底化：每面板可独立配置浏览源；面板源=浏览配置，批量部署目标由工具栏（宿主）决定。
     auto* chooserRow = new QHBoxLayout();
@@ -205,6 +228,13 @@ void FileBrowserPanel::setupUi()
     auto* f2Shortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
     f2Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
     connect(f2Shortcut, &QShortcut::activated, this, &FileBrowserPanel::renameSelected);
+
+    // TC 标签快捷键
+    auto* newTabShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+T")), this);
+    connect(newTabShortcut, &QShortcut::activated, this, &FileBrowserPanel::addTab);
+    auto* closeTabShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+W")), this);
+    connect(closeTabShortcut, &QShortcut::activated, this,
+            [this]() { closeTab(m_currentTab); });
 
     auto* f3Shortcut = new QShortcut(QKeySequence(Qt::Key_F3), this);
     f3Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -411,8 +441,59 @@ void FileBrowserPanel::navigateTo(const QString& path)
 {
     m_pathEdit->setText(path);
     recordPathHistory(path);
+    updateCurrentTabPath(path);
     updateDriveHighlight();
     loadDirectory(path);
+}
+
+// 标签文本：本地取末段目录名（空=此电脑），远程取路径末段
+void FileBrowserPanel::updateCurrentTabPath(const QString& path)
+{
+    if (!m_tabBar || m_currentTab < 0 || m_currentTab >= m_tabPaths.size()) return;
+    m_tabPaths[m_currentTab] = path;
+    QString label;
+    if (path.isEmpty()) {
+        label = (m_source && m_source->sourceId() == QStringLiteral("local"))
+                    ? QStringLiteral("此电脑") : QStringLiteral("/");
+    } else {
+        const QString trimmed = path.endsWith('/') ? path.left(path.size() - 1) : path;
+        const int slash = trimmed.lastIndexOf('/');
+        label = slash >= 0 ? trimmed.mid(slash + 1) : trimmed;
+        if (label.isEmpty()) label = path;
+    }
+    m_tabBar->setTabText(m_currentTab, label);
+    m_tabBar->setTabToolTip(m_currentTab, path);
+}
+
+// Ctrl+T：新建标签（复制当前路径）；新标签成为当前
+void FileBrowserPanel::addTab()
+{
+    if (!m_tabBar) return;
+    const QString path = m_currentPath;
+    m_tabPaths << path;
+    const int idx = m_tabBar->addTab(path.isEmpty() ? tr("此电脑") : path);
+    m_tabBar->setTabToolTip(idx, path);
+    m_currentTab = idx;
+    m_tabBar->blockSignals(true);
+    m_tabBar->setCurrentIndex(idx);
+    m_tabBar->blockSignals(false);
+    updateCurrentTabPath(path);
+    navigateTo(path);
+}
+
+// Ctrl+W / 关闭按钮：至少保留一个标签
+void FileBrowserPanel::closeTab(int index)
+{
+    if (!m_tabBar || m_tabBar->count() <= 1) return;
+    if (index < 0 || index >= m_tabBar->count()) return;
+    m_tabBar->blockSignals(true);
+    m_tabBar->removeTab(index);
+    m_tabPaths.removeAt(index);
+    if (m_currentTab >= m_tabBar->count()) m_currentTab = m_tabBar->count() - 1;
+    else if (index < m_currentTab) --m_currentTab;
+    m_tabBar->setCurrentIndex(m_currentTab);
+    m_tabBar->blockSignals(false);
+    navigateTo(m_tabPaths.value(m_currentTab));
 }
 
 // 路径历史（TC 常用目录）：去重置顶、上限 20、持久化到 ConfigStore

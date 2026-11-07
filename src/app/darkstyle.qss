@@ -894,3 +894,22 @@ QPushButton#driveButton[active="true"] {
     background: #12302C;
     font-weight: 600;
 }
+
+/* ===== 面板标签栏（TC 多标签） ===== */
+QTabBar#panelTabBar::tab {
+    background: #141B24;
+    border: 1px solid #263140;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 3px 12px;
+    margin-right: 2px;
+    color: #8B98A8;
+}
+QTabBar#panelTabBar::tab:selected {
+    background: #1B2430;
+    color: #E6EDF3;
+    border-color: #35465A;
+}
+QTabBar#panelTabBar::tab:hover {
+    color: #E6EDF3;
+}
