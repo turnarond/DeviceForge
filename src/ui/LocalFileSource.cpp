@@ -100,7 +100,9 @@ std::vector<FtpFileInfo> LocalFileSource::list(const QString& path)
     for (; it != end; it.increment(ec)) {
         if (ec) break;
         const auto& entry = *it;
-        const std::string name = entry.path().filename().string();
+        // 中文文件名：fs::path::string() 在 Windows 返回本地编码（GBK），Qt 按 UTF-8
+        // 解释会乱码；统一用 u8string()（UTF-8 字节）承载，显示侧 fromUtf8。
+        const std::string name = entry.path().filename().u8string();
         if (name == "." || name == "..") continue;   // 不返回（面板统一补充 ".."）
 
         FtpFileInfo info;

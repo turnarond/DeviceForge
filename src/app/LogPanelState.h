@@ -21,7 +21,7 @@
 namespace logpanel {
 
 struct State {
-    bool collapsed = false;
+    bool collapsed = true;   // 默认折叠（日志区是辅助信息，不占主界面）
     int expandedHeight = 180;
 };
 

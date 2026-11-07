@@ -826,6 +826,63 @@ void FileBrowserPanel::moveSelectedTo(FileBrowserPanel* target)
         m_breadcrumb->setText(tr("目录移动暂不支持（浅拷贝限制），已跳过 %1 个目录").arg(dirSkipped));
 }
 
+// 本地目录递归收集为上传项（目标父目录由 TransferExecutor 逐级确保）
+void FileBrowserPanel::collectLocalDirItems(const QString& srcDir, const QString& dstDir,
+                                            QVector<TransferItemRequest>& out)
+{
+    QDirIterator it(srcDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString abs = QDir::fromNativeSeparators(it.next());
+        const QString rel = QDir::fromNativeSeparators(QDir(srcDir).relativeFilePath(abs));
+        TransferItemRequest item;
+        item.direction = TransferDirection::Upload;
+        item.localPath = abs;
+        item.remotePath = joinedPath(dstDir, rel);
+        out.push_back(std::move(item));
+    }
+}
+
+// 远程目录递归收集为下载项（同步 list；目标子目录本地直接创建）
+void FileBrowserPanel::collectRemoteDirItems(const QString& srcDir, const QString& dstDir,
+                                             QVector<TransferItemRequest>& out)
+{
+    if (!m_source) return;
+    const auto files = m_source->list(srcDir);
+    for (const auto& f : files) {
+        if (f.name == "." || f.name == "..") continue;
+        const QString name = QString::fromStdString(f.name);
+        const QString srcPath = joinedPath(srcDir, name);
+        const QString dstPath = joinedPath(dstDir, name);
+        if (f.isDir) {
+            QDir().mkpath(dstPath);   // 下载：本地目标目录
+            collectRemoteDirItems(srcPath, dstPath, out);
+        } else {
+            TransferItemRequest item;
+            item.direction = TransferDirection::Download;
+            item.localPath = dstPath;
+            item.remotePath = srcPath;
+            out.push_back(std::move(item));
+        }
+    }
+}
+
+// 本地目录 → 本地目录直接递归复制（不进传输内核；用于两栏皆为本地源）
+bool FileBrowserPanel::copyLocalDirectory(const QString& srcDir, const QString& dstDir)
+{
+    if (!QDir().mkpath(dstDir)) return false;
+    bool ok = true;
+    QDirIterator it(srcDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString abs = it.next();
+        const QString rel = QDir(srcDir).relativeFilePath(abs);
+        const QString dst = joinedPath(dstDir, rel);
+        QDir().mkpath(QFileInfo(dst).absolutePath());
+        if (QFile::exists(dst) && !QFile::remove(dst)) { ok = false; continue; }
+        if (!QFile::copy(abs, dst)) ok = false;
+    }
+    return ok;
+}
+
 QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool move)
 {
     if (!m_source || !target || !target->source() || !m_transferSubmitter)
@@ -838,17 +895,28 @@ QUuid FileBrowserPanel::submitSelectedTransfer(FileBrowserPanel* target, bool mo
 
     QVector<TransferItemRequest> items;
     int directoriesSkipped = 0;
+    const bool localToLocal = sourceLocal && targetLocal;
     for (const auto& file : selectedFiles()) {
         if (file.name == "..")
             continue;
+        const QString entryName = QString::fromStdString(file.name);
         if (file.isDir) {
-            ++directoriesSkipped;
+            // TC 拖拽文件夹：本地→远程递归上传 / 远程→本地递归下载 / 本地→本地直接复制
+            const QString srcDir = joinedPath(m_currentPath, entryName);
+            const QString dstDir = joinedPath(target->m_currentPath, entryName);
+            if (sourceLocal && !localToLocal)
+                collectLocalDirItems(srcDir, dstDir, items);
+            else if (!sourceLocal && targetLocal)
+                collectRemoteDirItems(srcDir, dstDir, items);
+            else if (localToLocal) {
+                if (!copyLocalDirectory(srcDir, dstDir)) ++directoriesSkipped;
+            } else
+                ++directoriesSkipped;
             continue;
         }
 
-        const QString name = QString::fromStdString(file.name);
+        const QString name = entryName;
         TransferItemRequest item;
-        const bool localToLocal = sourceLocal && targetLocal;
         item.direction = sourceLocal && !localToLocal ? TransferDirection::Upload
                                                       : TransferDirection::Download;
         item.localPath = joinedPath(localToLocal || !sourceLocal
@@ -1190,6 +1258,10 @@ bool FileBrowserPanel::eventFilter(QObject* watched, QEvent* event)
             }
             if (key->key() == Qt::Key_Backspace) {
                 navigateToParent();
+                return true;
+            }
+            if (key->key() == Qt::Key_Delete) {
+                deleteSelected();   // TC：Delete 删除选中项（二次确认）
                 return true;
             }
             if (key->key() == Qt::Key_Right) {

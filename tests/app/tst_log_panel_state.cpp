@@ -33,7 +33,7 @@ private slots:
 void TstLogPanelState::emptyRecordYieldsDefaults()
 {
     const State s = logpanel::fromRecord(QVariantMap{});
-    QCOMPARE(s.collapsed, false);
+    QCOMPARE(s.collapsed, true);   // 默认折叠（日志区不占主界面）
     QCOMPARE(s.expandedHeight, 180);
 }
 
@@ -53,7 +53,7 @@ void TstLogPanelState::invalidValuesFallBackToDefaults()
     rec.insert(QStringLiteral("collapsed"), QStringLiteral("nope"));
     rec.insert(QStringLiteral("height"), 0);
     const State s = logpanel::fromRecord(rec);
-    QCOMPARE(s.collapsed, false);
+    QCOMPARE(s.collapsed, true);   // 非法值回落默认折叠
     QCOMPARE(s.expandedHeight, 180);
 
     rec.insert(QStringLiteral("height"), -50);

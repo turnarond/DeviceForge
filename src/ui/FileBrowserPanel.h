@@ -73,6 +73,12 @@ public:
     void renameSelected();
     void recordPathHistory(const QString& path);   // 记录路径历史（补全用）
     void quickLocate(const QString& typed);        // TC 打字即定位（表格内快速搜索）
+    // 目录递归复制（TC 拖拽文件夹）：本地→远程上传 / 远程→本地下载 / 本地→本地直接复制
+    static void collectLocalDirItems(const QString& srcDir, const QString& dstDir,
+                                     QVector<class TransferItemRequest>& out);
+    void collectRemoteDirItems(const QString& srcDir, const QString& dstDir,
+                               QVector<class TransferItemRequest>& out);
+    static bool copyLocalDirectory(const QString& srcDir, const QString& dstDir);
     void newDirectoryHere();   // F7 / 右键「新建目录」
     void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）
