@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QCompleter>
+#include <QProcess>
 #include <QTabBar>
 #include <QStringListModel>
 #include <QComboBox>
@@ -239,8 +240,8 @@ void FileBrowserPanel::setupUi()
 
     auto* f3Shortcut = new QShortcut(QKeySequence(Qt::Key_F3), this);
     f3Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
-    // TC 的 F3=查看（只读）；本工具编辑器为预览/编辑二合一，F3 与 F4 同入口
-    connect(f3Shortcut, &QShortcut::activated, this, &FileBrowserPanel::openEditorForSelectedFile);
+    // TC 的 F3=查看：配置了外部查看工具则用它，否则回退内置预览/编辑
+    connect(f3Shortcut, &QShortcut::activated, this, &FileBrowserPanel::openViewerForSelectedFile);
 
     auto* f7Shortcut = new QShortcut(QKeySequence(Qt::Key_F7), this);
     f7Shortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -312,6 +313,24 @@ void FileBrowserPanel::setupUi()
 // ============================================================
 
 namespace {
+// v2.18：外部工具（app.tools 配置：editor/viewer/diff，空=未配置）
+QString externalToolCommand(const QString& kind)
+{
+    const auto m = ConfigStore::instance().load(QStringLiteral("app"), QStringLiteral("tools"));
+    return m.value(kind).toString().trimmed();
+}
+
+// 启动外部程序：模板中的 %f 替换为文件路径（命令按标准拆分，支持带引号路径）
+bool launchExternalTool(const QString& commandTemplate, const QString& path)
+{
+    if (commandTemplate.isEmpty()) return false;
+    QString cmd = commandTemplate;
+    cmd.replace(QStringLiteral("%f"), path);
+    const QStringList parts = QProcess::splitCommand(cmd);
+    if (parts.isEmpty()) return false;
+    return QProcess::startDetached(parts.first(), parts.mid(1));
+}
+
 QString capacityText(qint64 bytes)
 {
     if (bytes <= 0) return QStringLiteral("—");
@@ -1260,6 +1279,8 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
     auto* moveAct    = menu.addAction(tr("移动到对面"));
     menu.addSeparator();
     auto* copyPathAct = menu.addAction(tr("复制路径"));
+    menu.addSeparator();
+    auto* diffAct   = menu.addAction(tr("用对比工具比较（对面同名文件）"));
     auto* refreshAct = menu.addAction(tr("刷新"));
 
     enterAct->setEnabled(selIsDir);            // 仅目录（含 ..）可进入
@@ -1268,6 +1289,17 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
     copyAct->setEnabled(hasSel && m_peerPanel);
     moveAct->setEnabled(hasSel && m_peerPanel);
     copyPathAct->setEnabled(hasSel);
+    // 外部对比：需配置 diff 工具 + 对面有同名选中文件 + 两侧皆本地
+    bool diffReady = !externalToolCommand(QStringLiteral("diff")).isEmpty()
+                     && m_peerPanel && singleSel && !selIsDir;
+    if (diffReady && m_peerPanel) {
+        const auto peerSel = m_peerPanel->selectedFiles();
+        diffReady = m_source && m_peerPanel->source()
+                    && m_source->sourceId() == QStringLiteral("local")
+                    && m_peerPanel->source()->sourceId() == QStringLiteral("local")
+                    && !peerSel.empty() && peerSel.front().name == files.front().name;
+    }
+    diffAct->setEnabled(diffReady);
 
     QAction* chosen = menu.exec(m_table->viewport()->mapToGlobal(pos));
     if (!chosen) return;
@@ -1310,6 +1342,24 @@ void FileBrowserPanel::showContextMenu(const QPoint& pos)
                                          : m_currentPath + "/" + name;
         QApplication::clipboard()->setText(p);
         m_breadcrumb->setText(tr("路径已复制: %1").arg(p));
+    } else if (chosen == diffAct) {
+        const auto peerSel = m_peerPanel->selectedFiles();
+        const QString name = QString::fromStdString(files.front().name);
+        QString left = m_currentPath;
+        if (!left.endsWith(QLatin1Char('/'))) left += QLatin1Char('/');
+        left += name;
+        QString right = m_peerPanel->currentPath();
+        if (!right.endsWith(QLatin1Char('/'))) right += QLatin1Char('/');
+        right += QString::fromStdString(peerSel.front().name);
+        const QString cmd = externalToolCommand(QStringLiteral("diff"));
+        QString launch = cmd;
+        launch.replace(QStringLiteral("%1"), left);
+        launch.replace(QStringLiteral("%2"), right);
+        const QStringList parts = QProcess::splitCommand(launch);
+        if (!parts.isEmpty() && QProcess::startDetached(parts.first(), parts.mid(1)))
+            m_breadcrumb->setText(tr("已用对比工具比较: %1").arg(name));
+        else
+            m_breadcrumb->setText(tr("对比工具启动失败（检查设置中的对比命令）"));
     } else if (chosen == refreshAct) {
         refresh();
     }
@@ -1520,6 +1570,29 @@ FileBrowserPanel::DropRoute FileBrowserPanel::handleDrop(
 // 与 loadDirectory 同一 QPointer+gen 竞态模式。
 // ============================================================
 
+// F3 查看：本地 + 配置了外部查看工具 → 外部打开；否则走内置预览/编辑
+void FileBrowserPanel::openViewerForSelectedFile()
+{
+    if (m_source && m_source->sourceId() == QStringLiteral("local")) {
+        const QString extCmd = externalToolCommand(QStringLiteral("viewer"));
+        if (!extCmd.isEmpty()) {
+            const auto files = selectedFiles();
+            if (!files.empty() && !files.front().isDir && files.front().name != "..") {
+                QString dir = m_currentPath;
+                if (!dir.endsWith(QLatin1Char('/')))
+                    dir += QLatin1Char('/');
+                const QString path = dir + QString::fromStdString(files.front().name);
+                if (launchExternalTool(extCmd, path)) {
+                    m_breadcrumb->setText(tr("已用外部工具查看: %1")
+                                              .arg(QString::fromStdString(files.front().name)));
+                    return;
+                }
+            }
+        }
+    }
+    openEditorForSelectedFile();
+}
+
 void FileBrowserPanel::openEditorForSelectedFile()
 {
     QModelIndex index = m_table->currentIndex();
@@ -1544,6 +1617,21 @@ void FileBrowserPanel::openEditorForRow(int row)
         return;
     if (!m_source)
         return;
+
+    // v2.18：本地文件 + 配置了外部编辑工具 → 直接用外部程序打开（跳过内置读取）
+    if (m_source->sourceId() == QStringLiteral("local")) {
+        const QString extCmd = externalToolCommand(QStringLiteral("editor"));
+        if (!extCmd.isEmpty()) {
+            QString dir = m_currentPath;
+            if (!dir.endsWith(QLatin1Char('/')))
+                dir += QLatin1Char('/');
+            const QString extPath = dir + QString::fromStdString(fi.name);
+            if (launchExternalTool(extCmd, extPath)) {
+                m_breadcrumb->setText(tr("已用外部工具打开: %1").arg(QString::fromStdString(fi.name)));
+                return;
+            }
+        }
+    }
 
     QString dir = m_currentPath;
     if (!dir.endsWith(QLatin1Char('/')))

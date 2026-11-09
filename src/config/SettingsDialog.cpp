@@ -21,6 +21,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QSlider>
+#include <QPlainTextEdit>
 
 namespace {
 
@@ -196,6 +197,49 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     if (auto* mainLayoutPtr2 = qobject_cast<QVBoxLayout*>(layout()))
         mainLayoutPtr2->insertLayout(1, deployRow);   // 紧随外观主题行
 
+    // v2.18：外部工具（编辑/查看/对比）——空=使用内置编辑器；%f=文件路径，%1/%2=对比双方
+    {
+        auto* toolsRow = new QHBoxLayout();
+        toolsRow->addWidget(new QLabel(QStringLiteral("外部工具"), this));
+        m_editorEdit = new QLineEdit(this);
+        m_editorEdit->setPlaceholderText(QStringLiteral("编辑（如 notepad.exe \"%f\"）"));
+        m_viewerEdit = new QLineEdit(this);
+        m_viewerEdit->setPlaceholderText(QStringLiteral("查看（如 notepad.exe \"%f\"）"));
+        m_diffEdit = new QLineEdit(this);
+        m_diffEdit->setPlaceholderText(QStringLiteral("对比（如 BCompare.exe \"%1\" \"%2\"）"));
+        const auto tools = ConfigStore::instance().load(
+            QStringLiteral("app"), QStringLiteral("tools"));
+        m_editorEdit->setText(tools.value(QStringLiteral("editor")).toString());
+        m_viewerEdit->setText(tools.value(QStringLiteral("viewer")).toString());
+        m_diffEdit->setText(tools.value(QStringLiteral("diff")).toString());
+        toolsRow->addWidget(m_editorEdit, 1);
+        toolsRow->addWidget(m_viewerEdit, 1);
+        toolsRow->addWidget(m_diffEdit, 1);
+        if (auto* mainLayoutPtr3 = qobject_cast<QVBoxLayout*>(layout()))
+            mainLayoutPtr3->insertLayout(2, toolsRow);
+        auto* toolsNote = new QLabel(
+            QStringLiteral("外部工具仅对本地文件生效；远程文件请用内置编辑器（F4）"), this);
+        if (auto* mainLayoutPtr4 = qobject_cast<QVBoxLayout*>(layout()))
+            mainLayoutPtr4->insertWidget(3, toolsNote);
+    }
+
+    // v2.18：快速启动栏（每行「名称 | 命令」，名称即按钮文字；空行忽略）
+    {
+        if (auto* mainLayoutPtr5 = qobject_cast<QVBoxLayout*>(layout())) {
+            mainLayoutPtr5->insertWidget(4, new QLabel(
+                QStringLiteral("快速启动栏（每行：名称 | 命令）"), this));
+            m_quickLaunchEdit = new QPlainTextEdit(this);
+            m_quickLaunchEdit->setPlaceholderText(
+                QStringLiteral("串口助手 | D:\\tools\\comassistant.exe\n"
+                               "设备网页 | http://192.168.1.10"));
+            m_quickLaunchEdit->setMaximumHeight(90);
+            const auto ql = ConfigStore::instance().load(
+                QStringLiteral("app"), QStringLiteral("quicklaunch"));
+            m_quickLaunchEdit->setPlainText(ql.value(QStringLiteral("entries")).toString());
+            mainLayoutPtr5->insertWidget(5, m_quickLaunchEdit);
+        }
+    }
+
     populateTable();
 }
 
@@ -210,6 +254,20 @@ void SettingsDialog::accept()
         QMessageBox::warning(this, QStringLiteral("保存失败"),
             QStringLiteral("并发度设置未能写入配置库（ConfigStore），本次修改不会生效。"));
         return;
+    }
+    // v2.18：快速启动栏（整块文本原样保存，主窗口读取时按行解析）
+    if (m_quickLaunchEdit) {
+        QVariantMap ql;
+        ql.insert(QStringLiteral("entries"), m_quickLaunchEdit->toPlainText());
+        ConfigStore::instance().save(QStringLiteral("app"), QStringLiteral("quicklaunch"), ql);
+    }
+    // v2.18：外部工具命令（空串也保存 = 清除该工具配置）
+    if (m_editorEdit || m_viewerEdit || m_diffEdit) {
+        QVariantMap tools;
+        if (m_editorEdit) tools.insert(QStringLiteral("editor"), m_editorEdit->text().trimmed());
+        if (m_viewerEdit) tools.insert(QStringLiteral("viewer"), m_viewerEdit->text().trimmed());
+        if (m_diffEdit) tools.insert(QStringLiteral("diff"), m_diffEdit->text().trimmed());
+        ConfigStore::instance().save(QStringLiteral("app"), QStringLiteral("tools"), tools);
     }
     QDialog::accept();
 }
