@@ -83,6 +83,7 @@ public:
     void collectRemoteDirItems(const QString& srcDir, const QString& dstDir,
                                QVector<class TransferItemRequest>& out);
     static bool copyLocalDirectory(const QString& srcDir, const QString& dstDir);
+    void openViewerForSelectedFile();   // F3：外部查看工具（未配置则内置预览）
     void newDirectoryHere();   // F7 / 右键「新建目录」
     void deleteSelected();     // F8 / 右键「删除」                        // F2：重命名
     void copySelectedTo(FileBrowserPanel* target); // F5：复制到目标面板（方向语义）

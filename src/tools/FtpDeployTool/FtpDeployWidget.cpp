@@ -215,7 +215,7 @@ void FtpDeployWidget::setupCompareBar(QVBoxLayout* mainLayout)
     auto* row = new QHBoxLayout();
     row->setSpacing(8);
 
-    m_dirCompareBtn = new QPushButton(QStringLiteral("目录对比  Ctrl+M"), this);
+    m_dirCompareBtn = new QPushButton(QStringLiteral("目录对比  F10"), this);
     m_dirCompareBtn->setObjectName(QStringLiteral("mbDirCompare"));
     m_dirCompareBtn->setCheckable(true);
 
@@ -240,8 +240,11 @@ void FtpDeployWidget::setupCompareBar(QVBoxLayout* mainLayout)
     else
         mainLayout->addLayout(row);
 
-    auto* sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+M")), this);
+    // TC 习惯：F10 = 左右栏目录对比（Ctrl+M 保留为兼容快捷键）
+    auto* sc = new QShortcut(QKeySequence(Qt::Key_F10), this);
     connect(sc, &QShortcut::activated, this, [this]() { m_dirCompareBtn->toggle(); });
+    auto* scLegacy = new QShortcut(QKeySequence(QStringLiteral("Ctrl+M")), this);
+    connect(scLegacy, &QShortcut::activated, this, [this]() { m_dirCompareBtn->toggle(); });
 }
 
 void FtpDeployWidget::setupCompareSummary(QVBoxLayout* mainLayout)

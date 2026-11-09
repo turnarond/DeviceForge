@@ -2,6 +2,11 @@
 #include "ThemeTokens.h"
 #include "app/WindowPlacement.h"   // v2.14 双屏初始放置决策纯函数
 #include <QMessageBox>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QToolBar>
+#include <QProcess>
+#include <QCloseEvent>
 #include <QGuiApplication>   // v2.14 双屏放置：枚举 screens()
 #include <QScreen>           // v2.14 双屏放置：availableGeometry()
 #include <QString>
@@ -198,6 +203,8 @@ DeviceForge::DeviceForge(QWidget* parent)
     // 7. 日志面板状态（v2.11.1）：从 ConfigStore 恢复折叠态与展开高度，
     //    初始比例由 splitSizes 钳制（不再硬编码 600:250）
     setupLogPanel();
+    setupTray();   // v2.18：关闭窗口 → 系统托盘常驻（避免反复冷启动）
+    rebuildQuickLaunchBar();   // v2.18：用户自定义快速启动栏
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
@@ -255,6 +262,90 @@ DeviceForge::DeviceForge(QWidget* parent)
 
     // 在线更新集成（Task 5）：菜单"帮助-检查更新" + 状态栏版本标签 + 5 秒后自动检查
     setupUpdateChecker();
+}
+
+// v2.18：系统托盘常驻。关闭窗口不退出而是缩到托盘；托盘双击/菜单恢复，
+// 菜单「退出」才真正结束进程。解决"每次启动太慢"的反复冷启动问题。
+// v2.18：快速启动栏。设置页 `app.quicklaunch.entries` 每行「名称 | 命令」，
+// 名称即按钮文字；点击用 QProcess::startDetached 拉起（不阻塞主界面）。
+void DeviceForge::rebuildQuickLaunchBar()
+{
+    if (!m_quickLaunchBar) {
+        m_quickLaunchBar = addToolBar(QStringLiteral("快速启动"));
+        m_quickLaunchBar->setObjectName(QStringLiteral("quickLaunchBar"));
+        m_quickLaunchBar->setMovable(false);
+        addToolBar(Qt::TopToolBarArea, m_quickLaunchBar);
+    }
+    m_quickLaunchBar->clear();
+    const auto ql = ConfigStore::instance().load(
+        QStringLiteral("app"), QStringLiteral("quicklaunch"));
+    const QString text = ql.value(QStringLiteral("entries")).toString();
+    for (const QString& raw : text.split(QLatin1Char('\n'))) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty()) continue;
+        const int sep = line.indexOf(QLatin1Char('|'));
+        if (sep <= 0) continue;
+        const QString name = line.left(sep).trimmed();
+        const QString cmd = line.mid(sep + 1).trimmed();
+        if (name.isEmpty() || cmd.isEmpty()) continue;
+        auto* act = m_quickLaunchBar->addAction(name);
+        connect(act, &QAction::triggered, this, [this, cmd, name]() {
+            const QStringList parts = QProcess::splitCommand(cmd);
+            if (parts.isEmpty() || !QProcess::startDetached(parts.first(), parts.mid(1))) {
+                qWarning() << "快速启动失败:" << name;
+            } else {
+                qInfo() << "快速启动:" << name;
+            }
+        });
+    }
+}
+
+void DeviceForge::setupTray()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) return;
+    m_trayIcon = new QSystemTrayIcon(QIcon(QStringLiteral(":/icons/app.ico")), this);
+    m_trayIcon->setToolTip(QStringLiteral("DeviceForge - 工业设备批量运维平台"));
+    auto* menu = new QMenu(this);
+    menu->addAction(QStringLiteral("显示主窗口"), this, [this]() {
+        showNormal();
+        activateWindow();
+        raise();
+    });
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("退出程序"), this, [this]() {
+        m_quitting = true;
+        if (m_trayIcon) m_trayIcon->hide();
+        qApp->quit();
+    });
+    m_trayIcon->setContextMenu(menu);
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::DoubleClick
+                    || reason == QSystemTrayIcon::Trigger) {
+                    showNormal();
+                    activateWindow();
+                    raise();
+                }
+            });
+    m_trayIcon->show();
+}
+
+void DeviceForge::closeEvent(QCloseEvent* event)
+{
+    // 托盘可用且非真退出：隐藏到托盘（首次给一次气泡提示）
+    if (!m_quitting && m_trayIcon && m_trayIcon->isVisible()) {
+        hide();
+        static bool notified = false;
+        if (!notified) {
+            notified = true;
+            m_trayIcon->showMessage(QStringLiteral("DeviceForge"),
+                                    QStringLiteral("已最小化到系统托盘，双击图标可恢复窗口"),
+                                    QSystemTrayIcon::Information, 2500);
+        }
+        event->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(event);
 }
 
 void DeviceForge::initToolTabs()

@@ -11,6 +11,9 @@
 #include <memory>
 
 class QTimer;
+class QSystemTrayIcon;
+class QToolBar;
+class QCloseEvent;
 
 class ToolHost;
 class DeviceBusWidget;
@@ -132,5 +135,17 @@ private:
     QLabel*        m_versionLabel     = nullptr;    // 状态栏:当前版本标签(可点击)
     QLabel*        m_directionLabel   = nullptr;    // 状态栏中央:部署方向指示(仅部署工具存在时显示)
     bool           m_autoCheck        = false;      // 自动检查标志(静默失败)
+
+    // v2.18：系统托盘常驻（关闭窗口 → 托盘，避免反复冷启动；托盘菜单可退出）
+    void setupTray();
+    QSystemTrayIcon* m_trayIcon = nullptr;
+    bool m_quitting = false;
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
+    // v2.18：用户自定义快速启动栏（设置页配置「名称|命令」，每行一项）
+    void rebuildQuickLaunchBar();
+    QToolBar* m_quickLaunchBar = nullptr;
 };
 
